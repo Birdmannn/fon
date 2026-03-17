@@ -1,0 +1,14 @@
+[package]
+name = "freight"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ckb-std = "1.0"
+ckb-hash = "0.116"
+secp256k1 = { version = "0.28", default-features = false, features = ["recovery", "alloc", "global-context"] }
+
+
+[features]
+library = []
+native-simulator = ["library", "ckb-std/native-simulator"]
