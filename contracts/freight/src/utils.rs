@@ -8,10 +8,7 @@ use ckb_std::ckb_types::packed::Script;
 use ckb_std::debug;
 use ckb_std::error::SysError;
 use ckb_std::high_level::{load_cell_lock, load_cell_type, load_header, load_input, load_script};
-use secp256k1::{
-    Message, Secp256k1,
-    ecdsa::{RecoverableSignature, RecoveryId},
-};
+use k256::ecdsa::{Signature, VerifyingKey, signature::hazmat::PrehashVerifier};
 
 pub struct Address([u8; 20]);
 
@@ -43,29 +40,30 @@ pub fn is_authorized_by_address(authorized_address: &[u8; 20]) -> Result<bool, E
     Ok(false)
 }
 
-// Script args parsing
-fn get_admin_address() -> Result<[u8; 20], Error> {
+// Script args parsing.
+// `index` is the byte offset into the full type script args where the field starts.
+// Layout: [selector (1)][admin_address (20, index=1)][admin_pubkey (33, index=21)][instruction-specific...]
+fn get_admin_address(index: usize) -> Result<[u8; 20], Error> {
     let script = load_script()?;
     let args = script.args().raw_data();
-    if args.len() < 53 {
+    if args.len() < index + 20 {
         return Err(Error::InvalidTypeScriptArgs);
     }
     let mut admin_address = [0u8; 20];
-    admin_address.copy_from_slice(&args[0..20]);
+    admin_address.copy_from_slice(&args[index..index + 20]);
     Ok(admin_address)
 }
 
-// Admin pubkey for signature verification
-pub fn get_admin_pubkey() -> Result<[u8; 33], Error> {
+// `index` is the byte offset into the full type script args where the pubkey starts.
+pub fn get_admin_pubkey(index: usize) -> Result<[u8; 33], Error> {
     let script = load_script()?;
     let args = script.args().raw_data();
-    // 33 bytes, compressed secp256k1 pubkey hash
-    if args.len() < 53 {
+    if args.len() < index + 33 {
         return Err(Error::InvalidTypeScriptArgs);
     }
-    let mut admin_pubkey_hash = [0u8; 33];
-    admin_pubkey_hash.copy_from_slice(&args[20..53]);
-    Ok(admin_pubkey_hash)
+    let mut admin_pubkey = [0u8; 33];
+    admin_pubkey.copy_from_slice(&args[index..index + 33]);
+    Ok(admin_pubkey)
 }
 
 // Cell counting
@@ -130,7 +128,7 @@ pub fn extract_caller_address(key: AddressKey) -> Result<[u8; 20], Error> {
             extract_address_from_lock(&lock)
         }
         AddressKey::Depositor => get_depositor_address(),
-        AddressKey::Admin => get_admin_address(),
+        AddressKey::Admin(index) => get_admin_address(index),
     }
 }
 
@@ -198,6 +196,9 @@ pub fn get_current_timestamp() -> Result<u64, Error> {
 }
 
 pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
+    if data.len() < CAMPAIGN_DATA_LEN {
+        return Err(Error::InvalidCellData);
+    }
     let created_at = u64::from_le_bytes(data[0..8].try_into().unwrap());
     let start_duration_in_seconds = u64::from_le_bytes(data[8..16].try_into().unwrap());
     let task_duration_in_seconds = u64::from_le_bytes(data[16..24].try_into().unwrap());
@@ -206,13 +207,16 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
         addr.copy_from_slice(&data[24..44]);
         addr
     };
-
     let campaign_type: CampaignType = data[44].try_into().unwrap();
     let maximum_amount = u64::from_le_bytes(data[45..53].try_into().unwrap());
     let current_deposits = u64::from_le_bytes(data[53..61].try_into().unwrap());
     let status: CampaignStatus = data[61].try_into().unwrap();
+    // Distribution fields (bytes 62–101)
+    let reward_count = u64::from_le_bytes(data[62..70].try_into().unwrap());
+    let mut randomness_hash = [0u8; 32];
+    randomness_hash.copy_from_slice(&data[70..102]);
 
-    let output_campaign = Campaign {
+    Ok(Campaign {
         created_at,
         start_duration_in_seconds,
         task_duration_in_seconds,
@@ -221,20 +225,28 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
         maximum_amount,
         current_deposits,
         status,
-    };
-
-    Ok(output_campaign)
+        reward_count,
+        randomness_hash,
+    })
 }
 
-pub fn recover_pubkey_hash(signature: &[u8], message: &[u8; 32]) -> [u8; 33] {
-    let secp = Secp256k1::verification_only();
-    let recovery_id = RecoveryId::from_i32(signature[64] as i32).expect("invalid recovery id");
-    let sig = RecoverableSignature::from_compact(&signature[0..64], recovery_id)
-        .expect("invalid signature");
-    let msg = Message::from_digest(*message);
-    secp.recover_ecdsa(&msg, &sig)
-        .expect("pubkey recovery failed")
-        .serialize() // returns compressed [u8; 33]
+/// Verify a 64-byte compact ECDSA signature against a pre-hashed message and
+/// a known compressed public key (33 bytes SEC1).
+pub fn verify_ecdsa_signature(
+    signature: &[u8],
+    message: &[u8; 32],
+    pubkey: &[u8; 33],
+) -> Result<(), crate::errors::Error> {
+    if signature.len() != 64 {
+        return Err(crate::errors::Error::InvalidSignature);
+    }
+    let verifying_key = VerifyingKey::from_sec1_bytes(pubkey)
+        .map_err(|_| crate::errors::Error::InvalidSignature)?;
+    let sig = Signature::from_slice(signature)
+        .map_err(|_| crate::errors::Error::InvalidSignature)?;
+    verifying_key
+        .verify_prehash(message, &sig)
+        .map_err(|_| crate::errors::Error::Unauthorized)
 }
 
 pub fn parse_participant_data(data: &[u8]) -> Result<ParticipantData, Error> {

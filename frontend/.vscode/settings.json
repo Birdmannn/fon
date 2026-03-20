@@ -1,0 +1,7 @@
+{
+    "builder.serverUrl": "",
+    "builder.command": "npm run dev",
+    "builder.runDevServer": true,
+    "builder.autoDetectDevServer": true,
+    "builder.launchType": "editor"
+}

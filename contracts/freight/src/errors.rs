@@ -26,6 +26,8 @@ pub enum Error {
     InvalidParticipantArgs,
     CampaignDataMismatch,
     InvalidOperation,
+    InvalidSignature,
+    RandomnessMismatch,
 }
 
 impl From<SysError> for Error {

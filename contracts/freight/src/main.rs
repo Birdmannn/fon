@@ -1,7 +1,6 @@
-#![cfg_attr(not(any(feature = "library", test)), no_std)]
-#![cfg_attr(not(test), no_main)]
-
-#[cfg(any(feature = "library", test))]
+#![cfg_attr(target_arch = "riscv64", no_std)]
+#![cfg_attr(target_arch = "riscv64", no_main)]
+#[cfg(not(target_arch = "riscv64"))]
 extern crate alloc;
 
 use ckb_std::debug;
@@ -9,9 +8,9 @@ use ckb_std::high_level::load_script;
 use freight::errors::Error;
 use freight::instructions::*;
 
-#[cfg(not(any(feature = "library", test)))]
+#[cfg(target_arch = "riscv64")]
 ckb_std::entry!(program_entry);
-#[cfg(not(any(feature = "library", test)))]
+#[cfg(target_arch = "riscv64")]
 // By default, the following heap configuration is used:
 // * 16KB fixed heap
 // * 1.2MB(rounded up to be 16-byte aligned) dynamic heap
@@ -20,7 +19,9 @@ ckb_std::entry!(program_entry);
 // and the buddy-alloc alloc implementation.
 ckb_std::default_alloc!(16384, 1258306, 64);
 
-/// Deploy this program with typescript (constructor) args: [admin address], [admin pubkey]
+#[cfg(not(target_arch = "riscv64"))]
+fn main() {}
+
 pub fn program_entry() -> i8 {
     match run() {
         Ok(()) => 0,
@@ -39,7 +40,7 @@ fn run() -> Result<(), Error> {
         return Err(Error::EmptyScriptArgs);
     }
 
-    // First byte of args the function selector
+    // First byte of args is the function selector
     let instruction = args[0];
     debug!("Instruction selector: {}", instruction);
 
@@ -47,9 +48,10 @@ fn run() -> Result<(), Error> {
     match instruction {
         0 => create_campaign(instruction_args),
         1 => deposit(instruction_args),
-        2 => distribute(instruction_args),
+        2 => batch_deliver(instruction_args),
         3 => verify_participant(instruction_args),
         4 => update_campaign_status(instruction_args),
+        5 => submit_randomness_hash(instruction_args),
         _ => {
             debug!("Invalid instruction selector: {}", instruction);
             Err(Error::UnknownScriptArgs)

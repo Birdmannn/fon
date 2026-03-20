@@ -46,13 +46,14 @@ impl TryFrom<u8> for CampaignStatus {
     }
 }
 
-// Enum for key, for extracting address from lock args
-#[repr(u8)]
+// Enum for key, for extracting address from lock args.
+// Admin(index) carries the byte offset into the type script args where the
+// admin address starts (e.g. AddressKey::Admin(1) → args[1..21]).
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddressKey {
-    Creator = 0,   // Address Key of the campaign creator
-    Depositor = 1, // Address Key of the depositor
-    Admin = 2,     // Address Key of the admin (for distribution)
+    Creator,
+    Depositor,
+    Admin(usize),
 }
 
 // Campaign data structure (stored in cell data)
@@ -66,6 +67,9 @@ pub struct Campaign {
     pub maximum_amount: u64,            // Max deposit allowed (8 bytes)
     pub current_deposits: u64,          // Total deposits so far (8 bytes)
     pub status: CampaignStatus,         // Current status (1 byte)
+    // Distribution parameters – zero-initialised at creation; set by submit_randomness_hash
+    pub reward_count: u64,              // How many participants to reward (8 bytes)
+    pub randomness_hash: [u8; 32],      // blake2b_256(randomness); [0;32] = sequential mode (32 bytes)
 }
 
 // Participant data, we use one cell per participant.
@@ -101,8 +105,9 @@ impl TryFrom<u8> for ParticipantStatus {
     }
 }
 
-// Campaign cell data format (total: 62 bytes)
-pub const CAMPAIGN_DATA_LEN: usize = 62;
+// Campaign cell data format (total: 102 bytes)
+// Layout: [8][8][8][20][1][8][8][1] = 62 base, plus [8][32] = 40 distribution fields
+pub const CAMPAIGN_DATA_LEN: usize = 102;
 
 impl Campaign {
     pub fn accepts_deposits(&self) -> bool {

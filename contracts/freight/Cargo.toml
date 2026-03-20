@@ -5,8 +5,9 @@ edition = "2024"
 
 [dependencies]
 ckb-std = "1.0"
-ckb-hash = "0.116"
-secp256k1 = { version = "0.28", default-features = false, features = ["recovery", "alloc", "global-context"] }
+ckb-hash = { version = "1.0", default-features = false, features = ["ckb-contract"] }
+# alloc (no std, no global-context) so this builds on both riscv64 (no_std) and the host
+k256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 
 
 [features]

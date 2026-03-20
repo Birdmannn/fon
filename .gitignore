@@ -1,3 +1,5 @@
 /build
 /target
 /tests/failed_txs
+
+.builder/config/data.json

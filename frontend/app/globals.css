@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Cruyff Sans";
+  src: url("https://db.onlinewebfonts.com/t/4d3d035208dcabeab13960407bce97f1.eot");
+  src: url("https://db.onlinewebfonts.com/t/4d3d035208dcabeab13960407bce97f1.eot?#iefix") format("embedded-opentype"),
+    url("https://db.onlinewebfonts.com/t/4d3d035208dcabeab13960407bce97f1.woff2") format("woff2"),
+    url("https://db.onlinewebfonts.com/t/4d3d035208dcabeab13960407bce97f1.woff") format("woff"),
+    url("https://db.onlinewebfonts.com/t/4d3d035208dcabeab13960407bce97f1.ttf") format("truetype");
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+}
+
+.btn-wallet {
+  background-color: var(--background) !important;
+  border: 2px solid var(--foreground) !important;
+  color: var(--foreground) !important;
+  transition: all 400ms ease !important;
+}
+
+.btn-wallet:hover {
+  background-color: var(--foreground) !important;
+  color: var(--background) !important;
+  border-color: var(--background) !important;
+}
