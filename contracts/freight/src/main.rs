@@ -4,7 +4,10 @@
 extern crate alloc;
 
 use ckb_std::debug;
-use ckb_std::high_level::load_script;
+use ckb_std::ckb_constants::Source;
+use ckb_std::ckb_types::prelude::Entity;
+use ckb_std::error::SysError;
+use ckb_std::high_level::{load_input, load_script, load_witness_args};
 use freight::errors::Error;
 use freight::instructions::*;
 
@@ -40,11 +43,39 @@ fn run() -> Result<(), Error> {
         return Err(Error::EmptyScriptArgs);
     }
 
-    // First byte of args is the function selector
     let instruction = args[0];
-    debug!("Instruction selector: {}", instruction);
 
-    let instruction_args = &args[1..];
+    // Stable campaign cells keep selector 0 in the type args forever.
+    // When such a cell is being spent, the real state-transition action is
+    // passed in WitnessArgs.output_type of GroupInput[0].
+    if instruction == 0 && has_group_input()? {
+        let witness = load_witness_args(0, Source::GroupInput)
+            .map_err(|_| Error::UnknownScriptArgs)?;
+        let action = witness.output_type().to_opt().ok_or(Error::UnknownScriptArgs)?;
+        let action_bytes = action.raw_data();
+        if action_bytes.is_empty() {
+            debug!("Witness output_type is empty for stable campaign transition");
+            return Err(Error::UnknownScriptArgs);
+        }
+
+        let witness_instruction = action_bytes[0];
+        debug!("Witness instruction selector: {}", witness_instruction);
+        return dispatch_instruction(witness_instruction, &action_bytes[1..]);
+    }
+
+    debug!("Instruction selector: {}", instruction);
+    dispatch_instruction(instruction, &args[1..])
+}
+
+fn has_group_input() -> Result<bool, Error> {
+    match load_input(0, Source::GroupInput) {
+        Ok(_) => Ok(true),
+        Err(SysError::IndexOutOfBound) => Ok(false),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn dispatch_instruction(instruction: u8, instruction_args: &[u8]) -> Result<(), Error> {
     match instruction {
         0 => create_campaign(instruction_args),
         1 => deposit(instruction_args),

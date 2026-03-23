@@ -1,12 +1,12 @@
 use crate::errors::Error;
 use crate::types::{
-    CAMPAIGN_DATA_LEN, Campaign, PARTICIPANT_DATA_LEN, ParticipantStatus, TOKEN_DATA_LEN,
+    CAMPAIGN_DATA_LEN, Campaign, PARTICIPANT_DATA_LEN, ParticipantStatus,
 };
 use crate::utils::{parse_campaign_data, parse_participant_data};
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::prelude::Entity;
 use ckb_std::debug;
-use ckb_std::high_level::{load_cell, load_cell_capacity, load_cell_data, load_input, load_script};
+use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_input};
 
 /// Count non-campaign input cells that have PARTICIPANT_DATA_LEN bytes of data.
 /// The campaign cell is always inputs[0], so we start scanning from index 1.
@@ -125,101 +125,16 @@ pub fn verify_campaign_tx(output_data: &[u8], expected_campaign: &Campaign) -> R
 }
 
 pub fn validate_deposit_transfer(deposit_amount: u64) -> Result<(), Error> {
-    let current_script = load_script().map_err(|_| Error::LoadScriptFailed)?;
-    let current_script_hash = current_script.calc_script_hash();
+    let campaign_input_capacity =
+        load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+    let campaign_output_capacity =
+        load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
 
-    let mut user_input_balance = 0u64;
-    let mut user_output_balance = 0u64;
-    let mut campaign_input_balance = 0u64;
-    let mut campaign_output_balance = 0u64;
-
-    // === SCAN INPUT CELLS ===
-    let mut i = 0;
-    loop {
-        match load_cell_data(i, Source::Input) {
-            Ok(data) => {
-                // Only process token cells (8 bytes)
-                if data.len() != TOKEN_DATA_LEN {
-                    i += 1;
-                    continue;
-                }
-
-                // Check if this cell belongs to campaign or user
-                let cell = load_cell(i, Source::Input).map_err(|_| Error::InvalidCellData)?;
-                let is_campaign_cell = match cell.type_().to_opt() {
-                    Some(type_script) => type_script.calc_script_hash() == current_script_hash,
-                    None => false,
-                };
-
-                let amount = u64::from_le_bytes(data[0..8].try_into().unwrap());
-
-                if is_campaign_cell {
-                    campaign_input_balance = campaign_input_balance
-                        .checked_add(amount)
-                        .ok_or(Error::AmountMismatch)?;
-                } else {
-                    user_input_balance = user_input_balance
-                        .checked_add(amount)
-                        .ok_or(Error::AmountMismatch)?;
-                }
-
-                i += 1;
-            }
-            Err(_) => break,
-        }
-    }
-
-    // === SCAN OUTPUT CELLS ===
-    i = 0;
-    loop {
-        match load_cell_data(i, Source::Output) {
-            Ok(data) => {
-                if data.len() != TOKEN_DATA_LEN {
-                    i += 1;
-                    continue;
-                }
-
-                let cell = load_cell(i, Source::Output).map_err(|_| Error::InvalidCellData)?;
-                let is_campaign_cell = match cell.type_().to_opt() {
-                    Some(type_script) => type_script.calc_script_hash() == current_script_hash,
-                    None => false,
-                };
-
-                let amount = u64::from_le_bytes(data[0..8].try_into().unwrap());
-
-                if is_campaign_cell {
-                    campaign_output_balance = campaign_output_balance
-                        .checked_add(amount)
-                        .ok_or(Error::AmountMismatch)?;
-                } else {
-                    user_output_balance = user_output_balance
-                        .checked_add(amount)
-                        .ok_or(Error::AmountMismatch)?;
-                }
-
-                i += 1;
-            }
-            Err(_) => break,
-        }
-    }
-
-    // === VALIDATE BALANCES ===
-
-    // User balance decreased by deposit_amount
-    let expected_user_output = user_input_balance
-        .checked_sub(deposit_amount)
-        .ok_or(Error::InsufficientBalance)?;
-
-    if user_output_balance != expected_user_output {
-        return Err(Error::AmountMismatch);
-    }
-
-    // Campaign balance increased by deposit_amount
-    let expected_campaign_output = campaign_input_balance
+    let expected_campaign_output = campaign_input_capacity
         .checked_add(deposit_amount)
         .ok_or(Error::AmountMismatch)?;
 
-    if campaign_output_balance != expected_campaign_output {
+    if campaign_output_capacity != expected_campaign_output {
         return Err(Error::AmountMismatch);
     }
 

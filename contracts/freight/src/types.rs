@@ -111,8 +111,8 @@ pub const CAMPAIGN_DATA_LEN: usize = 102;
 
 impl Campaign {
     pub fn accepts_deposits(&self) -> bool {
-        // Campaign must not be active
-        self.status == CampaignStatus::Created && self.campaign_type == CampaignType::SimpleTask
+        // Only deposit-backed campaigns accept deposits before they start.
+        self.status == CampaignStatus::Created && self.campaign_type != CampaignType::SimpleTask
     }
 }
 

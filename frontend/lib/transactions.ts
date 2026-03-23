@@ -2,6 +2,7 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { FREIGHT_CONTRACT, CampaignStatus, CampaignType } from "./contract";
 import {
   encodeCreateCampaignArgs,
+  encodeDepositArgs,
   encodeCampaignData,
   decodeCampaignData,
   bytesToHex,
@@ -93,12 +94,64 @@ export async function sendCreateCampaign(
   return signer.sendTransaction(tx);
 }
 
+// ─── deposit ─────────────────────────────────────────────────────────────────
+
+export async function sendDeposit(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  amountCkb: bigint // in CKB (not shannons)
+): Promise<string> {
+  const amountShannons = amountCkb * 100_000_000n; // CKB → shannons
+
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  // Include the tip header so the contract can read the current timestamp.
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  const actionArgsHex = bytesToHex(encodeDepositArgs(amountShannons)) as `0x${string}`;
+
+  // Update campaign data with new deposits
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+  };
+
+  // Add the campaign cell as input (GroupInput[0])
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  // Output[0]: updated campaign cell with new deposit amount and new type script
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons + amountShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  // Auto-select inputs + change output to cover outputs + fees
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = actionArgsHex;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
+}
+
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────
 
 export interface CampaignCell {
   outPoint: { txHash: string; index: number };
   data: CampaignData;
   capacityShannons: bigint;
+  lock: ccc.ScriptLike;
+  type: ccc.ScriptLike;
 }
 
 export async function fetchCampaigns(
@@ -127,8 +180,9 @@ export async function fetchCampaigns(
     if (count++ >= limit) break;
     try {
       const rawData = hexToBytes(cell.outputData);
+      const typeScript = cell.cellOutput.type;
       // Campaign cells are exactly 102 bytes; participant cells are 65 bytes.
-      if (rawData.length !== 102) continue;
+      if (rawData.length !== 102 || !typeScript) continue;
       results.push({
         outPoint: {
           txHash: cell.outPoint.txHash,
@@ -136,6 +190,8 @@ export async function fetchCampaigns(
         },
         data: decodeCampaignData(rawData),
         capacityShannons: cell.cellOutput.capacity,
+        lock: cell.cellOutput.lock,
+        type: typeScript,
       });
     } catch {
       // Skip malformed cells.

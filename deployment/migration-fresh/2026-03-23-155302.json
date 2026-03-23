@@ -1,0 +1,13 @@
+{
+  "cell_recipes": [
+    {
+      "name": "freight",
+      "tx_hash": "0x7a02ebd7c6d7c9a263e49f00dd2bd282cff77d294bd5876926b2d66f8b7ed604",
+      "index": 0,
+      "occupied_capacity": 10754200000000,
+      "data_hash": "0xc178add8fb40fa4637bde57173de0d0a4fbe6e783dd36d274b9cda1d4ade4c86",
+      "type_id": "0xec267d9dea748406b4fcba135eef140d5ab0fa3a62214e08af4e30ec2033533a"
+    }
+  ],
+  "dep_group_recipes": []
+}

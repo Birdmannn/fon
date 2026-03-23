@@ -107,11 +107,12 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     let campaign_data = load_cell_data(0, Source::GroupInput)?;
     let mut campaign = parse_campaign_data(&campaign_data)?;
 
-    // Campaign must be past its task deadline
+    // Campaign must be past its task deadline.
+    // NOTE: created_at and timestamp are in milliseconds; durations are in seconds → * 1_000.
     let timestamp = get_current_timestamp()?;
     let till = campaign.created_at
-        .checked_add(campaign.start_duration_in_seconds)
-        .and_then(|t| t.checked_add(campaign.task_duration_in_seconds))
+        .checked_add(campaign.start_duration_in_seconds * 1_000)
+        .and_then(|t| t.checked_add(campaign.task_duration_in_seconds * 1_000))
         .ok_or(Error::InvalidCampaignArgs)?;
     if timestamp <= till {
         return Err(Error::InvalidOperation);
@@ -231,12 +232,13 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
     let campaign_data = load_cell_data(0, Source::GroupInput)?;
     let campaign = parse_campaign_data(&campaign_data)?;
 
-    // Check timestamp/status first; this path does not need the witness
+    // Check timestamp/status first; this path does not need the witness.
+    // NOTE: created_at and timestamp are in milliseconds; durations are in seconds → * 1_000.
     let timestamp = get_current_timestamp()?;
     let till = campaign
         .created_at
-        .checked_add(campaign.start_duration_in_seconds)
-        .and_then(|t| t.checked_add(campaign.task_duration_in_seconds))
+        .checked_add(campaign.start_duration_in_seconds * 1_000)
+        .and_then(|t| t.checked_add(campaign.task_duration_in_seconds * 1_000))
         .ok_or(Error::InvalidCampaignArgs)?;
     if timestamp > till || campaign.status != CampaignStatus::Active {
         return Err(Error::VerificationNotCompleted);
@@ -297,7 +299,9 @@ pub fn deposit(args: &[u8]) -> Result<(), Error> {
 
     // validations
     // check if campaign still accepts deposits
-    if current_timestamp > campaign.created_at + campaign.start_duration_in_seconds {
+    // NOTE: created_at and current_timestamp are in milliseconds (from CKB block header).
+    //       start_duration_in_seconds is in seconds, so we multiply by 1_000 to convert.
+    if current_timestamp > campaign.created_at + campaign.start_duration_in_seconds * 1_000 {
         debug!("Campaign has already started, no longer accepts deposits");
         return Err(Error::DepositNotCompleted);
     }

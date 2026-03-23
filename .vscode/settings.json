@@ -3,5 +3,6 @@
     "builder.command": "cd frontend && npm run dev",
     "builder.runDevServer": true,
     "builder.autoDetectDevServer": true,
-    "builder.launchType": "editor"
+    "builder.launchType": "editor",
+    "kiroAgent.configureMCP": "Disabled"
 }

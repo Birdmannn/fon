@@ -69,6 +69,21 @@ fn build_participant_bytes(
     Bytes::from(data)
 }
 
+fn build_create_campaign_script_args(
+    start_duration: u64,
+    task_duration: u64,
+    campaign_type: CampaignType,
+    maximum_amount: u64,
+) -> Bytes {
+    let mut args = Vec::with_capacity(26);
+    args.push(0u8);
+    args.extend_from_slice(&start_duration.to_le_bytes());
+    args.extend_from_slice(&task_duration.to_le_bytes());
+    args.push(campaign_type as u8);
+    args.extend_from_slice(&maximum_amount.to_le_bytes());
+    Bytes::from(args)
+}
+
 /// Insert a block header into the context and return its hash for use as a
 /// header-dep.
 fn insert_header(context: &mut Context, timestamp: u64) -> Byte32 {
@@ -254,8 +269,8 @@ fn test_create_campaign_success() {
 
 // ─────────────────────────────── deposit ────────────────────────────────────
 
-/// SUCCESS – a zero-amount deposit on a SimpleTask campaign writes the correct
-/// updated data to GroupOutput[0] (exercises our GroupInput → GroupOutput fix).
+/// SUCCESS – a deposit-backed stable selector-0 campaign cell uses witness
+/// output_type to dispatch deposit, increasing both capacity and current_deposits.
 #[test]
 fn test_deposit_success() {
     let mut context = Context::default();
@@ -263,19 +278,25 @@ fn test_deposit_success() {
     let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
 
     let creator_address = address_from(CREATOR);
+    let depositor_address = address_from(DEPOSITOR);
     let created_at = 1_700_000_000u64;
     let start_duration = 86_400u64; // 1 day
     let task_duration = 604_800u64; // 7 days
-    let max_amount = 1_000u64;
-    let deposit_amount = 0u64;
+    let max_amount = 50_000u64;
+    let deposit_amount = 25_000u64;
 
     let header_hash = insert_header(&mut context, created_at);
 
-    // Type script args: [selector = 1][deposit_amount (8 LE bytes)]
-    let mut script_args = vec![1u8];
-    script_args.extend_from_slice(&deposit_amount.to_le_bytes());
     let campaign_type_script = context
-        .build_script(&freight_out_point, Bytes::from(script_args))
+        .build_script(
+            &freight_out_point,
+            build_create_campaign_script_args(
+                start_duration,
+                task_duration,
+                CampaignType::FundedTask,
+                max_amount,
+            ),
+        )
         .expect("build type script");
 
     let creator_lock = context
@@ -285,7 +306,270 @@ fn test_deposit_success() {
         )
         .expect("build lock script");
 
-    // Input campaign cell: status = Created, type = SimpleTask
+    let depositor_lock = context
+        .build_script(
+            &always_success_out_point,
+            Bytes::from(depositor_address.to_vec()),
+        )
+        .expect("build depositor lock");
+
+    // Input campaign cell: status = Created, type = FundedTask
+    let input_data = build_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        CampaignType::FundedTask,
+        max_amount,
+        0,
+        CampaignStatus::Created,
+        0,
+        [0u8; 32],
+    );
+    let campaign_in_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone())
+            .type_(Some(campaign_type_script.clone()).pack())
+            .build(),
+        input_data,
+    );
+    let campaign_input = CellInput::new_builder()
+        .previous_output(campaign_in_out_point)
+        .build();
+
+    let depositor_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(depositor_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let depositor_input = CellInput::new_builder()
+        .previous_output(depositor_out_point)
+        .build();
+
+    // Output campaign cell: capacity and current_deposits both increased.
+    let output_data = build_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        CampaignType::FundedTask,
+        max_amount,
+        deposit_amount,
+        CampaignStatus::Created,
+        0,
+        [0u8; 32],
+    );
+
+    let mut witness_action = vec![1u8];
+    witness_action.extend_from_slice(&deposit_amount.to_le_bytes());
+    let witness_args = WitnessArgsBuilder::default()
+        .output_type(Some(Bytes::from(witness_action)).pack())
+        .build();
+
+    let tx = TransactionBuilder::default()
+        .inputs(vec![campaign_input, depositor_input])
+        .header_dep(header_hash)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + deposit_amount)))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - deposit_amount)))
+                .lock(depositor_lock)
+                .build(),
+        ])
+        .outputs_data(vec![output_data, Bytes::new()].pack())
+        .witnesses(vec![
+            witness_args.as_bytes().pack(),
+            Bytes::new().pack(),
+        ])
+        .build();
+    let tx = context.complete_tx(tx);
+
+    let cycles = context
+        .verify_tx(&tx, 10_000_000)
+        .expect("witness-dispatched deposit should succeed");
+    println!("deposit_success cycles: {}", cycles);
+}
+
+/// SUCCESS – if the requested deposit exceeds remaining headroom, the contract
+/// caps the accepted amount to the remaining campaign capacity.
+#[test]
+fn test_deposit_exceeds_maximum_caps_to_remaining() {
+    let mut context = Context::default();
+    let freight_out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let creator_address = address_from(CREATOR);
+    let depositor_address = address_from(DEPOSITOR);
+    let created_at = 1_700_000_000u64;
+    let start_duration = 86_400u64;
+    let task_duration = 604_800u64;
+    let max_amount = 1_000u64;
+    let deposit_amount = 2_000u64; // intentionally exceeds max_amount
+
+    let header_hash = insert_header(&mut context, created_at);
+
+    let campaign_type_script = context
+        .build_script(
+            &freight_out_point,
+            build_create_campaign_script_args(
+                start_duration,
+                task_duration,
+                CampaignType::FundedTask,
+                max_amount,
+            ),
+        )
+        .expect("build type script");
+
+    let creator_lock = context
+        .build_script(
+            &always_success_out_point,
+            Bytes::from(creator_address.to_vec()),
+        )
+        .expect("build lock script");
+
+    let depositor_lock = context
+        .build_script(
+            &always_success_out_point,
+            Bytes::from(depositor_address.to_vec()),
+        )
+        .expect("build depositor lock");
+
+    let campaign_data = build_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        CampaignType::FundedTask,
+        max_amount,
+        0,
+        CampaignStatus::Created,
+        0,
+        [0u8; 32],
+    );
+    let campaign_in_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone())
+            .type_(Some(campaign_type_script.clone()).pack())
+            .build(),
+        campaign_data.clone(),
+    );
+    let campaign_input = CellInput::new_builder()
+        .previous_output(campaign_in_out_point)
+        .build();
+
+    let depositor_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(depositor_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let depositor_input = CellInput::new_builder()
+        .previous_output(depositor_out_point)
+        .build();
+
+    let accepted_deposit = max_amount;
+    let campaign_output_data = build_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        CampaignType::FundedTask,
+        max_amount,
+        accepted_deposit,
+        CampaignStatus::Created,
+        0,
+        [0u8; 32],
+    );
+
+    let mut witness_action = vec![1u8];
+    witness_action.extend_from_slice(&deposit_amount.to_le_bytes());
+    let witness_args = WitnessArgsBuilder::default()
+        .output_type(Some(Bytes::from(witness_action)).pack())
+        .build();
+
+    let tx = TransactionBuilder::default()
+        .inputs(vec![campaign_input, depositor_input])
+        .header_dep(header_hash)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + accepted_deposit)))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - accepted_deposit)))
+                .lock(depositor_lock)
+                .build(),
+        ])
+        .outputs_data(vec![campaign_output_data, Bytes::new()].pack())
+        .witnesses(vec![
+            witness_args.as_bytes().pack(),
+            Bytes::new().pack(),
+        ])
+        .build();
+    let tx = context.complete_tx(tx);
+
+    let cycles = context
+        .verify_tx(&tx, 10_000_000)
+        .expect("deposit should cap to remaining headroom and succeed");
+    println!(
+        "test_deposit_exceeds_maximum_caps_to_remaining cycles: {}",
+        cycles
+    );
+}
+
+/// FAILURE – SimpleTask campaigns are not deposit-backed and must reject deposits.
+#[test]
+fn test_deposit_rejects_simple_task() {
+    let mut context = Context::default();
+    let freight_out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let creator_address = address_from(CREATOR);
+    let depositor_address = address_from(DEPOSITOR);
+    let created_at = 1_700_000_000u64;
+    let start_duration = 86_400u64;
+    let task_duration = 604_800u64;
+    let max_amount = 50_000u64;
+    let deposit_amount = 25_000u64;
+
+    let header_hash = insert_header(&mut context, created_at);
+
+    let campaign_type_script = context
+        .build_script(
+            &freight_out_point,
+            build_create_campaign_script_args(
+                start_duration,
+                task_duration,
+                CampaignType::SimpleTask,
+                max_amount,
+            ),
+        )
+        .expect("build type script");
+
+    let creator_lock = context
+        .build_script(
+            &always_success_out_point,
+            Bytes::from(creator_address.to_vec()),
+        )
+        .expect("build lock script");
+
+    let depositor_lock = context
+        .build_script(
+            &always_success_out_point,
+            Bytes::from(depositor_address.to_vec()),
+        )
+        .expect("build depositor lock");
+
     let input_data = build_campaign_bytes(
         created_at,
         start_duration,
@@ -310,7 +594,17 @@ fn test_deposit_success() {
         .previous_output(campaign_in_out_point)
         .build();
 
-    // Output campaign cell: current_deposits updated (still 0 for zero deposit)
+    let depositor_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(depositor_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let depositor_input = CellInput::new_builder()
+        .previous_output(depositor_out_point)
+        .build();
+
     let output_data = build_campaign_bytes(
         created_at,
         start_duration,
@@ -324,104 +618,247 @@ fn test_deposit_success() {
         [0u8; 32],
     );
 
+    let mut witness_action = vec![1u8];
+    witness_action.extend_from_slice(&deposit_amount.to_le_bytes());
+    let witness_args = WitnessArgsBuilder::default()
+        .output_type(Some(Bytes::from(witness_action)).pack())
+        .build();
+
     let tx = TransactionBuilder::default()
-        .input(campaign_input)
+        .inputs(vec![campaign_input, depositor_input])
         .header_dep(header_hash)
         .outputs(vec![
             CellOutput::new_builder()
-                .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + deposit_amount)))
                 .lock(creator_lock.clone())
                 .type_(Some(campaign_type_script.clone()).pack())
                 .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - deposit_amount)))
+                .lock(depositor_lock)
+                .build(),
         ])
-        .outputs_data(vec![output_data].pack())
+        .outputs_data(vec![output_data, Bytes::new()].pack())
+        .witnesses(vec![
+            witness_args.as_bytes().pack(),
+            Bytes::new().pack(),
+        ])
         .build();
     let tx = context.complete_tx(tx);
 
-    let cycles = context
-        .verify_tx(&tx, 10_000_000)
-        .expect("deposit with zero amount should succeed");
-    println!("deposit_success cycles: {}", cycles);
+    let result = context.verify_tx(&tx, 10_000_000);
+    assert!(result.is_err(), "SimpleTask deposit must be rejected");
+    println!(
+        "test_deposit_rejects_simple_task correctly rejected: {:?}",
+        result.err()
+    );
 }
 
-/// FAILURE – requested deposit exceeds campaign maximum_amount.
-/// The contract caps at remaining and then validates the token transfer,
-/// which fails because no real token cells are present.
+/// REGRESSION – deposit must succeed when the tx timestamp is still within the
+/// start period, even when using real CKB millisecond-scale timestamps.
+///
+/// This test catches the bug where `created_at` (in ms) was compared directly
+/// to `created_at + start_duration_seconds` without unit conversion, causing
+/// the deposit window to close after just `start_duration` *milliseconds*
+/// (≈86 seconds for a 1-day campaign) instead of `start_duration * 1000` ms.
 #[test]
-fn test_deposit_exceeds_maximum() {
+fn test_deposit_within_start_period_millisecond_timestamps() {
     let mut context = Context::default();
     let freight_out_point = context.deploy_cell_by_name("freight");
     let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
 
     let creator_address = address_from(CREATOR);
-    let created_at = 1_700_000_000u64;
-    let start_duration = 86_400u64;
-    let task_duration = 604_800u64;
-    let max_amount = 1_000u64;
-    let deposit_amount = 2_000u64; // intentionally exceeds max_amount
+    let depositor_address = address_from(DEPOSITOR);
 
-    let header_hash = insert_header(&mut context, created_at);
+    // Use realistic ms-scale timestamps (as CKB block headers produce).
+    let created_at_ms = 1_700_000_000_000u64; // creation time in ms
+    let start_duration = 86_400u64;           // 1 day in seconds
+    let task_duration = 604_800u64;           // 7 days in seconds
+    let max_amount = 50_000u64;
+    let deposit_amount = 10_000u64;
 
-    let mut script_args = vec![1u8];
-    script_args.extend_from_slice(&deposit_amount.to_le_bytes());
+    // Deposit happens 100 seconds (100_000 ms) after creation – well within the
+    // 1-day window.  With the old bug, the check was:
+    //   100_000 > 1_700_000_000_000 + 86_400  → TRUE  → deposit rejected (wrong!)
+    // With the fix:
+    //   100_000_ms_elapsed > 86_400_000_ms_window? → FALSE → deposit accepted (correct!)
+    let deposit_ts_ms = created_at_ms + 100_000u64; // +100 seconds in ms
+
+    // Insert the header the depositor presents (tip block at deposit time).
+    let header_hash = insert_header(&mut context, deposit_ts_ms);
+
     let campaign_type_script = context
-        .build_script(&freight_out_point, Bytes::from(script_args))
+        .build_script(
+            &freight_out_point,
+            build_create_campaign_script_args(
+                start_duration,
+                task_duration,
+                CampaignType::FundedTask,
+                max_amount,
+            ),
+        )
         .expect("build type script");
 
     let creator_lock = context
-        .build_script(
-            &always_success_out_point,
-            Bytes::from(creator_address.to_vec()),
-        )
-        .expect("build lock script");
+        .build_script(&always_success_out_point, Bytes::from(creator_address.to_vec()))
+        .expect("build creator lock");
+    let depositor_lock = context
+        .build_script(&always_success_out_point, Bytes::from(depositor_address.to_vec()))
+        .expect("build depositor lock");
 
-    let campaign_data = build_campaign_bytes(
-        created_at,
-        start_duration,
-        task_duration,
-        &creator_address,
-        CampaignType::SimpleTask,
-        max_amount,
-        0,
-        CampaignStatus::Created,
-        0,
-        [0u8; 32],
+    let input_data = build_campaign_bytes(
+        created_at_ms, start_duration, task_duration, &creator_address,
+        CampaignType::FundedTask, max_amount, 0, CampaignStatus::Created, 0, [0u8; 32],
     );
-    let campaign_in_out_point = context.create_cell(
+    let campaign_out_point = context.create_cell(
         CellOutput::new_builder()
             .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
             .lock(creator_lock.clone())
             .type_(Some(campaign_type_script.clone()).pack())
             .build(),
-        campaign_data.clone(),
+        input_data,
     );
-    let campaign_input = CellInput::new_builder()
-        .previous_output(campaign_in_out_point)
+    let campaign_input = CellInput::new_builder().previous_output(campaign_out_point).build();
+
+    let depositor_cell = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(depositor_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let depositor_input = CellInput::new_builder().previous_output(depositor_cell).build();
+
+    let output_data = build_campaign_bytes(
+        created_at_ms, start_duration, task_duration, &creator_address,
+        CampaignType::FundedTask, max_amount, deposit_amount, CampaignStatus::Created, 0, [0u8; 32],
+    );
+
+    let mut witness_action = vec![1u8];
+    witness_action.extend_from_slice(&deposit_amount.to_le_bytes());
+    let witness_args = WitnessArgsBuilder::default()
+        .output_type(Some(Bytes::from(witness_action)).pack())
         .build();
 
     let tx = TransactionBuilder::default()
-        .input(campaign_input)
+        .inputs(vec![campaign_input, depositor_input])
         .header_dep(header_hash)
         .outputs(vec![
             CellOutput::new_builder()
-                .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + deposit_amount)))
                 .lock(creator_lock.clone())
                 .type_(Some(campaign_type_script.clone()).pack())
                 .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - deposit_amount)))
+                .lock(depositor_lock)
+                .build(),
         ])
-        .outputs_data(vec![campaign_data].pack())
+        .outputs_data(vec![output_data, Bytes::new()].pack())
+        .witnesses(vec![witness_args.as_bytes().pack(), Bytes::new().pack()])
+        .build();
+    let tx = context.complete_tx(tx);
+
+    let cycles = context
+        .verify_tx(&tx, 10_000_000)
+        .expect("deposit at +100 s should succeed (timestamp unit fix)");
+    println!("test_deposit_within_start_period_millisecond_timestamps cycles: {}", cycles);
+}
+
+/// FAILURE – deposit must be rejected when the current block timestamp has
+/// passed the end of the start period (in milliseconds).
+#[test]
+fn test_deposit_rejects_after_start_period_elapsed() {
+    let mut context = Context::default();
+    let freight_out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let creator_address = address_from(CREATOR);
+    let depositor_address = address_from(DEPOSITOR);
+
+    let created_at_ms = 1_700_000_000_000u64;
+    let start_duration = 86_400u64;  // 1 day in seconds
+    let task_duration = 604_800u64;
+    let max_amount = 50_000u64;
+    let deposit_amount = 10_000u64;
+
+    // Deposit happens 1 second AFTER the 1-day start window in ms.
+    let deposit_ts_ms = created_at_ms + start_duration * 1_000 + 1_000u64;
+
+    let header_hash = insert_header(&mut context, deposit_ts_ms);
+
+    let campaign_type_script = context
+        .build_script(
+            &freight_out_point,
+            build_create_campaign_script_args(
+                start_duration, task_duration, CampaignType::FundedTask, max_amount,
+            ),
+        )
+        .expect("build type script");
+
+    let creator_lock = context
+        .build_script(&always_success_out_point, Bytes::from(creator_address.to_vec()))
+        .expect("build creator lock");
+    let depositor_lock = context
+        .build_script(&always_success_out_point, Bytes::from(depositor_address.to_vec()))
+        .expect("build depositor lock");
+
+    let input_data = build_campaign_bytes(
+        created_at_ms, start_duration, task_duration, &creator_address,
+        CampaignType::FundedTask, max_amount, 0, CampaignStatus::Created, 0, [0u8; 32],
+    );
+    let campaign_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone())
+            .type_(Some(campaign_type_script.clone()).pack())
+            .build(),
+        input_data,
+    );
+    let campaign_input = CellInput::new_builder().previous_output(campaign_out_point).build();
+
+    let depositor_cell = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(depositor_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let depositor_input = CellInput::new_builder().previous_output(depositor_cell).build();
+
+    let output_data = build_campaign_bytes(
+        created_at_ms, start_duration, task_duration, &creator_address,
+        CampaignType::FundedTask, max_amount, deposit_amount, CampaignStatus::Created, 0, [0u8; 32],
+    );
+
+    let mut witness_action = vec![1u8];
+    witness_action.extend_from_slice(&deposit_amount.to_le_bytes());
+    let witness_args = WitnessArgsBuilder::default()
+        .output_type(Some(Bytes::from(witness_action)).pack())
+        .build();
+
+    let tx = TransactionBuilder::default()
+        .inputs(vec![campaign_input, depositor_input])
+        .header_dep(header_hash)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + deposit_amount)))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - deposit_amount)))
+                .lock(depositor_lock)
+                .build(),
+        ])
+        .outputs_data(vec![output_data, Bytes::new()].pack())
+        .witnesses(vec![witness_args.as_bytes().pack(), Bytes::new().pack()])
         .build();
     let tx = context.complete_tx(tx);
 
     let result = context.verify_tx(&tx, 10_000_000);
-    assert!(
-        result.is_err(),
-        "deposit exceeding maximum_amount must be rejected (capped then token-balance check fails)"
-    );
-    println!(
-        "test_deposit_exceeds_maximum correctly rejected: {:?}",
-        result.err()
-    );
+    assert!(result.is_err(), "deposit after start period must be rejected");
+    println!("test_deposit_rejects_after_start_period_elapsed correctly rejected: {:?}", result.err());
 }
 
 // ────────────────────────── verify_participant ───────────────────────────────

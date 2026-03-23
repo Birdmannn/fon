@@ -4,11 +4,11 @@
 
 export const FREIGHT_CONTRACT = {
   codeHash:
-    "0x4d4d1f8add25fdfbe9ef5b588d0319d8a18ef0b4814882f83de6305f5b89f31a",
+    "0xec267d9dea748406b4fcba135eef140d5ab0fa3a62214e08af4e30ec2033533a",
   hashType: "type" as const,
   outPoint: {
     txHash:
-      "0xb893f0d342fce1f29a0d093a517112e65801a1f4380a759ec843aeb0e72bb5b7",
+      "0x62010d354f67f456aee68012ad79ccbff0f65ea257cbb5d88672e96ffc85a60b",
     index: 0,
   },
 } as const;
