@@ -32,13 +32,13 @@ export default function CreateCampaignPage() {
     setErrorMsg("");
 
     try {
-      const startMs = BigInt(Math.round(parseFloat(startDelayHours) * 3_600_000));
-      const taskMs = BigInt(Math.round(parseFloat(taskDurationHours) * 3_600_000));
+      const startSecs = BigInt(Math.round(parseFloat(startDelayHours) * 3600));
+      const taskSecs = BigInt(Math.round(parseFloat(taskDurationHours) * 3600));
       const maxCkb = BigInt(Math.round(parseFloat(maxAmountCkb)));
 
       const hash = await sendCreateCampaign(signer, {
-        startDurationMs: startMs,
-        taskDurationMs: taskMs,
+        startDurationSecs: startSecs,
+        taskDurationSecs: taskSecs,
         campaignType,
         maximumAmountCkb: maxCkb,
       });

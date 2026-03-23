@@ -31,13 +31,13 @@ export function freightScript(argsBytes: Uint8Array): ccc.ScriptLike {
 export async function sendCreateCampaign(
   signer: ccc.Signer,
   opts: {
-    startDurationMs: bigint;
-    taskDurationMs: bigint;
+    startDurationSecs: bigint;
+    taskDurationSecs: bigint;
     campaignType: CampaignType;
     maximumAmountCkb: bigint; // in CKB (not shannons)
   }
 ): Promise<string> {
-  const { startDurationMs, taskDurationMs, campaignType, maximumAmountCkb } = opts;
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb } = opts;
   const maximumAmount = maximumAmountCkb * 100_000_000n; // CKB → shannons
 
   const tx = ccc.Transaction.default();
@@ -55,8 +55,8 @@ export async function sendCreateCampaign(
 
   // Type script args: [0x00][startDuration(8)][taskDuration(8)][campaignType(1)][maxAmount(8)]
   const typeArgs = encodeCreateCampaignArgs(
-    startDurationMs,
-    taskDurationMs,
+    startDurationSecs,
+    taskDurationSecs,
     campaignType,
     maximumAmount
   );
@@ -64,8 +64,8 @@ export async function sendCreateCampaign(
   // Campaign cell data (102 bytes). createdAt comes from the tip block timestamp (ms).
   const campaignData = encodeCampaignData({
     createdAt: tipHeader.timestamp,
-    startDurationSecs: startDurationMs,
-    taskDurationSecs: taskDurationMs,
+    startDurationSecs: startDurationSecs,
+    taskDurationSecs: taskDurationSecs,
     createdBy,
     campaignType,
     maximumAmount,
@@ -107,19 +107,28 @@ export async function fetchCampaigns(
 ): Promise<CampaignCell[]> {
   const results: CampaignCell[] = [];
 
-  const typeScript: ccc.ScriptLike = {
-    codeHash: FREIGHT_CONTRACT.codeHash,
-    hashType: FREIGHT_CONTRACT.hashType,
-    // Prefix-search: selector byte 0x00 = create_campaign cells.
-    args: "0x00",
-  };
-
+  // Use prefix mode so we match all cells with this type script regardless of args length.
+  // findCellsByType hardcodes "exact" which would never match our 26-byte args.
   let count = 0;
-  for await (const cell of client.findCellsByType(typeScript, true)) {
+  for await (const cell of client.findCells(
+    {
+      script: {
+        codeHash: FREIGHT_CONTRACT.codeHash,
+        hashType: FREIGHT_CONTRACT.hashType,
+        args: "0x",
+      },
+      scriptType: "type",
+      scriptSearchMode: "prefix",
+      withData: true,
+    },
+    "desc",
+    limit
+  )) {
     if (count++ >= limit) break;
     try {
       const rawData = hexToBytes(cell.outputData);
-      if (rawData.length < 102) continue;
+      // Campaign cells are exactly 102 bytes; participant cells are 65 bytes.
+      if (rawData.length !== 102) continue;
       results.push({
         outPoint: {
           txHash: cell.outPoint.txHash,

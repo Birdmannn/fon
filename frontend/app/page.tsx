@@ -15,6 +15,7 @@ export default function Home() {
       <div className="w-full max-w-2xl flex flex-col gap-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
+          {/* DEBUG: connect wallet bypassed
           {signer ? (
             <button
               onClick={disconnect}
@@ -30,6 +31,10 @@ export default function Home() {
               Connect Wallet
             </button>
           )}
+          */}
+          <a href="/create" className="px-4 py-2 rounded-full font-semibold text-sm btn-wallet w-full sm:w-auto text-center">
+            Connect Wallet (debug)
+          </a>
         </div>
 
         <p className="text-xs text-gray-400 font-mono break-all">
