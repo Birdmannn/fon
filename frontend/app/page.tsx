@@ -2,7 +2,7 @@
 
 import { ccc } from "@ckb-ccc/connector-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { FREIGHT_CONTRACT } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
 
@@ -55,11 +55,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg sm:text-xl font-semibold">Campaigns</h2>
-        </div>
-
-        <CampaignList client={client} />
+        <CampaignListHeader client={client} />
       </div>
 
       {signer && (
@@ -104,22 +100,121 @@ function ConnectedInfo({ signer }: { signer: ccc.Signer }) {
   );
 }
 
-function CampaignList({ client }: { client: ccc.Client }) {
+function CampaignListHeader({ client }: { client: ccc.Client }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = () => {
+  const loadCampaigns = () => {
     setLoading(true);
+    setIsRefreshing(true);
     fetchCampaigns(client)
       .then(setCampaigns)
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setIsRefreshing(false);
+      });
   };
 
   useEffect(() => {
-    refresh();
-  }, [client]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadCampaigns();
+  }, [client]);
+
+  useEffect(() => {
+    if (isSearchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [isSearchOpen]);
+
+  const handleRefresh = () => {
+    if (campaigns.length > 0) {
+      loadCampaigns();
+    }
+  };
+
+  const handleSearchClick = () => {
+    setIsSearchOpen(!isSearchOpen);
+    if (isSearchOpen) {
+      setSearchQuery("");
+    }
+  };
+
+  const handleSearchClose = () => {
+    setIsSearchOpen(false);
+    setSearchQuery("");
+  };
+
+  return (
+    <>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-lg sm:text-xl font-semibold">Campaigns</h2>
+        <div className="flex items-center gap-2 justify-end">
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="campaign-action-btn"
+            data-tooltip="Refresh campaigns"
+          >
+            <svg
+              className={`campaign-action-icon ${isRefreshing ? "refreshing" : ""}`}
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36" />
+            </svg>
+          </button>
+          <div
+            className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}
+            onBlur={handleSearchClose}
+          >
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Search campaigns..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="campaign-search-input"
+            />
+          </div>
+          <button
+            onClick={handleSearchClick}
+            className="campaign-action-btn"
+            data-tooltip="Search campaigns"
+          >
+            <svg
+              className="campaign-action-icon"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <CampaignList campaigns={campaigns} loading={loading} error={error} client={client} />
+    </>
+  );
+}
+
+function CampaignList({ campaigns, loading, error }: { campaigns: CampaignCell[]; loading: boolean; error: string; client: ccc.Client }) {
+  const signer = ccc.useSigner();
 
   if (loading) {
     return <p className="text-sm text-gray-400">Loading campaigns…</p>;
@@ -140,7 +235,7 @@ function CampaignList({ client }: { client: ccc.Client }) {
   return (
     <div className="flex flex-col gap-3">
       {campaigns.map((c) => (
-        <CampaignCard key={`${c.outPoint.txHash}:${c.outPoint.index}`} campaign={c} onDepositSuccess={refresh} />
+        <CampaignCard key={`${c.outPoint.txHash}:${c.outPoint.index}`} campaign={c} signer={signer} />
       ))}
     </div>
   );
@@ -149,9 +244,8 @@ function CampaignList({ client }: { client: ccc.Client }) {
 const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
 const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge"];
 
-function CampaignCard({ campaign: c, onDepositSuccess }: { campaign: CampaignCell; onDepositSuccess: () => void }) {
+function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer: ccc.Signer | null }) {
   const { data, outPoint } = c;
-  const signer = ccc.useSigner();
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
   const maxCkb = (Number(data.maximumAmount) / 1e8).toFixed(2);
@@ -225,8 +319,7 @@ function CampaignCard({ campaign: c, onDepositSuccess }: { campaign: CampaignCel
       alert(`Deposit sent! Tx: ${txHash}`);
       setShowDepositModal(false);
       setDepositAmount("");
-      // Wait a couple seconds for the indexer to pick up the new cell, then refresh
-      setTimeout(onDepositSuccess, 3000);
+      // Note: In production, you'd wait for confirmation and refetch campaigns
     } catch (error) {
       alert(`Deposit failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -248,9 +341,7 @@ function CampaignCard({ campaign: c, onDepositSuccess }: { campaign: CampaignCel
               {shortHash}
             </a>
           </span>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 w-fit">
-            {STATUS_LABELS[data.status] ?? data.status}
-          </span>
+          <span className={`status-indicator status-${["created", "active", "completed", "cancelled"][data.status] || "created"}`} title={STATUS_LABELS[data.status] ?? data.status} />
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 text-sm">
           <span className="font-medium">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
@@ -289,7 +380,7 @@ function CampaignCard({ campaign: c, onDepositSuccess }: { campaign: CampaignCel
 
         <button
           onClick={handleBookmark}
-          className={`campaign-action-btn ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+          className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
         >
           <svg
@@ -308,7 +399,7 @@ function CampaignCard({ campaign: c, onDepositSuccess }: { campaign: CampaignCel
 
         <button
           onClick={handleComment}
-          className={`campaign-action-btn ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+          className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
         >
           <svg
@@ -327,7 +418,7 @@ function CampaignCard({ campaign: c, onDepositSuccess }: { campaign: CampaignCel
 
         <button
           onClick={handleReshare}
-          className={`campaign-action-btn ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+          className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
         >
           <svg
