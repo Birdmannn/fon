@@ -235,7 +235,7 @@ function CampaignList({ campaigns, loading, error }: { campaigns: CampaignCell[]
   return (
     <div className="flex flex-col gap-3">
       {campaigns.map((c) => (
-        <CampaignCard key={`${c.outPoint.txHash}:${c.outPoint.index}`} campaign={c} signer={signer} />
+        <CampaignCard key={`${c.outPoint.txHash}:${c.outPoint.index}`} campaign={c} signer={signer ?? null} />
       ))}
     </div>
   );
