@@ -6,6 +6,7 @@ pub enum CampaignType {
     FundedTask = 1,     // Requires deposits to start
     Crowdfunding = 2,   // Deposit-based with funding goal
     TimedChallenge = 3, // Time-sensitive with deposits
+    Raffle = 4,         // Ticket-based raffle; ticket_price stored in aux_amount
 }
 
 impl TryFrom<u8> for CampaignType {
@@ -17,6 +18,7 @@ impl TryFrom<u8> for CampaignType {
             1 => Ok(CampaignType::FundedTask),
             2 => Ok(CampaignType::Crowdfunding),
             3 => Ok(CampaignType::TimedChallenge),
+            4 => Ok(CampaignType::Raffle),
             _ => Err(value),
         }
     }
@@ -57,39 +59,44 @@ pub enum AddressKey {
 }
 
 // Campaign data structure (stored in cell data)
+// Layout: [8][8][8][20][1][8][8][1][8][32][64][8] = 174 bytes
 #[derive(Debug, Clone, PartialEq)]
 pub struct Campaign {
-    pub created_at: u64,                // Unix timestamp (8 bytes)
+    pub created_at: u64,                // Unix timestamp in ms (8 bytes)
     pub start_duration_in_seconds: u64, // Time until campaign starts (8 bytes)
     pub task_duration_in_seconds: u64,  // How long campaign runs (8 bytes)
     pub created_by: [u8; 20],           // Creator's address (20 bytes)
     pub campaign_type: CampaignType,    // Type of campaign (1 byte)
-    pub maximum_amount: u64,            // Max deposit allowed (8 bytes)
-    pub current_deposits: u64,          // Total deposits so far (8 bytes)
+    pub maximum_amount: u64,            // Max deposit allowed in shannons (8 bytes)
+    pub current_deposits: u64,          // Total deposits so far in shannons (8 bytes)
     pub status: CampaignStatus,         // Current status (1 byte)
-    // Distribution parameters – zero-initialised at creation; set by submit_randomness_hash
     pub reward_count: u64,              // How many participants to reward (8 bytes)
     pub randomness_hash: [u8; 32],      // blake2b_256(randomness); [0;32] = sequential mode (32 bytes)
+    pub summary: [u8; 64],              // Campaign summary, UTF-8 zero-padded (64 bytes)
+    pub aux_amount: u64,                // Auxiliary amount: ticket_price for Raffle, 0 otherwise (8 bytes)
 }
 
 // Participant data, we use one cell per participant.
+// Layout: [32][4][20][8][1][8] = 73 bytes
 #[derive(Debug)]
 pub struct ParticipantData {
-    pub campaign_tx_hash: [u8; 32], // which campaign
-    pub campaign_index: u32,        // which campaign output
-    pub participant_address: [u8; 20],
-    pub joined_at: u64,
-    pub status: ParticipantStatus,
+    pub campaign_tx_hash: [u8; 32],  // which campaign (32 bytes)
+    pub campaign_index: u32,         // which campaign output (4 bytes)
+    pub participant_address: [u8; 20], // participant's address (20 bytes)
+    pub joined_at: u64,              // timestamp in ms (8 bytes)
+    pub status: ParticipantStatus,   // current status (1 byte)
+    pub deposited_amount: u64,       // amount deposited by this participant in shannons (8 bytes)
 }
 
-pub const PARTICIPANT_DATA_LEN: usize = 65; // outpoint + address + timestamp + status.
+pub const PARTICIPANT_DATA_LEN: usize = 73;
 
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParticipantStatus {
     Pending = 0,
-    Verified,
-    Rewarded,
+    Verified = 1,
+    Rewarded = 2,
+    Refunded = 3,
 }
 
 impl TryFrom<u8> for ParticipantStatus {
@@ -100,19 +107,28 @@ impl TryFrom<u8> for ParticipantStatus {
             0 => Ok(ParticipantStatus::Pending),
             1 => Ok(ParticipantStatus::Verified),
             2 => Ok(ParticipantStatus::Rewarded),
+            3 => Ok(ParticipantStatus::Refunded),
             _ => Err(val),
         }
     }
 }
 
-// Campaign cell data format (total: 102 bytes)
-// Layout: [8][8][8][20][1][8][8][1] = 62 base, plus [8][32] = 40 distribution fields
-pub const CAMPAIGN_DATA_LEN: usize = 102;
+// Campaign cell data format (total: 174 bytes)
+// Layout: [8][8][8][20][1][8][8][1][8][32][64][8]
+pub const CAMPAIGN_DATA_LEN: usize = 174;
 
 impl Campaign {
     pub fn accepts_deposits(&self) -> bool {
-        // Only deposit-backed campaigns accept deposits before they start.
+        // Raffle and deposit-backed campaigns accept deposits before they start.
         self.status == CampaignStatus::Created && self.campaign_type != CampaignType::SimpleTask
+    }
+
+    pub fn is_raffle(&self) -> bool {
+        self.campaign_type == CampaignType::Raffle
+    }
+
+    pub fn ticket_price(&self) -> u64 {
+        self.aux_amount
     }
 }
 

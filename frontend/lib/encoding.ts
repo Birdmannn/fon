@@ -48,20 +48,22 @@ export function bytesToHex(bytes: Uint8Array): string {
 // ─── Script args encoding ─────────────────────────────────────────────────────
 
 /** args for selector 0 – create_campaign
- *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)]
+ *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)]
  */
 export function encodeCreateCampaignArgs(
   startDurationSecs: bigint,
   taskDurationSecs: bigint,
   campaignType: CampaignType,
-  maximumAmount: bigint
+  maximumAmount: bigint,
+  auxAmount: bigint
 ): Uint8Array {
   return concat(
     new Uint8Array([Selector.CreateCampaign]),
     u64LE(startDurationSecs),
     u64LE(taskDurationSecs),
     new Uint8Array([campaignType]),
-    u64LE(maximumAmount)
+    u64LE(maximumAmount),
+    u64LE(auxAmount)
   );
 }
 
@@ -111,7 +113,7 @@ export function encodeSubmitRandomnessHashArgs(
   );
 }
 
-// ─── Campaign cell data (102 bytes) ──────────────────────────────────────────
+// ─── Campaign cell data (166 bytes) ──────────────────────────────────────────
 
 export interface CampaignData {
   createdAt: bigint;
@@ -124,6 +126,21 @@ export interface CampaignData {
   status: CampaignStatus;
   rewardCount: bigint;
   randomnessHash: Uint8Array; // 32 bytes
+  summary: Uint8Array;        // 64 bytes, UTF-8 zero-padded
+  auxAmount: bigint;          // ticket_price for Raffle, 0 otherwise
+}
+
+export function encodeSummary(text: string): Uint8Array {
+  const encoded = new TextEncoder().encode(text);
+  if (encoded.length > 64) throw new Error("Summary exceeds 64 bytes");
+  const buf = new Uint8Array(64);
+  buf.set(encoded);
+  return buf;
+}
+
+export function decodeSummary(bytes: Uint8Array): string {
+  const end = bytes.indexOf(0);
+  return new TextDecoder().decode(end === -1 ? bytes : bytes.slice(0, end));
 }
 
 export function encodeCampaignData(c: CampaignData): Uint8Array {
@@ -137,12 +154,14 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     u64LE(c.currentDeposits),
     new Uint8Array([c.status]),
     u64LE(c.rewardCount),
-    c.randomnessHash
+    c.randomnessHash,
+    c.summary,
+    u64LE(c.auxAmount)
   );
 }
 
 export function decodeCampaignData(data: Uint8Array): CampaignData {
-  if (data.length < 102) throw new Error("campaign data too short");
+  if (data.length < 174) throw new Error("campaign data too short");
   const view = new DataView(data.buffer, data.byteOffset);
   return {
     createdAt: view.getBigUint64(0, true),
@@ -155,6 +174,8 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     status: data[61] as CampaignStatus,
     rewardCount: view.getBigUint64(62, true),
     randomnessHash: data.slice(70, 102),
+    summary: data.slice(102, 166),
+    auxAmount: view.getBigUint64(166, true),
   };
 }
 
@@ -166,6 +187,7 @@ export interface ParticipantData {
   participantAddress: Uint8Array; // 20 bytes
   joinedAt: bigint;
   status: ParticipantStatus;
+  depositedAmount: bigint;        // shannons deposited by this participant
 }
 
 export function encodeParticipantData(p: ParticipantData): Uint8Array {
@@ -174,12 +196,13 @@ export function encodeParticipantData(p: ParticipantData): Uint8Array {
     u32LE(p.campaignIndex),
     p.participantAddress,
     u64LE(p.joinedAt),
-    new Uint8Array([p.status])
+    new Uint8Array([p.status]),
+    u64LE(p.depositedAmount)
   );
 }
 
 export function decodeParticipantData(data: Uint8Array): ParticipantData {
-  if (data.length < 65) throw new Error("participant data too short");
+  if (data.length < 73) throw new Error("participant data too short");
   const view = new DataView(data.buffer, data.byteOffset);
   return {
     campaignTxHash: data.slice(0, 32),
@@ -187,5 +210,6 @@ export function decodeParticipantData(data: Uint8Array): ParticipantData {
     participantAddress: data.slice(36, 56),
     joinedAt: view.getBigUint64(56, true),
     status: data[64] as ParticipantStatus,
+    depositedAmount: view.getBigUint64(65, true),
   };
 }

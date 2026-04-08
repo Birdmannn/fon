@@ -4,6 +4,7 @@ import {
   encodeCreateCampaignArgs,
   encodeDepositArgs,
   encodeCampaignData,
+  encodeSummary,
   decodeCampaignData,
   bytesToHex,
   hexToBytes,
@@ -35,11 +36,14 @@ export async function sendCreateCampaign(
     startDurationSecs: bigint;
     taskDurationSecs: bigint;
     campaignType: CampaignType;
-    maximumAmountCkb: bigint; // in CKB (not shannons)
+    maximumAmountCkb: bigint;
+    auxAmountCkb: bigint; // ticket_price for Raffle (in CKB), 0 otherwise
+    summary: string;
   }
 ): Promise<string> {
-  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb } = opts;
-  const maximumAmount = maximumAmountCkb * 100_000_000n; // CKB → shannons
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, summary } = opts;
+  const maximumAmount = maximumAmountCkb * 100_000_000n;
+  const auxAmount = auxAmountCkb * 100_000_000n;
 
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
@@ -54,15 +58,16 @@ export async function sendCreateCampaign(
   const createdBy = new Uint8Array(20);
   createdBy.set(lockArgBytes.slice(0, 20));
 
-  // Type script args: [0x00][startDuration(8)][taskDuration(8)][campaignType(1)][maxAmount(8)]
+  // Type script args: [0x00][startDuration(8)][taskDuration(8)][campaignType(1)][maxAmount(8)][auxAmount(8)]
   const typeArgs = encodeCreateCampaignArgs(
     startDurationSecs,
     taskDurationSecs,
     campaignType,
-    maximumAmount
+    maximumAmount,
+    auxAmount
   );
 
-  // Campaign cell data (102 bytes). createdAt comes from the tip block timestamp (ms).
+  // Campaign cell data (174 bytes).
   const campaignData = encodeCampaignData({
     createdAt: tipHeader.timestamp,
     startDurationSecs: startDurationSecs,
@@ -74,6 +79,8 @@ export async function sendCreateCampaign(
     status: CampaignStatus.Created,
     rewardCount: 0n,
     randomnessHash: new Uint8Array(32),
+    summary: encodeSummary(summary),
+    auxAmount,
   });
 
   // Output: campaign cell.
@@ -181,8 +188,8 @@ export async function fetchCampaigns(
     try {
       const rawData = hexToBytes(cell.outputData);
       const typeScript = cell.cellOutput.type;
-      // Campaign cells are exactly 102 bytes; participant cells are 65 bytes.
-      if (rawData.length !== 102 || !typeScript) continue;
+      // Campaign cells are exactly 174 bytes; participant cells are 73 bytes.
+      if (rawData.length !== 174 || !typeScript) continue;
       results.push({
         outPoint: {
           txHash: cell.outPoint.txHash,

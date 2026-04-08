@@ -1,7 +1,4 @@
 // ─── Deployed contract (CKB Testnet) ─────────────────────────────────────────
-// Update CODE_HASH after each upgrade; OUT_POINT changes too.
-// TYPE_ID (CODE_HASH) is stable across upgrades when hash_type = "type".
-
 export const FREIGHT_CONTRACT = {
   codeHash:
     "0xec267d9dea748406b4fcba135eef140d5ab0fa3a62214e08af4e30ec2033533a",
@@ -21,6 +18,8 @@ export enum Selector {
   VerifyParticipant = 3,
   UpdateCampaignStatus = 4,
   SubmitRandomnessHash = 5,
+  CancelCampaign = 6,
+  Refund = 7,
 }
 
 // ─── On-chain enums ───────────────────────────────────────────────────────────
@@ -29,6 +28,7 @@ export enum CampaignType {
   FundedTask = 1,
   Crowdfunding = 2,
   TimedChallenge = 3,
+  Raffle = 4,
 }
 
 export enum CampaignStatus {
@@ -42,8 +42,9 @@ export enum ParticipantStatus {
   Pending = 0,
   Verified = 1,
   Rewarded = 2,
+  Refunded = 3,
 }
 
 // ─── Cell data sizes (must match Rust constants) ──────────────────────────────
-export const CAMPAIGN_DATA_LEN = 102;
-export const PARTICIPANT_DATA_LEN = 65;
+export const CAMPAIGN_DATA_LEN = 174;
+export const PARTICIPANT_DATA_LEN = 73;

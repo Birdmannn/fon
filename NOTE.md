@@ -1,62 +1,107 @@
-# CKB Constructor Pattern & Type Script Args
+# FreightOnNervos — Contract & Frontend Changelog
 
-## CKB's "constructor" IS the type script args
+## Contract Changes
 
-In CKB there is no separate deploy-then-construct step. The pattern is:
+### New Types (`types.rs`)
 
-1. **Deploy the binary once** — the contract code (`freight`) lives in a cell. Its hash is the "class identity".
-2. **Create a campaign cell** with that binary set as the type script, and pass `[admin_address][admin_pubkey]` as the **type script args** at creation time.
+- `CampaignType::Raffle = 4` — ticket-based raffle campaign
+- `Campaign.aux_amount: u64` — stores ticket price for Raffle campaigns, 0 otherwise
+- `Campaign.summary: [u8; 64]` — UTF-8 zero-padded campaign description (set at creation, never changed)
+- `ParticipantData.deposited_amount: u64` — tracks how much each participant deposited (needed for refunds)
+- `ParticipantStatus::Refunded = 3` — new terminal status for refunded participants
+- `CAMPAIGN_DATA_LEN`: 102 → 174 bytes
+- `PARTICIPANT_DATA_LEN`: 65 → 73 bytes
 
-Those args are **permanently bound to that cell**. Nobody can mutate them. If you spend (consume) the cell, the cell is gone. If a new cell is created with the same script code but different args, it is a *different* contract instance. This is exactly the constructor pattern — it just lives in the args instead of separate storage.
+### Updated Instructions
 
-So **no hardcoding needed**. The args ARE the immutable constructor.
+**`create_campaign` (selector 0)**
+- Args extended: `[start(8)][task(8)][type(1)][max(8)][aux(8)]` = 33 bytes (was 25)
+- Validates `summary` is non-empty (not all zeros)
+- For `Raffle` type: validates `maximum_amount % aux_amount == 0` and `aux_amount > 0`
+
+**`deposit` (selector 1)**
+- Unchanged in logic; now works with 174-byte campaign cells
+
+**`verify_participant` (selector 3)**
+- Raffle path: no admin signature required; validates ticket price capacity transfer via `apply_deposit`, then calls `validate_participant_added` with `ticket_price` as `deposited_amount`
+- Non-raffle path: unchanged (admin ECDSA signature in `witness.input_type`)
+- Both paths: output participant cell must have `status = Verified` and correct `deposited_amount`
+
+**`update_campaign_status` (selector 4)**
+- Fully implemented (was a stub)
+- Permissionless: anyone can call it
+- `Created → Active` when `now >= created_at + start_duration * 1000`
+- `Active → Completed` when `now >= created_at + (start_duration + task_duration) * 1000`
+- Only forward transitions allowed; returns `InvalidOperation` if nothing to update yet
+
+**`submit_randomness_hash` (selector 5)**
+- Unchanged
+
+### New Instructions
+
+**`cancel_campaign` (selector 6)**
+- Caller must be the campaign creator (verified via non-campaign input lock vs `campaign.created_by`)
+- Campaign must not already be `Completed` or `Cancelled`
+- Output cell: identical data with `status = Cancelled`
+
+**`refund` (selector 7)**
+- Campaign must be `Cancelled`
+- Caller must be the campaign creator
+- For each `Verified` participant input: validates `campaign_tx_hash` and `campaign_index` match, output participant has `status = Refunded`, output capacity = input capacity + `deposited_amount`
+- Output campaign cell: `current_deposits` reduced by total refunded amount
+- Works for all campaign types
+
+### New Helpers
+
+- `apply_deposit(campaign, amount)` in `utils.rs` — shared capacity transition logic used by both `deposit` and the raffle path of `verify_participant`
+- `validate_refund_outputs` / `validate_refunded_output` in `validations.rs` — validates all participant refund transitions in a batch
+- `validate_participant_added` now takes `deposited_amount` parameter and verifies it matches the output cell
 
 ---
 
-## Type script args layout (fixed)
+## Frontend Changes
 
-`main.rs` keeps the selector at `args[0]`. The constructor args (admin identity) sit
-immediately after, followed by any instruction-specific data:
-
-```
-args[0]        = selector                  (1 byte,  read by main.rs)
-args[1..21]    = admin_address             (20 bytes, constructor arg, index = 1)
-args[21..54]   = admin_pubkey              (33 bytes, constructor arg, index = 21)
-args[54..]     = instruction-specific data (varies per operation)
-```
-
-For `verify_participant` (selector = 3):
-```
-args[0]        = 3
-args[1..21]    = admin_address
-args[21..54]   = admin_pubkey
-args[54..119]  = signature (65 bytes)   ← instruction_args[53..118]
-```
-
-`get_admin_address(index)` and `get_admin_pubkey(index)` both call `load_script()` and
-read from the full type script args starting at the given `index`. This keeps the
-constructor data cleanly separated while allowing each instruction to specify exactly
-where in the args its admin fields live.
-
-`AddressKey::Admin(usize)` carries the index directly, e.g.
-`extract_caller_address(AddressKey::Admin(1))` → calls `get_admin_address(1)` → reads
-`args[1..21]`.
+- `CampaignData` interface: added `auxAmount`, `summary` fields; size 166 → 174 bytes
+- `ParticipantData` interface: added `depositedAmount` field; size 65 → 73 bytes
+- `ParticipantStatus`: added `Refunded = 3`
+- `CampaignType`: added `Raffle = 4`
+- `Selector`: added `CancelCampaign = 6`, `Refund = 7`
+- `encodeCreateCampaignArgs`: added `auxAmount` parameter
+- `encodeSummary` / `decodeSummary` helpers added
+- Create campaign page: added `summary` text input (required, 64-byte limit with live counter) and conditional `Ticket Price` field shown only for Raffle type
 
 ---
 
-## The real trust question
+## Tests (29 total, all passing)
 
-Anyone can create a cell using the freight binary as a type script with *their own* pubkey as args and call it a "campaign". The contract code enforces rules internally, but it cannot prevent someone from instantiating it with arbitrary args.
-
-The off-chain indexer / front-end must filter campaigns by checking:
-- The type script **code hash** matches the known deployed freight binary, AND
-- The **admin_address** in `args[0..20]` matches a known trusted admin
-
-This is the standard CKB trust model: the code is trusted, the args define the instance.
-
----
-
-## TODO
-
-- Write a full `verify_participant` success test once a real secp256k1 admin key pair is available for signing
-- Implement `distribute()` and call `extract_caller_address(AddressKey::Admin(1))` to enforce admin-only access
+| Test | What it covers |
+|------|---------------|
+| `test_create_campaign_success` | Basic campaign creation |
+| `test_create_campaign_empty_summary_rejected` | Empty summary blocked |
+| `test_create_raffle_campaign_success` | Raffle creation with valid ticket price |
+| `test_create_raffle_invalid_ticket_price_rejected` | Non-divisible ticket price blocked |
+| `test_deposit_success` | Normal deposit flow |
+| `test_deposit_exceeds_maximum_caps_to_remaining` | Partial deposit capping |
+| `test_deposit_rejects_simple_task` | SimpleTask deposits blocked |
+| `test_deposit_within_start_period_millisecond_timestamps` | ms timestamp regression |
+| `test_deposit_rejects_after_start_period_elapsed` | Late deposit blocked |
+| `test_verify_participant_campaign_expired` | Expired campaign blocked |
+| `test_verify_participant_invalid_signature` | Bad signature blocked |
+| `test_verify_participant_success` | Valid admin signature accepted |
+| `test_verify_participant_raffle_success` | Raffle entry without signature |
+| `test_batch_deliver_sequential` | Equal split delivery |
+| `test_batch_deliver_randomness_success` | Randomness preimage delivery |
+| `test_batch_deliver_wrong_preimage` | Wrong preimage blocked |
+| `test_batch_deliver_deadline_not_passed` | Early delivery blocked |
+| `test_submit_randomness_hash_success` | Commit distribution params |
+| `test_submit_randomness_hash_already_set` | Idempotency guard |
+| `test_submit_randomness_hash_campaign_cancelled` | Cancelled campaign blocked |
+| `test_cancel_campaign_success` | Creator cancels campaign |
+| `test_cancel_campaign_already_cancelled` | Double-cancel blocked |
+| `test_cancel_campaign_unauthorized` | Non-creator cancel blocked |
+| `test_refund_success` | Two participants refunded correctly |
+| `test_refund_campaign_not_cancelled` | Refund on active campaign blocked |
+| `test_refund_wrong_output_capacity` | Insufficient refund blocked |
+| `test_update_campaign_status_to_active` | Created → Active transition |
+| `test_update_campaign_status_to_completed` | Active → Completed transition |
+| `test_update_campaign_status_too_early` | Premature update blocked |

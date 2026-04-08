@@ -160,22 +160,27 @@ pub fn validate_campaign_params(
     task_duration: u64,
     campaign_type: CampaignType,
     maximum_amount: u64,
+    aux_amount: u64,
 ) -> Result<(), Error> {
-    // Start duration should not actually be more than a year. For now, it is hardcoded
     let max_duration = 365 * 24 * 60 * 60;
     if start_duration > max_duration {
         return Err(Error::InvalidCampaignArgs);
     }
 
-    // Task duration should atleast be thirty minutes, and should not be more than a year.
-    let min_task_duration = 30 * 60; // 30 minutes in seconds
-    let max_task_duration = 365 * 24 * 60 * 60; // 1 year in seconds
-
+    let min_task_duration = 30 * 60;
+    let max_task_duration = 365 * 24 * 60 * 60;
     if task_duration < min_task_duration || task_duration > max_task_duration {
         return Err(Error::InvalidCampaignArgs);
     }
 
-    let _ = (campaign_type, maximum_amount);
+    if campaign_type == CampaignType::Raffle {
+        if aux_amount == 0 {
+            return Err(Error::InvalidCampaignArgs);
+        }
+        if maximum_amount % aux_amount != 0 {
+            return Err(Error::InvalidCampaignArgs);
+        }
+    }
 
     Ok(())
 }
@@ -215,6 +220,11 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
     let reward_count = u64::from_le_bytes(data[62..70].try_into().unwrap());
     let mut randomness_hash = [0u8; 32];
     randomness_hash.copy_from_slice(&data[70..102]);
+    // Summary field (bytes 102–165)
+    let mut summary = [0u8; 64];
+    summary.copy_from_slice(&data[102..166]);
+    // aux_amount (bytes 166–173)
+    let aux_amount = u64::from_le_bytes(data[166..174].try_into().unwrap());
 
     Ok(Campaign {
         created_at,
@@ -227,7 +237,33 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
         status,
         reward_count,
         randomness_hash,
+        summary,
+        aux_amount,
     })
+}
+
+/// Shared deposit logic: validates the campaign cell capacity transition and
+/// updates `campaign.current_deposits`. Used by both `deposit` and the raffle
+/// path of `verify_participant`.
+pub fn apply_deposit(campaign: &mut Campaign, amount: u64) -> Result<(), Error> {
+    use ckb_std::high_level::load_cell_capacity;
+
+    let input_capacity = load_cell_capacity(0, Source::GroupInput)
+        .map_err(|_| Error::InvalidCellData)?;
+    let output_capacity = load_cell_capacity(0, Source::GroupOutput)
+        .map_err(|_| Error::InvalidCellData)?;
+
+    let expected = input_capacity.checked_add(amount).ok_or(Error::AmountMismatch)?;
+    if output_capacity != expected {
+        return Err(Error::AmountMismatch);
+    }
+
+    campaign.current_deposits = campaign
+        .current_deposits
+        .checked_add(amount)
+        .ok_or(Error::AmountMismatch)?;
+
+    Ok(())
 }
 
 /// Verify a 64-byte compact ECDSA signature against a pre-hashed message and
@@ -261,17 +297,15 @@ pub fn parse_participant_data(data: &[u8]) -> Result<ParticipantData, Error> {
     participant_address.copy_from_slice(&data[36..56]);
 
     let joined_at = u64::from_le_bytes(data[56..64].try_into().unwrap());
+    let status: ParticipantStatus = data[64].try_into().unwrap();
+    let deposited_amount = u64::from_le_bytes(data[65..73].try_into().unwrap());
 
-    let status_bytes = data[64];
-    let status: ParticipantStatus = status_bytes.try_into().unwrap();
-
-    let data = ParticipantData {
+    Ok(ParticipantData {
         campaign_tx_hash,
         campaign_index,
         participant_address,
         joined_at,
         status,
-    };
-
-    Ok(data)
+        deposited_amount,
+    })
 }

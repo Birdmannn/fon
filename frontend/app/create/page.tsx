@@ -20,6 +20,8 @@ export default function CreateCampaignPage() {
   const [taskDurationHours, setTaskDurationHours] = useState("24");
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
+  const [auxAmountCkb, setAuxAmountCkb] = useState("10");
+  const [summary, setSummary] = useState("");
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -41,6 +43,8 @@ export default function CreateCampaignPage() {
         taskDurationSecs: taskSecs,
         campaignType,
         maximumAmountCkb: maxCkb,
+        auxAmountCkb: campaignType === CampaignType.Raffle ? BigInt(Math.round(parseFloat(auxAmountCkb))) : 0n,
+        summary,
       });
 
       setTxHash(hash);
@@ -156,6 +160,40 @@ export default function CreateCampaignPage() {
             />
             <span className="text-xs text-gray-500">
               Maximum total CKB that can be deposited into this campaign.
+            </span>
+          </label>
+
+          {campaignType === CampaignType.Raffle && (
+            <label className="flex flex-col gap-1">
+              <span className="text-sm font-medium">Ticket Price (CKB)</span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={auxAmountCkb}
+                onChange={(e) => setAuxAmountCkb(e.target.value)}
+                className="border border-gray-300 rounded px-3 py-2 text-sm"
+                required
+              />
+              <span className="text-xs text-gray-500">
+                Price per raffle ticket. Maximum deposit must be divisible by this.
+              </span>
+            </label>
+          )}
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-medium">Summary</span>
+            <input
+              type="text"
+              maxLength={64}
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-2 text-sm"
+              placeholder="Brief description of the campaign"
+              required
+            />
+            <span className="text-xs text-gray-500">
+              {new TextEncoder().encode(summary).length}/64 bytes
             </span>
           </label>
 
