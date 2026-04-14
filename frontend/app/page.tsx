@@ -58,25 +58,23 @@ export default function Home() {
         <CampaignListHeader client={client} />
       </div>
 
-      {signer && (
-        <Link
-          href="/create"
-          className="fixed left-8 create-campaign-fab"
+      <Link
+        href="/create"
+        className="fixed left-8 create-campaign-fab"
+      >
+        <svg
+          width="48"
+          height="48"
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
         >
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-          >
-            <line x1="24" y1="8" x2="24" y2="40" />
-            <line x1="8" y1="24" x2="40" y2="24" />
-          </svg>
-        </Link>
-      )}
+          <line x1="24" y1="8" x2="24" y2="40" />
+          <line x1="8" y1="24" x2="40" y2="24" />
+        </svg>
+      </Link>
     </main>
   );
 }

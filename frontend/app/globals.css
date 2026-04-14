@@ -273,3 +273,55 @@ body {
 .campaign-search-wrapper.active .campaign-search-input {
   animation: search-slide-in 300ms ease-out forwards, search-underline-in 300ms ease-out forwards;
 }
+
+/* Contenteditable placeholder support */
+[contenteditable][placeholder]:empty:before {
+  content: attr(placeholder);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+/* Theme-aware components */
+.theme-bg {
+  background-color: var(--background);
+}
+
+.theme-fg {
+  color: var(--foreground);
+}
+
+.theme-secondary-bg {
+  background-color: var(--background);
+  opacity: 0.95;
+}
+
+.theme-border {
+  border-color: var(--foreground);
+  opacity: 0.3;
+}
+
+.theme-input {
+  background-color: var(--background);
+  color: var(--foreground);
+  border-color: var(--foreground);
+  opacity: 1;
+  border-opacity: 0.2;
+}
+
+.theme-input:focus {
+  border-color: var(--foreground);
+  border-opacity: 0.5;
+}
+
+.theme-button {
+  background-color: var(--foreground);
+  color: var(--background);
+}
+
+.theme-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.theme-button:disabled {
+  opacity: 0.5;
+}
