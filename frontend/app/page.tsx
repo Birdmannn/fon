@@ -1,53 +1,257 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import CreateCampaignModalContent from "@/app/create/_components/CreateCampaignModalContent";
 import { FREIGHT_CONTRACT } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
 
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const INFO_MODAL_ANIMATION_MS = 620;
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
+  const [createResetSignal, setCreateResetSignal] = useState(0);
+  const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearInfoCloseTimer = () => {
+    if (infoCloseTimerRef.current) {
+      clearTimeout(infoCloseTimerRef.current);
+      infoCloseTimerRef.current = null;
+    }
+  };
+
+  const clearInfoHideTimer = () => {
+    if (infoHideTimerRef.current) {
+      clearTimeout(infoHideTimerRef.current);
+      infoHideTimerRef.current = null;
+    }
+  };
+
+  const clearCreateHideTimer = () => {
+    if (createHideTimerRef.current) {
+      clearTimeout(createHideTimerRef.current);
+      createHideTimerRef.current = null;
+    }
+  };
+
+  const openInfoModal = () => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  };
+
+  const closeInfoModal = useCallback(() => {
+    clearInfoCloseTimer();
+
+    if (!showInfoModal || isInfoModalClosing) return;
+
+    setIsInfoModalClosing(true);
+    clearInfoHideTimer();
+    infoHideTimerRef.current = setTimeout(() => {
+      setShowInfoModal(false);
+      setIsInfoModalClosing(false);
+      infoHideTimerRef.current = null;
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [showInfoModal, isInfoModalClosing]);
+
+  const openCreateModal = () => {
+    clearCreateHideTimer();
+    setIsCreateModalClosing(false);
+    setShowCreateModal(true);
+  };
+
+  const closeCreateModal = useCallback(() => {
+    if (!showCreateModal || isCreateModalClosing) return;
+
+    setIsCreateModalClosing(true);
+    clearCreateHideTimer();
+    createHideTimerRef.current = setTimeout(() => {
+      setShowCreateModal(false);
+      setIsCreateModalClosing(false);
+      createHideTimerRef.current = null;
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [showCreateModal, isCreateModalClosing]);
+
+  const resetCreateModal = useCallback(() => {
+    setCreateResetSignal((current) => current + 1);
+  }, []);
+
+  const scheduleCloseInfoModal = () => {
+    clearInfoCloseTimer();
+    infoCloseTimerRef.current = setTimeout(() => {
+      closeInfoModal();
+    }, 120);
+  };
+
+  const toggleInfoModal = () => {
+    if (showInfoModal && !isInfoModalClosing) {
+      closeInfoModal();
+      return;
+    }
+
+    openInfoModal();
+  };
+
+  useEffect(() => {
+    return () => {
+      clearInfoCloseTimer();
+      clearInfoHideTimer();
+      clearCreateHideTimer();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showInfoModal) return;
+
+    const handleEscapeClose = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeInfoModal();
+      }
+    };
+
+    window.addEventListener("keydown", handleEscapeClose);
+    return () => {
+      window.removeEventListener("keydown", handleEscapeClose);
+    };
+  }, [showInfoModal, closeInfoModal]);
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+
+    const handleEscapeClose = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeCreateModal();
+      }
+    };
+
+    window.addEventListener("keydown", handleEscapeClose);
+    return () => {
+      window.removeEventListener("keydown", handleEscapeClose);
+    };
+  }, [showCreateModal, closeCreateModal]);
+
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className="w-full max-w-2xl flex flex-col gap-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
-          {/* DEBUG: connect wallet bypassed */}
-          {signer ? (
-            <button
-              onClick={disconnect}
-              className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="header-info-wrap">
+            <div
+              onMouseEnter={openInfoModal}
+              onMouseLeave={scheduleCloseInfoModal}
             >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              onClick={open}
-              className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+              <button
+                type="button"
+                className="header-info-btn"
+                aria-label="Open Freight information"
+                onClick={toggleInfoModal}
+                onFocus={openInfoModal}
+                onBlur={scheduleCloseInfoModal}
+              >
+                <span className="header-info-inner-ring" aria-hidden="true" />
+                <span className="header-info-glyph" aria-hidden="true">i</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="header-right-actions">
+            {showCreateModal && (
+              <div className="create-modal-top-actions" role="group" aria-label="Create modal controls">
+                <button
+                  type="button"
+                  className="create-modal-action-btn"
+                  data-tooltip="Reset form"
+                  onClick={resetCreateModal}
+                  aria-label="Reset create campaign form"
+                >
+                  <svg
+                    className="campaign-action-icon"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M3 2v6h6" />
+                    <path d="M3.51 15a9 9 0 1 0 .49-9" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="create-modal-action-btn"
+                  data-tooltip="Close"
+                  onClick={closeCreateModal}
+                  aria-label="Close create campaign modal"
+                >
+                  <svg
+                    className="campaign-action-icon"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            {/* DEBUG: connect wallet bypassed */}
+            {signer ? (
+              <button
+                onClick={disconnect}
+                className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button
+                onClick={open}
+                className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+              >
+                Connect Wallet
+              </button>
+            )}
+          </div>
+
+          {showInfoModal && (
+            <div
+              className={`header-info-modal ${isInfoModalClosing ? "header-info-modal-closing" : ""}`}
+              role="dialog"
+              aria-label="Freight information modal"
+              onMouseEnter={openInfoModal}
+              onMouseLeave={scheduleCloseInfoModal}
             >
-              Connect Wallet
-            </button>
+              <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
+              <p className="text-xs text-gray-400 font-mono break-all mt-2">
+                Contract:{" "}
+                <a
+                  href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
+                </a>
+              </p>
+            </div>
           )}
-         
+
           {/* <a href="/create" className="px-4 py-2 rounded-full font-semibold text-sm btn-wallet w-full sm:w-auto text-center">
             Connect Wallet (debug)
           </a> */}
         </div>
-
-        <p className="text-xs text-gray-400 font-mono break-all">
-          Contract:{" "}
-          <a
-            href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
-          </a>
-        </p>
 
         {signer && (
           <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -58,9 +262,44 @@ export default function Home() {
         <CampaignListHeader client={client} />
       </div>
 
-      <Link
-        href="/create"
+      {showInfoModal && (
+        <button
+          type="button"
+          className={`header-info-backdrop ${isInfoModalClosing ? "header-info-backdrop-closing" : ""}`}
+          aria-label="Close Freight information modal"
+          onClick={closeInfoModal}
+        />
+      )}
+
+      {showCreateModal && (
+        <button
+          type="button"
+          className={`create-campaign-backdrop ${isCreateModalClosing ? "create-campaign-backdrop-closing" : ""}`}
+          aria-label="Close create campaign modal"
+          onClick={closeCreateModal}
+        />
+      )}
+
+      {showCreateModal && (
+        <div
+          className={`create-campaign-modal ${isCreateModalClosing ? "create-campaign-modal-closing" : ""}`}
+          role="dialog"
+          aria-label="Create campaign modal"
+          aria-modal="true"
+        >
+          <CreateCampaignModalContent
+            mode="modal"
+            onRequestClose={closeCreateModal}
+            resetSignal={createResetSignal}
+          />
+        </div>
+      )}
+
+      <button
+        type="button"
+        aria-label="Open create campaign modal"
         className="fixed left-8 create-campaign-fab"
+        onClick={openCreateModal}
       >
         <svg
           width="48"
@@ -74,7 +313,7 @@ export default function Home() {
           <line x1="24" y1="8" x2="24" y2="40" />
           <line x1="8" y1="24" x2="40" y2="24" />
         </svg>
-      </Link>
+      </button>
     </main>
   );
 }
@@ -136,15 +375,13 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   };
 
   const handleSearchClick = () => {
-    setIsSearchOpen(!isSearchOpen);
-    if (isSearchOpen) {
-      setSearchQuery("");
-    }
-  };
-
-  const handleSearchClose = () => {
-    setIsSearchOpen(false);
-    setSearchQuery("");
+    setIsSearchOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSearchQuery("");
+      }
+      return next;
+    });
   };
 
   return (
@@ -174,7 +411,6 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
           </button>
           <div
             className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}
-            onBlur={handleSearchClose}
           >
             <input
               ref={searchInputRef}
