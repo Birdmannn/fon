@@ -677,6 +677,31 @@ body {
   transform: translate(0.25rem, 0.35rem);
 }
 
+.create-modal-title-wrap {
+  position: relative;
+}
+
+.create-modal-counter {
+  color: #6b7280;
+  font-size: 0.78rem;
+  line-height: 1;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  pointer-events: none;
+  z-index: 56;
+}
+
+.create-modal-title-counter {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 1.25rem 0.35rem;
+}
+
+.create-modal-body-counter {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 4.35rem;
+}
+
 .create-modal-send-btn {
   position: absolute;
   right: 1rem;

@@ -18,6 +18,49 @@ const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
 const COMPULSORY_HASHTAG_SET = new Set(Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()));
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
 const CREATE_CONSTRAINTS_MESSAGE_SUCCESS = "All contraints passed";
+const CREATE_MODAL_TITLE_MAX_CHARS = 30;
+const CREATE_MODAL_BODY_MAX_CHARS = 250;
+const CREATE_TOTAL_MAX_CHARS = 256;
+const SUMMARY_MAX_BYTES = 64;
+const summaryEncoder = new TextEncoder();
+
+const getTextBytes = (text: string) => summaryEncoder.encode(text).length;
+const getTextChars = (text: string) => text.length;
+const buildCreateContent = (title: string, description: string) => [title, description].filter(Boolean).join("\n");
+const normalizeSummarySource = (text: string) => text.replace(/\s+/g, " ").trim();
+
+const truncateToUtf8Bytes = (text: string, maxBytes: number) => {
+  let truncated = "";
+
+  for (const char of Array.from(text)) {
+    const candidate = truncated + char;
+    if (getTextBytes(candidate) > maxBytes) {
+      break;
+    }
+    truncated = candidate;
+  }
+
+  return truncated;
+};
+
+const truncateToTextLimit = (text: string, maxChars: number) => {
+  let truncated = "";
+
+  for (const char of Array.from(text)) {
+    const candidate = truncated + char;
+    if (getTextChars(candidate) > maxChars) {
+      break;
+    }
+    truncated = candidate;
+  }
+
+  return truncated;
+};
+
+const buildOnchainSummary = ({ title, description }: { title: string; description: string }) => {
+  const source = normalizeSummarySource(description) || normalizeSummarySource(title);
+  return truncateToUtf8Bytes(source, SUMMARY_MAX_BYTES);
+};
 
 export type CreateConstraintStatus = {
   titlePassed: boolean;
@@ -71,9 +114,17 @@ export default function CreateCampaignModalContent({
 
   const isModal = mode === "modal";
   const descriptionText = isModal ? modalDescription : summary;
-  const effectiveSummary = isModal
-    ? [modalTitle.trim(), modalDescription.trim()].filter(Boolean).join("\n")
-    : summary;
+  const createContent = isModal ? buildCreateContent(modalTitle, modalDescription) : summary;
+  const createContentChars = getTextChars(createContent);
+  const trimmedModalTitle = modalTitle.trim();
+  const trimmedModalDescription = modalDescription.trim();
+  const onchainSummary = isModal
+    ? buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription })
+    : buildOnchainSummary({ title: "", description: summary });
+  const modalTitleChars = getTextChars(modalTitle);
+  const modalDescriptionChars = getTextChars(modalDescription);
+  const modalTitleMaxChars = CREATE_MODAL_TITLE_MAX_CHARS;
+  const modalDescriptionMaxChars = CREATE_MODAL_BODY_MAX_CHARS;
 
   const hashtags = useMemo(() => {
     const matches = descriptionText.match(/#\w+/g) || [];
@@ -153,7 +204,25 @@ export default function CreateCampaignModalContent({
 
   const handleEditorInput = (e: React.FormEvent<HTMLDivElement>) => {
     const text = e.currentTarget.textContent || "";
-    const normalizedText = text.trim().length === 0 ? "" : text;
+    let normalizedText = text.trim().length === 0 ? "" : text;
+
+    if (isModal) {
+      if (e.currentTarget === modalTitleRef.current) {
+        normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_TITLE_MAX_CHARS);
+      } else if (e.currentTarget === modalDescriptionRef.current) {
+        normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
+      }
+    }
+
+    if (e.currentTarget.textContent !== normalizedText) {
+      e.currentTarget.textContent = normalizedText;
+      const range = document.createRange();
+      const selection = window.getSelection();
+      range.selectNodeContents(e.currentTarget);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
 
     if (normalizedText.length === 0) {
       e.currentTarget.textContent = "";
@@ -310,18 +379,25 @@ export default function CreateCampaignModalContent({
 
       const lastHashIndex = text.lastIndexOf("#", caretPos - 1);
       if (lastHashIndex !== -1) {
-        const newText = text.substring(0, lastHashIndex) + `#${label} ` + text.substring(caretPos);
+        const insertedText = text.substring(0, lastHashIndex) + `#${label} ` + text.substring(caretPos);
+        const newText =
+          isModal && targetEditor === modalDescriptionRef.current
+            ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+            : isModal && targetEditor === modalTitleRef.current
+              ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
+              : insertedText;
+
         targetEditor.textContent = newText;
         setEditorTextByNode(targetEditor, newText);
         setShowHashtagMenu(false);
 
         setTimeout(() => {
-          const newPos = lastHashIndex + label.length + 2;
+          const newPos = Math.min(lastHashIndex + label.length + 2, newText.length);
           const newRange = document.createRange();
           const sel = window.getSelection();
           if (targetEditor.firstChild) {
-            newRange.setStart(targetEditor.firstChild, Math.min(newPos, newText.length));
-            newRange.setEnd(targetEditor.firstChild, Math.min(newPos, newText.length));
+            newRange.setStart(targetEditor.firstChild, newPos);
+            newRange.setEnd(targetEditor.firstChild, newPos);
             sel?.removeAllRanges();
             sel?.addRange(newRange);
           }
@@ -345,22 +421,29 @@ export default function CreateCampaignModalContent({
 
       const lastAtIndex = text.lastIndexOf("@", caretPos - 1);
       if (lastAtIndex !== -1) {
-        const newText = text.substring(0, lastAtIndex) + `@${username} ` + text.substring(caretPos);
+        const insertedText = text.substring(0, lastAtIndex) + `@${username} ` + text.substring(caretPos);
+        const newText =
+          isModal && targetEditor === modalDescriptionRef.current
+            ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+            : isModal && targetEditor === modalTitleRef.current
+              ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
+              : insertedText;
+
         targetEditor.textContent = newText;
         setEditorTextByNode(targetEditor, newText);
         setShowMentionMenu(false);
 
-        if (!mentions.includes(username)) {
+        if (!mentions.includes(username) && newText.includes(`@${username}`)) {
           setMentions([...mentions, username]);
         }
 
         setTimeout(() => {
-          const newPos = lastAtIndex + username.length + 2;
+          const newPos = Math.min(lastAtIndex + username.length + 2, newText.length);
           const newRange = document.createRange();
           const sel = window.getSelection();
           if (targetEditor.firstChild) {
-            newRange.setStart(targetEditor.firstChild, Math.min(newPos, newText.length));
-            newRange.setEnd(targetEditor.firstChild, Math.min(newPos, newText.length));
+            newRange.setStart(targetEditor.firstChild, newPos);
+            newRange.setEnd(targetEditor.firstChild, newPos);
             sel?.removeAllRanges();
             sel?.addRange(newRange);
           }
@@ -421,7 +504,7 @@ export default function CreateCampaignModalContent({
         campaignType,
         maximumAmountCkb: maxCkb,
         auxAmountCkb: 0n,
-        summary: effectiveSummary,
+        summary: onchainSummary,
       });
 
       setTxHash(hash);
@@ -432,7 +515,7 @@ export default function CreateCampaignModalContent({
     }
   }
 
-  const summaryBytes = new TextEncoder().encode(effectiveSummary).length;
+  const summaryBytes = createContentChars;
   const title = "Create a Campaign";
   const isSubmitDisabled = status === "pending" || !constraintsPassed;
 
@@ -521,36 +604,41 @@ export default function CreateCampaignModalContent({
           {isModal ? (
             <>
               <div className="relative w-full h-full flex flex-col">
-                <div
-                  ref={modalTitleRef}
-                  contentEditable="true"
-                  suppressContentEditableWarning
-                  onInput={handleEditorInput}
-                  onKeyDown={handleModalTitleKeyDown}
-                  onFocus={(e) => {
-                    activeEditorRef.current = e.currentTarget;
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => {
-                      setShowHashtagMenu(false);
-                      setShowMentionMenu(false);
-                    }, 100);
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const text = e.clipboardData.getData("text/plain");
-                    document.execCommand("insertText", false, text);
-                  }}
-                  data-placeholder="title"
-                  role="textbox"
-                  aria-placeholder="title"
-                  className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
-                  style={{
-                    wordWrap: "break-word",
-                    overflowWrap: "break-word",
-                    outline: "none",
-                  }}
-                />
+                <div className="create-modal-title-wrap">
+                  <div
+                    ref={modalTitleRef}
+                    contentEditable="true"
+                    suppressContentEditableWarning
+                    onInput={handleEditorInput}
+                    onKeyDown={handleModalTitleKeyDown}
+                    onFocus={(e) => {
+                      activeEditorRef.current = e.currentTarget;
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setShowHashtagMenu(false);
+                        setShowMentionMenu(false);
+                      }, 100);
+                    }}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      const text = e.clipboardData.getData("text/plain");
+                      document.execCommand("insertText", false, text);
+                    }}
+                    data-placeholder="title"
+                    role="textbox"
+                    aria-placeholder="title"
+                    className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
+                    style={{
+                      wordWrap: "break-word",
+                      overflowWrap: "break-word",
+                      outline: "none",
+                    }}
+                  />
+                  <div className="create-modal-counter create-modal-title-counter">
+                    {modalTitleChars}/{modalTitleMaxChars}
+                  </div>
+                </div>
 
                 <div
                   ref={modalDescriptionRef}
@@ -583,6 +671,10 @@ export default function CreateCampaignModalContent({
                     caretColor: "currentColor",
                   }}
                 />
+
+                <div className="create-modal-counter create-modal-body-counter">
+                  {modalDescriptionChars}/{modalDescriptionMaxChars}
+                </div>
 
                 {showHashtagMenu && (
                   <div
@@ -856,7 +948,7 @@ export default function CreateCampaignModalContent({
                         </span>
                       ))}
                     </div>
-                    <span className="font-medium">{summaryBytes}/256 chars</span>
+                    <span className="font-medium">{summaryBytes}/{CREATE_TOTAL_MAX_CHARS} chars</span>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
