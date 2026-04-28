@@ -1,53 +1,350 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import Link from "next/link";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
+import CreateCampaignModalContent, { CreateConstraintStatus } from "@/app/create/_components/CreateCampaignModalContent";
 import { FREIGHT_CONTRACT } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
+
+const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
+
+const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
+  key: keyof CreateConstraintStatus;
+  text: string;
+}> = [
+  { key: "titlePassed", text: "1. Title is required." },
+  { key: "bodyPassed", text: "2. Body must be at least 120 characters (Well, ofcourse, we can keep it 15 if it's a Raffle)" },
+  {
+    key: "firstHashtagPassed",
+    text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle.",
+  },
+  { key: "additionalHashtagsPassed", text: "4. Additional hashtags may follow after the first compulsory hashtag." },
+];
 
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const INFO_MODAL_ANIMATION_MS = 620;
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
+  const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
+  const [activeInfoButtonRect, setActiveInfoButtonRect] = useState<DOMRect | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
+  const [createResetSignal, setCreateResetSignal] = useState(0);
+  const [constraintStatus, setConstraintStatus] = useState<CreateConstraintStatus>({
+    titlePassed: false,
+    bodyPassed: false,
+    firstHashtagPassed: false,
+    additionalHashtagsPassed: true,
+  });
+  const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
+
+  const clearInfoCloseTimer = () => {
+    if (infoCloseTimerRef.current) {
+      clearTimeout(infoCloseTimerRef.current);
+      infoCloseTimerRef.current = null;
+    }
+  };
+
+  const clearInfoHideTimer = () => {
+    if (infoHideTimerRef.current) {
+      clearTimeout(infoHideTimerRef.current);
+      infoHideTimerRef.current = null;
+    }
+  };
+
+  const clearCreateHideTimer = () => {
+    if (createHideTimerRef.current) {
+      clearTimeout(createHideTimerRef.current);
+      createHideTimerRef.current = null;
+    }
+  };
+
+  const refreshHeaderInfoButtonRect = useCallback(() => {
+    const button = headerInfoButtonRef.current;
+    if (!button) return;
+
+    setActiveInfoButtonRect(button.getBoundingClientRect());
+  }, []);
+
+  const showInfoModalForInteraction = (interaction: "hover" | "click") => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    refreshHeaderInfoButtonRect();
+    setInfoModalInteraction(interaction);
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  };
+
+  const openInfoModalFromHover = () => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+
+    if (showInfoModal && infoModalInteraction === "click" && !isInfoModalClosing) {
+      return;
+    }
+
+    showInfoModalForInteraction("hover");
+  };
+
+  const keepInfoModalOpen = () => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  };
+
+  const closeInfoModal = useCallback(() => {
+    clearInfoCloseTimer();
+
+    if (!showInfoModal || isInfoModalClosing) return;
+
+    setIsInfoModalClosing(true);
+    clearInfoHideTimer();
+    infoHideTimerRef.current = setTimeout(() => {
+      setShowInfoModal(false);
+      setIsInfoModalClosing(false);
+      setInfoModalInteraction("hover");
+      setActiveInfoButtonRect(null);
+      infoHideTimerRef.current = null;
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [showInfoModal, isInfoModalClosing]);
+
+
+
+  const openCreateModal = () => {
+    clearCreateHideTimer();
+    setIsCreateModalClosing(false);
+    setShowCreateModal(true);
+  };
+
+  const closeCreateModal = useCallback(() => {
+    if (!showCreateModal || isCreateModalClosing) return;
+
+    setIsCreateModalClosing(true);
+    clearCreateHideTimer();
+    createHideTimerRef.current = setTimeout(() => {
+      setShowCreateModal(false);
+      setIsCreateModalClosing(false);
+      createHideTimerRef.current = null;
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [showCreateModal, isCreateModalClosing]);
+
+  const resetCreateModal = useCallback(() => {
+    setCreateResetSignal((current) => current + 1);
+  }, []);
+
+  const scheduleCloseInfoModal = () => {
+    if (infoModalInteraction === "click") {
+      return;
+    }
+
+    clearInfoCloseTimer();
+    infoCloseTimerRef.current = setTimeout(() => {
+      closeInfoModal();
+    }, 120);
+  };
+
+  const toggleInfoModal = () => {
+    if (showInfoModal && !isInfoModalClosing) {
+      closeInfoModal();
+      return;
+    }
+
+    showInfoModalForInteraction("click");
+  };
+
+  useEffect(() => {
+    return () => {
+      clearInfoCloseTimer();
+      clearInfoHideTimer();
+      clearCreateHideTimer();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showInfoModal) return;
+
+    const handleEscapeClose = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeInfoModal();
+      }
+    };
+
+    window.addEventListener("keydown", handleEscapeClose);
+    return () => {
+      window.removeEventListener("keydown", handleEscapeClose);
+    };
+  }, [showInfoModal, closeInfoModal]);
+
+  useEffect(() => {
+    if (!showInfoModal) return;
+
+    refreshHeaderInfoButtonRect();
+
+    const handleViewportChange = () => {
+      refreshHeaderInfoButtonRect();
+    };
+
+    window.addEventListener("resize", handleViewportChange);
+    window.addEventListener("scroll", handleViewportChange, true);
+
+    return () => {
+      window.removeEventListener("resize", handleViewportChange);
+      window.removeEventListener("scroll", handleViewportChange, true);
+    };
+  }, [showInfoModal, refreshHeaderInfoButtonRect]);
+
+  const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className="w-full max-w-2xl flex flex-col gap-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
-          {/* DEBUG: connect wallet bypassed */}
-          {signer ? (
-            <button
-              onClick={disconnect}
-              className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="header-info-wrap">
+            <div
+              onMouseEnter={openInfoModalFromHover}
+              onMouseLeave={scheduleCloseInfoModal}
             >
-              Disconnect
-            </button>
-          ) : (
-            <button
-              onClick={open}
-              className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+              <button
+                type="button"
+                className="header-info-btn"
+                aria-label="Open Freight information"
+                onClick={toggleInfoModal}
+                onFocus={openInfoModalFromHover}
+                onBlur={scheduleCloseInfoModal}
+              >
+                <span className="header-info-inner-ring" aria-hidden="true" />
+                <span className="header-info-glyph" aria-hidden="true">i</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="header-right-actions">
+            {showCreateModal && (
+              <div
+                className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
+                role="group"
+                aria-label="Create modal controls"
+              >
+                <button
+                  type="button"
+                  className="create-modal-action-btn"
+                  data-tooltip="Reset form"
+                  onClick={resetCreateModal}
+                  aria-label="Reset create campaign form"
+                >
+                  <svg
+                    className="campaign-action-icon"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M3 2v6h6" />
+                    <path d="M3.51 15a9 9 0 1 0 .49-9" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="create-modal-action-btn"
+                  data-tooltip="Close"
+                  onClick={closeCreateModal}
+                  aria-label="Close create campaign modal"
+                >
+                  <svg
+                    className="campaign-action-icon"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
+              {signer ? (
+                <button
+                  onClick={disconnect}
+                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <button
+                  onClick={open}
+                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+                >
+                  Connect Wallet
+                </button>
+              )}
+            </div>
+          </div>
+
+          {showInfoModal && (
+            <div
+              className={`header-info-modal ${isInfoModalClosing ? "header-info-modal-closing" : ""}`}
+              role="dialog"
+              aria-label="Freight information modal"
+              onMouseEnter={keepInfoModalOpen}
+              onMouseLeave={scheduleCloseInfoModal}
             >
-              Connect Wallet
-            </button>
+              <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
+              <p className="text-xs text-gray-400 font-mono break-all mt-2">
+                Contract:{" "}
+                <a
+                  href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
+                </a>
+              </p>
+              {showCreateModal && (
+                <div className="create-info-constraints-copy">
+                  <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
+                  {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
+                    const passed = constraintStatus[item.key];
+
+                    return (
+                      <p
+                        key={item.key}
+                        className={`create-info-constraint-item ${passed ? "create-info-constraint-item-pass" : ""}`}
+                      >
+                        {passed && (
+                          <span className="create-info-constraint-check" aria-hidden="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="12" cy="12" r="9" />
+                              <path d="m8.5 12 2.2 2.2 4.8-4.8" />
+                            </svg>
+                          </span>
+                        )}
+                        <span>{item.text}</span>
+                      </p>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
-         
+
           {/* <a href="/create" className="px-4 py-2 rounded-full font-semibold text-sm btn-wallet w-full sm:w-auto text-center">
             Connect Wallet (debug)
           </a> */}
         </div>
-
-        <p className="text-xs text-gray-400 font-mono break-all">
-          Contract:{" "}
-          <a
-            href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
-          </a>
-        </p>
 
         {signer && (
           <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
@@ -58,25 +355,88 @@ export default function Home() {
         <CampaignListHeader client={client} />
       </div>
 
-      {signer && (
-        <Link
-          href="/create"
-          className="fixed left-8 create-campaign-fab"
-        >
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-          >
-            <line x1="24" y1="8" x2="24" y2="40" />
-            <line x1="8" y1="24" x2="40" y2="24" />
-          </svg>
-        </Link>
+      {showInfoModal && (
+        <button
+          type="button"
+          className={`header-info-backdrop ${isInfoModalClosing ? "header-info-backdrop-closing" : ""}`}
+          aria-label="Close Freight information modal"
+          onClick={closeInfoModal}
+          style={{ pointerEvents: infoModalInteraction === "click" ? "auto" : "none" }}
+        />
       )}
+
+      {showInfoModal && activeInfoButtonRect && (
+        <button
+          type="button"
+          className="header-info-btn header-info-btn-floating"
+          aria-label="Open Freight information"
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleInfoModal();
+          }}
+          onMouseEnter={keepInfoModalOpen}
+          onMouseLeave={scheduleCloseInfoModal}
+          onFocus={keepInfoModalOpen}
+          onBlur={scheduleCloseInfoModal}
+          style={{
+            left: `${activeInfoButtonRect.left}px`,
+            top: `${activeInfoButtonRect.top}px`,
+            width: `${activeInfoButtonRect.width}px`,
+            height: `${activeInfoButtonRect.height}px`,
+          }}
+        >
+          <span className="header-info-inner-ring" aria-hidden="true" />
+          <span className="header-info-glyph" aria-hidden="true">i</span>
+        </button>
+      )}
+
+      {showCreateModal && (
+        <button
+          type="button"
+          className={`create-campaign-backdrop ${isCreateModalClosing ? "create-campaign-backdrop-closing" : ""}`}
+          aria-label="Close create campaign modal"
+          onClick={closeCreateModal}
+        />
+      )}
+
+      {showCreateModal && (
+        <div
+          className={`create-campaign-modal ${isCreateModalClosing ? "create-campaign-modal-closing" : ""}`}
+          role="dialog"
+          aria-label="Create campaign modal"
+          aria-modal="true"
+        >
+          <CreateCampaignModalContent
+            mode="modal"
+            onRequestClose={closeCreateModal}
+            resetSignal={createResetSignal}
+            onInfoEnter={openInfoModalFromHover}
+            onInfoLeave={scheduleCloseInfoModal}
+            onInfoToggle={toggleInfoModal}
+            onConstraintStatusChange={setConstraintStatus}
+          />
+        </div>
+      )}
+
+      <button
+        type="button"
+        aria-label="Open create campaign modal"
+        className="fixed left-8 create-campaign-fab"
+        onClick={openCreateModal}
+      >
+        <svg
+          width="48"
+          height="48"
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+        >
+          <line x1="24" y1="8" x2="24" y2="40" />
+          <line x1="8" y1="24" x2="40" y2="24" />
+        </svg>
+      </button>
     </main>
   );
 }
@@ -109,7 +469,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const loadCampaigns = () => {
+  const loadCampaigns = useCallback(() => {
     setLoading(true);
     setIsRefreshing(true);
     fetchCampaigns(client)
@@ -119,11 +479,17 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
         setLoading(false);
         setIsRefreshing(false);
       });
-  };
+  }, [client]);
 
   useEffect(() => {
-    loadCampaigns();
-  }, [client]);
+    const loadTimer = setTimeout(() => {
+      loadCampaigns();
+    }, 0);
+
+    return () => {
+      clearTimeout(loadTimer);
+    };
+  }, [loadCampaigns]);
 
   useEffect(() => {
     if (isSearchOpen && searchInputRef.current) {
@@ -138,15 +504,13 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   };
 
   const handleSearchClick = () => {
-    setIsSearchOpen(!isSearchOpen);
-    if (isSearchOpen) {
-      setSearchQuery("");
-    }
-  };
-
-  const handleSearchClose = () => {
-    setIsSearchOpen(false);
-    setSearchQuery("");
+    setIsSearchOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSearchQuery("");
+      }
+      return next;
+    });
   };
 
   return (
@@ -176,7 +540,6 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
           </button>
           <div
             className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}
-            onBlur={handleSearchClose}
           >
             <input
               ref={searchInputRef}
