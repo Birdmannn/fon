@@ -3,10 +3,14 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import CreateCampaignModalContent, { CreateConstraintStatus } from "@/app/create/_components/CreateCampaignModalContent";
-import { FREIGHT_CONTRACT } from "@/lib/contract";
+import { FREIGHT_CONTRACT, CampaignType } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
+const CREATE_DEFAULT_START_DELAY_HOURS = "0";
+const CREATE_DEFAULT_TASK_DURATION_HOURS = "24";
+const CREATE_DEFAULT_MAX_AMOUNT_CKB = "1000";
+const CREATE_DEFAULT_AUX_AMOUNT_CKB = "10";
 
 const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
   key: keyof CreateConstraintStatus;
@@ -31,6 +35,12 @@ export default function Home() {
   const [activeInfoButtonRect, setActiveInfoButtonRect] = useState<DOMRect | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
+  const [isCreateArgsMenuOpen, setIsCreateArgsMenuOpen] = useState(false);
+  const [createStartDelayHours, setCreateStartDelayHours] = useState(CREATE_DEFAULT_START_DELAY_HOURS);
+  const [createTaskDurationHours, setCreateTaskDurationHours] = useState(CREATE_DEFAULT_TASK_DURATION_HOURS);
+  const [createMaxAmountCkb, setCreateMaxAmountCkb] = useState(CREATE_DEFAULT_MAX_AMOUNT_CKB);
+  const [createAuxAmountCkb, setCreateAuxAmountCkb] = useState(CREATE_DEFAULT_AUX_AMOUNT_CKB);
+  const [createDerivedCampaignType, setCreateDerivedCampaignType] = useState<CampaignType | null>(null);
   const [createResetSignal, setCreateResetSignal] = useState(0);
   const [constraintStatus, setConstraintStatus] = useState<CreateConstraintStatus>({
     titlePassed: false,
@@ -63,6 +73,15 @@ export default function Home() {
       createHideTimerRef.current = null;
     }
   };
+
+  const resetCreateArgsState = useCallback(() => {
+    setIsCreateArgsMenuOpen(false);
+    setCreateStartDelayHours(CREATE_DEFAULT_START_DELAY_HOURS);
+    setCreateTaskDurationHours(CREATE_DEFAULT_TASK_DURATION_HOURS);
+    setCreateMaxAmountCkb(CREATE_DEFAULT_MAX_AMOUNT_CKB);
+    setCreateAuxAmountCkb(CREATE_DEFAULT_AUX_AMOUNT_CKB);
+    setCreateDerivedCampaignType(null);
+  }, []);
 
   const refreshHeaderInfoButtonRect = useCallback(() => {
     const button = headerInfoButtonRef.current;
@@ -118,6 +137,7 @@ export default function Home() {
 
   const openCreateModal = () => {
     clearCreateHideTimer();
+    resetCreateArgsState();
     setIsCreateModalClosing(false);
     setShowCreateModal(true);
   };
@@ -125,6 +145,7 @@ export default function Home() {
   const closeCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
 
+    setIsCreateArgsMenuOpen(false);
     setIsCreateModalClosing(true);
     clearCreateHideTimer();
     createHideTimerRef.current = setTimeout(() => {
@@ -135,8 +156,9 @@ export default function Home() {
   }, [showCreateModal, isCreateModalClosing]);
 
   const resetCreateModal = useCallback(() => {
+    resetCreateArgsState();
     setCreateResetSignal((current) => current + 1);
-  }, []);
+  }, [resetCreateArgsState]);
 
   const scheduleCloseInfoModal = () => {
     if (infoModalInteraction === "click") {
@@ -200,6 +222,8 @@ export default function Home() {
   }, [showInfoModal, refreshHeaderInfoButtonRect]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const shouldShowCreateArgsBar = showCreateModal && !isCreateModalClosing;
+  const isRaffleCreateCampaign = createDerivedCampaignType === CampaignType.Raffle;
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
@@ -224,57 +248,128 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="header-right-actions">
+          <div className={`header-right-actions ${shouldShowCreateArgsBar ? "header-right-actions-modal-open" : ""}`.trim()}>
             {showCreateModal && (
               <div
-                className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
+                className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""} ${isCreateArgsMenuOpen ? "create-modal-top-actions-open" : ""}`.trim()}
                 role="group"
                 aria-label="Create modal controls"
               >
+                <div className={`create-modal-reset-slot ${isCreateArgsMenuOpen ? "create-modal-reset-slot-hidden" : ""}`.trim()}>
+                  <button
+                    type="button"
+                    className="create-modal-action-btn"
+                    data-tooltip="Reset form"
+                    onClick={resetCreateModal}
+                    aria-label="Reset create campaign form"
+                  >
+                    <svg
+                      className="campaign-action-icon"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M3 2v6h6" />
+                      <path d="M3.51 15a9 9 0 1 0 .49-9" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div id="create-modal-args-bar" className={`create-modal-args-bar ${isCreateArgsMenuOpen ? "create-modal-args-bar-open" : ""}`.trim()}>
+                  <div className={`create-modal-args-content ${isCreateArgsMenuOpen ? "create-modal-args-content-open" : ""}`.trim()}>
+                    <label className="create-modal-args-field">
+                      <span className="create-modal-args-label">Start</span>
+                      <span className="create-modal-args-input-wrap">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.5"
+                          value={createStartDelayHours}
+                          onChange={(event) => setCreateStartDelayHours(event.target.value)}
+                          className="create-modal-args-input"
+                        />
+                        <span className="create-modal-args-suffix">hrs</span>
+                      </span>
+                    </label>
+
+                    <label className="create-modal-args-field">
+                      <span className="create-modal-args-label">Duration</span>
+                      <span className="create-modal-args-input-wrap">
+                        <input
+                          type="number"
+                          min="0.5"
+                          step="0.5"
+                          value={createTaskDurationHours}
+                          onChange={(event) => setCreateTaskDurationHours(event.target.value)}
+                          className="create-modal-args-input"
+                        />
+                        <span className="create-modal-args-suffix">hrs</span>
+                      </span>
+                    </label>
+
+                    <label className="create-modal-args-field">
+                      <span className="create-modal-args-label">Max</span>
+                      <span className="create-modal-args-input-wrap">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={createMaxAmountCkb}
+                          onChange={(event) => setCreateMaxAmountCkb(event.target.value)}
+                          className="create-modal-args-input"
+                        />
+                        <span className="create-modal-args-suffix">CKB</span>
+                      </span>
+                    </label>
+
+                    {isRaffleCreateCampaign && (
+                      <label className="create-modal-args-field">
+                        <span className="create-modal-args-label">Aux</span>
+                        <span className="create-modal-args-input-wrap">
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={createAuxAmountCkb}
+                            onChange={(event) => setCreateAuxAmountCkb(event.target.value)}
+                            className="create-modal-args-input"
+                          />
+                          <span className="create-modal-args-suffix">CKB</span>
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
                 <button
                   type="button"
-                  className="create-modal-action-btn"
-                  data-tooltip="Reset form"
-                  onClick={resetCreateModal}
-                  aria-label="Reset create campaign form"
+                  className={`create-modal-action-btn create-modal-menu-trigger ${isCreateArgsMenuOpen ? "create-modal-menu-trigger-open" : ""}`.trim()}
+                  data-tooltip={isCreateArgsMenuOpen ? "Hide settings" : "Show settings"}
+                  onClick={() => setIsCreateArgsMenuOpen((current) => !current)}
+                  aria-label="Toggle create campaign settings"
+                  aria-expanded={isCreateArgsMenuOpen}
+                  aria-controls="create-modal-args-bar"
                 >
                   <svg
                     className="campaign-action-icon"
                     width="18"
                     height="18"
                     viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
+                    fill="currentColor"
                   >
-                    <path d="M3 2v6h6" />
-                    <path d="M3.51 15a9 9 0 1 0 .49-9" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="create-modal-action-btn"
-                  data-tooltip="Close"
-                  onClick={closeCreateModal}
-                  aria-label="Close create campaign modal"
-                >
-                  <svg
-                    className="campaign-action-icon"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
+                    <circle cx="12" cy="5" r="1.8" />
+                    <circle cx="12" cy="12" r="1.8" />
+                    <circle cx="12" cy="19" r="1.8" />
                   </svg>
                 </button>
               </div>
             )}
 
             <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
+
               {signer ? (
                 <button
                   onClick={disconnect}
@@ -410,10 +505,14 @@ export default function Home() {
             mode="modal"
             onRequestClose={closeCreateModal}
             resetSignal={createResetSignal}
-            onInfoEnter={openInfoModalFromHover}
-            onInfoLeave={scheduleCloseInfoModal}
-            onInfoToggle={toggleInfoModal}
             onConstraintStatusChange={setConstraintStatus}
+            startDelayHours={createStartDelayHours}
+            taskDurationHours={createTaskDurationHours}
+            onTaskDurationHoursChange={setCreateTaskDurationHours}
+            maxAmountCkb={createMaxAmountCkb}
+            onMaxAmountCkbChange={setCreateMaxAmountCkb}
+            auxAmountCkb={createAuxAmountCkb}
+            onDerivedCampaignTypeChange={setCreateDerivedCampaignType}
           />
         </div>
       )}

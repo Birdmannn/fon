@@ -17,7 +17,6 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
 const COMPULSORY_HASHTAG_SET = new Set(Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()));
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
-const CREATE_CONSTRAINTS_MESSAGE_SUCCESS = "All contraints passed";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
 const CREATE_MODAL_BODY_MAX_CHARS = 250;
 const CREATE_TOTAL_MAX_CHARS = 256;
@@ -73,20 +72,28 @@ type CreateCampaignModalContentProps = {
   mode: "modal" | "page";
   onRequestClose?: () => void;
   resetSignal?: number;
-  onInfoEnter?: (target?: DOMRect) => void;
-  onInfoLeave?: () => void;
-  onInfoToggle?: (target?: DOMRect) => void;
   onConstraintStatusChange?: (status: CreateConstraintStatus) => void;
+  startDelayHours?: string;
+  taskDurationHours?: string;
+  onTaskDurationHoursChange?: (value: string) => void;
+  maxAmountCkb?: string;
+  onMaxAmountCkbChange?: (value: string) => void;
+  auxAmountCkb?: string;
+  onDerivedCampaignTypeChange?: (type: CampaignType | null) => void;
 };
 
 export default function CreateCampaignModalContent({
   mode,
   onRequestClose,
   resetSignal = 0,
-  onInfoEnter,
-  onInfoLeave,
-  onInfoToggle,
   onConstraintStatusChange,
+  startDelayHours,
+  taskDurationHours,
+  onTaskDurationHoursChange,
+  maxAmountCkb,
+  onMaxAmountCkbChange,
+  auxAmountCkb,
+  onDerivedCampaignTypeChange,
 }: CreateCampaignModalContentProps) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -101,8 +108,10 @@ export default function CreateCampaignModalContent({
   const [modalTitle, setModalTitle] = useState("");
   const [modalDescription, setModalDescription] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
-  const [taskDurationHours, setTaskDurationHours] = useState("24");
-  const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
+  const [localStartDelayHours, setLocalStartDelayHours] = useState("0");
+  const [localTaskDurationHours, setLocalTaskDurationHours] = useState("24");
+  const [localMaxAmountCkb, setLocalMaxAmountCkb] = useState("1000");
+  const [localAuxAmountCkb, setLocalAuxAmountCkb] = useState("10");
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -113,8 +122,21 @@ export default function CreateCampaignModalContent({
   const [mentionQuery, setMentionQuery] = useState("");
 
   const isModal = mode === "modal";
+  const effectiveStartDelayHours = isModal ? (startDelayHours ?? "0") : localStartDelayHours;
+  const effectiveTaskDurationHours = isModal ? (taskDurationHours ?? "24") : localTaskDurationHours;
+  const effectiveMaxAmountCkb = isModal ? (maxAmountCkb ?? "1000") : localMaxAmountCkb;
+  const effectiveAuxAmountCkb = isModal ? (auxAmountCkb ?? "10") : localAuxAmountCkb;
+
+  const setEffectiveTaskDurationHours = isModal
+    ? (onTaskDurationHoursChange ?? (() => {}))
+    : setLocalTaskDurationHours;
+  const setEffectiveMaxAmountCkb = isModal
+    ? (onMaxAmountCkbChange ?? (() => {}))
+    : setLocalMaxAmountCkb;
+
   const descriptionText = isModal ? modalDescription : summary;
   const createContent = isModal ? buildCreateContent(modalTitle, modalDescription) : summary;
+
   const createContentChars = getTextChars(createContent);
   const trimmedModalTitle = modalTitle.trim();
   const trimmedModalDescription = modalDescription.trim();
@@ -159,6 +181,10 @@ export default function CreateCampaignModalContent({
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
   );
 
+  useEffect(() => {
+    onDerivedCampaignTypeChange?.(isFirstHashtagCompulsory ? campaignType : null);
+  }, [campaignType, isFirstHashtagCompulsory, onDerivedCampaignTypeChange]);
+
   const setEditorTextByNode = useCallback((node: HTMLDivElement | null, text: string) => {
     if (!node) return;
     if (node === modalTitleRef.current) {
@@ -185,8 +211,10 @@ export default function CreateCampaignModalContent({
     setErrorMsg("");
     setMentions([]);
     setCampaignType(CampaignType.SimpleTask);
-    setTaskDurationHours("24");
-    setMaxAmountCkb("1000");
+    setLocalStartDelayHours("0");
+    setLocalTaskDurationHours("24");
+    setLocalMaxAmountCkb("1000");
+    setLocalAuxAmountCkb("10");
     setShowHashtagMenu(false);
     setShowMentionMenu(false);
     setMentionQuery("");
@@ -494,16 +522,17 @@ export default function CreateCampaignModalContent({
     setErrorMsg("");
 
     try {
-      const startSecs = 0n;
-      const taskSecs = BigInt(Math.round(parseFloat(taskDurationHours) * 3600));
-      const maxCkb = BigInt(Math.round(parseFloat(maxAmountCkb)));
+      const startSecs = BigInt(Math.round(parseFloat(effectiveStartDelayHours) * 3600));
+      const taskSecs = BigInt(Math.round(parseFloat(effectiveTaskDurationHours) * 3600));
+      const maxCkb = BigInt(Math.round(parseFloat(effectiveMaxAmountCkb)));
+      const auxCkb = campaignType === CampaignType.Raffle ? BigInt(Math.round(parseFloat(effectiveAuxAmountCkb))) : 0n;
 
       const hash = await sendCreateCampaign(signer, {
         startDurationSecs: startSecs,
         taskDurationSecs: taskSecs,
         campaignType,
         maximumAmountCkb: maxCkb,
-        auxAmountCkb: 0n,
+        auxAmountCkb: auxCkb,
         summary: onchainSummary,
       });
 
@@ -625,9 +654,9 @@ export default function CreateCampaignModalContent({
                       const text = e.clipboardData.getData("text/plain");
                       document.execCommand("insertText", false, text);
                     }}
-                    data-placeholder="title"
+                    data-placeholder="caption"
                     role="textbox"
-                    aria-placeholder="title"
+                    aria-placeholder="caption"
                     className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
                     style={{
                       wordWrap: "break-word",
@@ -660,9 +689,9 @@ export default function CreateCampaignModalContent({
                     const text = e.clipboardData.getData("text/plain");
                     document.execCommand("insertText", false, text);
                   }}
-                  data-placeholder="description"
+                  data-placeholder="please add context, even if it's a little"
                   role="textbox"
-                  aria-placeholder="description"
+                  aria-placeholder="please add context, even if it's a little"
                   className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
                   style={{
                     wordWrap: "break-word",
@@ -763,7 +792,7 @@ export default function CreateCampaignModalContent({
 
               <div className="create-modal-constraints-row">
                 <p className={`create-modal-constraints-text ${constraintsPassed ? "create-modal-constraints-pass" : ""}`}>
-                  {constraintsPassed ? CREATE_CONSTRAINTS_MESSAGE_SUCCESS : CREATE_CONSTRAINTS_MESSAGE_PENDING}
+                  {!constraintsPassed && CREATE_CONSTRAINTS_MESSAGE_PENDING}
                 </p>
               </div>
 
@@ -959,8 +988,8 @@ export default function CreateCampaignModalContent({
                           type="number"
                           min="0.5"
                           step="0.5"
-                          value={taskDurationHours}
-                          onChange={(e) => setTaskDurationHours(e.target.value)}
+                          value={effectiveTaskDurationHours}
+                          onChange={(e) => setEffectiveTaskDurationHours(e.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
@@ -974,8 +1003,8 @@ export default function CreateCampaignModalContent({
                           type="number"
                           min="1"
                           step="1"
-                          value={maxAmountCkb}
-                          onChange={(e) => setMaxAmountCkb(e.target.value)}
+                          value={effectiveMaxAmountCkb}
+                          onChange={(e) => setEffectiveMaxAmountCkb(e.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
