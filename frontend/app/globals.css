@@ -137,7 +137,8 @@ body {
   background-color: var(--background);
   border: 2px solid transparent;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0);
-  transition: width 320ms ease, opacity 240ms ease, border-color 240ms ease, box-shadow 240ms ease;
+  margin-right: 0;
+  transition: width 320ms ease, opacity 240ms ease, border-color 240ms ease, box-shadow 240ms ease, margin-right 320ms ease;
 }
 
 .create-modal-args-bar-open {
@@ -223,6 +224,14 @@ body {
   background-color: var(--foreground);
   color: var(--background);
   border-color: var(--foreground);
+}
+
+.create-modal-menu-trigger {
+  width: 2.6rem;
+  min-width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
 }
 
 .create-modal-action-btn {
