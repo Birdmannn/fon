@@ -62,6 +62,39 @@ const buildOnchainSummary = ({ title, description }: { title: string; descriptio
   return truncateToUtf8Bytes(source, SUMMARY_MAX_BYTES);
 };
 
+const getNextListLine = (currentLine: string) => {
+  const numberedMatch = currentLine.match(/^(\s*)(\d+)\.\s+(.*)$/);
+  if (numberedMatch) {
+    const [, indent, number, content] = numberedMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${Number(number) + 1}. ` };
+  }
+
+  const checkboxMatch = currentLine.match(/^(\s*)([-*•]\s+)?\[( |x|X)\]\s+(.*)$/);
+  if (checkboxMatch) {
+    const [, indent, bulletPrefix = "", , content] = checkboxMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${bulletPrefix}[ ] ` };
+  }
+
+  const bulletMatch = currentLine.match(/^(\s*)([-*•])\s+(.*)$/);
+  if (bulletMatch) {
+    const [, indent, bullet, content] = bulletMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${bullet} ` };
+  }
+
+  const quoteMatch = currentLine.match(/^(\s*)(>)\s?(.*)$/);
+  if (quoteMatch) {
+    const [, indent, marker, content] = quoteMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${marker} ` };
+  }
+
+  return null;
+};
+
+
 export type CreateConstraintStatus = {
   titlePassed: boolean;
   bodyPassed: boolean;
@@ -176,6 +209,95 @@ export default function CreateCampaignModalContent({
     return activeEditorRef.current ?? (isModal ? modalDescriptionRef.current : pageEditorRef.current);
   }, [isModal]);
 
+  const getCaretPosition = useCallback((target: HTMLDivElement, selection = window.getSelection()) => {
+    if (!selection || selection.rangeCount === 0) return 0;
+    const range = selection.getRangeAt(0);
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(target);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+    return preCaretRange.toString().length;
+  }, []);
+
+  const setCaretPosition = useCallback((target: HTMLDivElement, position: number) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const fullText = target.textContent || "";
+    if (position >= fullText.length) {
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+
+    const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+    let remaining = position;
+    let currentNode = walker.nextNode();
+
+    while (currentNode) {
+      const textLength = currentNode.textContent?.length ?? 0;
+      if (remaining <= textLength) {
+        const range = document.createRange();
+        range.setStart(currentNode, remaining);
+        range.setEnd(currentNode, remaining);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      remaining -= textLength;
+      currentNode = walker.nextNode();
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, []);
+
+  const renderEditorText = useCallback((target: HTMLDivElement | null, text: string) => {
+    if (!target) return;
+
+    if (target === modalDescriptionRef.current || target === pageEditorRef.current) {
+      if (text.length === 0) {
+        target.replaceChildren();
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      const lines = text.split("\n");
+
+      lines.forEach((line, index) => {
+        if (index > 0) {
+          fragment.appendChild(document.createTextNode("\n"));
+        }
+
+        if (/^\s*##\s+/.test(line)) {
+          const headingLine = document.createElement("span");
+          headingLine.textContent = line;
+          headingLine.style.fontSize = "1.45rem";
+          headingLine.style.lineHeight = "1.25";
+          headingLine.style.fontWeight = "700";
+          fragment.appendChild(headingLine);
+          return;
+        }
+
+        fragment.appendChild(document.createTextNode(line));
+      });
+
+      if (text.endsWith("\n")) {
+        fragment.appendChild(document.createElement("br"));
+      }
+
+      target.replaceChildren(fragment);
+      return;
+    }
+
+    target.textContent = text;
+  }, []);
+
   const resetComposer = useCallback(() => {
     setStatus("idle");
     setTxHash("");
@@ -214,37 +336,33 @@ export default function CreateCampaignModalContent({
       }
     }
 
-    if (e.currentTarget.textContent !== normalizedText) {
-      e.currentTarget.textContent = normalizedText;
-      const range = document.createRange();
-      const selection = window.getSelection();
-      range.selectNodeContents(e.currentTarget);
-      range.collapse(false);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    }
+    const selection = window.getSelection();
+    const caretPos = getCaretPosition(e.currentTarget, selection);
 
     if (normalizedText.length === 0) {
-      e.currentTarget.textContent = "";
+      renderEditorText(e.currentTarget, "");
+    } else if (text !== normalizedText || e.currentTarget === modalDescriptionRef.current || e.currentTarget === pageEditorRef.current) {
+      renderEditorText(e.currentTarget, normalizedText);
+      setCaretPosition(e.currentTarget, Math.min(caretPos, normalizedText.length));
     }
 
     activeEditorRef.current = e.currentTarget;
     setEditorTextByNode(e.currentTarget, normalizedText);
 
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
+    const activeSelection = window.getSelection();
+    if (activeSelection && activeSelection.rangeCount > 0) {
+      const range = activeSelection.getRangeAt(0);
       const preCaretRange = range.cloneRange();
       preCaretRange.selectNodeContents(e.currentTarget);
       preCaretRange.setEnd(range.endContainer, range.endOffset);
-      const caretPos = preCaretRange.toString().length;
-      const beforeCursor = normalizedText.substring(0, caretPos);
+      const updatedCaretPos = preCaretRange.toString().length;
+      const beforeCursor = normalizedText.substring(0, updatedCaretPos);
 
       const lastHashIndex = beforeCursor.lastIndexOf("#");
       const hashtagMatch =
         lastHashIndex !== -1 ? beforeCursor.substring(lastHashIndex + 1).match(/^[\w]*$/) : null;
 
-      if (hashtagMatch && normalizedText[caretPos - 1] !== " " && normalizedText[caretPos - 1] !== "\n") {
+      if (hashtagMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const rect = e.currentTarget.getBoundingClientRect();
         setHashtagPosition({
           top: rect.top + rect.height,
@@ -259,7 +377,7 @@ export default function CreateCampaignModalContent({
       const mentionMatch =
         lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w]*$/) : null;
 
-      if (mentionMatch && normalizedText[caretPos - 1] !== " " && normalizedText[caretPos - 1] !== "\n") {
+      if (mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
         const rect = e.currentTarget.getBoundingClientRect();
@@ -297,6 +415,49 @@ export default function CreateCampaignModalContent({
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     activeEditorRef.current = e.currentTarget;
 
+    if (e.key === "Enter") {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        e.preventDefault();
+        const range = selection.getRangeAt(0);
+        const text = e.currentTarget.textContent || "";
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(e.currentTarget);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        const caretPos = preCaretRange.toString().length;
+        const lineStartBreakIndex = text.lastIndexOf("\n", Math.max(caretPos - 1, 0));
+        const lineStartIndex = lineStartBreakIndex === -1 ? 0 : lineStartBreakIndex + 1;
+        const lineEndBreakIndex = text.indexOf("\n", caretPos);
+        const lineEndIndex = lineEndBreakIndex === -1 ? text.length : lineEndBreakIndex;
+        const currentLine = text.slice(lineStartIndex, lineEndIndex);
+        const nextListLine = getNextListLine(currentLine);
+
+        let newText =
+          nextListLine?.mode === "exit"
+            ? text.slice(0, lineStartIndex) + text.slice(lineEndIndex)
+            : text.slice(0, caretPos) + (nextListLine?.insertText ?? "\n") + text.slice(caretPos);
+
+        if (isModal && e.currentTarget === modalDescriptionRef.current) {
+          newText = truncateToTextLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
+        }
+
+        renderEditorText(e.currentTarget, newText);
+        setEditorTextByNode(e.currentTarget, newText);
+        setShowHashtagMenu(false);
+        setShowMentionMenu(false);
+
+        const newCaretPos = Math.min(
+          nextListLine?.mode === "exit"
+            ? lineStartIndex
+            : caretPos + (nextListLine?.insertText?.length ?? 1),
+          newText.length
+        );
+
+        setCaretPosition(e.currentTarget, newCaretPos);
+        return;
+      }
+    }
+
     if (
       e.key === "Backspace" &&
       e.currentTarget === modalDescriptionRef.current &&
@@ -308,21 +469,11 @@ export default function CreateCampaignModalContent({
         const titleText = titleEl.textContent || "";
         const newTitleText = titleText.slice(0, -1);
         titleEl.textContent = newTitleText;
+        renderEditorText(titleEl, newTitleText);
         setModalTitle(newTitleText);
         titleEl.focus();
         activeEditorRef.current = titleEl;
-        const range = document.createRange();
-        const selection = window.getSelection();
-        if (titleEl.firstChild) {
-          const endPos = titleEl.firstChild.textContent?.length ?? 0;
-          range.setStart(titleEl.firstChild, endPos);
-          range.collapse(true);
-        } else {
-          range.selectNodeContents(titleEl);
-          range.collapse(false);
-        }
-        selection?.removeAllRanges();
-        selection?.addRange(range);
+        setCaretPosition(titleEl, newTitleText.length);
       }
       setShowHashtagMenu(false);
       setShowMentionMenu(false);
