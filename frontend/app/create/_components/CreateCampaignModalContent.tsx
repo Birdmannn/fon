@@ -17,7 +17,6 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
 const COMPULSORY_HASHTAG_SET = new Set(Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()));
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
-const CREATE_CONSTRAINTS_MESSAGE_SUCCESS = "All contraints passed";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
 const CREATE_MODAL_BODY_MAX_CHARS = 250;
 const CREATE_TOTAL_MAX_CHARS = 256;
@@ -94,6 +93,19 @@ const getNextListLine = (currentLine: string) => {
   return null;
 };
 
+const buildPreviewExcerpt = (text: string, maxChars: number) => {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxChars).trimEnd()}…`;
+};
+
+export type CreateModalStep = "compose" | "review";
+
+type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
+type DraftRecordStatus = "draft" | "published" | "publish_failed";
 
 export type CreateConstraintStatus = {
   titlePassed: boolean;
@@ -106,6 +118,8 @@ type CreateCampaignModalContentProps = {
   mode: "modal" | "page";
   onRequestClose?: () => void;
   resetSignal?: number;
+  stepBackSignal?: number;
+  onStepChange?: (step: CreateModalStep) => void;
   onInfoEnter?: (target?: DOMRect) => void;
   onInfoLeave?: () => void;
   onInfoToggle?: (target?: DOMRect) => void;
@@ -116,6 +130,8 @@ export default function CreateCampaignModalContent({
   mode,
   onRequestClose,
   resetSignal = 0,
+  stepBackSignal = 0,
+  onStepChange,
   onInfoEnter,
   onInfoLeave,
   onInfoToggle,
@@ -136,6 +152,7 @@ export default function CreateCampaignModalContent({
   const [mentions, setMentions] = useState<string[]>([]);
   const [taskDurationHours, setTaskDurationHours] = useState("24");
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
+  const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [txHash, setTxHash] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -144,24 +161,32 @@ export default function CreateCampaignModalContent({
   const [hashtagPosition, setHashtagPosition] = useState({ top: 0, left: 0 });
   const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
   const [mentionQuery, setMentionQuery] = useState("");
+  const [modalStep, setModalStep] = useState<CreateModalStep>("compose");
+  const [reviewSummary, setReviewSummary] = useState("");
+  const [draftRecordId, setDraftRecordId] = useState<string | null>(null);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
+  const [draftSaveError, setDraftSaveError] = useState("");
 
   const isModal = mode === "modal";
+  const isReviewStep = isModal && modalStep === "review";
   const descriptionText = isModal ? modalDescription : summary;
   const createContent = isModal ? buildCreateContent(modalTitle, modalDescription) : summary;
   const createContentChars = getTextChars(createContent);
   const trimmedModalTitle = modalTitle.trim();
   const trimmedModalDescription = modalDescription.trim();
-  const onchainSummary = isModal
+  const generatedOnchainSummary = isModal
     ? buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription })
     : buildOnchainSummary({ title: "", description: summary });
+  const activeReviewSummary = isModal ? reviewSummary : generatedOnchainSummary;
   const modalTitleChars = getTextChars(modalTitle);
   const modalDescriptionChars = getTextChars(modalDescription);
   const modalTitleMaxChars = CREATE_MODAL_TITLE_MAX_CHARS;
   const modalDescriptionMaxChars = CREATE_MODAL_BODY_MAX_CHARS;
+  const reviewSummaryBytes = getTextBytes(activeReviewSummary);
 
   const hashtags = useMemo(() => {
     const matches = descriptionText.match(/#\w+/g) || [];
-    return matches.map((h) => h.substring(1));
+    return matches.map((hashtag) => hashtag.substring(1));
   }, [descriptionText]);
 
   const firstHashtag = hashtags[0];
@@ -174,19 +199,42 @@ export default function CreateCampaignModalContent({
   const descriptionChars = descriptionText.trim().length;
   const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
   const hasRequiredBodyLength = descriptionChars >= minDescriptionChars;
-  const hasRequiredTitle = !isModal || modalTitle.trim().length > 0;
+  const hasRequiredTitle = !isModal || trimmedModalTitle.length > 0;
   const constraintsPassed = hasRequiredTitle && hasRequiredBodyLength && hasRequiredCompulsoryHashtag;
+  const summaryBytes = createContentChars;
+  const title = "Create a Campaign";
+  const createPreviewBody = buildPreviewExcerpt(trimmedModalDescription, 220);
+  const activeModalError = draftSaveError || errorMsg;
+  const isNextDisabled = status === "pending" || !constraintsPassed;
+  const parsedDurationHours = Number.parseFloat(taskDurationHours);
+  const parsedMaxAmountCkb = Number.parseFloat(maxAmountCkb);
+  const parsedRaffleTicketPriceCkb = Number.parseFloat(raffleTicketPriceCkb);
+  const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
+  const hasValidReviewSummary = activeReviewSummary.trim().length > 0 && reviewSummaryBytes <= SUMMARY_MAX_BYTES;
+  const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
+  const hasValidMaxAmount = Number.isFinite(parsedMaxAmountCkb) && parsedMaxAmountCkb > 0;
+  const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
+  const isPublishDisabled =
+    status === "pending" ||
+    draftSaveStatus === "saving" ||
+    draftSaveStatus === "error" ||
+    !hasValidReviewSummary ||
+    !hasValidDuration ||
+    !hasValidMaxAmount ||
+    !hasValidRaffleTicketPrice;
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
-      const typeEntry = Object.entries(CAMPAIGN_TYPE_LABELS).find(
-        ([, label]) => label.toLowerCase() === normalizedFirstHashtag
-      );
+      const typeEntry = Object.entries(CAMPAIGN_TYPE_LABELS).find(([, label]) => label.toLowerCase() === normalizedFirstHashtag);
       if (typeEntry) {
         setCampaignType(Number(typeEntry[0]) as CampaignType);
       }
     }
   }, [isFirstHashtagCompulsory, normalizedFirstHashtag]);
+
+  useEffect(() => {
+    onStepChange?.(status === "success" ? "compose" : modalStep);
+  }, [modalStep, onStepChange, status]);
 
   const filteredMentions = MOCK_USERS.filter(
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
@@ -298,6 +346,12 @@ export default function CreateCampaignModalContent({
     target.textContent = text;
   }, []);
 
+  const hideMenus = useCallback(() => {
+    setShowHashtagMenu(false);
+    setShowMentionMenu(false);
+    setMentionQuery("");
+  }, []);
+
   const resetComposer = useCallback(() => {
     setStatus("idle");
     setTxHash("");
@@ -309,9 +363,13 @@ export default function CreateCampaignModalContent({
     setCampaignType(CampaignType.SimpleTask);
     setTaskDurationHours("24");
     setMaxAmountCkb("1000");
-    setShowHashtagMenu(false);
-    setShowMentionMenu(false);
-    setMentionQuery("");
+    setRaffleTicketPriceCkb("1");
+    setModalStep("compose");
+    setReviewSummary("");
+    setDraftRecordId(null);
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    hideMenus();
     if (pageEditorRef.current) {
       pageEditorRef.current.textContent = "";
     }
@@ -322,38 +380,73 @@ export default function CreateCampaignModalContent({
       modalDescriptionRef.current.textContent = "";
     }
     activeEditorRef.current = null;
-  }, []);
+  }, [hideMenus]);
 
-  const handleEditorInput = (e: React.FormEvent<HTMLDivElement>) => {
-    const text = e.currentTarget.textContent || "";
+  useEffect(() => {
+    if (mode === "modal") {
+      resetComposer();
+    }
+  }, [mode, resetSignal, resetComposer]);
+
+  useEffect(() => {
+    if (!isModal || stepBackSignal === 0 || modalStep !== "review" || status === "pending") {
+      return;
+    }
+
+    setModalStep("compose");
+    setErrorMsg("");
+    setDraftSaveError("");
+    hideMenus();
+  }, [hideMenus, isModal, modalStep, status, stepBackSignal]);
+
+  useEffect(() => {
+    onConstraintStatusChange?.({
+      titlePassed: hasRequiredTitle,
+      bodyPassed: hasRequiredBodyLength,
+      firstHashtagPassed: hasRequiredCompulsoryHashtag,
+      additionalHashtagsPassed: true,
+    });
+  }, [
+    hasRequiredTitle,
+    hasRequiredBodyLength,
+    hasRequiredCompulsoryHashtag,
+    onConstraintStatusChange,
+  ]);
+
+  const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
+    const text = event.currentTarget.textContent || "";
     let normalizedText = text.trim().length === 0 ? "" : text;
 
     if (isModal) {
-      if (e.currentTarget === modalTitleRef.current) {
+      if (event.currentTarget === modalTitleRef.current) {
         normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_TITLE_MAX_CHARS);
-      } else if (e.currentTarget === modalDescriptionRef.current) {
+      } else if (event.currentTarget === modalDescriptionRef.current) {
         normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
       }
     }
 
     const selection = window.getSelection();
-    const caretPos = getCaretPosition(e.currentTarget, selection);
+    const caretPos = getCaretPosition(event.currentTarget, selection);
 
     if (normalizedText.length === 0) {
-      renderEditorText(e.currentTarget, "");
-    } else if (text !== normalizedText || e.currentTarget === modalDescriptionRef.current || e.currentTarget === pageEditorRef.current) {
-      renderEditorText(e.currentTarget, normalizedText);
-      setCaretPosition(e.currentTarget, Math.min(caretPos, normalizedText.length));
+      renderEditorText(event.currentTarget, "");
+    } else if (
+      text !== normalizedText ||
+      event.currentTarget === modalDescriptionRef.current ||
+      event.currentTarget === pageEditorRef.current
+    ) {
+      renderEditorText(event.currentTarget, normalizedText);
+      setCaretPosition(event.currentTarget, Math.min(caretPos, normalizedText.length));
     }
 
-    activeEditorRef.current = e.currentTarget;
-    setEditorTextByNode(e.currentTarget, normalizedText);
+    activeEditorRef.current = event.currentTarget;
+    setEditorTextByNode(event.currentTarget, normalizedText);
 
     const activeSelection = window.getSelection();
     if (activeSelection && activeSelection.rangeCount > 0) {
       const range = activeSelection.getRangeAt(0);
       const preCaretRange = range.cloneRange();
-      preCaretRange.selectNodeContents(e.currentTarget);
+      preCaretRange.selectNodeContents(event.currentTarget);
       preCaretRange.setEnd(range.endContainer, range.endOffset);
       const updatedCaretPos = preCaretRange.toString().length;
       const beforeCursor = normalizedText.substring(0, updatedCaretPos);
@@ -363,7 +456,7 @@ export default function CreateCampaignModalContent({
         lastHashIndex !== -1 ? beforeCursor.substring(lastHashIndex + 1).match(/^[\w]*$/) : null;
 
       if (hashtagMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
-        const rect = e.currentTarget.getBoundingClientRect();
+        const rect = event.currentTarget.getBoundingClientRect();
         setHashtagPosition({
           top: rect.top + rect.height,
           left: rect.left,
@@ -380,7 +473,7 @@ export default function CreateCampaignModalContent({
       if (mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
-        const rect = e.currentTarget.getBoundingClientRect();
+        const rect = event.currentTarget.getBoundingClientRect();
         setMentionPosition({
           top: rect.top + rect.height,
           left: rect.left,
@@ -392,9 +485,9 @@ export default function CreateCampaignModalContent({
     }
   };
 
-  const handleModalTitleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
+  const handleModalTitleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
       const descriptionEl = modalDescriptionRef.current;
       if (descriptionEl) {
         descriptionEl.focus();
@@ -409,20 +502,20 @@ export default function CreateCampaignModalContent({
       return;
     }
 
-    handleEditorKeyDown(e);
+    handleEditorKeyDown(event);
   };
 
-  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    activeEditorRef.current = e.currentTarget;
+  const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    activeEditorRef.current = event.currentTarget;
 
-    if (e.key === "Enter") {
+    if (event.key === "Enter") {
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
-        e.preventDefault();
+        event.preventDefault();
         const range = selection.getRangeAt(0);
-        const text = e.currentTarget.textContent || "";
+        const text = event.currentTarget.textContent || "";
         const preCaretRange = range.cloneRange();
-        preCaretRange.selectNodeContents(e.currentTarget);
+        preCaretRange.selectNodeContents(event.currentTarget);
         preCaretRange.setEnd(range.endContainer, range.endOffset);
         const caretPos = preCaretRange.toString().length;
         const lineStartBreakIndex = text.lastIndexOf("\n", Math.max(caretPos - 1, 0));
@@ -437,14 +530,13 @@ export default function CreateCampaignModalContent({
             ? text.slice(0, lineStartIndex) + text.slice(lineEndIndex)
             : text.slice(0, caretPos) + (nextListLine?.insertText ?? "\n") + text.slice(caretPos);
 
-        if (isModal && e.currentTarget === modalDescriptionRef.current) {
+        if (isModal && event.currentTarget === modalDescriptionRef.current) {
           newText = truncateToTextLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
         }
 
-        renderEditorText(e.currentTarget, newText);
-        setEditorTextByNode(e.currentTarget, newText);
-        setShowHashtagMenu(false);
-        setShowMentionMenu(false);
+        renderEditorText(event.currentTarget, newText);
+        setEditorTextByNode(event.currentTarget, newText);
+        hideMenus();
 
         const newCaretPos = Math.min(
           nextListLine?.mode === "exit"
@@ -453,17 +545,17 @@ export default function CreateCampaignModalContent({
           newText.length
         );
 
-        setCaretPosition(e.currentTarget, newCaretPos);
+        setCaretPosition(event.currentTarget, newCaretPos);
         return;
       }
     }
 
     if (
-      e.key === "Backspace" &&
-      e.currentTarget === modalDescriptionRef.current &&
+      event.key === "Backspace" &&
+      event.currentTarget === modalDescriptionRef.current &&
       (modalDescriptionRef.current?.textContent || "").trim().length === 0
     ) {
-      e.preventDefault();
+      event.preventDefault();
       const titleEl = modalTitleRef.current;
       if (titleEl) {
         const titleText = titleEl.textContent || "";
@@ -475,33 +567,31 @@ export default function CreateCampaignModalContent({
         activeEditorRef.current = titleEl;
         setCaretPosition(titleEl, newTitleText.length);
       }
-      setShowHashtagMenu(false);
-      setShowMentionMenu(false);
+      hideMenus();
       return;
     }
 
-    if (e.key === "Escape") {
-      setShowHashtagMenu(false);
-      setShowMentionMenu(false);
-      e.preventDefault();
+    if (event.key === "Escape") {
+      hideMenus();
+      event.preventDefault();
       return;
     }
 
     const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-    const modKey = isMac ? e.metaKey : e.ctrlKey;
+    const modKey = isMac ? event.metaKey : event.ctrlKey;
 
     if (modKey) {
-      switch (e.key.toLowerCase()) {
+      switch (event.key.toLowerCase()) {
         case "b":
-          e.preventDefault();
+          event.preventDefault();
           document.execCommand("bold", false);
           break;
         case "i":
-          e.preventDefault();
+          event.preventDefault();
           document.execCommand("italic", false);
           break;
         case "u":
-          e.preventDefault();
+          event.preventDefault();
           document.execCommand("underline", false);
           break;
       }
@@ -545,12 +635,12 @@ export default function CreateCampaignModalContent({
         setTimeout(() => {
           const newPos = Math.min(lastHashIndex + label.length + 2, newText.length);
           const newRange = document.createRange();
-          const sel = window.getSelection();
+          const activeSelection = window.getSelection();
           if (targetEditor.firstChild) {
             newRange.setStart(targetEditor.firstChild, newPos);
             newRange.setEnd(targetEditor.firstChild, newPos);
-            sel?.removeAllRanges();
-            sel?.addRange(newRange);
+            activeSelection?.removeAllRanges();
+            activeSelection?.addRange(newRange);
           }
         }, 0);
       }
@@ -585,18 +675,18 @@ export default function CreateCampaignModalContent({
         setShowMentionMenu(false);
 
         if (!mentions.includes(username) && newText.includes(`@${username}`)) {
-          setMentions([...mentions, username]);
+          setMentions((current) => [...current, username]);
         }
 
         setTimeout(() => {
           const newPos = Math.min(lastAtIndex + username.length + 2, newText.length);
           const newRange = document.createRange();
-          const sel = window.getSelection();
+          const activeSelection = window.getSelection();
           if (targetEditor.firstChild) {
             newRange.setStart(targetEditor.firstChild, newPos);
             newRange.setEnd(targetEditor.firstChild, newPos);
-            sel?.removeAllRanges();
-            sel?.addRange(newRange);
+            activeSelection?.removeAllRanges();
+            activeSelection?.addRange(newRange);
           }
         }, 0);
       }
@@ -604,33 +694,189 @@ export default function CreateCampaignModalContent({
   };
 
   const handleRemoveMention = (mention: string) => {
-    setMentions(mentions.filter((m) => m !== mention));
+    setMentions((current) => current.filter((item) => item !== mention));
   };
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
+  const validateComposeConstraints = () => {
     if (isModal && !hasRequiredTitle) {
       setErrorMsg("Please add a title");
       setStatus("error");
-      return;
+      return false;
     }
 
     if (!hasRequiredBodyLength) {
       setErrorMsg(`Description must be at least ${minDescriptionChars} characters`);
       setStatus("error");
-      return;
+      return false;
     }
 
     if (!isFirstHashtagCompulsory) {
       setErrorMsg("The first hashtag must be one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle");
       setStatus("error");
-      return;
+      return false;
     }
 
     if (!hasExactlyOneCompulsoryHashtag) {
       setErrorMsg("Use exactly one compulsory hashtag (#SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle)");
       setStatus("error");
+      return false;
+    }
+
+    return true;
+  };
+
+  const buildDraftPayload = async (summaryDraft: string, draftStatus: DraftRecordStatus, txHashValue: string | null, publishError: string | null) => {
+    let creatorAddress: string | null = null;
+
+    if (signer) {
+      try {
+        creatorAddress = await signer.getRecommendedAddress();
+      } catch {
+        creatorAddress = null;
+      }
+    }
+
+    return {
+      title: trimmedModalTitle,
+      description: trimmedModalDescription,
+      campaignType,
+      summaryDraft,
+      argsDraft: {
+        taskDurationHours,
+        maxAmountCkb,
+        auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+      },
+      socialMetadata: {
+        mentions,
+        comments: [],
+        likeCount: 0,
+        bookmarkCount: 0,
+        reshareCount: 0,
+      },
+      creatorAddress,
+      status: draftStatus,
+      txHash: txHashValue,
+      publishError,
+    };
+  };
+
+  const persistDraftRecord = async (
+    summaryDraft: string,
+    draftStatus: DraftRecordStatus,
+    txHashValue: string | null = null,
+    publishError: string | null = null
+  ) => {
+    setDraftSaveStatus("saving");
+    setDraftSaveError("");
+
+    try {
+      const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError);
+      const response = await fetch(draftRecordId ? `/api/campaign-records/${draftRecordId}` : "/api/campaign-records", {
+        method: draftRecordId ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Failed to save campaign record");
+      }
+
+      if (!draftRecordId && data?.id) {
+        setDraftRecordId(data.id);
+      }
+
+      setDraftSaveStatus("saved");
+      return data?.id ?? draftRecordId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save campaign record";
+      setDraftSaveStatus("error");
+      setDraftSaveError(message);
+      throw error;
+    }
+  };
+
+  const handleAdvanceToReview = async () => {
+    if (!validateComposeConstraints()) {
+      return;
+    }
+
+    const nextSummary = buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription });
+    setReviewSummary(nextSummary);
+    setModalStep("review");
+    setErrorMsg("");
+    hideMenus();
+
+    try {
+      await persistDraftRecord(nextSummary, "draft");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const handleRetryDraftSave = async () => {
+    try {
+      await persistDraftRecord(activeReviewSummary, "draft");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const validateReviewInputs = () => {
+    if (draftSaveStatus === "saving") {
+      setErrorMsg("Please wait while the draft is being saved");
+      setStatus("error");
+      return false;
+    }
+
+    if (draftSaveStatus === "error") {
+      setErrorMsg("Please retry saving the draft before publishing");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidReviewSummary) {
+      setErrorMsg("Summary must be non-empty and fit within 64 UTF-8 bytes");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidDuration) {
+      setErrorMsg("Please enter a valid duration greater than 0 hours");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidMaxAmount) {
+      setErrorMsg("Please enter a valid max deposit greater than 0 CKB");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidRaffleTicketPrice) {
+      setErrorMsg("Please enter a valid raffle ticket price greater than 0 CKB");
+      setStatus("error");
+      return false;
+    }
+
+    return true;
+  };
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (isModal && modalStep === "compose") {
+      await handleAdvanceToReview();
+      return;
+    }
+
+    if (!validateComposeConstraints()) {
+      return;
+    }
+
+    if (isModal && !validateReviewInputs()) {
       return;
     }
 
@@ -646,49 +892,323 @@ export default function CreateCampaignModalContent({
 
     try {
       const startSecs = 0n;
-      const taskSecs = BigInt(Math.round(parseFloat(taskDurationHours) * 3600));
-      const maxCkb = BigInt(Math.round(parseFloat(maxAmountCkb)));
+      const taskSecs = BigInt(Math.round(parsedDurationHours * 3600));
+      const maxCkb = BigInt(Math.round(parsedMaxAmountCkb));
+      const auxAmountCkb = shouldCollectRaffleTicketPrice
+        ? BigInt(Math.round(parsedRaffleTicketPriceCkb))
+        : 0n;
+      const summaryToPublish = isModal
+        ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
+        : generatedOnchainSummary;
 
       const hash = await sendCreateCampaign(signer, {
         startDurationSecs: startSecs,
         taskDurationSecs: taskSecs,
         campaignType,
         maximumAmountCkb: maxCkb,
-        auxAmountCkb: 0n,
-        summary: onchainSummary,
+        auxAmountCkb,
+        summary: summaryToPublish,
       });
+
+      if (isModal && draftRecordId) {
+        try {
+          await persistDraftRecord(summaryToPublish, "published", hash, null);
+        } catch {
+          // Keep the publish success state even if the off-chain patch fails.
+        }
+      }
 
       setTxHash(hash);
       setStatus("success");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (isModal && draftRecordId) {
+        try {
+          await persistDraftRecord(activeReviewSummary.trim(), "publish_failed", null, message);
+        } catch {
+          // Preserve the original publish failure message.
+        }
+      }
+
+      setErrorMsg(message);
       setStatus("error");
     }
   }
 
-  const summaryBytes = createContentChars;
-  const title = "Create a Campaign";
-  const isSubmitDisabled = status === "pending" || !constraintsPassed;
+  const renderModalArgsInputs = () => (
+    <div className="create-review-args-grid">
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold theme-fg">⏱️ Duration</label>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="0.5"
+            step="0.5"
+            value={taskDurationHours}
+            onChange={(event) => setTaskDurationHours(event.target.value)}
+            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+          />
+          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
+        </div>
+      </div>
 
-  useEffect(() => {
-    if (mode === "modal") {
-      resetComposer();
-    }
-  }, [mode, resetSignal, resetComposer]);
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-semibold theme-fg">💰 Max Deposit</label>
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={maxAmountCkb}
+            onChange={(event) => setMaxAmountCkb(event.target.value)}
+            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
+          />
+          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
+        </div>
+      </div>
 
-  useEffect(() => {
-    onConstraintStatusChange?.({
-      titlePassed: hasRequiredTitle,
-      bodyPassed: hasRequiredBodyLength,
-      firstHashtagPassed: hasRequiredCompulsoryHashtag,
-      additionalHashtagsPassed: true,
-    });
-  }, [
-    hasRequiredTitle,
-    hasRequiredBodyLength,
-    hasRequiredCompulsoryHashtag,
-    onConstraintStatusChange,
-  ]);
+      {shouldCollectRaffleTicketPrice ? (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold theme-fg">🎟️ Ticket Price</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={raffleTicketPriceCkb}
+              onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
+              className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-emerald-500"
+            />
+            <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold theme-fg">💬 Social</label>
+          <div className="flex items-center justify-center gap-1 theme-bg border-2 theme-border rounded-lg px-2 py-1 min-h-[2rem]">
+            <span className="text-red-500 font-bold text-sm">❤️</span>
+            <span className="text-green-500 font-bold text-sm">💬</span>
+            <span className="text-orange-500 font-bold text-sm">🔄</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderModalComposePane = () => (
+    <div className="create-modal-step-pane create-modal-step-pane-compose">
+      <div className="relative w-full h-full flex flex-col">
+        <div className="create-modal-title-wrap">
+          <div
+            ref={modalTitleRef}
+            contentEditable="true"
+            suppressContentEditableWarning
+            onInput={handleEditorInput}
+            onKeyDown={handleModalTitleKeyDown}
+            onFocus={(event) => {
+              activeEditorRef.current = event.currentTarget;
+            }}
+            onBlur={() => {
+              setTimeout(() => {
+                hideMenus();
+              }, 100);
+            }}
+            onPaste={(event) => {
+              event.preventDefault();
+              const text = event.clipboardData.getData("text/plain");
+              document.execCommand("insertText", false, text);
+            }}
+            data-placeholder="title"
+            role="textbox"
+            aria-placeholder="title"
+            className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
+            style={{
+              wordWrap: "break-word",
+              overflowWrap: "break-word",
+              outline: "none",
+            }}
+          />
+          <div className="create-modal-counter create-modal-title-counter">
+            {modalTitleChars}/{modalTitleMaxChars}
+          </div>
+        </div>
+
+        <div
+          ref={modalDescriptionRef}
+          contentEditable="true"
+          suppressContentEditableWarning
+          onInput={handleEditorInput}
+          onKeyDown={handleEditorKeyDown}
+          onFocus={(event) => {
+            activeEditorRef.current = event.currentTarget;
+          }}
+          onBlur={() => {
+            setTimeout(() => {
+              hideMenus();
+            }, 100);
+          }}
+          onPaste={(event) => {
+            event.preventDefault();
+            const text = event.clipboardData.getData("text/plain");
+            document.execCommand("insertText", false, text);
+          }}
+          data-placeholder="description"
+          role="textbox"
+          aria-placeholder="description"
+          className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
+          style={{
+            wordWrap: "break-word",
+            overflowWrap: "break-word",
+            outline: "none",
+            caretColor: "currentColor",
+          }}
+        />
+
+        <div className="create-modal-counter create-modal-body-counter">
+          {modalDescriptionChars}/{modalDescriptionMaxChars}
+        </div>
+
+        {showHashtagMenu && (
+          <div
+            className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48"
+            style={{
+              top: `${hashtagPosition.top}px`,
+              left: `${hashtagPosition.left}px`,
+            }}
+          >
+            <div className="p-2">
+              {Object.values(CampaignType)
+                .filter((value) => typeof value === "number")
+                .map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => handleHashtagSelect(CAMPAIGN_TYPE_LABELS[type as CampaignType])}
+                    className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
+                  >
+                    #{CAMPAIGN_TYPE_LABELS[type as CampaignType]}
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {showMentionMenu && (
+          <div
+            ref={mentionMenuRef}
+            className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48 max-h-40 overflow-y-auto"
+            style={{
+              top: `${mentionPosition.top}px`,
+              left: `${mentionPosition.left}px`,
+            }}
+          >
+            <div className="p-2">
+              {filteredMentions.length > 0 ? (
+                filteredMentions.map((user) => (
+                  <button
+                    key={user}
+                    type="button"
+                    onClick={() => handleMentionSelect(user)}
+                    className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
+                  >
+                    @{user}
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-2 text-xs theme-fg opacity-60">No users found</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {mentions.length > 0 && (
+        <div className="create-modal-mentions-row">
+          {mentions.map((mention) => (
+            <div
+              key={mention}
+              className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
+              style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
+            >
+              <span>@{mention}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveMention(mention)}
+                className="theme-fg opacity-70 hover:opacity-100 font-bold"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="create-modal-constraints-row">
+        <p className={`create-modal-constraints-text ${constraintsPassed ? "create-modal-constraints-pass" : ""}`}>
+          {!constraintsPassed && CREATE_CONSTRAINTS_MESSAGE_PENDING}
+        </p>
+      </div>
+    </div>
+  );
+
+  const renderModalReviewPane = () => (
+    <div className="create-modal-step-pane create-modal-step-pane-review">
+      <div className="create-review-pane-inner">
+        <div className="create-review-preview-card">
+          <p className="create-review-section-label">Preview</p>
+          {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
+          <p className="create-review-preview-body">{createPreviewBody || "No preview available yet."}</p>
+          {(firstHashtag || otherHashtags.length > 0) && (
+            <div className="create-review-tag-row">
+              {firstHashtag && <span className="create-review-primary-tag">#{firstHashtag}</span>}
+              {otherHashtags.map((tag) => (
+                <span key={tag} className="create-review-secondary-tag">#{tag}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="create-review-summary-card">
+          <div className="flex items-center justify-between gap-3">
+            <p className="create-review-section-label">Generated summary</p>
+            <span className="create-review-summary-bytes">{reviewSummaryBytes}/{SUMMARY_MAX_BYTES} bytes</span>
+          </div>
+          <textarea
+            value={activeReviewSummary}
+            onChange={(event) => {
+              setReviewSummary(truncateToUtf8Bytes(event.target.value, SUMMARY_MAX_BYTES));
+              setErrorMsg("");
+            }}
+            rows={4}
+            className="create-review-summary-input theme-input"
+            placeholder="Summary that will be stored on-chain"
+          />
+        </div>
+
+        <div className="create-review-args-card">
+          <div className="flex items-center justify-between gap-3">
+            <p className="create-review-section-label">Campaign args</p>
+            <span className="text-xs theme-fg opacity-70">Post content is being saved off-chain</span>
+          </div>
+          {renderModalArgsInputs()}
+        </div>
+
+        <div className="create-review-draft-status-row">
+          {draftSaveStatus === "saving" && <p className="create-review-draft-status">Saving draft preview…</p>}
+          {draftSaveStatus === "saved" && <p className="create-review-draft-status create-review-draft-status-success">Draft preview saved</p>}
+          {draftSaveStatus === "error" && (
+            <div className="create-review-draft-error-wrap">
+              <p className="create-review-draft-status create-review-draft-status-error">{draftSaveError}</p>
+              <button type="button" onClick={handleRetryDraftSave} className="create-review-inline-btn">
+                Retry
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -754,176 +1274,42 @@ export default function CreateCampaignModalContent({
         <form onSubmit={handleSubmit} className={isModal ? "w-full h-full relative" : "w-full flex flex-col gap-3"}>
           {isModal ? (
             <>
-              <div className="relative w-full h-full flex flex-col">
-                <div className="create-modal-title-wrap">
-                  <div
-                    ref={modalTitleRef}
-                    contentEditable="true"
-                    suppressContentEditableWarning
-                    onInput={handleEditorInput}
-                    onKeyDown={handleModalTitleKeyDown}
-                    onFocus={(e) => {
-                      activeEditorRef.current = e.currentTarget;
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setShowHashtagMenu(false);
-                        setShowMentionMenu(false);
-                      }, 100);
-                    }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      const text = e.clipboardData.getData("text/plain");
-                      document.execCommand("insertText", false, text);
-                    }}
-                    data-placeholder="title"
-                    role="textbox"
-                    aria-placeholder="title"
-                    className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
-                    style={{
-                      wordWrap: "break-word",
-                      overflowWrap: "break-word",
-                      outline: "none",
-                    }}
-                  />
-                  <div className="create-modal-counter create-modal-title-counter">
-                    {modalTitleChars}/{modalTitleMaxChars}
-                  </div>
+              <div className="create-modal-step-viewport">
+                <div className={`create-modal-step-track ${isReviewStep ? "create-modal-step-track-review" : ""}`}>
+                  {renderModalComposePane()}
+                  {renderModalReviewPane()}
                 </div>
-
-                <div
-                  ref={modalDescriptionRef}
-                  contentEditable="true"
-                  suppressContentEditableWarning
-                  onInput={handleEditorInput}
-                  onKeyDown={handleEditorKeyDown}
-                  onFocus={(e) => {
-                    activeEditorRef.current = e.currentTarget;
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => {
-                      setShowHashtagMenu(false);
-                      setShowMentionMenu(false);
-                    }, 100);
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const text = e.clipboardData.getData("text/plain");
-                    document.execCommand("insertText", false, text);
-                  }}
-                  data-placeholder="description"
-                  role="textbox"
-                  aria-placeholder="description"
-                  className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
-                  style={{
-                    wordWrap: "break-word",
-                    overflowWrap: "break-word",
-                    outline: "none",
-                    caretColor: "currentColor",
-                  }}
-                />
-
-                <div className="create-modal-counter create-modal-body-counter">
-                  {modalDescriptionChars}/{modalDescriptionMaxChars}
-                </div>
-
-                {showHashtagMenu && (
-                  <div
-                    className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48"
-                    style={{
-                      top: `${hashtagPosition.top}px`,
-                      left: `${hashtagPosition.left}px`,
-                    }}
-                  >
-                    <div className="p-2">
-                      {Object.values(CampaignType)
-                        .filter((v) => typeof v === "number")
-                        .map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => handleHashtagSelect(CAMPAIGN_TYPE_LABELS[type as CampaignType])}
-                            className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
-                          >
-                            #{CAMPAIGN_TYPE_LABELS[type as CampaignType]}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {showMentionMenu && (
-                  <div
-                    ref={mentionMenuRef}
-                    className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48 max-h-40 overflow-y-auto"
-                    style={{
-                      top: `${mentionPosition.top}px`,
-                      left: `${mentionPosition.left}px`,
-                    }}
-                  >
-                    <div className="p-2">
-                      {filteredMentions.length > 0 ? (
-                        filteredMentions.map((user) => (
-                          <button
-                            key={user}
-                            type="button"
-                            onClick={() => handleMentionSelect(user)}
-                            className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
-                          >
-                            @{user}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-xs theme-fg opacity-60">No users found</div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {mentions.length > 0 && (
-                <div className="create-modal-mentions-row">
-                  {mentions.map((mention) => (
-                    <div
-                      key={mention}
-                      className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
-                      style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
-                    >
-                      <span>@{mention}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMention(mention)}
-                        className="theme-fg opacity-70 hover:opacity-100 font-bold"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+              {activeModalError && (
+                <div
+                  className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
+                  style={{ bottom: isReviewStep ? "5.7rem" : mentions.length > 0 ? "7.6rem" : "3.2rem" }}
+                >
+                  <p className="text-sm font-semibold text-red-500">Error</p>
+                  <p className="text-xs text-red-600 break-all">{activeModalError}</p>
                 </div>
               )}
 
-              {/* {status === "error" && (
-                <div
-                  className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
-                  style={{ bottom: mentions.length > 0 ? "7.6rem" : "3.2rem" }}
-                >
-                  <p className="text-sm font-semibold text-red-500">Error</p>
-                  <p className="text-xs text-red-600 break-all">{errorMsg}</p>
-                </div>
-              )} */}
-
-              <div className="create-modal-constraints-row">
-                <p className={`create-modal-constraints-text ${constraintsPassed ? "create-modal-constraints-pass" : ""}`}>
-                  {!constraintsPassed && CREATE_CONSTRAINTS_MESSAGE_PENDING}
-                </p>
-              </div>
-
               <button
-                type="submit"
-                disabled={isSubmitDisabled}
-                className={`create-modal-send-btn ${isSubmitDisabled ? "" : "create-modal-send-btn-active"}`.trim()}
-                aria-label={status === "pending" ? "Publishing" : "Publish campaign"}
-                title={status === "pending" ? "Publishing..." : "Publish Campaign"}
+                type={isReviewStep ? "submit" : "button"}
+                disabled={isReviewStep ? isPublishDisabled : isNextDisabled}
+                onClick={isReviewStep ? undefined : () => void handleAdvanceToReview()}
+                className={`create-modal-send-btn ${(isReviewStep ? isPublishDisabled : isNextDisabled) ? "" : "create-modal-send-btn-active"}`.trim()}
+                aria-label={
+                  isReviewStep
+                    ? status === "pending"
+                      ? "Publishing"
+                      : "Publish campaign"
+                    : "Next"
+                }
+                title={
+                  isReviewStep
+                    ? status === "pending"
+                      ? "Publishing..."
+                      : "Publish campaign"
+                    : "Next"
+                }
               >
                 {status === "pending" ? "…" : "➤"}
               </button>
@@ -999,21 +1385,20 @@ export default function CreateCampaignModalContent({
                     suppressContentEditableWarning
                     onInput={handleEditorInput}
                     onKeyDown={handleEditorKeyDown}
-                    onFocus={(e) => {
-                      activeEditorRef.current = e.currentTarget;
-                      e.currentTarget.style.minHeight = "11rem";
-                      e.currentTarget.style.maxHeight = "20rem";
-                      e.currentTarget.style.height = "auto";
+                    onFocus={(event) => {
+                      activeEditorRef.current = event.currentTarget;
+                      event.currentTarget.style.minHeight = "11rem";
+                      event.currentTarget.style.maxHeight = "20rem";
+                      event.currentTarget.style.height = "auto";
                     }}
                     onBlur={() => {
                       setTimeout(() => {
-                        setShowHashtagMenu(false);
-                        setShowMentionMenu(false);
+                        hideMenus();
                       }, 100);
                     }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      const text = e.clipboardData.getData("text/plain");
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      const text = event.clipboardData.getData("text/plain");
                       document.execCommand("insertText", false, text);
                     }}
                     data-placeholder="What's your campaign about? Type #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle first..."
@@ -1039,7 +1424,7 @@ export default function CreateCampaignModalContent({
                     >
                       <div className="p-2">
                         {Object.values(CampaignType)
-                          .filter((v) => typeof v === "number")
+                          .filter((value) => typeof value === "number")
                           .map((type) => (
                             <button
                               key={type}
@@ -1111,7 +1496,7 @@ export default function CreateCampaignModalContent({
                           min="0.5"
                           step="0.5"
                           value={taskDurationHours}
-                          onChange={(e) => setTaskDurationHours(e.target.value)}
+                          onChange={(event) => setTaskDurationHours(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
@@ -1126,7 +1511,7 @@ export default function CreateCampaignModalContent({
                           min="1"
                           step="1"
                           value={maxAmountCkb}
-                          onChange={(e) => setMaxAmountCkb(e.target.value)}
+                          onChange={(event) => setMaxAmountCkb(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
@@ -1178,7 +1563,7 @@ export default function CreateCampaignModalContent({
 
               <button
                 type="submit"
-                disabled={isSubmitDisabled}
+                disabled={status === "pending" || !constraintsPassed}
                 className="w-full px-6 py-3 rounded-xl theme-button font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {status === "pending" ? "Publishing..." : "Publish Campaign"}
