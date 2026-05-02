@@ -120,9 +120,6 @@ type CreateCampaignModalContentProps = {
   resetSignal?: number;
   stepBackSignal?: number;
   onStepChange?: (step: CreateModalStep) => void;
-  onInfoEnter?: (target?: DOMRect) => void;
-  onInfoLeave?: () => void;
-  onInfoToggle?: (target?: DOMRect) => void;
   onConstraintStatusChange?: (status: CreateConstraintStatus) => void;
 };
 
@@ -132,9 +129,6 @@ export default function CreateCampaignModalContent({
   resetSignal = 0,
   stepBackSignal = 0,
   onStepChange,
-  onInfoEnter,
-  onInfoLeave,
-  onInfoToggle,
   onConstraintStatusChange,
 }: CreateCampaignModalContentProps) {
   const { open } = ccc.useCcc();

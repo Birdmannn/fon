@@ -443,9 +443,6 @@ export default function Home() {
             resetSignal={createResetSignal}
             stepBackSignal={createStepBackSignal}
             onStepChange={setCreateModalStep}
-            onInfoEnter={openInfoModalFromHover}
-            onInfoLeave={scheduleCloseInfoModal}
-            onInfoToggle={toggleInfoModal}
             onConstraintStatusChange={setConstraintStatus}
           />
         </div>

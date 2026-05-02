@@ -1,27 +1,27 @@
 import { MongoClient } from "mongodb";
 
-const uri = process.env.MONGODB_URI;
-
-if (!uri) {
-  throw new Error("Missing MONGODB_URI environment variable");
-}
-
 const globalForMongo = globalThis as typeof globalThis & {
   __freightMongoClientPromise?: Promise<MongoClient>;
 };
 
-const mongoClientPromise =
-  globalForMongo.__freightMongoClientPromise ??
-  new MongoClient(uri).connect();
+function getMongoClientPromise() {
+  const uri = process.env.MONGODB_URI;
 
-if (process.env.NODE_ENV !== "production") {
-  globalForMongo.__freightMongoClientPromise = mongoClientPromise;
+  if (!uri) {
+    throw new Error("Missing MONGODB_URI environment variable");
+  }
+
+  if (!globalForMongo.__freightMongoClientPromise) {
+    globalForMongo.__freightMongoClientPromise = new MongoClient(uri).connect();
+  }
+
+  return globalForMongo.__freightMongoClientPromise;
 }
 
 export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "freightonnervos";
 export const CAMPAIGN_RECORDS_COLLECTION = "campaignRecords";
 
 export async function getMongoCollection() {
-  const client = await mongoClientPromise;
+  const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(CAMPAIGN_RECORDS_COLLECTION);
 }
