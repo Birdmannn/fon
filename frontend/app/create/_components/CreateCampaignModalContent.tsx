@@ -914,7 +914,7 @@ export default function CreateCampaignModalContent({
 
               <div className="create-modal-constraints-row">
                 <p className={`create-modal-constraints-text ${constraintsPassed ? "create-modal-constraints-pass" : ""}`}>
-                  {constraintsPassed ? CREATE_CONSTRAINTS_MESSAGE_SUCCESS : CREATE_CONSTRAINTS_MESSAGE_PENDING}
+                  {!constraintsPassed && CREATE_CONSTRAINTS_MESSAGE_PENDING}
                 </p>
               </div>
 
