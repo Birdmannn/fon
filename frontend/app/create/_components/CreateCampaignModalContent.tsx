@@ -1,7 +1,7 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, LoaderCircle, RefreshCw, Send, SendHorizonal } from "lucide-react";
+import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal } from "lucide-react";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -466,7 +466,15 @@ export default function CreateCampaignModalContent({
       const hashtagMatch =
         lastHashIndex !== -1 ? beforeCursor.substring(lastHashIndex + 1).match(/^[\w]*$/) : null;
 
-      if (hashtagMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
+      const allowHashtagMenu =
+        event.currentTarget === modalDescriptionRef.current || event.currentTarget === pageEditorRef.current;
+
+      if (
+        allowHashtagMenu &&
+        hashtagMatch &&
+        normalizedText[updatedCaretPos - 1] !== " " &&
+        normalizedText[updatedCaretPos - 1] !== "\n"
+      ) {
         const rect = event.currentTarget.getBoundingClientRect();
         setHashtagPosition({
           top: rect.top + rect.height,
@@ -1172,7 +1180,7 @@ export default function CreateCampaignModalContent({
   const renderModalReviewPane = () => (
     <div className="create-modal-step-pane create-modal-step-pane-review">
       <div className="create-review-pane-inner">
-        <div className="create-review-preview-card">
+        <div className="create-review-preview-card create-review-preview-card-main">
           <p className="create-review-section-label">Preview</p>
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
           <p className="create-review-preview-body">{createPreviewBody || "No preview available yet."}</p>
@@ -1191,13 +1199,13 @@ export default function CreateCampaignModalContent({
             <p className="create-review-section-label">Generated summary</p>
             <span className="create-review-summary-bytes">{reviewSummaryBytes}/{SUMMARY_MAX_BYTES} bytes</span>
           </div>
-          <textarea
+          <input
+            type="text"
             value={activeReviewSummary}
             onChange={(event) => {
               setReviewSummary(truncateToUtf8Bytes(event.target.value, SUMMARY_MAX_BYTES));
               setErrorMsg("");
             }}
-            rows={4}
             className="create-review-summary-input theme-input"
             placeholder="Summary that will be stored on-chain"
           />
@@ -1358,7 +1366,7 @@ export default function CreateCampaignModalContent({
                 ) : draftSaveStatus === "error" ? (
                   <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
                 ) : status === "pending" ? "…" : isReviewStep ? (
-                  <SendHorizonal size={30} strokeWidth={2} aria-hidden="true" />
+                  <SendHorizontal size={30} strokeWidth={2} aria-hidden="true" />
                 ) : (
                   <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
                 )}
