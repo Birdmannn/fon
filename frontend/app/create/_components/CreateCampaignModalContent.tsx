@@ -1,6 +1,7 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
@@ -1352,33 +1353,9 @@ export default function CreateCampaignModalContent({
                 }
               >
                 {draftSaveStatus === "saving" ? (
-                  <svg
-                    className="create-modal-send-spinner"
-                    width="44"
-                    height="44"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                  >
-                    <circle cx="12" cy="12" r="8" opacity="0.28" />
-                    <path d="M12 4a8 8 0 0 1 8 8" />
-                  </svg>
+                  <LoaderCircle className="create-modal-send-spinner" size={44} strokeWidth={2.2} aria-hidden="true" />
                 ) : draftSaveStatus === "error" ? (
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3 2v6h6" />
-                    <path d="M3.51 15a9 9 0 1 0 .49-9" />
-                  </svg>
+                  <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
                 ) : status === "pending" ? "…" : "➤"}
               </button>
             </>

@@ -132,7 +132,7 @@ body {
 .header-info-inner-ring {
   position: absolute;
   inset: 17%;
-  border: 1px solid currentColor;
+  border: 2px solid currentColor;
   border-radius: 9999px;
   pointer-events: none;
   transition: inset 250ms ease;
@@ -303,6 +303,8 @@ body {
 .campaign-action-icon {
   display: inline-block;
   flex-shrink: 0;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
 }
 
 .campaign-action-count {

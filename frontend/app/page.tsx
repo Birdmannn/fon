@@ -1,5 +1,20 @@
 "use client";
 
+import {
+  ArrowLeft,
+  Bookmark,
+  CheckCircle,
+  Coins,
+  Heart,
+  Info,
+  MessageSquare,
+  Plus,
+  RefreshCw,
+  Repeat2,
+  RotateCcw,
+  Search,
+  X,
+} from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import CreateCampaignModalContent, { CreateConstraintStatus, CreateModalStep } from "@/app/create/_components/CreateCampaignModalContent";
@@ -277,18 +292,7 @@ export default function Home() {
                   onClick={resetCreateModal}
                   aria-label="Reset create campaign form"
                 >
-                  <svg
-                    className="campaign-action-icon"
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  >
-                    <path d="M3 2v6h6" />
-                    <path d="M3.51 15a9 9 0 1 0 .49-9" />
-                  </svg>
+                  <RotateCcw className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -298,30 +302,9 @@ export default function Home() {
                   aria-label={createTopActionLabel}
                 >
                   {createModalStep === "review" ? (
-                    <svg
-                      className="campaign-action-icon"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M15 18l-6-6 6-6" />
-                    </svg>
+                    <ArrowLeft className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                   ) : (
-                    <svg
-                      className="campaign-action-icon"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M18 6 6 18" />
-                      <path d="m6 6 12 12" />
-                    </svg>
+                    <X className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
                   )}
                 </button>
               </div>
@@ -398,10 +381,7 @@ export default function Home() {
                           >
                             {passed && (
                               <span className="create-info-constraint-check" aria-hidden="true">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="12" cy="12" r="9" />
-                                  <path d="m8.5 12 2.2 2.2 4.8-4.8" />
-                                </svg>
+                                <CheckCircle size={14} strokeWidth={2.4} />
                               </span>
                             )}
                             <span>{item.text}</span>
@@ -462,6 +442,7 @@ export default function Home() {
           }}
         >
           <span className="header-info-inner-ring" aria-hidden="true" />
+          {/* <Info size={16} strokeWidth={2.2} aria-hidden="true" /> */}
           <span className="header-info-glyph" aria-hidden="true">i</span>
         </button>
       )}
@@ -500,18 +481,7 @@ export default function Home() {
         className="fixed left-8 create-campaign-fab"
         onClick={openCreateModal}
       >
-        <svg
-          width="48"
-          height="48"
-          viewBox="0 0 48 48"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="3"
-          strokeLinecap="round"
-        >
-          <line x1="24" y1="8" x2="24" y2="40" />
-          <line x1="8" y1="24" x2="40" y2="24" />
-        </svg>
+        <Plus size={48} strokeWidth={2} aria-hidden="true" />
       </button>
     </main>
   );
@@ -600,19 +570,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
             className="campaign-action-btn"
             data-tooltip="Refresh campaigns"
           >
-            <svg
-              className={`campaign-action-icon ${isRefreshing ? "refreshing" : ""}`}
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36" />
-            </svg>
+            <RefreshCw className={`campaign-action-icon ${isRefreshing ? "refreshing" : ""}`} size={24} strokeWidth={2} aria-hidden="true" />
           </button>
           <div className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}>
             <input
@@ -629,18 +587,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
             className="campaign-action-btn"
             data-tooltip="Search campaigns"
           >
-            <svg
-              className="campaign-action-icon"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.35-4.35" />
-            </svg>
+            <Search className="campaign-action-icon" size={24} strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -793,17 +740,7 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           className={`campaign-action-btn ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
         >
-          <svg
-            className="campaign-action-icon"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-          </svg>
+          <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
           <span className="campaign-action-count">{likes}</span>
         </button>
 
@@ -812,17 +749,7 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
         >
-          <svg
-            className="campaign-action-icon"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
+          <Bookmark className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
           <span className="campaign-action-count">{bookmarks}</span>
         </button>
 
@@ -831,17 +758,7 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
         >
-          <svg
-            className="campaign-action-icon"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
+          <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
           <span className="campaign-action-count">{comments}</span>
         </button>
 
@@ -850,18 +767,7 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
         >
-          <svg
-            className="campaign-action-icon"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M1 4v6h6M23 20v-6h-6" />
-            <path d="M20.49 9A9 9 0 0 0 5.64 5.64M3.51 15A9 9 0 0 0 18.36 18.36" />
-          </svg>
+          <Repeat2 className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
           <span className="campaign-action-count">{reshares}</span>
         </button>
 
@@ -870,17 +776,7 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           className={`campaign-action-btn ml-auto ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to deposit" : "Deposit CKB"}
         >
-          <svg
-            className="campaign-action-icon"
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M12 1v22M17 5H9a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" />
-          </svg>
+          <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
           <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
         </button>
       </div>
