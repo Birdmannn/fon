@@ -21,6 +21,18 @@ const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
   { key: "additionalHashtagsPassed", text: "4. Additional hashtags may follow after the first compulsory hashtag." },
 ];
 
+const CREATE_INFO_TYPING_HEADING = "Typing:";
+
+const CREATE_INFO_TYPING_ITEMS = [
+  "Start with 1. then press Enter to continue numbered lists.",
+  "Start with -, *, or • then press Enter to continue bullet lists.",
+  "Start with [ ] or [x] to continue checkbox items.",
+  "Type ## at the start of a line for a larger heading line.",
+  "Use # for hashtags and @ for mentions.",
+];
+
+
+
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -367,6 +379,12 @@ export default function Home() {
                       </p>
                     );
                   })}
+                  <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
+                  {CREATE_INFO_TYPING_ITEMS.map((item) => (
+                    <p key={item} className="create-info-constraint-item">
+                      <span>{item}</span>
+                    </p>
+                  ))}
                 </div>
               )}
             </div>
