@@ -736,9 +736,16 @@ body {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);
 }
 
-.create-modal-send-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.create-modal-send-btn-loading {
+  transform: none !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16) !important;
+}
+
+.create-modal-send-btn-loading:hover,
+.create-modal-send-btn-loading:focus-visible,
+.create-modal-send-btn-loading:active {
+  transform: none !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.16) !important;
 }
 
 .create-modal-mentions-row {

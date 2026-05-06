@@ -1,7 +1,8 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { LoaderCircle, RefreshCw } from "lucide-react";
+import { ArrowRight, LoaderCircle, RefreshCw, Send, SendHorizonal } from "lucide-react";
+
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
@@ -1320,7 +1321,7 @@ export default function CreateCampaignModalContent({
                       : undefined
                     : () => void handleAdvanceToReview()
                 }
-                className={`create-modal-send-btn ${(
+                className={`create-modal-send-btn ${draftSaveStatus === "saving" ? "create-modal-send-btn-loading" : ""} ${(
                   isReviewStep
                     ? draftSaveStatus === "saving"
                       ? true
@@ -1353,10 +1354,14 @@ export default function CreateCampaignModalContent({
                 }
               >
                 {draftSaveStatus === "saving" ? (
-                  <LoaderCircle className="create-modal-send-spinner" size={44} strokeWidth={2.2} aria-hidden="true" />
+                  <LoaderCircle className="create-modal-send-spinner" size={40} strokeWidth={2} aria-hidden="true" />
                 ) : draftSaveStatus === "error" ? (
                   <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
-                ) : status === "pending" ? "…" : "➤"}
+                ) : status === "pending" ? "…" : isReviewStep ? (
+                  <SendHorizonal size={30} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
+                )}
               </button>
             </>
           ) : (

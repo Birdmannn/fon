@@ -6,7 +6,6 @@ import {
   CheckCircle,
   Coins,
   Heart,
-  Info,
   MessageSquare,
   Plus,
   RefreshCw,
@@ -302,7 +301,7 @@ export default function Home() {
                   aria-label={createTopActionLabel}
                 >
                   {createModalStep === "review" ? (
-                    <ArrowLeft className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                    <ArrowLeft className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <X className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
                   )}
