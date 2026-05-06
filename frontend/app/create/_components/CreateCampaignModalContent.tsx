@@ -214,11 +214,10 @@ export default function CreateCampaignModalContent({
   const isPublishDisabled =
     status === "pending" ||
     draftSaveStatus === "saving" ||
-    draftSaveStatus === "error" ||
-    !hasValidReviewSummary ||
-    !hasValidDuration ||
-    !hasValidMaxAmount ||
-    !hasValidRaffleTicketPrice;
+    (!draftSaveError && !hasValidReviewSummary) ||
+    (!draftSaveError && !hasValidDuration) ||
+    (!draftSaveError && !hasValidMaxAmount) ||
+    (!draftSaveError && !hasValidRaffleTicketPrice);
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
@@ -830,6 +829,9 @@ export default function CreateCampaignModalContent({
   };
 
   const handleRetryDraftSave = async () => {
+    setStatus("idle");
+    setErrorMsg("");
+
     try {
       await persistDraftRecord(activeReviewSummary, "draft");
     } catch {
@@ -1208,14 +1210,14 @@ export default function CreateCampaignModalContent({
         </div>
 
         <div className="create-review-draft-status-row">
-          {draftSaveStatus === "saving" && <p className="create-review-draft-status">Saving draft preview…</p>}
-          {draftSaveStatus === "saved" && <p className="create-review-draft-status create-review-draft-status-success">Draft preview saved</p>}
-          {draftSaveStatus === "error" && (
-            <div className="create-review-draft-error-wrap">
-              <p className="create-review-draft-status create-review-draft-status-error">Draft save failed. Hover on info for more.</p>
-              <button type="button" onClick={handleRetryDraftSave} className="create-review-inline-btn">
-                Retry
-              </button>
+          {draftSaveStatus === "saving" && (
+            <div
+              className="create-review-save-progress"
+              aria-label="Saving preview draft"
+              role="progressbar"
+              aria-valuetext="Saving preview draft"
+            >
+              <span className="create-review-save-progress-bar" />
             </div>
           )}
         </div>
@@ -1311,26 +1313,50 @@ export default function CreateCampaignModalContent({
               )}
 
               <button
-                type={isReviewStep ? "submit" : "button"}
-                disabled={isReviewStep ? isPublishDisabled : isNextDisabled}
-                onClick={isReviewStep ? undefined : () => void handleAdvanceToReview()}
-                className={`create-modal-send-btn ${(isReviewStep ? isPublishDisabled : isNextDisabled) ? "" : "create-modal-send-btn-active"}`.trim()}
+                type={isReviewStep && draftSaveStatus !== "error" ? "submit" : "button"}
+                disabled={isReviewStep ? (draftSaveStatus === "error" ? false : isPublishDisabled) : isNextDisabled}
+                onClick={
+                  isReviewStep
+                    ? draftSaveStatus === "error"
+                      ? () => void handleRetryDraftSave()
+                      : undefined
+                    : () => void handleAdvanceToReview()
+                }
+                className={`create-modal-send-btn ${((isReviewStep ? (draftSaveStatus === "error" ? false : isPublishDisabled) : isNextDisabled)) ? "" : "create-modal-send-btn-active"}`.trim()}
                 aria-label={
                   isReviewStep
-                    ? status === "pending"
-                      ? "Publishing"
-                      : "Publish campaign"
+                    ? draftSaveStatus === "error"
+                      ? "Retry saving preview"
+                      : status === "pending"
+                        ? "Publishing"
+                        : "Publish campaign"
                     : "Next"
                 }
                 title={
                   isReviewStep
-                    ? status === "pending"
-                      ? "Publishing..."
-                      : "Publish campaign"
+                    ? draftSaveStatus === "error"
+                      ? "Retry saving preview"
+                      : status === "pending"
+                        ? "Publishing..."
+                        : "Publish campaign"
                     : "Next"
                 }
               >
-                {status === "pending" ? "…" : "➤"}
+                {draftSaveStatus === "error" ? (
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 2v6h6" />
+                    <path d="M3.51 15a9 9 0 1 0 .49-9" />
+                  </svg>
+                ) : status === "pending" ? "…" : "➤"}
               </button>
             </>
           ) : (
