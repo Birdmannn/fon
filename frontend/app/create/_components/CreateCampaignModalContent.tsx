@@ -932,58 +932,58 @@ export default function CreateCampaignModalContent({
 
   const renderModalArgsInputs = () => (
     <div className="create-review-args-grid">
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-semibold theme-fg">⏱️ Duration</label>
-        <div className="flex items-center gap-1">
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">Duration</label>
+        <div className="create-review-arg-control">
           <input
             type="number"
             min="0.5"
             step="0.5"
             value={taskDurationHours}
             onChange={(event) => setTaskDurationHours(event.target.value)}
-            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+            className="create-review-arg-input"
           />
-          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
+          <span className="create-review-arg-unit">hrs</span>
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-semibold theme-fg">💰 Max Deposit</label>
-        <div className="flex items-center gap-1">
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">Max deposit</label>
+        <div className="create-review-arg-control">
           <input
             type="number"
             min="1"
             step="1"
             value={maxAmountCkb}
             onChange={(event) => setMaxAmountCkb(event.target.value)}
-            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
+            className="create-review-arg-input"
           />
-          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
+          <span className="create-review-arg-unit">CKB</span>
         </div>
       </div>
 
       {shouldCollectRaffleTicketPrice ? (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold theme-fg">🎟️ Ticket Price</label>
-          <div className="flex items-center gap-1">
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Ticket price</label>
+          <div className="create-review-arg-control">
             <input
               type="number"
               min="1"
               step="1"
               value={raffleTicketPriceCkb}
               onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
-              className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-emerald-500"
+              className="create-review-arg-input"
             />
-            <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
+            <span className="create-review-arg-unit">CKB</span>
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold theme-fg">💬 Social</label>
-          <div className="flex items-center justify-center gap-1 theme-bg border-2 theme-border rounded-lg px-2 py-1 min-h-[2rem]">
-            <span className="text-red-500 font-bold text-sm">❤️</span>
-            <span className="text-green-500 font-bold text-sm">💬</span>
-            <span className="text-orange-500 font-bold text-sm">🔄</span>
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Social</label>
+          <div className="create-review-social-control" aria-label="Social actions enabled">
+            <span>Like</span>
+            <span>Reply</span>
+            <span>Share</span>
           </div>
         </div>
       )}
@@ -1181,9 +1181,9 @@ export default function CreateCampaignModalContent({
         </div>
 
         <div className="create-review-args-card">
-          <div className="flex items-center justify-between gap-3">
+          <div className="create-review-card-heading-row">
             <p className="create-review-section-label">Campaign args</p>
-            <span className="text-xs theme-fg opacity-70">Post content is being saved off-chain</span>
+            <span className="create-review-offchain-note">Content saved off-chain</span>
           </div>
           {renderModalArgsInputs()}
         </div>
