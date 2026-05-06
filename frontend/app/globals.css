@@ -876,11 +876,28 @@ body {
   color: #111;
 }
 
+.create-review-preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
 .create-review-preview-body {
-  margin: 0.55rem 0 0;
+  margin: 0;
   font-size: 0.9rem;
   line-height: 1.5;
   color: #3f3f46;
+  white-space: pre-wrap;
+}
+
+.create-review-preview-quote-row {
+  margin: 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid #9ca3af;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #52525b;
   white-space: pre-wrap;
 }
 

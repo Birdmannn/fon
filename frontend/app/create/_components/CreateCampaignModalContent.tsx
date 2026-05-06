@@ -95,13 +95,33 @@ const getNextListLine = (currentLine: string) => {
   return null;
 };
 
-const buildPreviewExcerpt = (text: string, maxChars: number) => {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxChars) {
-    return normalized;
+const buildPreviewLines = (text: string, maxChars: number) => {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return [] as string[];
   }
 
-  return `${normalized.slice(0, maxChars).trimEnd()}…`;
+  const lines = trimmed.split("\n");
+  const output: string[] = [];
+  let remaining = maxChars;
+
+  for (const rawLine of lines) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const line = rawLine.replace(/\s+$/g, "");
+    const take = line.slice(0, remaining);
+    output.push(take);
+    remaining -= take.length;
+
+    if (line.length > take.length) {
+      output[output.length - 1] = `${take.trimEnd()}…`;
+      break;
+    }
+  }
+
+  return output;
 };
 
 export type CreateModalStep = "compose" | "review";
@@ -202,7 +222,7 @@ export default function CreateCampaignModalContent({
   const constraintsPassed = hasRequiredTitle && hasRequiredBodyLength && hasRequiredCompulsoryHashtag;
   const summaryBytes = createContentChars;
   const title = "Create a Campaign";
-  const createPreviewBody = buildPreviewExcerpt(trimmedModalDescription, 220);
+  const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
   const activeModalError = draftSaveError || errorMsg;
   const isNextDisabled = status === "pending" || !constraintsPassed;
   const parsedDurationHours = Number.parseFloat(taskDurationHours);
@@ -1183,7 +1203,25 @@ export default function CreateCampaignModalContent({
         <div className="create-review-preview-card create-review-preview-card-main">
           <p className="create-review-section-label">Preview</p>
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
-          <p className="create-review-preview-body">{createPreviewBody || "No preview available yet."}</p>
+          {createPreviewLines.length > 0 ? (
+            <div className="create-review-preview-content">
+              {createPreviewLines.map((line, index) => {
+                const isQuote = /^\s*>/.test(line);
+
+                return isQuote ? (
+                  <div key={`${line}-${index}`} className="create-review-preview-quote-row">
+                    {line.replace(/^\s*>\s?/, "")}
+                  </div>
+                ) : (
+                  <p key={`${line}-${index}`} className="create-review-preview-body">
+                    {line}
+                  </p>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="create-review-preview-body">No preview available yet.</p>
+          )}
           {(firstHashtag || otherHashtags.length > 0) && (
             <div className="create-review-tag-row">
               {firstHashtag && <span className="create-review-primary-tag">#{firstHashtag}</span>}
