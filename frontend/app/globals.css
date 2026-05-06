@@ -1037,78 +1037,21 @@ body {
   background: #f4f4f5;
 }
 
-.create-review-draft-status-row {
-  min-height: 0.45rem;
+
+.create-modal-send-spinner {
+  display: block;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+  animation: create-modal-send-spin 0.9s linear infinite;
 }
 
-.create-review-save-progress {
-  position: relative;
-  width: 100%;
-  height: 0.42rem;
-  overflow: hidden;
-  border-radius: 9999px;
-  background: rgba(23, 23, 23, 0.1);
-}
-
-.create-review-save-progress-bar {
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(23, 23, 23, 0.16), rgba(23, 23, 23, 0.82), rgba(23, 23, 23, 0.16));
-  animation: create-review-save-progress 1.05s ease-in-out infinite;
-}
-
-@keyframes create-review-save-progress {
+@keyframes create-modal-send-spin {
   from {
-    transform: translateX(-120%);
+    transform: rotate(0deg);
   }
   to {
-    transform: translateX(260%);
+    transform: rotate(360deg);
   }
-}
-
-.create-review-inline-btn {
-  border: none;
-  background: none;
-  color: #2563eb;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-}
-
-.create-review-inline-btn:hover {
-  text-decoration: underline;
-}
-
-@media (max-width: 768px) {
-  .create-review-args-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 768px) {
-  .create-campaign-modal {
-    left: 0.75rem;
-    right: 0.75rem;
-    top: max(4.75rem, 8vh);
-    height: 80vh;
-  }
-}
-
-.create-review-inline-btn {
-  border: none;
-  background: none;
-  color: #2563eb;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-}
-
-.create-review-inline-btn:hover {
-  text-decoration: underline;
 }
 
 @media (max-width: 768px) {

@@ -1209,18 +1209,7 @@ export default function CreateCampaignModalContent({
           {renderModalArgsInputs()}
         </div>
 
-        <div className="create-review-draft-status-row">
-          {draftSaveStatus === "saving" && (
-            <div
-              className="create-review-save-progress"
-              aria-label="Saving preview draft"
-              role="progressbar"
-              aria-valuetext="Saving preview draft"
-            >
-              <span className="create-review-save-progress-bar" />
-            </div>
-          )}
-        </div>
+        <div className="create-review-draft-status-row" aria-hidden="true" />
       </div>
     </div>
   );
@@ -1313,8 +1302,16 @@ export default function CreateCampaignModalContent({
               )}
 
               <button
-                type={isReviewStep && draftSaveStatus !== "error" ? "submit" : "button"}
-                disabled={isReviewStep ? (draftSaveStatus === "error" ? false : isPublishDisabled) : isNextDisabled}
+                type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
+                disabled={
+                  isReviewStep
+                    ? draftSaveStatus === "saving"
+                      ? true
+                      : draftSaveStatus === "error"
+                        ? false
+                        : isPublishDisabled
+                    : isNextDisabled
+                }
                 onClick={
                   isReviewStep
                     ? draftSaveStatus === "error"
@@ -1322,27 +1319,53 @@ export default function CreateCampaignModalContent({
                       : undefined
                     : () => void handleAdvanceToReview()
                 }
-                className={`create-modal-send-btn ${((isReviewStep ? (draftSaveStatus === "error" ? false : isPublishDisabled) : isNextDisabled)) ? "" : "create-modal-send-btn-active"}`.trim()}
+                className={`create-modal-send-btn ${(
+                  isReviewStep
+                    ? draftSaveStatus === "saving"
+                      ? true
+                      : draftSaveStatus === "error"
+                        ? false
+                        : isPublishDisabled
+                    : isNextDisabled
+                ) ? "" : "create-modal-send-btn-active"}`.trim()}
                 aria-label={
                   isReviewStep
-                    ? draftSaveStatus === "error"
-                      ? "Retry saving preview"
-                      : status === "pending"
-                        ? "Publishing"
-                        : "Publish campaign"
+                    ? draftSaveStatus === "saving"
+                      ? "Saving preview"
+                      : draftSaveStatus === "error"
+                        ? "Retry saving preview"
+                        : status === "pending"
+                          ? "Publishing"
+                          : "Publish campaign"
                     : "Next"
                 }
                 title={
                   isReviewStep
-                    ? draftSaveStatus === "error"
-                      ? "Retry saving preview"
-                      : status === "pending"
-                        ? "Publishing..."
-                        : "Publish campaign"
+                    ? draftSaveStatus === "saving"
+                      ? "Saving preview..."
+                      : draftSaveStatus === "error"
+                        ? "Retry saving preview"
+                        : status === "pending"
+                          ? "Publishing..."
+                          : "Publish campaign"
                     : "Next"
                 }
               >
-                {draftSaveStatus === "error" ? (
+                {draftSaveStatus === "saving" ? (
+                  <svg
+                    className="create-modal-send-spinner"
+                    width="44"
+                    height="44"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                  >
+                    <circle cx="12" cy="12" r="8" opacity="0.28" />
+                    <path d="M12 4a8 8 0 0 1 8 8" />
+                  </svg>
+                ) : draftSaveStatus === "error" ? (
                   <svg
                     width="22"
                     height="22"
