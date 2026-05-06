@@ -138,6 +138,7 @@ export default function CreateCampaignModalContent({
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
+  const lastHandledStepBackSignalRef = useRef(stepBackSignal);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -383,12 +384,21 @@ export default function CreateCampaignModalContent({
   }, [mode, resetSignal, resetComposer]);
 
   useEffect(() => {
-    if (!isModal || stepBackSignal === 0 || modalStep !== "review" || status === "pending") {
+    if (
+      !isModal ||
+      stepBackSignal === 0 ||
+      stepBackSignal === lastHandledStepBackSignalRef.current ||
+      modalStep !== "review" ||
+      status === "pending"
+    ) {
       return;
     }
 
+    lastHandledStepBackSignalRef.current = stepBackSignal;
     setModalStep("compose");
+    setStatus("idle");
     setErrorMsg("");
+    setDraftSaveStatus("idle");
     setDraftSaveError("");
     hideMenus();
   }, [hideMenus, isModal, modalStep, status, stepBackSignal]);
@@ -799,6 +809,9 @@ export default function CreateCampaignModalContent({
 
     const nextSummary = buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription });
     setReviewSummary(nextSummary);
+    setStatus("idle");
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
     setModalStep("review");
     setErrorMsg("");
     hideMenus();
