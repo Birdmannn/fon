@@ -31,7 +31,16 @@ const CREATE_INFO_TYPING_ITEMS = [
   "Use # for hashtags and @ for mentions.",
 ];
 
+const CREATE_INFO_PREVIEW_HEADING = "Preview:";
 
+const CREATE_INFO_PREVIEW_ITEMS = [
+  "The generated summary is the short on-chain version of the post.",
+  "It is required because on-chain summary storage is limited to 64 UTF-8 bytes.",
+  "You can edit the summary before publishing if you want a clearer on-chain description.",
+  "Review and set the campaign args here, especially duration and max deposit.",
+  "If the first hashtag is #Raffle, a ticket price is also required.",
+  "The full title, description, mentions, and review snapshot are saved off-chain.",
+];
 
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -52,6 +61,7 @@ export default function Home() {
     firstHashtagPassed: false,
     additionalHashtagsPassed: true,
   });
+  const [previewError, setPreviewError] = useState("");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,12 +138,11 @@ export default function Home() {
     }, INFO_MODAL_ANIMATION_MS);
   }, [showInfoModal, isInfoModalClosing]);
 
-
-
   const openCreateModal = () => {
     clearCreateHideTimer();
     setIsCreateModalClosing(false);
     setCreateModalStep("compose");
+    setPreviewError("");
     setShowCreateModal(true);
   };
 
@@ -146,12 +155,14 @@ export default function Home() {
       setShowCreateModal(false);
       setIsCreateModalClosing(false);
       setCreateModalStep("compose");
+      setPreviewError("");
       createHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
   }, [showCreateModal, isCreateModalClosing]);
 
   const resetCreateModal = useCallback(() => {
     setCreateModalStep("compose");
+    setPreviewError("");
     setCreateResetSignal((current) => current + 1);
   }, []);
 
@@ -179,6 +190,7 @@ export default function Home() {
     if (createModalStep === "review") {
       setCreateStepBackSignal((current) => current + 1);
       setCreateModalStep("compose");
+      setPreviewError("");
       return;
     }
 
@@ -235,11 +247,9 @@ export default function Home() {
       <div className="w-full max-w-2xl flex flex-col gap-6">
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="header-info-wrap">
-            <div
-              onMouseEnter={openInfoModalFromHover}
-              onMouseLeave={scheduleCloseInfoModal}
-            >
+            <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
+                ref={headerInfoButtonRef}
                 type="button"
                 className="header-info-btn"
                 aria-label="Open Freight information"
@@ -358,41 +368,58 @@ export default function Home() {
               </p>
               {showCreateModal && (
                 <div className="create-info-constraints-copy">
-                  <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
-                  {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
-                    const passed = constraintStatus[item.key];
+                  {createModalStep === "review" ? (
+                    <>
+                      <p>{CREATE_INFO_PREVIEW_HEADING}</p>
+                      {CREATE_INFO_PREVIEW_ITEMS.map((item) => (
+                        <p key={item} className="create-info-constraint-item">
+                          <span>{item}</span>
+                        </p>
+                      ))}
+                      {previewError && (
+                        <>
+                          <p className="mt-3 text-red-500 font-semibold">Errors</p>
+                          <p className="create-info-constraint-item text-red-500">
+                            <span>{previewError}</span>
+                          </p>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
+                      {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
+                        const passed = constraintStatus[item.key];
 
-                    return (
-                      <p
-                        key={item.key}
-                        className={`create-info-constraint-item ${passed ? "create-info-constraint-item-pass" : ""}`}
-                      >
-                        {passed && (
-                          <span className="create-info-constraint-check" aria-hidden="true">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                              <circle cx="12" cy="12" r="9" />
-                              <path d="m8.5 12 2.2 2.2 4.8-4.8" />
-                            </svg>
-                          </span>
-                        )}
-                        <span>{item.text}</span>
-                      </p>
-                    );
-                  })}
-                  <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
-                  {CREATE_INFO_TYPING_ITEMS.map((item) => (
-                    <p key={item} className="create-info-constraint-item">
-                      <span>{item}</span>
-                    </p>
-                  ))}
+                        return (
+                          <p
+                            key={item.key}
+                            className={`create-info-constraint-item ${passed ? "create-info-constraint-item-pass" : ""}`}
+                          >
+                            {passed && (
+                              <span className="create-info-constraint-check" aria-hidden="true">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="9" />
+                                  <path d="m8.5 12 2.2 2.2 4.8-4.8" />
+                                </svg>
+                              </span>
+                            )}
+                            <span>{item.text}</span>
+                          </p>
+                        );
+                      })}
+                      <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
+                      {CREATE_INFO_TYPING_ITEMS.map((item) => (
+                        <p key={item} className="create-info-constraint-item">
+                          <span>{item}</span>
+                        </p>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </div>
           )}
-
-          {/* <a href="/create" className="px-4 py-2 rounded-full font-semibold text-sm btn-wallet w-full sm:w-auto text-center">
-            Connect Wallet (debug)
-          </a> */}
         </div>
 
         {signer && (
@@ -462,6 +489,7 @@ export default function Home() {
             stepBackSignal={createStepBackSignal}
             onStepChange={setCreateModalStep}
             onConstraintStatusChange={setConstraintStatus}
+            onPreviewErrorChange={setPreviewError}
           />
         </div>
       )}
@@ -586,9 +614,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36M20.49 15a9 9 0 0 1-14.85 3.36" />
             </svg>
           </button>
-          <div
-            className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}
-          >
+          <div className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}>
             <input
               ref={searchInputRef}
               type="text"
@@ -636,11 +662,7 @@ function CampaignList({ campaigns, loading, error }: { campaigns: CampaignCell[]
   }
 
   if (campaigns.length === 0) {
-    return (
-      <p className="text-sm text-gray-400">
-        No campaigns found on testnet yet.
-      </p>
-    );
+    return <p className="text-sm text-gray-400">No campaigns found on testnet yet.</p>;
   }
 
   return (
@@ -662,7 +684,6 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
   const maxCkb = (Number(data.maximumAmount) / 1e8).toFixed(2);
   const depositedCkb = (Number(data.currentDeposits) / 1e8).toFixed(2);
 
-  // Action state
   const [likes, setLikes] = useState(0);
   const [bookmarks, setBookmarks] = useState(0);
   const [comments, setComments] = useState(0);
@@ -672,7 +693,6 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
   const [userCommented, setUserCommented] = useState(false);
   const [userReshared, setUserReshared] = useState(false);
 
-  // Deposit modal state
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositing, setIsDepositing] = useState(false);
@@ -730,7 +750,6 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
       alert(`Deposit sent! Tx: ${txHash}`);
       setShowDepositModal(false);
       setDepositAmount("");
-      // Note: In production, you'd wait for confirmation and refetch campaigns
     } catch (error) {
       alert(`Deposit failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -759,16 +778,15 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           <span className="text-gray-400 text-xs">Created {createdAtDate}</span>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 text-xs text-gray-500">
-        {data.rewardCount > 0n && (
-          <span>
-            Reward count:{" "}
-            <strong className="text-gray-800">{String(data.rewardCount)}</strong>
-          </span>
-        )}
-      </div>
+          {data.rewardCount > 0n && (
+            <span>
+              Reward count:{" "}
+              <strong className="text-gray-800">{String(data.rewardCount)}</strong>
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Campaign Actions */}
       <div className="flex items-center gap-2 pt-2 pb-3 text-xs">
         <button
           onClick={handleLike}
@@ -867,7 +885,6 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
         </button>
       </div>
 
-      {/* Deposit Modal */}
       {showDepositModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4">

@@ -121,6 +121,7 @@ type CreateCampaignModalContentProps = {
   stepBackSignal?: number;
   onStepChange?: (step: CreateModalStep) => void;
   onConstraintStatusChange?: (status: CreateConstraintStatus) => void;
+  onPreviewErrorChange?: (message: string) => void;
 };
 
 export default function CreateCampaignModalContent({
@@ -130,6 +131,7 @@ export default function CreateCampaignModalContent({
   stepBackSignal = 0,
   onStepChange,
   onConstraintStatusChange,
+  onPreviewErrorChange,
 }: CreateCampaignModalContentProps) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -416,6 +418,10 @@ export default function CreateCampaignModalContent({
     hasRequiredCompulsoryHashtag,
     onConstraintStatusChange,
   ]);
+
+  useEffect(() => {
+    onPreviewErrorChange?.(isReviewStep ? activeModalError : "");
+  }, [activeModalError, isReviewStep, onPreviewErrorChange]);
 
   const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
     const text = event.currentTarget.textContent || "";
@@ -1206,7 +1212,7 @@ export default function CreateCampaignModalContent({
           {draftSaveStatus === "saved" && <p className="create-review-draft-status create-review-draft-status-success">Draft preview saved</p>}
           {draftSaveStatus === "error" && (
             <div className="create-review-draft-error-wrap">
-              <p className="create-review-draft-status create-review-draft-status-error">{draftSaveError}</p>
+              <p className="create-review-draft-status create-review-draft-status-error">Draft save failed. Hover on info for more.</p>
               <button type="button" onClick={handleRetryDraftSave} className="create-review-inline-btn">
                 Retry
               </button>
@@ -1289,13 +1295,19 @@ export default function CreateCampaignModalContent({
               </div>
 
               {activeModalError && (
-                <div
-                  className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
-                  style={{ bottom: isReviewStep ? "5.7rem" : mentions.length > 0 ? "7.6rem" : "3.2rem" }}
-                >
-                  <p className="text-sm font-semibold text-red-500">Error</p>
-                  <p className="text-xs text-red-600 break-all">{activeModalError}</p>
-                </div>
+                isReviewStep ? (
+                  <div className="create-modal-constraints-row">
+                    <p className="create-modal-constraints-text text-red-500">An Error Occurred. Hover on info for more</p>
+                  </div>
+                ) : (
+                  <div
+                    className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
+                    style={{ bottom: mentions.length > 0 ? "7.6rem" : "3.2rem" }}
+                  >
+                    <p className="text-sm font-semibold text-red-500">Error</p>
+                    <p className="text-xs text-red-600 break-all">{activeModalError}</p>
+                  </div>
+                )
               )}
 
               <button
