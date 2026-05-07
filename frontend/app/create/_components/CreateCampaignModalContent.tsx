@@ -169,6 +169,7 @@ export default function CreateCampaignModalContent({
   const [modalTitle, setModalTitle] = useState("");
   const [modalDescription, setModalDescription] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
+  const [taskStartDelayHours, setTaskStartDelayHours] = useState("0");
   const [taskDurationHours, setTaskDurationHours] = useState("24");
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
@@ -225,11 +226,13 @@ export default function CreateCampaignModalContent({
   const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
   const activeModalError = draftSaveError || errorMsg;
   const isNextDisabled = status === "pending" || !constraintsPassed;
+  const parsedStartDelayHours = Number.parseFloat(taskStartDelayHours);
   const parsedDurationHours = Number.parseFloat(taskDurationHours);
   const parsedMaxAmountCkb = Number.parseFloat(maxAmountCkb);
   const parsedRaffleTicketPriceCkb = Number.parseFloat(raffleTicketPriceCkb);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
   const hasValidReviewSummary = activeReviewSummary.trim().length > 0 && reviewSummaryBytes <= SUMMARY_MAX_BYTES;
+  const hasValidStartDelay = Number.isFinite(parsedStartDelayHours) && parsedStartDelayHours >= 0;
   const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
   const hasValidMaxAmount = Number.isFinite(parsedMaxAmountCkb) && parsedMaxAmountCkb > 0;
   const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
@@ -237,6 +240,7 @@ export default function CreateCampaignModalContent({
     status === "pending" ||
     draftSaveStatus === "saving" ||
     (!draftSaveError && !hasValidReviewSummary) ||
+    (!draftSaveError && !hasValidStartDelay) ||
     (!draftSaveError && !hasValidDuration) ||
     (!draftSaveError && !hasValidMaxAmount) ||
     (!draftSaveError && !hasValidRaffleTicketPrice);
@@ -379,6 +383,7 @@ export default function CreateCampaignModalContent({
     setErrorMsg("");
     setMentions([]);
     setCampaignType(CampaignType.SimpleTask);
+    setTaskStartDelayHours("0");
     setTaskDurationHours("24");
     setMaxAmountCkb("1000");
     setRaffleTicketPriceCkb("1");

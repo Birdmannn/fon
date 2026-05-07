@@ -561,7 +561,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   return (
     <>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg sm:text-xl font-semibold">Campaigns</h2>
+        <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>
         <div className="flex items-center gap-2 justify-end">
           <button
             onClick={handleRefresh}
