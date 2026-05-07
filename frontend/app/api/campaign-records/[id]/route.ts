@@ -10,6 +10,7 @@ type CampaignRecordPayload = {
   campaignType?: unknown;
   summaryDraft?: unknown;
   argsDraft?: {
+    taskStartDelayHours?: unknown;
     taskDurationHours?: unknown;
     maxAmountCkb?: unknown;
     auxAmountCkb?: unknown;
@@ -22,6 +23,7 @@ type CampaignRecordPayload = {
     reshareCount?: unknown;
   };
   creatorAddress?: unknown;
+  creatorHandle?: unknown;
   status?: unknown;
   txHash?: unknown;
   publishError?: unknown;
@@ -76,6 +78,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const summaryDraft = ensureString(payload.summaryDraft, "summaryDraft").trim();
   ensureSummaryWithinLimit(summaryDraft);
 
+  const taskStartDelayHours = ensureNumberString(payload.argsDraft?.taskStartDelayHours, "argsDraft.taskStartDelayHours");
   const taskDurationHours = ensureNumberString(payload.argsDraft?.taskDurationHours, "argsDraft.taskDurationHours");
   const maxAmountCkb = ensureNumberString(payload.argsDraft?.maxAmountCkb, "argsDraft.maxAmountCkb");
   const auxAmountCkb = ensureNumberString(payload.argsDraft?.auxAmountCkb, "argsDraft.auxAmountCkb");
@@ -97,6 +100,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const txHash = ensureOptionalString(payload.txHash, "txHash");
   const publishError = ensureOptionalString(payload.publishError, "publishError");
   const creatorAddress = ensureOptionalString(payload.creatorAddress, "creatorAddress");
+  const creatorHandle = ensureOptionalString(payload.creatorHandle, "creatorHandle");
 
   return {
     title,
@@ -104,6 +108,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
     campaignType,
     summaryDraft,
     argsDraft: {
+      taskStartDelayHours,
       taskDurationHours,
       maxAmountCkb,
       auxAmountCkb,
@@ -116,6 +121,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
       reshareCount: typeof payload.socialMetadata?.reshareCount === "number" ? payload.socialMetadata.reshareCount : 0,
     },
     creatorAddress,
+    creatorHandle,
     status,
     txHash,
     publishError,

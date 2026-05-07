@@ -95,6 +95,14 @@ const getNextListLine = (currentLine: string) => {
   return null;
 };
 
+const deriveDefaultCreatorHandle = (address: string | null) => {
+  const normalized = (address || "freightguest0000000000000000")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  return `freight${normalized.slice(-20)}.ckb`;
+};
+
 const buildPreviewLines = (text: string, maxChars: number) => {
   const trimmed = text.trim();
   if (trimmed.length === 0) {
@@ -126,7 +134,9 @@ const buildPreviewLines = (text: string, maxChars: number) => {
 
 export type CreateModalStep = "compose" | "review";
 
+
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
+
 type DraftRecordStatus = "draft" | "published" | "publish_failed";
 
 export type CreateConstraintStatus = {
@@ -786,6 +796,7 @@ export default function CreateCampaignModalContent({
       campaignType,
       summaryDraft,
       argsDraft: {
+        taskStartDelayHours,
         taskDurationHours,
         maxAmountCkb,
         auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
@@ -798,6 +809,7 @@ export default function CreateCampaignModalContent({
         reshareCount: 0,
       },
       creatorAddress,
+      creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
       status: draftStatus,
       txHash: txHashValue,
       publishError,
@@ -941,7 +953,7 @@ export default function CreateCampaignModalContent({
     setErrorMsg("");
 
     try {
-      const startSecs = 0n;
+      const startSecs = BigInt(Math.round(parsedStartDelayHours * 3600));
       const taskSecs = BigInt(Math.round(parsedDurationHours * 3600));
       const maxCkb = BigInt(Math.round(parsedMaxAmountCkb));
       const auxAmountCkb = shouldCollectRaffleTicketPrice
@@ -988,6 +1000,21 @@ export default function CreateCampaignModalContent({
 
   const renderModalArgsInputs = () => (
     <div className="create-review-args-grid">
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">Start delay</label>
+        <div className="create-review-arg-control">
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={taskStartDelayHours}
+            onChange={(event) => setTaskStartDelayHours(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">hrs</span>
+        </div>
+      </div>
+
       <div className="create-review-arg-field">
         <label className="create-review-arg-label">Duration</label>
         <div className="create-review-arg-control">
@@ -1372,7 +1399,7 @@ export default function CreateCampaignModalContent({
                       : undefined
                     : () => void handleAdvanceToReview()
                 }
-                className={`create-modal-send-btn ${draftSaveStatus === "saving" ? "create-modal-send-btn-loading" : ""} ${(
+                className={`create-modal-send-btn ${(draftSaveStatus === "saving" || status === "pending") ? "create-modal-send-btn-loading" : ""} ${(
                   isReviewStep
                     ? draftSaveStatus === "saving"
                       ? true
@@ -1404,11 +1431,11 @@ export default function CreateCampaignModalContent({
                     : "Next"
                 }
               >
-                {draftSaveStatus === "saving" ? (
+                {draftSaveStatus === "saving" || status === "pending" ? (
                   <LoaderCircle className="create-modal-send-spinner" size={40} strokeWidth={2} aria-hidden="true" />
                 ) : draftSaveStatus === "error" ? (
                   <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
-                ) : status === "pending" ? "…" : isReviewStep ? (
+                ) : isReviewStep ? (
                   <SendHorizontal size={30} strokeWidth={2} aria-hidden="true" />
                 ) : (
                   <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />

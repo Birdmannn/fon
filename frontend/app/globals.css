@@ -132,7 +132,7 @@ body {
 .header-info-inner-ring {
   position: absolute;
   inset: 17%;
-  border: 2px solid currentColor;
+  border: 1px solid currentColor;
   border-radius: 9999px;
   pointer-events: none;
   transition: inset 250ms ease;
