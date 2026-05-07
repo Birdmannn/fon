@@ -766,7 +766,7 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
           className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
           data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
         >
-          <Repeat2 className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+          <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
           <span className="campaign-action-count">{reshares}</span>
         </button>
 
