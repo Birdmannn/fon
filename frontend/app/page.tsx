@@ -5,6 +5,7 @@ import {
   Bookmark,
   CheckCircle,
   Coins,
+  Copy,
   Heart,
   MessageSquare,
   Plus,
@@ -15,10 +16,11 @@ import {
   X,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import CreateCampaignModalContent, { CreateConstraintStatus, CreateModalStep } from "@/app/create/_components/CreateCampaignModalContent";
-import { FREIGHT_CONTRACT } from "@/lib/contract";
+import { FREIGHT_CONTRACT, CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
+import { bytesToHex, decodeSummary } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
 
@@ -55,6 +57,116 @@ const CREATE_INFO_PREVIEW_ITEMS = [
   "If the first hashtag is #Raffle, a ticket price is also required.",
   "The full title, description, mentions, and review snapshot are saved off-chain.",
 ];
+
+const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
+const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge", "Raffle"];
+const TYPE_TAGS = ["SimpleTask", "FundedTask", "Crowdfunding", "TimedChallenge", "Raffle"];
+
+type CampaignRecord = {
+  _id?: string;
+  title?: string;
+  description?: string;
+  campaignType?: number;
+  summaryDraft?: string;
+  socialMetadata?: {
+    mentions?: string[];
+    comments?: unknown[];
+    likeCount?: number;
+    bookmarkCount?: number;
+    reshareCount?: number;
+  };
+  creatorAddress?: string | null;
+  creatorHandle?: string | null;
+  status?: "draft" | "published" | "publish_failed";
+  txHash?: string | null;
+};
+
+type MergedCampaign = {
+  campaign: CampaignCell;
+  record: CampaignRecord | null;
+  displayStatus: CampaignStatus;
+};
+
+function normalizeHash(value: string | null | undefined) {
+  return (value ?? "").toLowerCase();
+}
+
+function deriveDisplayStatus(campaign: CampaignCell) {
+  if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
+    return campaign.data.status;
+  }
+
+  const createdAtSeconds = Number(campaign.data.createdAt) / 1000;
+  const nowSeconds = Date.now() / 1000;
+  const startsAtSeconds = createdAtSeconds + Number(campaign.data.startDurationSecs);
+  const endsAtSeconds = startsAtSeconds + Number(campaign.data.taskDurationSecs);
+
+  if (nowSeconds < startsAtSeconds) {
+    return CampaignStatus.Created;
+  }
+
+  if (nowSeconds >= endsAtSeconds) {
+    return CampaignStatus.Completed;
+  }
+
+  return CampaignStatus.Active;
+}
+
+function getStatusClassName(status: CampaignStatus) {
+  switch (status) {
+    case CampaignStatus.Active:
+      return "active";
+    case CampaignStatus.Completed:
+      return "completed";
+    case CampaignStatus.Cancelled:
+      return "cancelled";
+    case CampaignStatus.Created:
+    default:
+      return "created";
+  }
+}
+
+function formatCkbAmount(value: bigint) {
+  return (Number(value) / 1e8).toFixed(2);
+}
+
+function formatDurationLabel(totalSeconds: number) {
+  if (totalSeconds <= 0) {
+    return "0h";
+  }
+
+  if (totalSeconds % 3600 === 0) {
+    return `${totalSeconds / 3600}h`;
+  }
+
+  const hours = totalSeconds / 3600;
+  return `${hours.toFixed(1)}h`;
+}
+
+function truncateAddress(address: string) {
+  if (address.length <= 16) {
+    return address;
+  }
+
+  return `${address.slice(0, 8)}…${address.slice(-6)}`;
+}
+
+function buildDefaultHandle(addressHex: string) {
+  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
+  return `freight${normalized.slice(-20)}.ckb`;
+}
+
+function decodeCreatedByAddress(campaign: CampaignCell) {
+  return bytesToHex(campaign.data.createdBy);
+}
+
+function copyText(text: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+
+  return Promise.reject(new Error("Clipboard API unavailable"));
+}
 
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -441,7 +553,6 @@ export default function Home() {
           }}
         >
           <span className="header-info-inner-ring" aria-hidden="true" />
-          {/* <Info size={16} strokeWidth={2.2} aria-hidden="true" /> */}
           <span className="header-info-glyph" aria-hidden="true">i</span>
         </button>
       )}
@@ -507,6 +618,7 @@ function ConnectedInfo({ signer }: { signer: ccc.Signer }) {
 
 function CampaignListHeader({ client }: { client: ccc.Client }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
+  const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -516,9 +628,33 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
 
   const loadCampaigns = useCallback(() => {
     setLoading(true);
+    setError("");
     setIsRefreshing(true);
-    fetchCampaigns(client)
-      .then(setCampaigns)
+
+    Promise.all([
+      fetchCampaigns(client),
+      fetch("/api/campaign-records", { cache: "no-store" }).then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error ?? "Failed to fetch campaign records");
+        }
+
+        return Array.isArray(data?.records) ? (data.records as CampaignRecord[]) : [];
+      }),
+    ])
+      .then(([chainCampaigns, records]) => {
+        const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
+
+        for (const record of records) {
+          const key = normalizeHash(record.txHash);
+          if (key && !nextRecordsByTxHash[key]) {
+            nextRecordsByTxHash[key] = record;
+          }
+        }
+
+        setCampaigns(chainCampaigns);
+        setRecordsByTxHash(nextRecordsByTxHash);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => {
         setLoading(false);
@@ -543,9 +679,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   }, [isSearchOpen]);
 
   const handleRefresh = () => {
-    if (campaigns.length > 0) {
-      loadCampaigns();
-    }
+    loadCampaigns();
   };
 
   const handleSearchClick = () => {
@@ -557,6 +691,41 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
       return next;
     });
   };
+
+  const mergedCampaigns = useMemo<MergedCampaign[]>(() => {
+    return campaigns.map((campaign) => ({
+      campaign,
+      record: recordsByTxHash[normalizeHash(campaign.outPoint.txHash)] ?? null,
+      displayStatus: deriveDisplayStatus(campaign),
+    }));
+  }, [campaigns, recordsByTxHash]);
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const filteredCampaigns = useMemo(() => {
+    if (!normalizedSearchQuery) {
+      return mergedCampaigns;
+    }
+
+    return mergedCampaigns.filter(({ campaign, record }) => {
+      const creatorAddress = record?.creatorAddress ?? decodeCreatedByAddress(campaign);
+      const creatorHandle = record?.creatorHandle ?? buildDefaultHandle(creatorAddress);
+      const summary = record?.summaryDraft ?? decodeSummary(campaign.data.summary);
+      const searchable = [
+        record?.title,
+        record?.description,
+        summary,
+        creatorAddress,
+        creatorHandle,
+        TYPE_LABELS[campaign.data.campaignType],
+        TYPE_TAGS[campaign.data.campaignType],
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .toLowerCase();
+
+      return searchable.includes(normalizedSearchQuery);
+    });
+  }, [mergedCampaigns, normalizedSearchQuery]);
 
   return (
     <>
@@ -591,12 +760,12 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
         </div>
       </div>
 
-      <CampaignList campaigns={campaigns} loading={loading} error={error} client={client} />
+      <CampaignList campaigns={filteredCampaigns} loading={loading} error={error} />
     </>
   );
 }
 
-function CampaignList({ campaigns, loading, error }: { campaigns: CampaignCell[]; loading: boolean; error: string; client: ccc.Client }) {
+function CampaignList({ campaigns, loading, error }: { campaigns: MergedCampaign[]; loading: boolean; error: string }) {
   const signer = ccc.useSigner();
 
   if (loading) {
@@ -613,31 +782,52 @@ function CampaignList({ campaigns, loading, error }: { campaigns: CampaignCell[]
 
   return (
     <div className="flex flex-col gap-3">
-      {campaigns.map((c) => (
-        <CampaignCard key={`${c.outPoint.txHash}:${c.outPoint.index}`} campaign={c} signer={signer ?? null} />
+      {campaigns.map(({ campaign, record, displayStatus }) => (
+        <CampaignCard
+          key={`${campaign.outPoint.txHash}:${campaign.outPoint.index}`}
+          campaign={campaign}
+          record={record}
+          displayStatus={displayStatus}
+          signer={signer ?? null}
+        />
       ))}
     </div>
   );
 }
 
-const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
-const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge"];
-
-function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer: ccc.Signer | null }) {
+function CampaignCard({
+  campaign: c,
+  record,
+  displayStatus,
+  signer,
+}: {
+  campaign: CampaignCell;
+  record: CampaignRecord | null;
+  displayStatus: CampaignStatus;
+  signer: ccc.Signer | null;
+}) {
   const { data, outPoint } = c;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
-  const maxCkb = (Number(data.maximumAmount) / 1e8).toFixed(2);
-  const depositedCkb = (Number(data.currentDeposits) / 1e8).toFixed(2);
+  const maxCkb = formatCkbAmount(data.maximumAmount);
+  const depositedCkb = formatCkbAmount(data.currentDeposits);
+  const ticketPriceCkb = Number(data.auxAmount) > 0 ? formatCkbAmount(data.auxAmount) : null;
+  const onchainSummary = decodeSummary(data.summary);
+  const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
+  const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
+  const displayTitle = record?.title?.trim() || onchainSummary;
+  const displayDescription = record?.description?.trim() || onchainSummary;
+  const mentions = record?.socialMetadata?.mentions ?? [];
 
-  const [likes, setLikes] = useState(0);
-  const [bookmarks, setBookmarks] = useState(0);
-  const [comments, setComments] = useState(0);
-  const [reshares, setReshares] = useState(0);
+  const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
+  const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
+  const [comments, setComments] = useState(Array.isArray(record?.socialMetadata?.comments) ? record.socialMetadata.comments.length : 0);
+  const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
   const [userLiked, setUserLiked] = useState(false);
   const [userBookmarked, setUserBookmarked] = useState(false);
   const [userCommented, setUserCommented] = useState(false);
   const [userReshared, setUserReshared] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
 
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
@@ -667,6 +857,17 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
     if (!isConnected) return;
     setUserReshared(!userReshared);
     setReshares((prev) => (userReshared ? prev - 1 : prev + 1));
+  };
+
+  const handleCopyAddress = async () => {
+    try {
+      await copyText(creatorAddress);
+      setCopyFeedback("copied");
+      window.setTimeout(() => setCopyFeedback("idle"), 1200);
+    } catch {
+      setCopyFeedback("error");
+      window.setTimeout(() => setCopyFeedback("idle"), 1200);
+    }
   };
 
   const handleDepositClick = () => {
@@ -707,6 +908,66 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
     <div className="flex flex-col gap-0">
       <div className="border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <button
+              type="button"
+              onClick={handleCopyAddress}
+              className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
+              title={creatorAddress}
+              aria-label="Copy creator address"
+            >
+              <Copy size={14} strokeWidth={2} aria-hidden="true" />
+              <span>{truncateAddress(creatorAddress)}</span>
+            </button>
+            <span className="text-xs text-gray-400">{creatorHandle}</span>
+            {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
+            {copyFeedback === "error" && <span className="text-[11px] text-red-500">Copy failed</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`status-indicator status-${getStatusClassName(displayStatus)}`} title={STATUS_LABELS[displayStatus] ?? String(displayStatus)} />
+            <span className="text-xs text-gray-500">{STATUS_LABELS[displayStatus] ?? String(displayStatus)}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+          <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
+          <span>Created {createdAtDate}</span>
+          <span>Start delay {formatDurationLabel(Number(data.startDurationSecs))}</span>
+          <span>Duration {formatDurationLabel(Number(data.taskDurationSecs))}</span>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
+          <p className="text-sm leading-6 text-gray-700 whitespace-pre-wrap break-words">{displayDescription}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 text-xs">
+          <span className="px-2 py-1 rounded bg-gray-900 text-white font-semibold">#{TYPE_TAGS[data.campaignType] ?? data.campaignType}</span>
+          {mentions.map((mention) => (
+            <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-600">
+          <div className="rounded border border-gray-200 px-3 py-2">
+            <div className="font-semibold text-gray-900">Max deposit</div>
+            <div>{maxCkb} CKB</div>
+          </div>
+          <div className="rounded border border-gray-200 px-3 py-2">
+            <div className="font-semibold text-gray-900">Current deposit</div>
+            <div>{depositedCkb} CKB</div>
+          </div>
+          <div className="rounded border border-gray-200 px-3 py-2">
+            <div className="font-semibold text-gray-900">Summary</div>
+            <div>{record?.summaryDraft || onchainSummary}</div>
+          </div>
+          <div className="rounded border border-gray-200 px-3 py-2">
+            <div className="font-semibold text-gray-900">Ticket price</div>
+            <div>{ticketPriceCkb ? `${ticketPriceCkb} CKB` : "—"}</div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <span className="text-xs font-mono text-gray-400 break-all">
             <a
               href={`https://pudge.explorer.nervos.org/transaction/${outPoint.txHash}`}
@@ -717,17 +978,9 @@ function CampaignCard({ campaign: c, signer }: { campaign: CampaignCell; signer:
               {shortHash}
             </a>
           </span>
-          <span className={`status-indicator status-${["created", "active", "completed", "cancelled"][data.status] || "created"}`} title={STATUS_LABELS[data.status] ?? data.status} />
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3 text-sm">
-          <span className="font-medium">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
-          <span className="text-gray-400 text-xs">Created {createdAtDate}</span>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:gap-4 text-xs text-gray-500">
           {data.rewardCount > 0n && (
-            <span>
-              Reward count:{" "}
-              <strong className="text-gray-800">{String(data.rewardCount)}</strong>
+            <span className="text-xs text-gray-500">
+              Reward count: <strong className="text-gray-800">{String(data.rewardCount)}</strong>
             </span>
           )}
         </div>

@@ -148,7 +148,16 @@ export async function POST(request: Request) {
 export async function GET() {
   try {
     const collection = await getMongoCollection();
-    const records = await collection.find({}, { sort: { updatedAt: -1 } }).limit(20).toArray();
+    const records = await collection
+      .find(
+        {
+          status: "published",
+          txHash: { $type: "string", $ne: "" },
+        },
+        { sort: { updatedAt: -1 } }
+      )
+      .limit(50)
+      .toArray();
     return NextResponse.json({ records });
   } catch {
     return badRequest("Failed to fetch campaign records", 500);
