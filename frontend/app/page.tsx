@@ -61,6 +61,7 @@ const CREATE_INFO_PREVIEW_ITEMS = [
 const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
 const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge", "Raffle"];
 const TYPE_TAGS = ["SimpleTask", "FundedTask", "Crowdfunding", "TimedChallenge", "Raffle"];
+const MOUNTABLES_PLACEHOLDER_MESSAGE = "NO MOUNTABLES YET. RAFFLE RAFFLE RAFFLE.   ";
 
 type CampaignRecord = {
   _id?: string;
@@ -515,7 +516,7 @@ export default function Home() {
 
         {signer && (
           <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-            <ConnectedInfo signer={signer} />
+            <MountablesPanel />
           </div>
         )}
 
@@ -597,21 +598,17 @@ export default function Home() {
   );
 }
 
-function ConnectedInfo({ signer }: { signer: ccc.Signer }) {
-  const [address, setAddress] = useState<string>("");
-  const [balance, setBalance] = useState<string>("");
-
-  useEffect(() => {
-    signer.getRecommendedAddress().then(setAddress);
-    signer
-      .getBalance()
-      .then((b) => setBalance((Number(b) / 1e8).toFixed(2) + " CKB"));
-  }, [signer]);
+function MountablesPanel() {
+  const marqueeText = `${MOUNTABLES_PLACEHOLDER_MESSAGE}${MOUNTABLES_PLACEHOLDER_MESSAGE}${MOUNTABLES_PLACEHOLDER_MESSAGE}`;
 
   return (
-    <div className="flex flex-col gap-0.5 text-sm">
-      <span className="font-mono text-xs text-gray-500 break-all">{address}</span>
-      <span className="font-semibold">{balance || "Loading…"}</span>
+    <div className="retro-mountables-shell" aria-label="Mountables display">
+      <div className="retro-marquee-viewport">
+        <div className="retro-marquee-track">
+          <span>{marqueeText}</span>
+          <span aria-hidden="true">{marqueeText}</span>
+        </div>
+      </div>
     </div>
   );
 }
