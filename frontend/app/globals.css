@@ -42,6 +42,7 @@ body {
 .retro-marquee-viewport {
   width: 100%;
   overflow: hidden;
+  height: 2.8rem; /* Fixed height for container */
 }
 
 .retro-marquee-track {
@@ -53,17 +54,20 @@ body {
   color: var(--foreground);
   font-family: var(--font-pixel), monospace;
   font-size: clamp(0.96rem, 1.45vw, 1.18rem);
-  line-height: 1.15;
+  line-height: 1;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   animation: retro-marquee-scroll 14s linear infinite;
   will-change: transform;
+  transform-origin: center;
 }
 
 .retro-marquee-track span {
   display: inline-block;
   padding-right: 3rem;
+  transform: scaleY(1.5); /* Stretch text vertically by 50% */
+  transform-origin: center;
 }
 
 @keyframes retro-marquee-scroll {
