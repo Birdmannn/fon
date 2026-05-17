@@ -159,7 +159,9 @@ export async function GET() {
       .limit(50)
       .toArray();
     return NextResponse.json({ records });
-  } catch {
-    return badRequest("Failed to fetch campaign records", 500);
+  } catch (error) {
+    console.error("GET /api/campaign-records error:", error);
+    const message = error instanceof Error ? error.message : "Failed to fetch campaign records";
+    return badRequest(message, 500);
   }
 }
