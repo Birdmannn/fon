@@ -1,0 +1,217 @@
+/* ============================================
+   CAMPAIGN COMPONENTS
+   Campaign cards, actions, status, and search
+   ============================================ */
+
+/* Campaign action buttons */
+.campaign-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #9ca3af;
+  transition: color 200ms ease;
+  outline: none;
+  position: relative;
+}
+
+.campaign-action-btn:hover:not(.campaign-action-disabled) {
+  color: #6b7280;
+}
+
+.campaign-action-btn.campaign-action-active {
+  color: #ef4444;
+}
+
+.campaign-action-btn.campaign-action-active:hover {
+  color: #dc2626;
+}
+
+/* Per-action color overrides — must come after the base active rule */
+.campaign-action-btn.action-bookmark.campaign-action-active,
+.campaign-action-btn.action-bookmark.campaign-action-active:hover {
+  color: #3b82f6; /* blue */
+}
+
+.campaign-action-btn.action-comment.campaign-action-active,
+.campaign-action-btn.action-comment.campaign-action-active:hover {
+  color: #10b981; /* green */
+}
+
+.campaign-action-btn.action-reshare.campaign-action-active,
+.campaign-action-btn.action-reshare.campaign-action-active:hover {
+  color: #f97316; /* orange */
+}
+
+.campaign-action-btn.campaign-action-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.campaign-action-icon {
+  display: inline-block;
+  flex-shrink: 0;
+  transform-origin: 50% 50%;
+  transform-box: fill-box;
+}
+
+.campaign-action-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: inherit;
+  font-family: var(--font-mono, monospace);
+}
+
+/* Campaign action tooltips */
+.campaign-action-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #1f2937;
+  color: #ffffff;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  margin-bottom: 0.375rem;
+  z-index: 10;
+}
+
+.campaign-action-btn:hover::after {
+  opacity: 1;
+}
+
+/* Campaign status indicator */
+.status-indicator {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  animation: status-pulse 2s ease-in-out infinite;
+  position: relative;
+  box-shadow: 0 0 4px currentColor;
+}
+
+.status-created {
+  background: #eab308;
+}
+
+.status-active {
+  background: #10b981;
+}
+
+.status-completed {
+  background: #f97316;
+}
+
+.status-cancelled {
+  background: #ef4444;
+}
+
+@keyframes status-pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Refresh icon rotation animation */
+@keyframes refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.campaign-action-icon.refreshing {
+  animation: refresh-spin 1s linear infinite;
+}
+
+/* Campaign search */
+.campaign-search-wrapper {
+  --campaign-search-width: clamp(9.5rem, 36vw, 14rem);
+  width: 0;
+  height: 2rem;
+  opacity: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+  transition: width 320ms ease, opacity 220ms ease;
+}
+
+.campaign-search-wrapper.active {
+  width: var(--campaign-search-width);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.campaign-search-input {
+  width: var(--campaign-search-width);
+  min-width: var(--campaign-search-width);
+  height: 100%;
+  border: none;
+  border-bottom: 2px solid #9ca3af;
+  background: transparent;
+  color: #9ca3af;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1;
+  padding: 0 0 0.2rem 0;
+  margin: 0;
+  outline: none;
+  transition: color 200ms ease, border-bottom-color 200ms ease;
+}
+
+.campaign-search-input::placeholder {
+  color: #9ca3af;
+}
+
+.campaign-search-input:focus {
+  color: #6b7280;
+  border-bottom-color: #6b7280;
+}
+
+/* FAB button */
+.create-campaign-fab {
+  position: fixed !important;
+  bottom: 10% !important;
+  left: max(1rem, calc(50% - 336px + 2rem)) !important;
+  width: 64px !important;
+  height: 64px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: var(--background) !important;
+  border: none !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14) !important;
+  color: var(--foreground) !important;
+  transition: all 400ms ease !important;
+  cursor: pointer !important;
+  z-index: 40 !important;
+}
+
+.create-campaign-fab:hover {
+  background-color: var(--foreground) !important;
+  color: var(--background) !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28) !important;
+}

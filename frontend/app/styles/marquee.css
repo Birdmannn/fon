@@ -1,0 +1,56 @@
+/* ============================================
+   MARQUEE / MOUNTABLES
+   Retro scrolling marquee component
+   ============================================ */
+
+.retro-mountables-shell {
+  width: 100%;
+  overflow: hidden;
+}
+
+.retro-marquee-viewport {
+  width: 100%;
+  overflow: hidden;
+  height: 2.8rem; /* Fixed height for container */
+}
+
+.retro-marquee-track {
+  display: inline-flex;
+  align-items: center;
+  min-width: max-content;
+  min-height: 2.8rem;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-family: var(--font-pixel), monospace;
+  font-size: clamp(0.96rem, 1.45vw, 1.18rem);
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  animation: retro-marquee-scroll 14s linear infinite;
+  will-change: transform;
+  transform-origin: center;
+}
+
+.retro-marquee-track span {
+  display: inline-block;
+  padding-right: 3.5rem; /* Increased spacing to prevent overlap */
+  transform: scale(1.15, 1.5); /* Stretch: 15% wider, 50% taller */
+  transform-origin: center;
+  font-weight: 950; /* Extra bold */
+}
+
+@keyframes retro-marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retro-marquee-track {
+    animation: none;
+  }
+}
