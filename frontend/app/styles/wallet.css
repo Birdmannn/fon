@@ -127,7 +127,7 @@
   padding: 0.7rem 0.8rem;
   border-radius: 0.5rem;
   border: 1px solid rgba(23, 23, 23, 0.12);
-  background: rgba(249, 250, 251, 0.92);
+  background: rgb(249, 250, 251); /* Fully opaque */
   color: var(--foreground);
   display: inline-flex;
   align-items: center;

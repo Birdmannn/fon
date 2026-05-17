@@ -34,7 +34,8 @@
 
 .retro-marquee-track span {
   display: inline-block;
-  padding-right: 3.5rem; /* Increased spacing to prevent overlap */
+  padding-right: 15rem; /* Increased spacing to prevent overlap */
+  padding-left: 10rem;
   transform: scale(1.15, 1.5); /* Stretch: 15% wider, 50% taller */
   transform-origin: center;
   font-weight: 950; /* Extra bold */
