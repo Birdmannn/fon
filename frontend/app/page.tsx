@@ -1183,7 +1183,7 @@ function CampaignCard({
           </div>
           <div className="flex items-center gap-2">
             <span className={`status-indicator status-${getStatusClassName(displayStatus)}`} title={STATUS_LABELS[displayStatus] ?? String(displayStatus)} />
-            <span className="text-xs text-gray-500">{STATUS_LABELS[displayStatus] ?? String(displayStatus)}</span>
+            {/* <span className="text-xs text-gray-500">{STATUS_LABELS[displayStatus] ?? String(displayStatus)}</span> */}
           </div>
         </div>
 
