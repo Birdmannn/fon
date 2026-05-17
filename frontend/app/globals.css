@@ -9,6 +9,9 @@
 /* Base styles - theme, fonts, variables */
 @import "./styles/base.css";
 
+/* Shared animations - must come before components that use them */
+@import "./styles/animations.css";
+
 /* Component styles */
 @import "./styles/marquee.css";
 @import "./styles/wallet.css";

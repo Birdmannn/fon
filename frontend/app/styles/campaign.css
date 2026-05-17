@@ -92,40 +92,58 @@
 /* Campaign status indicator */
 .status-indicator {
   display: inline-block;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  animation: status-pulse 2s ease-in-out infinite;
   position: relative;
-  box-shadow: 0 0 4px currentColor;
+}
+
+.status-indicator::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: 50%;
+  opacity: 0;
+  animation: status-pulse-ring 2s infinite;
 }
 
 .status-created {
+  background: #eab308;
+  animation: status-pulse-glow-yellow 2s infinite;
+}
+
+.status-created::before {
   background: #eab308;
 }
 
 .status-active {
   background: #10b981;
+  animation: status-pulse-glow-green 2s infinite;
+}
+
+.status-active::before {
+  background: #10b981;
 }
 
 .status-completed {
+  background: #f97316;
+  animation: status-pulse-glow-orange 2s infinite;
+}
+
+.status-completed::before {
   background: #f97316;
 }
 
 .status-cancelled {
   background: #ef4444;
+  animation: status-pulse-glow-red 2s infinite;
 }
 
-@keyframes status-pulse {
-  0% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
-  }
-  100% {
-    opacity: 1;
-  }
+.status-cancelled::before {
+  background: #ef4444;
 }
 
 /* Refresh icon rotation animation */
