@@ -1,4 +1,4 @@
-import { MongoClient } from "mongodb";
+import { MongoClient, MongoClientOptions } from "mongodb";
 
 const globalForMongo = globalThis as typeof globalThis & {
   __freightMongoClientPromise?: Promise<MongoClient>;
@@ -12,7 +12,16 @@ function getMongoClientPromise() {
   }
 
   if (!globalForMongo.__freightMongoClientPromise) {
-    globalForMongo.__freightMongoClientPromise = new MongoClient(uri).connect();
+    const options: MongoClientOptions = {
+      maxPoolSize: 10,
+      minPoolSize: 2,
+      maxIdleTimeMS: 30000,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000,
+    };
+    
+    globalForMongo.__freightMongoClientPromise = new MongoClient(uri, options).connect();
   }
 
   return globalForMongo.__freightMongoClientPromise;
