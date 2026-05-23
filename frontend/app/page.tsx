@@ -6,8 +6,6 @@ import {
   CheckCircle,
   Coins,
   Copy,
-  Eye,
-  EyeOff,
   Heart,
   MessageSquare,
   Plus,
@@ -15,7 +13,6 @@ import {
   Repeat2,
   RotateCcw,
   Search,
-  Settings2,
   X,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -90,8 +87,6 @@ type MergedCampaign = {
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
 };
-
-type ChainName = "mainnet" | "testnet" | "unknown";
 
 function normalizeHash(value: string | null | undefined) {
   return (value ?? "").toLowerCase();
@@ -174,50 +169,6 @@ function copyText(text: string) {
   return Promise.reject(new Error("Clipboard API unavailable"));
 }
 
-function deriveChainName(source: unknown): ChainName {
-  if (!source || typeof source !== "object") {
-    return "unknown";
-  }
-
-  const constructorName = source.constructor?.name?.toLowerCase?.() ?? "";
-  if (constructorName.includes("testnet")) {
-    return "testnet";
-  }
-  if (constructorName.includes("mainnet")) {
-    return "mainnet";
-  }
-
-  try {
-    const objectText = JSON.stringify(
-      source,
-      (_, value) => (typeof value === "bigint" ? value.toString() : value),
-      0
-    ).toLowerCase();
-
-    if (objectText.includes("testnet")) {
-      return "testnet";
-    }
-    if (objectText.includes("mainnet")) {
-      return "mainnet";
-    }
-  } catch {
-    return "unknown";
-  }
-
-  return "unknown";
-}
-
-function chainLabel(chain: ChainName) {
-  switch (chain) {
-    case "mainnet":
-      return "Mainnet";
-    case "testnet":
-      return "Testnet";
-    default:
-      return "Unknown";
-  }
-}
-
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -226,13 +177,6 @@ export default function Home() {
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [activeInfoButtonRect, setActiveInfoButtonRect] = useState<DOMRect | null>(null);
-  const [showWalletModal, setShowWalletModal] = useState(false);
-  const [isWalletModalClosing, setIsWalletModalClosing] = useState(false);
-  const [walletButtonRect, setWalletButtonRect] = useState<DOMRect | null>(null);
-  const [walletAddress, setWalletAddress] = useState("");
-  const [walletBalance, setWalletBalance] = useState("");
-  const [isBalanceVisible, setIsBalanceVisible] = useState(true);
-  const [copiedAddress, setCopiedAddress] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
   const [createResetSignal, setCreateResetSignal] = useState(0);
@@ -247,12 +191,8 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const walletCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const walletHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const copiedAddressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
-  const walletButtonRef = useRef<HTMLButtonElement>(null);
 
   const clearInfoCloseTimer = () => {
     if (infoCloseTimerRef.current) {
@@ -268,27 +208,6 @@ export default function Home() {
     }
   };
 
-  const clearWalletCloseTimer = () => {
-    if (walletCloseTimerRef.current) {
-      clearTimeout(walletCloseTimerRef.current);
-      walletCloseTimerRef.current = null;
-    }
-  };
-
-  const clearWalletHideTimer = () => {
-    if (walletHideTimerRef.current) {
-      clearTimeout(walletHideTimerRef.current);
-      walletHideTimerRef.current = null;
-    }
-  };
-
-  const clearCopiedAddressTimer = () => {
-    if (copiedAddressTimerRef.current) {
-      clearTimeout(copiedAddressTimerRef.current);
-      copiedAddressTimerRef.current = null;
-    }
-  };
-
   const clearCreateHideTimer = () => {
     if (createHideTimerRef.current) {
       clearTimeout(createHideTimerRef.current);
@@ -301,13 +220,6 @@ export default function Home() {
     if (!button) return;
 
     setActiveInfoButtonRect(button.getBoundingClientRect());
-  }, []);
-
-  const refreshWalletButtonRect = useCallback(() => {
-    const button = walletButtonRef.current;
-    if (!button) return;
-
-    setWalletButtonRect(button.getBoundingClientRect());
   }, []);
 
   const showInfoModalForInteraction = (interaction: "hover" | "click") => {
@@ -353,40 +265,7 @@ export default function Home() {
     }, INFO_MODAL_ANIMATION_MS);
   }, [showInfoModal, isInfoModalClosing]);
 
-  const openWalletModalFromHover = () => {
-    clearWalletCloseTimer();
-    clearWalletHideTimer();
-    refreshWalletButtonRect();
-    setIsWalletModalClosing(false);
-    setShowWalletModal(true);
-  };
-
-  const keepWalletModalOpen = () => {
-    clearWalletCloseTimer();
-    clearWalletHideTimer();
-    setIsWalletModalClosing(false);
-    setShowWalletModal(true);
-  };
-
-  const closeWalletModal = useCallback(() => {
-    clearWalletCloseTimer();
-
-    if (!showWalletModal || isWalletModalClosing) return;
-
-    setIsWalletModalClosing(true);
-    clearWalletHideTimer();
-    walletHideTimerRef.current = setTimeout(() => {
-      setShowWalletModal(false);
-      setIsWalletModalClosing(false);
-      setWalletButtonRect(null);
-      walletHideTimerRef.current = null;
-    }, INFO_MODAL_ANIMATION_MS);
-  }, [showWalletModal, isWalletModalClosing]);
-
   const openCreateModal = () => {
-    if (showWalletModal) {
-      closeWalletModal();
-    }
     clearCreateHideTimer();
     setIsCreateModalClosing(false);
     setCreateModalStep("compose");
@@ -421,13 +300,6 @@ export default function Home() {
     }, 120);
   };
 
-  const scheduleCloseWalletModal = () => {
-    clearWalletCloseTimer();
-    walletCloseTimerRef.current = setTimeout(() => {
-      closeWalletModal();
-    }, 120);
-  };
-
   const toggleInfoModal = () => {
     if (showInfoModal && !isInfoModalClosing) {
       closeInfoModal();
@@ -448,75 +320,18 @@ export default function Home() {
     closeCreateModal();
   };
 
-  const handleCopyWalletAddress = async () => {
-    if (!walletAddress) return;
-
-    try {
-      await copyText(walletAddress);
-      clearCopiedAddressTimer();
-      setCopiedAddress(true);
-      copiedAddressTimerRef.current = setTimeout(() => {
-        setCopiedAddress(false);
-        copiedAddressTimerRef.current = null;
-      }, 1200);
-    } catch {
-      clearCopiedAddressTimer();
-      setCopiedAddress(false);
-    }
-  };
-
   useEffect(() => {
     return () => {
       clearInfoCloseTimer();
       clearInfoHideTimer();
-      clearWalletCloseTimer();
-      clearWalletHideTimer();
-      clearCopiedAddressTimer();
       clearCreateHideTimer();
     };
   }, []);
 
   useEffect(() => {
-    if (!signer) {
-      return;
-    }
-
-    let cancelled = false;
-
-    signer.getRecommendedAddress().then((address) => {
-      if (!cancelled) {
-        setWalletAddress(address);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setWalletAddress("");
-      }
-    });
-
-    signer.getBalance().then((balance) => {
-      if (!cancelled) {
-        setWalletBalance(`${(Number(balance) / 1e8).toFixed(2)} CKB`);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setWalletBalance("");
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [signer]);
-
-  useEffect(() => {
     const handleEscapeClose = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (showWalletModal) {
-          closeWalletModal();
-        }
-        if (showInfoModal) {
-          closeInfoModal();
-        }
+      if (event.key === "Escape" && showInfoModal) {
+        closeInfoModal();
       }
     };
 
@@ -524,21 +339,17 @@ export default function Home() {
     return () => {
       window.removeEventListener("keydown", handleEscapeClose);
     };
-  }, [showInfoModal, closeInfoModal, showWalletModal, closeWalletModal]);
+  }, [showInfoModal, closeInfoModal]);
 
   useEffect(() => {
-    if (!showInfoModal && !showWalletModal) return;
+    if (!showInfoModal) return;
+
+    refreshHeaderInfoButtonRect();
 
     const handleViewportChange = () => {
-      if (showInfoModal) {
-        refreshHeaderInfoButtonRect();
-      }
-      if (showWalletModal) {
-        refreshWalletButtonRect();
-      }
+      refreshHeaderInfoButtonRect();
     };
 
-    handleViewportChange();
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("scroll", handleViewportChange, true);
 
@@ -546,20 +357,11 @@ export default function Home() {
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
     };
-  }, [showInfoModal, showWalletModal, refreshHeaderInfoButtonRect, refreshWalletButtonRect]);
+  }, [showInfoModal, refreshHeaderInfoButtonRect]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : "Close";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : "Close create campaign modal";
-  const expectedChain = deriveChainName(client) === "unknown" ? "testnet" : deriveChainName(client);
-  const currentChain = signer ? deriveChainName(signer.client) : "unknown";
-  const walletAddressDisplay = signer ? (walletAddress || "Loading…") : "Not connected";
-  const walletBalanceDisplay = signer ? (walletBalance || "Loading…") : "—";
-  const chainIndicatorClassName = currentChain === "unknown"
-    ? "wallet-chain-indicator-unknown"
-    : currentChain === expectedChain
-      ? "wallet-chain-indicator-match"
-      : "wallet-chain-indicator-mismatch";
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
@@ -616,81 +418,12 @@ export default function Home() {
 
             <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
               {signer ? (
-                <div
-                  className="wallet-info-wrap"
-                  onMouseEnter={openWalletModalFromHover}
-                  onMouseLeave={scheduleCloseWalletModal}
+                <button
+                  onClick={disconnect}
+                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
                 >
-                  <button
-                    ref={walletButtonRef}
-                    onClick={disconnect}
-                    onFocus={openWalletModalFromHover}
-                    onBlur={scheduleCloseWalletModal}
-                    className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
-                  >
-                    Disconnect
-                  </button>
-                  {showWalletModal && walletButtonRect && (
-                    <div
-                      className={`wallet-info-modal ${isWalletModalClosing ? "wallet-info-modal-closing" : ""}`}
-                      role="dialog"
-                      aria-label="Wallet information"
-                      onMouseEnter={keepWalletModalOpen}
-                      onMouseLeave={scheduleCloseWalletModal}
-                      style={{ width: `${Math.max(walletButtonRect.width * 2, 220)}px` }}
-                    >
-                      <div className="wallet-info-row">
-                        <div>
-                          <p className="wallet-info-label">Address</p>
-                          <p className="wallet-info-value wallet-info-value-mono">{truncateAddress(walletAddressDisplay)}</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="wallet-info-icon-btn"
-                          onClick={() => void handleCopyWalletAddress()}
-                          aria-label="Copy wallet address"
-                          title={copiedAddress ? "Copied" : "Copy address"}
-                        >
-                          <Copy size={15} strokeWidth={2} aria-hidden="true" />
-                        </button>
-                      </div>
-
-                      <div className="wallet-info-row">
-                        <div>
-                          <p className="wallet-info-label">Balance</p>
-                          <p className="wallet-info-value">{isBalanceVisible ? walletBalanceDisplay : "••••••"}</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="wallet-info-icon-btn"
-                          onClick={() => setIsBalanceVisible((current) => !current)}
-                          aria-label={isBalanceVisible ? "Hide balance" : "Show balance"}
-                          title={isBalanceVisible ? "Hide balance" : "Show balance"}
-                        >
-                          {isBalanceVisible ? (
-                            <EyeOff size={15} strokeWidth={2} aria-hidden="true" />
-                          ) : (
-                            <Eye size={15} strokeWidth={2} aria-hidden="true" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="wallet-info-row wallet-info-row-chain">
-                        <div>
-                          <p className="wallet-info-label">Chain</p>
-                          <p className="wallet-info-value">Current: {chainLabel(currentChain)}</p>
-                          <p className="wallet-info-subvalue">Expected: {chainLabel(expectedChain)}</p>
-                        </div>
-                        <span className={`wallet-chain-indicator ${chainIndicatorClassName}`} aria-hidden="true" />
-                      </div>
-
-                      <button type="button" className="wallet-info-menu-item">
-                        <Settings2 size={16} strokeWidth={2} aria-hidden="true" />
-                        <span>Introspect</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                  Disconnect
+                </button>
               ) : (
                 <button
                   onClick={open}
@@ -1163,8 +896,8 @@ function CampaignCard({
   };
 
   return (
-    <div className="flex flex-col gap-0">
-      <div className="border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
+    <div className="campaign-card-shell flex flex-col gap-0">
+      <div className="campaign-card-surface border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button
