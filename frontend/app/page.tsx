@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowDown,
   ArrowLeft,
   Bookmark,
   CheckCircle,
@@ -360,7 +361,7 @@ export default function Home() {
   }, [showInfoModal, refreshHeaderInfoButtonRect]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
-  const createTopActionTooltip = createModalStep === "review" ? "Back" : "Close";
+  const createTopActionTooltip = createModalStep === "review" ? "Back" : "Load";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : "Close create campaign modal";
 
   return (
@@ -410,7 +411,7 @@ export default function Home() {
                   {createModalStep === "review" ? (
                     <ArrowLeft className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
-                    <X className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+                    <ArrowDown className="campaign-action-icon" size={26} strokeWidth={2} aria-hidden="true" />
                   )}
                 </button>
               </div>
