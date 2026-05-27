@@ -278,6 +278,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [isDraftListLoading, setIsDraftListLoading] = useState(false);
   const [draftListError, setDraftListError] = useState("");
   const [draftDeleteId, setDraftDeleteId] = useState<string | null>(null);
+  const [showNoDraftsMessage, setShowNoDraftsMessage] = useState(false);
   const [lastSavedSnapshot, setLastSavedSnapshot] = useState<DraftSnapshot | null>(null);
   const [isApplyingDraft, setIsApplyingDraft] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
@@ -516,6 +517,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setIsDraftListLoading(false);
     setDraftListError("");
     setDraftDeleteId(null);
+    setShowNoDraftsMessage(false);
     setLastSavedSnapshot(null);
     setIsApplyingDraft(false);
     if (applyDraftAnimationTimerRef.current) {
@@ -582,6 +584,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [activeModalError, isReviewStep, onPreviewErrorChange]);
 
   const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
+    setShowNoDraftsMessage(false);
     const text = event.currentTarget.textContent || "";
     let normalizedText = text.trim().length === 0 ? "" : text;
 
@@ -991,7 +994,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         throw new Error(data?.error ?? "Failed to load drafts");
       }
 
-      setDraftRecords(Array.isArray(data?.records) ? (data.records as DraftRecord[]) : []);
+      const nextRecords = Array.isArray(data?.records) ? (data.records as DraftRecord[]) : [];
+      setDraftRecords(nextRecords);
+      if (nextRecords.length === 0) {
+        setIsDraftListOpen(false);
+        setShowNoDraftsMessage(true);
+        return;
+      }
+      setShowNoDraftsMessage(false);
       setIsDraftListOpen(true);
     } catch (error) {
       setDraftRecords([]);
@@ -1660,8 +1670,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       )}
 
       <div className="create-modal-constraints-row">
-        <p className={`create-modal-constraints-text ${constraintsPassed ? "create-modal-constraints-pass" : ""}`}>
-          {!constraintsPassed && CREATE_CONSTRAINTS_MESSAGE_PENDING}
+        <p className={`create-modal-constraints-text ${constraintsPassed && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
+          {showNoDraftsMessage ? "No drafts saved yet" : !constraintsPassed ? CREATE_CONSTRAINTS_MESSAGE_PENDING : ""}
         </p>
       </div>
     </div>
