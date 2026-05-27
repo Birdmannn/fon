@@ -254,6 +254,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const mentionMenuRef = useRef<HTMLDivElement>(null);
   const lastHandledStepBackSignalRef = useRef(stepBackSignal);
   const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftListRequestIdRef = useRef(0);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -368,6 +369,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     (!draftSaveError && !hasValidDuration) ||
     (!draftSaveError && !hasValidMaxAmount) ||
     (!draftSaveError && !hasValidRaffleTicketPrice);
+  const showDraftsPane = isModal && modalStep === "compose" && isDraftListOpen;
+  const composeHelperMessage = showNoDraftsMessage
+    ? "No saved drafts yet"
+    : isDraftListLoading
+      ? "Retrieving"
+      : showDraftsPane && draftRecords.length > 0
+        ? `${draftRecords.length} drafts available`
+        : !constraintsPassed
+          ? CREATE_CONSTRAINTS_MESSAGE_PENDING
+          : "";
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
@@ -987,8 +998,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [syncEditorsFromState]);
 
   const loadDraftRecords = useCallback(async () => {
+    const requestId = draftListRequestIdRef.current + 1;
+    draftListRequestIdRef.current = requestId;
+    setIsDraftListOpen(true);
     setIsDraftListLoading(true);
     setDraftListError("");
+    setShowNoDraftsMessage(false);
 
     try {
       const creatorAddress = await getCreatorAddress();
@@ -1000,6 +1015,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         throw new Error(data?.error ?? "Failed to load drafts");
       }
 
+      if (draftListRequestIdRef.current !== requestId) {
+        return false;
+      }
+
       const nextRecords = Array.isArray(data?.records) ? (data.records as DraftRecord[]) : [];
       setDraftRecords(nextRecords);
       if (nextRecords.length === 0) {
@@ -1007,16 +1026,20 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setShowNoDraftsMessage(true);
         return false;
       }
-      setShowNoDraftsMessage(false);
-      setIsDraftListOpen(true);
       return true;
     } catch (error) {
+      if (draftListRequestIdRef.current !== requestId) {
+        return false;
+      }
+
       setDraftRecords([]);
       setIsDraftListOpen(true);
       setDraftListError(error instanceof Error ? error.message : "Failed to load drafts");
       throw error;
     } finally {
-      setIsDraftListLoading(false);
+      if (draftListRequestIdRef.current === requestId) {
+        setIsDraftListLoading(false);
+      }
     }
   }, [getCreatorAddress]);
 
@@ -1231,7 +1254,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     },
     toggleDraftList: async () => {
       if (isDraftListOpen) {
+        draftListRequestIdRef.current += 1;
         setIsDraftListOpen(false);
+        setIsDraftListLoading(false);
         setDraftListError("");
         return false;
       }
@@ -1476,18 +1501,37 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     </div>
   );
 
-  const renderDraftList = () => (
-    <div className={`create-drafts-drawer ${isDraftListOpen ? "create-drafts-drawer-open" : ""}`}>
-      <div className="create-drafts-drawer-header">
+  const renderDraftListSkeleton = () => (
+    <div className="create-drafts-skeleton-list" aria-hidden="true">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="create-draft-card create-draft-card-skeleton">
+          <div className="create-draft-card-main create-draft-card-main-skeleton">
+            <div className="create-draft-card-row">
+              <span className="create-draft-skeleton-block create-draft-skeleton-title" />
+              <span className="create-draft-skeleton-block create-draft-skeleton-time" />
+            </div>
+            <div className="create-draft-skeleton-copy">
+              <span className="create-draft-skeleton-block create-draft-skeleton-line" />
+              <span className="create-draft-skeleton-block create-draft-skeleton-line create-draft-skeleton-line-short" />
+            </div>
+          </div>
+          <span className="create-draft-skeleton-block create-draft-skeleton-delete" />
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderDraftsPane = () => (
+    <div className="create-drafts-pane">
+      <div className="create-drafts-pane-header">
         <p className="create-review-section-label">Saved drafts</p>
       </div>
 
-      {draftListError && <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p>}
-      {isDraftListLoading ? <p className="create-drafts-feedback">Loading drafts…</p> : null}
-      {!isDraftListLoading && draftRecords.length === 0 ? <p className="create-drafts-feedback">No saved drafts yet.</p> : null}
+      {draftListError ? <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p> : null}
+      {isDraftListLoading ? renderDraftListSkeleton() : null}
 
       {!isDraftListLoading && draftRecords.length > 0 ? (
-        <div className="create-drafts-list">
+        <div className="create-drafts-list create-drafts-list-full">
           {draftRecords.map((record) => {
             const isDeleting = draftDeleteId === record._id;
             return (
@@ -1527,132 +1571,137 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const renderModalComposePane = () => (
     <div className={`create-modal-step-pane create-modal-step-pane-compose ${isApplyingDraft ? "create-modal-step-pane-compose-applying" : ""}`}>
       <div className="relative w-full h-full flex flex-col">
-        {renderDraftList()}
-        <div className="create-modal-title-wrap">
-          <div
-            ref={modalTitleRef}
-            contentEditable="true"
-            suppressContentEditableWarning
-            onInput={handleEditorInput}
-            onKeyDown={handleModalTitleKeyDown}
-            onFocus={(event) => {
-              activeEditorRef.current = event.currentTarget;
-            }}
-            onBlur={() => {
-              setTimeout(() => {
-                hideMenus();
-              }, 100);
-            }}
-            onPaste={(event) => {
-              event.preventDefault();
-              const text = event.clipboardData.getData("text/plain");
-              document.execCommand("insertText", false, text);
-            }}
-            data-placeholder="title"
-            role="textbox"
-            aria-placeholder="title"
-            className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
-            style={{
-              wordWrap: "break-word",
-              overflowWrap: "break-word",
-              outline: "none",
-            }}
-          />
-          <div className="create-modal-counter create-modal-title-counter">
-            {modalTitleChars}/{modalTitleMaxChars}
-          </div>
-        </div>
-
-        <div
-          ref={modalDescriptionRef}
-          contentEditable="true"
-          suppressContentEditableWarning
-          onInput={handleEditorInput}
-          onKeyDown={handleEditorKeyDown}
-          onFocus={(event) => {
-            activeEditorRef.current = event.currentTarget;
-          }}
-          onBlur={() => {
-            setTimeout(() => {
-              hideMenus();
-            }, 100);
-          }}
-          onPaste={(event) => {
-            event.preventDefault();
-            const text = event.clipboardData.getData("text/plain");
-            document.execCommand("insertText", false, text);
-          }}
-          data-placeholder="description"
-          role="textbox"
-          aria-placeholder="description"
-          className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
-          style={{
-            wordWrap: "break-word",
-            overflowWrap: "break-word",
-            outline: "none",
-            caretColor: "currentColor",
-          }}
-        />
-
-        <div className="create-modal-counter create-modal-body-counter">
-          {modalDescriptionChars}/{modalDescriptionMaxChars}
-        </div>
-
-        {showHashtagMenu && (
-          <div
-            className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48"
-            style={{
-              top: `${hashtagPosition.top}px`,
-              left: `${hashtagPosition.left}px`,
-            }}
-          >
-            <div className="p-2">
-              {Object.values(CampaignType)
-                .filter((value) => typeof value === "number")
-                .map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => handleHashtagSelect(CAMPAIGN_TYPE_LABELS[type as CampaignType])}
-                    className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
-                  >
-                    #{CAMPAIGN_TYPE_LABELS[type as CampaignType]}
-                  </button>
-                ))}
+        {showDraftsPane ? (
+          renderDraftsPane()
+        ) : (
+          <>
+            <div className="create-modal-title-wrap">
+              <div
+                ref={modalTitleRef}
+                contentEditable="true"
+                suppressContentEditableWarning
+                onInput={handleEditorInput}
+                onKeyDown={handleModalTitleKeyDown}
+                onFocus={(event) => {
+                  activeEditorRef.current = event.currentTarget;
+                }}
+                onBlur={() => {
+                  setTimeout(() => {
+                    hideMenus();
+                  }, 100);
+                }}
+                onPaste={(event) => {
+                  event.preventDefault();
+                  const text = event.clipboardData.getData("text/plain");
+                  document.execCommand("insertText", false, text);
+                }}
+                data-placeholder="title"
+                role="textbox"
+                aria-placeholder="title"
+                className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
+                style={{
+                  wordWrap: "break-word",
+                  overflowWrap: "break-word",
+                  outline: "none",
+                }}
+              />
+              <div className="create-modal-counter create-modal-title-counter">
+                {modalTitleChars}/{modalTitleMaxChars}
+              </div>
             </div>
-          </div>
-        )}
 
-        {showMentionMenu && (
-          <div
-            ref={mentionMenuRef}
-            className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48 max-h-40 overflow-y-auto"
-            style={{
-              top: `${mentionPosition.top}px`,
-              left: `${mentionPosition.left}px`,
-            }}
-          >
-            <div className="p-2">
-              {filteredMentions.length > 0 ? (
-                filteredMentions.map((user) => (
-                  <button
-                    key={user}
-                    type="button"
-                    onClick={() => handleMentionSelect(user)}
-                    className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
-                  >
-                    @{user}
-                  </button>
-                ))
-              ) : (
-                <div className="px-3 py-2 text-xs theme-fg opacity-60">No users found</div>
-              )}
+            <div
+              ref={modalDescriptionRef}
+              contentEditable="true"
+              suppressContentEditableWarning
+              onInput={handleEditorInput}
+              onKeyDown={handleEditorKeyDown}
+              onFocus={(event) => {
+                activeEditorRef.current = event.currentTarget;
+              }}
+              onBlur={() => {
+                setTimeout(() => {
+                  hideMenus();
+                }, 100);
+              }}
+              onPaste={(event) => {
+                event.preventDefault();
+                const text = event.clipboardData.getData("text/plain");
+                document.execCommand("insertText", false, text);
+              }}
+              data-placeholder="description"
+              role="textbox"
+              aria-placeholder="description"
+              className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
+              style={{
+                wordWrap: "break-word",
+                overflowWrap: "break-word",
+                outline: "none",
+                caretColor: "currentColor",
+              }}
+            />
+
+            <div className="create-modal-counter create-modal-body-counter">
+              {modalDescriptionChars}/{modalDescriptionMaxChars}
             </div>
-          </div>
+
+            {showHashtagMenu && (
+              <div
+                className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48"
+                style={{
+                  top: `${hashtagPosition.top}px`,
+                  left: `${hashtagPosition.left}px`,
+                }}
+              >
+                <div className="p-2">
+                  {Object.values(CampaignType)
+                    .filter((value) => typeof value === "number")
+                    .map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleHashtagSelect(CAMPAIGN_TYPE_LABELS[type as CampaignType])}
+                        className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
+                      >
+                        #{CAMPAIGN_TYPE_LABELS[type as CampaignType]}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {showMentionMenu && (
+              <div
+                ref={mentionMenuRef}
+                className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48 max-h-40 overflow-y-auto"
+                style={{
+                  top: `${mentionPosition.top}px`,
+                  left: `${mentionPosition.left}px`,
+                }}
+              >
+                <div className="p-2">
+                  {filteredMentions.length > 0 ? (
+                    filteredMentions.map((user) => (
+                      <button
+                        key={user}
+                        type="button"
+                        onClick={() => handleMentionSelect(user)}
+                        className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
+                      >
+                        @{user}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs theme-fg opacity-60">No users found</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {mentions.length > 0 && (
+      {!showDraftsPane && mentions.length > 0 && (
         <div className="create-modal-mentions-row">
           {mentions.map((mention) => (
             <div
@@ -1674,8 +1723,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       )}
 
       <div className="create-modal-constraints-row">
-        <p className={`create-modal-constraints-text ${constraintsPassed && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
-          {showNoDraftsMessage ? "No drafts saved yet" : !constraintsPassed ? CREATE_CONSTRAINTS_MESSAGE_PENDING : ""}
+        <p className={`create-modal-constraints-text ${constraintsPassed && !showDraftsPane && !isDraftListLoading && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
+          {composeHelperMessage}
         </p>
       </div>
     </div>
@@ -1833,66 +1882,68 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 )
               )}
 
-              <button
-                type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
-                disabled={
-                  isReviewStep
-                    ? draftSaveStatus === "saving"
-                      ? true
-                      : draftSaveStatus === "error"
-                        ? false
-                        : isPublishDisabled
-                    : isNextDisabled
-                }
-                onClick={
-                  isReviewStep
-                    ? draftSaveStatus === "error"
-                      ? () => void handleRetryDraftSave()
-                      : undefined
-                    : () => void handleAdvanceToReview()
-                }
-                className={`create-modal-send-btn ${(draftSaveStatus === "saving" || status === "pending") ? "create-modal-send-btn-loading" : ""} ${(
-                  isReviewStep
-                    ? draftSaveStatus === "saving"
-                      ? true
-                      : draftSaveStatus === "error"
-                        ? false
-                        : isPublishDisabled
-                    : isNextDisabled
-                ) ? "" : "create-modal-send-btn-active"}`.trim()}
-                aria-label={
-                  isReviewStep
-                    ? draftSaveStatus === "saving"
-                      ? "Saving preview"
-                      : draftSaveStatus === "error"
-                        ? "Retry saving preview"
-                        : status === "pending"
-                          ? "Publishing"
-                          : "Publish campaign"
-                    : "Next"
-                }
-                title={
-                  isReviewStep
-                    ? draftSaveStatus === "saving"
-                      ? "Saving preview..."
-                      : draftSaveStatus === "error"
-                        ? "Retry saving preview"
-                        : status === "pending"
-                          ? "Publishing..."
-                          : "Publish campaign"
-                    : "Next"
-                }
-              >
-                {draftSaveStatus === "saving" || status === "pending" ? (
-                  <LoaderCircle className="create-modal-send-spinner" size={40} strokeWidth={2} aria-hidden="true" />
-                ) : draftSaveStatus === "error" ? (
-                  <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
-                ) : isReviewStep ? (
-                  <SendHorizontal size={30} strokeWidth={2} aria-hidden="true" />
-                ) : (
-                  <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
-                )}
-              </button>
+              {(!showDraftsPane || isReviewStep) && (
+                <button
+                  type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
+                  disabled={
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? true
+                        : draftSaveStatus === "error"
+                          ? false
+                          : isPublishDisabled
+                      : isNextDisabled
+                  }
+                  onClick={
+                    isReviewStep
+                      ? draftSaveStatus === "error"
+                        ? () => void handleRetryDraftSave()
+                        : undefined
+                      : () => void handleAdvanceToReview()
+                  }
+                  className={`create-modal-send-btn ${(draftSaveStatus === "saving" || status === "pending") ? "create-modal-send-btn-loading" : ""} ${(
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? true
+                        : draftSaveStatus === "error"
+                          ? false
+                          : isPublishDisabled
+                      : isNextDisabled
+                  ) ? "" : "create-modal-send-btn-active"}`.trim()}
+                  aria-label={
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? "Saving preview"
+                        : draftSaveStatus === "error"
+                          ? "Retry saving preview"
+                          : status === "pending"
+                            ? "Publishing"
+                            : "Publish campaign"
+                      : "Next"
+                  }
+                  title={
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? "Saving preview..."
+                        : draftSaveStatus === "error"
+                          ? "Retry saving preview"
+                          : status === "pending"
+                            ? "Publishing..."
+                            : "Publish campaign"
+                      : "Next"
+                  }
+                >
+                  {draftSaveStatus === "saving" || status === "pending" ? (
+                    <LoaderCircle className="create-modal-send-spinner" size={40} strokeWidth={2} aria-hidden="true" />
+                  ) : draftSaveStatus === "error" ? (
+                    <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : isReviewStep ? (
+                    <SendHorizontal size={30} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </button>
+              )}
             </>
           ) : (
             <>
