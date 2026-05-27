@@ -22,11 +22,26 @@
   transform: translateX(-50%);
 }
 
+@keyframes create-modal-compose-apply {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .create-modal-step-pane {
   position: relative;
   width: 50%;
   height: 100%;
   flex-shrink: 0;
+}
+
+.create-modal-step-pane-compose-applying {
+  animation: create-modal-compose-apply 420ms ease;
 }
 
 .create-modal-step-pane-review {

@@ -20,8 +20,13 @@ function getMongoClientPromise() {
       socketTimeoutMS: 45000,
       connectTimeoutMS: 10000,
     };
-    
-    globalForMongo.__freightMongoClientPromise = new MongoClient(uri, options).connect();
+    const client = new MongoClient(uri, options);
+
+    globalForMongo.__freightMongoClientPromise = client.connect().catch(async (error) => {
+      globalForMongo.__freightMongoClientPromise = undefined;
+      await client.close().catch(() => undefined);
+      throw error;
+    });
   }
 
   return globalForMongo.__freightMongoClientPromise;

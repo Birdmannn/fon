@@ -1,10 +1,10 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal } from "lucide-react";
+import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "lucide-react";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
 import { sendCreateCampaign } from "@/lib/transactions";
 
@@ -134,10 +134,52 @@ const buildPreviewLines = (text: string, maxChars: number) => {
 
 export type CreateModalStep = "compose" | "review";
 
-
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
 
 type DraftRecordStatus = "draft" | "published" | "publish_failed";
+
+type DraftRecord = {
+  _id?: string;
+  title?: string;
+  description?: string;
+  campaignType?: number;
+  summaryDraft?: string;
+  argsDraft?: {
+    taskStartDelayHours?: string;
+    taskDurationHours?: string;
+    maxAmountCkb?: string;
+    auxAmountCkb?: string;
+  };
+  socialMetadata?: {
+    mentions?: string[];
+  };
+  creatorAddress?: string | null;
+  creatorHandle?: string | null;
+  status?: DraftRecordStatus;
+  txHash?: string | null;
+  publishError?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type DraftSnapshot = {
+  title: string;
+  description: string;
+  campaignType: CampaignType;
+  summaryDraft: string;
+  taskStartDelayHours: string;
+  taskDurationHours: string;
+  maxAmountCkb: string;
+  auxAmountCkb: string;
+  mentions: string[];
+};
+
+export type CreateCampaignModalContentHandle = {
+  hasDraftableChanges: () => boolean;
+  saveDraftFromClose: () => Promise<void>;
+  discardDraftSession: () => void;
+  openDraftList: () => Promise<void>;
+};
 
 export type CreateConstraintStatus = {
   titlePassed: boolean;
@@ -156,7 +198,43 @@ type CreateCampaignModalContentProps = {
   onPreviewErrorChange?: (message: string) => void;
 };
 
-export default function CreateCampaignModalContent({
+function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
+  return {
+    ...snapshot,
+    title: snapshot.title.trim(),
+    description: snapshot.description.trim(),
+    summaryDraft: snapshot.summaryDraft.trim(),
+    mentions: [...snapshot.mentions],
+  };
+}
+
+function areDraftSnapshotsEqual(left: DraftSnapshot | null, right: DraftSnapshot | null) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return JSON.stringify(buildDraftSnapshot(left)) === JSON.stringify(buildDraftSnapshot(right));
+}
+
+function formatDraftUpdatedAt(value: string | undefined) {
+  if (!value) {
+    return "Just now";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Just now";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, CreateCampaignModalContentProps>(function CreateCampaignModalContent({
   mode,
   onRequestClose,
   resetSignal = 0,
@@ -164,7 +242,7 @@ export default function CreateCampaignModalContent({
   onStepChange,
   onConstraintStatusChange,
   onPreviewErrorChange,
-}: CreateCampaignModalContentProps) {
+}: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
   const pageEditorRef = useRef<HTMLDivElement>(null);
@@ -173,6 +251,7 @@ export default function CreateCampaignModalContent({
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
   const lastHandledStepBackSignalRef = useRef(stepBackSignal);
+  const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -193,7 +272,14 @@ export default function CreateCampaignModalContent({
   const [mentionQuery, setMentionQuery] = useState("");
   const [modalStep, setModalStep] = useState<CreateModalStep>("compose");
   const [reviewSummary, setReviewSummary] = useState("");
-  const [draftRecordId, setDraftRecordId] = useState<string | null>(null);
+  const [activeDraftRecordId, setActiveDraftRecordId] = useState<string | null>(null);
+  const [draftRecords, setDraftRecords] = useState<DraftRecord[]>([]);
+  const [isDraftListOpen, setIsDraftListOpen] = useState(false);
+  const [isDraftListLoading, setIsDraftListLoading] = useState(false);
+  const [draftListError, setDraftListError] = useState("");
+  const [draftDeleteId, setDraftDeleteId] = useState<string | null>(null);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<DraftSnapshot | null>(null);
+  const [isApplyingDraft, setIsApplyingDraft] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState("");
 
@@ -246,6 +332,31 @@ export default function CreateCampaignModalContent({
   const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
   const hasValidMaxAmount = Number.isFinite(parsedMaxAmountCkb) && parsedMaxAmountCkb > 0;
   const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
+  const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
+  const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
+  const currentDraftSnapshot = useMemo<DraftSnapshot>(() => buildDraftSnapshot({
+    title: trimmedModalTitle,
+    description: trimmedModalDescription,
+    campaignType,
+    summaryDraft: currentDraftSummary,
+    taskStartDelayHours,
+    taskDurationHours,
+    maxAmountCkb,
+    auxAmountCkb: currentAuxAmountCkb,
+    mentions,
+  }), [
+    campaignType,
+    currentAuxAmountCkb,
+    currentDraftSummary,
+    maxAmountCkb,
+    mentions,
+    taskDurationHours,
+    taskStartDelayHours,
+    trimmedModalDescription,
+    trimmedModalTitle,
+  ]);
+  const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
+  const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
   const isPublishDisabled =
     status === "pending" ||
     draftSaveStatus === "saving" ||
@@ -399,7 +510,18 @@ export default function CreateCampaignModalContent({
     setRaffleTicketPriceCkb("1");
     setModalStep("compose");
     setReviewSummary("");
-    setDraftRecordId(null);
+    setActiveDraftRecordId(null);
+    setDraftRecords([]);
+    setIsDraftListOpen(false);
+    setIsDraftListLoading(false);
+    setDraftListError("");
+    setDraftDeleteId(null);
+    setLastSavedSnapshot(null);
+    setIsApplyingDraft(false);
+    if (applyDraftAnimationTimerRef.current) {
+      clearTimeout(applyDraftAnimationTimerRef.current);
+      applyDraftAnimationTimerRef.current = null;
+    }
     setDraftSaveStatus("idle");
     setDraftSaveError("");
     hideMenus();
@@ -779,80 +901,337 @@ export default function CreateCampaignModalContent({
     return true;
   };
 
-  const buildDraftPayload = async (summaryDraft: string, draftStatus: DraftRecordStatus, txHashValue: string | null, publishError: string | null) => {
-    let creatorAddress: string | null = null;
+  const syncEditorsFromState = useCallback((nextTitle: string, nextDescription: string) => {
+    renderEditorText(modalTitleRef.current, nextTitle);
+    renderEditorText(modalDescriptionRef.current, nextDescription);
+    renderEditorText(pageEditorRef.current, nextDescription);
+  }, [renderEditorText]);
 
-    if (signer) {
-      try {
-        creatorAddress = await signer.getRecommendedAddress();
-      } catch {
-        creatorAddress = null;
-      }
+  const getCreatorAddress = useCallback(async () => {
+    if (!signer) {
+      throw new Error("Connect wallet to manage drafts");
     }
 
-    return {
-      title: trimmedModalTitle,
-      description: trimmedModalDescription,
-      campaignType,
-      summaryDraft,
-      argsDraft: {
-        taskStartDelayHours,
-        taskDurationHours,
-        maxAmountCkb,
-        auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
-      },
-      socialMetadata: {
-        mentions,
-        comments: [],
-        likeCount: 0,
-        bookmarkCount: 0,
-        reshareCount: 0,
-      },
-      creatorAddress,
-      creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
-      status: draftStatus,
-      txHash: txHashValue,
-      publishError,
-    };
-  };
+    const creatorAddress = await signer.getRecommendedAddress();
+    if (!creatorAddress) {
+      throw new Error("Unable to resolve wallet address for drafts");
+    }
 
-  const persistDraftRecord = async (
-    summaryDraft: string,
-    draftStatus: DraftRecordStatus,
-    txHashValue: string | null = null,
-    publishError: string | null = null
-  ) => {
-    setDraftSaveStatus("saving");
+    return creatorAddress;
+  }, [signer]);
+
+  const applyDraftRecord = useCallback((record: DraftRecord) => {
+    const nextTitle = record.title?.trim() ?? "";
+    const nextDescription = record.description?.trim() ?? "";
+    const nextCampaignType = typeof record.campaignType === "number"
+      ? (record.campaignType as CampaignType)
+      : CampaignType.SimpleTask;
+    const nextSummary = record.summaryDraft?.trim() ?? "";
+    const nextMentions = Array.isArray(record.socialMetadata?.mentions) ? record.socialMetadata.mentions : [];
+    const nextStartDelay = record.argsDraft?.taskStartDelayHours ?? "0";
+    const nextDuration = record.argsDraft?.taskDurationHours ?? "24";
+    const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
+    const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+
+    setModalTitle(nextTitle);
+    setModalDescription(nextDescription);
+    setSummary(nextDescription);
+    setCampaignType(nextCampaignType);
+    setMentions(nextMentions);
+    setTaskStartDelayHours(nextStartDelay);
+    setTaskDurationHours(nextDuration);
+    setMaxAmountCkb(nextMaxAmount);
+    setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
+    setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
+    setActiveDraftRecordId(record._id ?? null);
+    setModalStep("compose");
+    setIsDraftListOpen(false);
+    setDraftSaveStatus("idle");
     setDraftSaveError("");
+    setDraftListError("");
+    setStatus("idle");
+    setErrorMsg("");
+    syncEditorsFromState(nextTitle, nextDescription);
+
+    const nextSnapshot = buildDraftSnapshot({
+      title: nextTitle,
+      description: nextDescription,
+      campaignType: nextCampaignType,
+      summaryDraft: nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }),
+      taskStartDelayHours: nextStartDelay,
+      taskDurationHours: nextDuration,
+      maxAmountCkb: nextMaxAmount,
+      auxAmountCkb: nextAuxAmount,
+      mentions: nextMentions,
+    });
+    setLastSavedSnapshot(nextSnapshot);
+
+    setIsApplyingDraft(true);
+    if (applyDraftAnimationTimerRef.current) {
+      clearTimeout(applyDraftAnimationTimerRef.current);
+    }
+    applyDraftAnimationTimerRef.current = setTimeout(() => {
+      setIsApplyingDraft(false);
+      applyDraftAnimationTimerRef.current = null;
+    }, 420);
+  }, [syncEditorsFromState]);
+
+  const loadDraftRecords = useCallback(async () => {
+    setIsDraftListLoading(true);
+    setDraftListError("");
 
     try {
-      const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError);
-      const response = await fetch(draftRecordId ? `/api/campaign-records/${draftRecordId}` : "/api/campaign-records", {
-        method: draftRecordId ? "PATCH" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
+      const creatorAddress = await getCreatorAddress();
+      const response = await fetch(`/api/campaign-records/drafts?creatorAddress=${encodeURIComponent(creatorAddress)}`, {
+        cache: "no-store",
       });
-
       const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(data?.error ?? "Failed to save campaign record");
+        throw new Error(data?.error ?? "Failed to load drafts");
       }
 
-      if (!draftRecordId && data?.id) {
-        setDraftRecordId(data.id);
-      }
-
-      setDraftSaveStatus("saved");
-      return data?.id ?? draftRecordId;
+      setDraftRecords(Array.isArray(data?.records) ? (data.records as DraftRecord[]) : []);
+      setIsDraftListOpen(true);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save campaign record";
-      setDraftSaveStatus("error");
-      setDraftSaveError(message);
+      setDraftRecords([]);
+      setIsDraftListOpen(true);
+      setDraftListError(error instanceof Error ? error.message : "Failed to load drafts");
       throw error;
+    } finally {
+      setIsDraftListLoading(false);
     }
-  };
+  }, [getCreatorAddress]);
+
+  const deleteDraftRecord = useCallback(async (recordId: string) => {
+    setDraftDeleteId(recordId);
+    setDraftListError("");
+
+    try {
+      const creatorAddress = await getCreatorAddress();
+      const response = await fetch(`/api/campaign-records/${recordId}?creatorAddress=${encodeURIComponent(creatorAddress)}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Failed to delete draft");
+      }
+
+      setDraftRecords((current) => current.filter((record) => record._id !== recordId));
+      if (activeDraftRecordId === recordId) {
+        setActiveDraftRecordId(null);
+        setModalTitle("");
+        setModalDescription("");
+        setSummary("");
+        setReviewSummary("");
+        setCampaignType(CampaignType.SimpleTask);
+        setMentions([]);
+        setTaskStartDelayHours("0");
+        setTaskDurationHours("24");
+        setMaxAmountCkb("1000");
+        setRaffleTicketPriceCkb("1");
+        setLastSavedSnapshot(null);
+        setDraftSaveStatus("idle");
+        setDraftSaveError("");
+        setStatus("idle");
+        setErrorMsg("");
+        setModalStep("compose");
+        hideMenus();
+        syncEditorsFromState("", "");
+        activeEditorRef.current = null;
+      }
+    } catch (error) {
+      setDraftListError(error instanceof Error ? error.message : "Failed to delete draft");
+      throw error;
+    } finally {
+      setDraftDeleteId(null);
+    }
+  }, [activeDraftRecordId, getCreatorAddress, hideMenus, syncEditorsFromState]);
+
+  const buildDraftPayload = useCallback(
+    async (
+      summaryDraft: string,
+      draftStatus: DraftRecordStatus,
+      txHashValue: string | null,
+      publishError: string | null
+    ) => {
+      const creatorAddress = await getCreatorAddress();
+
+      return {
+        title: trimmedModalTitle,
+        description: trimmedModalDescription,
+        campaignType,
+        summaryDraft,
+        argsDraft: {
+          taskStartDelayHours,
+          taskDurationHours,
+          maxAmountCkb,
+          auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+        },
+        socialMetadata: {
+          mentions,
+          comments: [],
+          likeCount: 0,
+          bookmarkCount: 0,
+          reshareCount: 0,
+        },
+        creatorAddress,
+        creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
+        status: draftStatus,
+        txHash: txHashValue,
+        publishError,
+      };
+    },
+    [
+      campaignType,
+      getCreatorAddress,
+      maxAmountCkb,
+      mentions,
+      raffleTicketPriceCkb,
+      shouldCollectRaffleTicketPrice,
+      taskDurationHours,
+      taskStartDelayHours,
+      trimmedModalDescription,
+      trimmedModalTitle,
+    ]
+  );
+
+  const persistDraftRecord = useCallback(
+    async (
+      summaryDraft: string,
+      draftStatus: DraftRecordStatus,
+      txHashValue: string | null = null,
+      publishError: string | null = null
+    ) => {
+      setDraftSaveStatus("saving");
+      setDraftSaveError("");
+
+      try {
+        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError);
+        const response = await fetch(activeDraftRecordId ? `/api/campaign-records/${activeDraftRecordId}` : "/api/campaign-records", {
+          method: activeDraftRecordId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error ?? "Failed to save campaign record");
+        }
+
+        const persistedId = data?.id ?? activeDraftRecordId;
+        if (persistedId) {
+          setActiveDraftRecordId(persistedId);
+        }
+
+        const nextSnapshot = buildDraftSnapshot({
+          title: trimmedModalTitle,
+          description: trimmedModalDescription,
+          campaignType,
+          summaryDraft,
+          taskStartDelayHours,
+          taskDurationHours,
+          maxAmountCkb,
+          auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+          mentions,
+        });
+        setLastSavedSnapshot(nextSnapshot);
+
+        setDraftRecords((current) => {
+          const updatedRecord: DraftRecord = {
+            _id: persistedId ?? undefined,
+            title: trimmedModalTitle,
+            description: trimmedModalDescription,
+            campaignType,
+            summaryDraft,
+            argsDraft: {
+              taskStartDelayHours,
+              taskDurationHours,
+              maxAmountCkb,
+              auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+            },
+            socialMetadata: {
+              mentions,
+            },
+            status: draftStatus,
+            txHash: txHashValue,
+            publishError,
+            updatedAt: new Date().toISOString(),
+          };
+
+          if (!persistedId) {
+            return current;
+          }
+
+          const remaining = current.filter((record) => record._id !== persistedId);
+          if (draftStatus === "published") {
+            return remaining;
+          }
+
+          return [updatedRecord, ...remaining];
+        });
+
+        setDraftSaveStatus("saved");
+        return persistedId;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to save campaign record";
+        setDraftSaveStatus("error");
+        setDraftSaveError(message);
+        throw error;
+      }
+    },
+    [
+      activeDraftRecordId,
+      buildDraftPayload,
+      campaignType,
+      maxAmountCkb,
+      mentions,
+      raffleTicketPriceCkb,
+      shouldCollectRaffleTicketPrice,
+      taskDurationHours,
+      taskStartDelayHours,
+      trimmedModalDescription,
+      trimmedModalTitle,
+    ]
+  );
+
+  useImperativeHandle(ref, () => ({
+    hasDraftableChanges: () => hasDraftableChanges,
+    saveDraftFromClose: async () => {
+      if (!hasDraftableChanges) {
+        return;
+      }
+      const summaryToSave = currentDraftSnapshot.summaryDraft || buildOnchainSummary({
+        title: trimmedModalTitle,
+        description: trimmedModalDescription,
+      });
+      await persistDraftRecord(summaryToSave, "draft");
+    },
+    discardDraftSession: () => {
+      resetComposer();
+    },
+    openDraftList: async () => {
+      await loadDraftRecords();
+    },
+  }), [
+    currentDraftSnapshot.summaryDraft,
+    hasDraftableChanges,
+    loadDraftRecords,
+    persistDraftRecord,
+    resetComposer,
+    trimmedModalDescription,
+    trimmedModalTitle,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (applyDraftAnimationTimerRef.current) {
+        clearTimeout(applyDraftAnimationTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleAdvanceToReview = async () => {
     if (!validateComposeConstraints()) {
@@ -972,7 +1351,7 @@ export default function CreateCampaignModalContent({
         summary: summaryToPublish,
       });
 
-      if (isModal && draftRecordId) {
+      if (isModal && activeDraftRecordId) {
         try {
           await persistDraftRecord(summaryToPublish, "published", hash, null);
         } catch {
@@ -985,7 +1364,7 @@ export default function CreateCampaignModalContent({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
-      if (isModal && draftRecordId) {
+      if (isModal && activeDraftRecordId) {
         try {
           await persistDraftRecord(activeReviewSummary.trim(), "publish_failed", null, message);
         } catch {
@@ -1073,9 +1452,68 @@ export default function CreateCampaignModalContent({
     </div>
   );
 
+  const renderDraftList = () => (
+    <div className={`create-drafts-drawer ${isDraftListOpen ? "create-drafts-drawer-open" : ""}`}>
+      <div className="create-drafts-drawer-header">
+        <p className="create-review-section-label">Saved drafts</p>
+        <button
+          type="button"
+          className="create-drafts-close-btn"
+          onClick={() => {
+            setIsDraftListOpen(false);
+            setDraftListError("");
+          }}
+        >
+          Hide
+        </button>
+      </div>
+
+      {draftListError && <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p>}
+      {isDraftListLoading ? <p className="create-drafts-feedback">Loading drafts…</p> : null}
+      {!isDraftListLoading && draftRecords.length === 0 ? <p className="create-drafts-feedback">No saved drafts yet.</p> : null}
+
+      {!isDraftListLoading && draftRecords.length > 0 ? (
+        <div className="create-drafts-list">
+          {draftRecords.map((record) => {
+            const isDeleting = draftDeleteId === record._id;
+            return (
+              <div key={record._id} className="create-draft-card">
+                <button
+                  type="button"
+                  className="create-draft-card-main"
+                  onClick={() => applyDraftRecord(record)}
+                >
+                  <div className="create-draft-card-row">
+                    <span className="create-draft-card-title">{record.title?.trim() || "Untitled draft"}</span>
+                    <span className="create-draft-card-time">{formatDraftUpdatedAt(record.updatedAt)}</span>
+                  </div>
+                  <p className="create-draft-card-summary">{record.summaryDraft?.trim() || "No summary yet."}</p>
+                </button>
+                <button
+                  type="button"
+                  className="create-draft-card-delete"
+                  onClick={() => {
+                    if (record._id) {
+                      void deleteDraftRecord(record._id).catch(() => undefined);
+                    }
+                  }}
+                  disabled={isDeleting}
+                  aria-label="Delete draft"
+                >
+                  <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+
   const renderModalComposePane = () => (
-    <div className="create-modal-step-pane create-modal-step-pane-compose">
+    <div className={`create-modal-step-pane create-modal-step-pane-compose ${isApplyingDraft ? "create-modal-step-pane-compose-applying" : ""}`}>
       <div className="relative w-full h-full flex flex-col">
+        {renderDraftList()}
         <div className="create-modal-title-wrap">
           <div
             ref={modalTitleRef}
@@ -1702,4 +2140,6 @@ export default function CreateCampaignModalContent({
       )}
     </div>
   );
-}
+});
+
+export default CreateCampaignModalContent;

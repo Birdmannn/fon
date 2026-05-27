@@ -31,6 +31,7 @@ type CampaignRecordPayload = {
 
 const SUMMARY_MAX_BYTES = 64;
 const summaryEncoder = new TextEncoder();
+const DELETABLE_DRAFT_STATUSES = ["draft", "publish_failed"] as const;
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -155,5 +156,35 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update campaign record";
     return badRequest(message);
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext<"/api/campaign-records/[id]">) {
+  try {
+    const { id } = await context.params;
+    if (!ObjectId.isValid(id)) {
+      return badRequest("Invalid campaign record id", 404);
+    }
+
+    const creatorAddress = new URL(request.url).searchParams.get("creatorAddress")?.trim();
+    if (!creatorAddress) {
+      return badRequest("creatorAddress is required");
+    }
+
+    const collection = await getMongoCollection();
+    const result = await collection.deleteOne({
+      _id: new ObjectId(id),
+      creatorAddress,
+      status: { $in: [...DELETABLE_DRAFT_STATUSES] },
+    });
+
+    if (result.deletedCount === 0) {
+      return badRequest("Draft record not found", 404);
+    }
+
+    return NextResponse.json({ ok: true, id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete campaign record";
+    return badRequest(message, 500);
   }
 }

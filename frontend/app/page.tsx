@@ -14,11 +14,14 @@ import {
   Repeat2,
   RotateCcw,
   Search,
-  X,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import CreateCampaignModalContent, { CreateConstraintStatus, CreateModalStep } from "@/app/create/_components/CreateCampaignModalContent";
+import CreateCampaignModalContent, {
+  CreateCampaignModalContentHandle,
+  CreateConstraintStatus,
+  CreateModalStep,
+} from "@/app/create/_components/CreateCampaignModalContent";
 import { FREIGHT_CONTRACT, CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
@@ -88,6 +91,8 @@ type MergedCampaign = {
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
 };
+
+type InfoModalMode = "about" | "save-draft-confirm";
 
 function normalizeHash(value: string | null | undefined) {
   return (value ?? "").toLowerCase();
@@ -177,6 +182,8 @@ export default function Home() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
+  const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
+  const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
   const [activeInfoButtonRect, setActiveInfoButtonRect] = useState<DOMRect | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
@@ -194,6 +201,7 @@ export default function Home() {
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
+  const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
 
   const clearInfoCloseTimer = () => {
     if (infoCloseTimerRef.current) {
@@ -223,18 +231,35 @@ export default function Home() {
     setActiveInfoButtonRect(button.getBoundingClientRect());
   }, []);
 
-  const showInfoModalForInteraction = (interaction: "hover" | "click") => {
+  const showInfoModalForInteraction = useCallback((interaction: "hover" | "click") => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     refreshHeaderInfoButtonRect();
+    setInfoModalMode("about");
+    setSaveDraftPromptError("");
     setInfoModalInteraction(interaction);
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  };
+  }, [refreshHeaderInfoButtonRect]);
+
+  const openSaveDraftConfirmModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    refreshHeaderInfoButtonRect();
+    setInfoModalMode("save-draft-confirm");
+    setSaveDraftPromptError("");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [refreshHeaderInfoButtonRect]);
 
   const openInfoModalFromHover = () => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
+
+    if (infoModalMode === "save-draft-confirm") {
+      return;
+    }
 
     if (showInfoModal && infoModalInteraction === "click" && !isInfoModalClosing) {
       return;
@@ -261,20 +286,14 @@ export default function Home() {
       setShowInfoModal(false);
       setIsInfoModalClosing(false);
       setInfoModalInteraction("hover");
+      setInfoModalMode("about");
+      setSaveDraftPromptError("");
       setActiveInfoButtonRect(null);
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
   }, [showInfoModal, isInfoModalClosing]);
 
-  const openCreateModal = () => {
-    clearCreateHideTimer();
-    setIsCreateModalClosing(false);
-    setCreateModalStep("compose");
-    setPreviewError("");
-    setShowCreateModal(true);
-  };
-
-  const closeCreateModal = useCallback(() => {
+  const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
 
     setIsCreateModalClosing(true);
@@ -284,9 +303,42 @@ export default function Home() {
       setIsCreateModalClosing(false);
       setCreateModalStep("compose");
       setPreviewError("");
+      setSaveDraftPromptError("");
       createHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
   }, [showCreateModal, isCreateModalClosing]);
+
+  const openCreateModal = () => {
+    clearCreateHideTimer();
+    setIsCreateModalClosing(false);
+    setCreateModalStep("compose");
+    setPreviewError("");
+    setSaveDraftPromptError("");
+    setShowCreateModal(true);
+  };
+
+  const requestCloseCreateModal = useCallback(() => {
+    if (createModalContentRef.current?.hasDraftableChanges()) {
+      openSaveDraftConfirmModal();
+      return;
+    }
+
+    finalizeCloseCreateModal();
+  }, [finalizeCloseCreateModal, openSaveDraftConfirmModal]);
+
+  const handleSaveDraftChoice = useCallback(async (shouldSave: boolean) => {
+    try {
+      if (shouldSave) {
+        await createModalContentRef.current?.saveDraftFromClose();
+      }
+
+      createModalContentRef.current?.discardDraftSession();
+      closeInfoModal();
+      finalizeCloseCreateModal();
+    } catch (error) {
+      setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
+    }
+  }, [closeInfoModal, finalizeCloseCreateModal]);
 
   const resetCreateModal = useCallback(() => {
     setCreateModalStep("compose");
@@ -295,6 +347,10 @@ export default function Home() {
   }, []);
 
   const scheduleCloseInfoModal = () => {
+    if (infoModalMode === "save-draft-confirm") {
+      return;
+    }
+
     clearInfoCloseTimer();
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal();
@@ -302,6 +358,10 @@ export default function Home() {
   };
 
   const toggleInfoModal = () => {
+    if (infoModalMode === "save-draft-confirm") {
+      return;
+    }
+
     if (showInfoModal && !isInfoModalClosing) {
       closeInfoModal();
       return;
@@ -318,7 +378,7 @@ export default function Home() {
       return;
     }
 
-    closeCreateModal();
+    void createModalContentRef.current?.openDraftList().catch(() => undefined);
   };
 
   useEffect(() => {
@@ -331,8 +391,21 @@ export default function Home() {
 
   useEffect(() => {
     const handleEscapeClose = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && showInfoModal) {
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (showInfoModal) {
+        if (infoModalMode === "save-draft-confirm") {
+          return;
+        }
+
         closeInfoModal();
+        return;
+      }
+
+      if (showCreateModal) {
+        requestCloseCreateModal();
       }
     };
 
@@ -340,7 +413,7 @@ export default function Home() {
     return () => {
       window.removeEventListener("keydown", handleEscapeClose);
     };
-  }, [showInfoModal, closeInfoModal]);
+  }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
   useEffect(() => {
     if (!showInfoModal) return;
@@ -361,8 +434,8 @@ export default function Home() {
   }, [showInfoModal, refreshHeaderInfoButtonRect]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
-  const createTopActionTooltip = createModalStep === "review" ? "Back" : "Load";
-  const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : "Close create campaign modal";
+  const createTopActionTooltip = createModalStep === "review" ? "Back" : "Load drafts";
+  const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : "Load saved drafts";
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
@@ -456,7 +529,32 @@ export default function Home() {
                   {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
                 </a>
               </p>
-              {showCreateModal && (
+              {showCreateModal && infoModalMode === "save-draft-confirm" ? (
+                <div className="create-info-constraints-copy">
+                  <p className="mt-3 font-semibold text-base text-gray-900">Save draft?</p>
+                  {saveDraftPromptError ? (
+                    <p className="create-info-constraint-item text-red-500">
+                      <span>{saveDraftPromptError}</span>
+                    </p>
+                  ) : null}
+                  <div className="create-info-confirm-actions">
+                    <button
+                      type="button"
+                      className="create-info-confirm-btn"
+                      onClick={() => void handleSaveDraftChoice(false)}
+                    >
+                      No
+                    </button>
+                    <button
+                      type="button"
+                      className="create-info-confirm-btn create-info-confirm-btn-primary"
+                      onClick={() => void handleSaveDraftChoice(true)}
+                    >
+                      Yes
+                    </button>
+                  </div>
+                </div>
+              ) : showCreateModal ? (
                 <div className="create-info-constraints-copy">
                   {createModalStep === "review" ? (
                     <>
@@ -504,7 +602,7 @@ export default function Home() {
                     </>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>
@@ -523,8 +621,8 @@ export default function Home() {
           type="button"
           className={`header-info-backdrop ${isInfoModalClosing ? "header-info-backdrop-closing" : ""}`}
           aria-label="Close Freight information modal"
-          onClick={closeInfoModal}
-          style={{ pointerEvents: infoModalInteraction === "click" ? "auto" : "none" }}
+          onClick={infoModalMode === "save-draft-confirm" ? undefined : closeInfoModal}
+          style={{ pointerEvents: infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" ? "auto" : "none" }}
         />
       )}
 
@@ -558,7 +656,7 @@ export default function Home() {
           type="button"
           className={`create-campaign-backdrop ${isCreateModalClosing ? "create-campaign-backdrop-closing" : ""}`}
           aria-label="Close create campaign modal"
-          onClick={closeCreateModal}
+          onClick={requestCloseCreateModal}
         />
       )}
 
@@ -570,8 +668,9 @@ export default function Home() {
           aria-modal="true"
         >
           <CreateCampaignModalContent
+            ref={createModalContentRef}
             mode="modal"
-            onRequestClose={closeCreateModal}
+            onRequestClose={requestCloseCreateModal}
             resetSignal={createResetSignal}
             stepBackSignal={createStepBackSignal}
             onStepChange={setCreateModalStep}
