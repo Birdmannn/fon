@@ -94,6 +94,8 @@ type MergedCampaign = {
 };
 
 type InfoModalMode = "about" | "save-draft-confirm";
+type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
+type CampaignCountdownPhase = "start" | "duration" | "ended";
 
 function normalizeHash(value: string | null | undefined) {
   return (value ?? "").toLowerCase();
@@ -138,17 +140,53 @@ function formatCkbAmount(value: bigint) {
   return (Number(value) / 1e8).toFixed(2);
 }
 
-function formatDurationLabel(totalSeconds: number) {
-  if (totalSeconds <= 0) {
-    return "0h";
+function formatCountdownSegment(value: number) {
+  return String(Math.max(0, value)).padStart(2, "0");
+}
+
+function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
+  const createdAtMs = Number(campaign.data.createdAt);
+  const startDelayMs = Math.max(0, Number(campaign.data.startDurationSecs) * 1000);
+  const durationMs = Math.max(0, Number(campaign.data.taskDurationSecs) * 1000);
+  const startsAtMs = createdAtMs + startDelayMs;
+  const endsAtMs = startsAtMs + durationMs;
+
+  let remainingMs = 0;
+  let initialMs = 0;
+  let phase: CampaignCountdownPhase = "ended";
+
+  if (nowMs < startsAtMs) {
+    phase = "start";
+    remainingMs = startsAtMs - nowMs;
+    initialMs = startDelayMs;
+  } else if (nowMs < endsAtMs) {
+    phase = "duration";
+    remainingMs = endsAtMs - nowMs;
+    initialMs = durationMs;
   }
 
-  if (totalSeconds % 3600 === 0) {
-    return `${totalSeconds / 3600}h`;
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (phase === "ended" || totalSeconds === 0) {
+    return {
+      text: "00D 00H 00M 00S",
+      tone: "ended" as CampaignCountdownTone,
+      phase: "ended" as CampaignCountdownPhase,
+    };
   }
 
-  const hours = totalSeconds / 3600;
-  return `${hours.toFixed(1)}h`;
+  const ratio = initialMs > 0 ? remainingMs / initialMs : 0;
+  const tone: CampaignCountdownTone = ratio <= 0.2 ? "danger" : ratio <= 0.5 ? "warn" : "good";
+
+  return {
+    text: `${formatCountdownSegment(days)}D ${formatCountdownSegment(hours)}H ${formatCountdownSegment(minutes)}M ${formatCountdownSegment(seconds)}S`,
+    tone,
+    phase,
+  };
 }
 
 function truncateAddress(address: string) {
@@ -866,6 +904,17 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
 
 function CampaignList({ campaigns, loading, error }: { campaigns: MergedCampaign[]; loading: boolean; error: string }) {
   const signer = ccc.useSigner();
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   if (loading) {
     return <p className="text-sm text-gray-400">Loading campaigns…</p>;
@@ -888,6 +937,7 @@ function CampaignList({ campaigns, loading, error }: { campaigns: MergedCampaign
           record={record}
           displayStatus={displayStatus}
           signer={signer ?? null}
+          nowMs={nowMs}
         />
       ))}
     </div>
@@ -899,11 +949,13 @@ function CampaignCard({
   record,
   displayStatus,
   signer,
+  nowMs,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
+  nowMs: number;
 }) {
   const { data, outPoint } = c;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
@@ -917,6 +969,9 @@ function CampaignCard({
   const displayDescription = record?.description?.trim() || onchainSummary;
   const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
   const mentions = record?.socialMetadata?.mentions ?? [];
+  const countdown = buildCampaignCountdown(c, nowMs);
+  const countdownTitle = countdown.phase === "start" ? "Starts in" : countdown.phase === "duration" ? "Ends in" : "Ended";
+  const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
 
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
@@ -1030,9 +1085,6 @@ function CampaignCard({
 
         <div className="flex flex-wrap gap-2 text-xs text-gray-500">
           <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
-          <span>Created {createdAtDate}</span>
-          <span>Start delay {formatDurationLabel(Number(data.startDurationSecs))}</span>
-          <span>Duration {formatDurationLabel(Number(data.taskDurationSecs))}</span>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -1063,29 +1115,36 @@ function CampaignCard({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="px-2 py-1 rounded bg-gray-900 text-white font-semibold">#{TYPE_TAGS[data.campaignType] ?? data.campaignType}</span>
-          {mentions.map((mention) => (
-            <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
-          ))}
-        </div>
+        {mentions.length > 0 && (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {mentions.map((mention) => (
+              <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
+            ))}
+          </div>
+        )}
 
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <span className="text-xs font-mono text-gray-400 break-all">
-            <a
-              href={`https://pudge.explorer.nervos.org/transaction/${outPoint.txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              {shortHash}
-            </a>
-          </span>
-          {data.rewardCount > 0n && (
-            <span className="text-xs text-gray-500">
-              Reward count: <strong className="text-gray-800">{String(data.rewardCount)}</strong>
+        <div className="campaign-card-footer">
+          <div className="campaign-card-footer-meta">
+            <span className="text-xs font-mono text-gray-400 break-all">
+              <a
+                href={`https://pudge.explorer.nervos.org/transaction/${outPoint.txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {shortHash}
+              </a>
             </span>
-          )}
+            <span className="campaign-card-created-date">Created {createdAtDate}</span>
+            {data.rewardCount > 0n && (
+              <span className="campaign-card-reward-count">
+                Reward count: <strong className="text-gray-800">{String(data.rewardCount)}</strong>
+              </span>
+            )}
+          </div>
+          <span className={countdownClassName} title={countdownTitle} aria-label={`${countdownTitle} ${countdown.text}`}>
+            {countdown.text}
+          </span>
         </div>
       </div>
 

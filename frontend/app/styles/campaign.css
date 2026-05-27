@@ -234,6 +234,53 @@
   min-height: 1.5rem;
 }
 
+.campaign-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.campaign-card-footer-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.campaign-card-created-date,
+.campaign-card-reward-count {
+  font-size: 0.75rem;
+  line-height: 1;
+  color: #9ca3af;
+}
+
+.campaign-card-countdown {
+  margin-left: auto;
+  font-size: 0.75rem;
+  line-height: 1;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+.campaign-card-countdown-good {
+  color: #16a34a;
+}
+
+.campaign-card-countdown-warn {
+  color: #c2410c;
+}
+
+.campaign-card-countdown-danger {
+  color: #dc2626;
+}
+
+.campaign-card-countdown-ended {
+  color: #9ca3af;
+}
+
 /* FAB button */
 .create-campaign-fab {
   position: fixed !important;
