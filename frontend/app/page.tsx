@@ -3,6 +3,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Bookmark,
   CheckCircle,
   Coins,
@@ -197,6 +198,7 @@ export default function Home() {
     additionalHashtagsPassed: true,
   });
   const [previewError, setPreviewError] = useState("");
+  const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -304,6 +306,7 @@ export default function Home() {
       setCreateModalStep("compose");
       setPreviewError("");
       setSaveDraftPromptError("");
+      setIsCreateDraftListOpen(false);
       createHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
   }, [showCreateModal, isCreateModalClosing]);
@@ -314,6 +317,7 @@ export default function Home() {
     setCreateModalStep("compose");
     setPreviewError("");
     setSaveDraftPromptError("");
+    setIsCreateDraftListOpen(false);
     setShowCreateModal(true);
   };
 
@@ -378,7 +382,7 @@ export default function Home() {
       return;
     }
 
-    void createModalContentRef.current?.openDraftList().catch(() => undefined);
+    void createModalContentRef.current?.toggleDraftList().catch(() => undefined);
   };
 
   useEffect(() => {
@@ -434,8 +438,8 @@ export default function Home() {
   }, [showInfoModal, refreshHeaderInfoButtonRect]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
-  const createTopActionTooltip = createModalStep === "review" ? "Back" : "Load drafts";
-  const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : "Load saved drafts";
+  const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
+  const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
@@ -484,7 +488,10 @@ export default function Home() {
                   {createModalStep === "review" ? (
                     <ArrowLeft className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
-                    <ArrowDown className="campaign-action-icon" size={26} strokeWidth={2} aria-hidden="true" />
+                    <span className={`create-modal-toggle-icon-wrap ${isCreateDraftListOpen ? "create-modal-toggle-icon-wrap-open" : ""}`}>
+                      <ArrowDown className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-down" size={26} strokeWidth={2} aria-hidden="true" />
+                      <ArrowUp className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-up" size={26} strokeWidth={2} aria-hidden="true" />
+                    </span>
                   )}
                 </button>
               </div>
@@ -676,6 +683,7 @@ export default function Home() {
             onStepChange={setCreateModalStep}
             onConstraintStatusChange={setConstraintStatus}
             onPreviewErrorChange={setPreviewError}
+            onDraftListOpenChange={setIsCreateDraftListOpen}
           />
         </div>
       )}

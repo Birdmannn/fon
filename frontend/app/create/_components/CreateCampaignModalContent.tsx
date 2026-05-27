@@ -178,7 +178,7 @@ export type CreateCampaignModalContentHandle = {
   hasDraftableChanges: () => boolean;
   saveDraftFromClose: () => Promise<void>;
   discardDraftSession: () => void;
-  openDraftList: () => Promise<void>;
+  toggleDraftList: () => Promise<boolean>;
 };
 
 export type CreateConstraintStatus = {
@@ -196,6 +196,7 @@ type CreateCampaignModalContentProps = {
   onStepChange?: (step: CreateModalStep) => void;
   onConstraintStatusChange?: (status: CreateConstraintStatus) => void;
   onPreviewErrorChange?: (message: string) => void;
+  onDraftListOpenChange?: (isOpen: boolean) => void;
 };
 
 function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
@@ -242,6 +243,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onStepChange,
   onConstraintStatusChange,
   onPreviewErrorChange,
+  onDraftListOpenChange,
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -582,6 +584,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   useEffect(() => {
     onPreviewErrorChange?.(isReviewStep ? activeModalError : "");
   }, [activeModalError, isReviewStep, onPreviewErrorChange]);
+
+  useEffect(() => {
+    onDraftListOpenChange?.(isDraftListOpen);
+  }, [isDraftListOpen, onDraftListOpenChange]);
 
   const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
     setShowNoDraftsMessage(false);
@@ -999,10 +1005,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       if (nextRecords.length === 0) {
         setIsDraftListOpen(false);
         setShowNoDraftsMessage(true);
-        return;
+        return false;
       }
       setShowNoDraftsMessage(false);
       setIsDraftListOpen(true);
+      return true;
     } catch (error) {
       setDraftRecords([]);
       setIsDraftListOpen(true);
@@ -1222,12 +1229,19 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     discardDraftSession: () => {
       resetComposer();
     },
-    openDraftList: async () => {
-      await loadDraftRecords();
+    toggleDraftList: async () => {
+      if (isDraftListOpen) {
+        setIsDraftListOpen(false);
+        setDraftListError("");
+        return false;
+      }
+
+      return loadDraftRecords();
     },
   }), [
     currentDraftSnapshot.summaryDraft,
     hasDraftableChanges,
+    isDraftListOpen,
     loadDraftRecords,
     persistDraftRecord,
     resetComposer,
@@ -1466,16 +1480,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     <div className={`create-drafts-drawer ${isDraftListOpen ? "create-drafts-drawer-open" : ""}`}>
       <div className="create-drafts-drawer-header">
         <p className="create-review-section-label">Saved drafts</p>
-        <button
-          type="button"
-          className="create-drafts-close-btn"
-          onClick={() => {
-            setIsDraftListOpen(false);
-            setDraftListError("");
-          }}
-        >
-          Hide
-        </button>
       </div>
 
       {draftListError && <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p>}
