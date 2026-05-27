@@ -910,7 +910,6 @@ function CampaignCard({
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
   const maxCkb = formatCkbAmount(data.maximumAmount);
   const depositedCkb = formatCkbAmount(data.currentDeposits);
-  const ticketPriceCkb = Number(data.auxAmount) > 0 ? formatCkbAmount(data.auxAmount) : null;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
@@ -1045,25 +1044,6 @@ function CampaignCard({
           {mentions.map((mention) => (
             <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
           ))}
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-600">
-          <div className="rounded border border-gray-200 px-3 py-2">
-            <div className="font-semibold text-gray-900">Max deposit</div>
-            <div>{maxCkb} CKB</div>
-          </div>
-          <div className="rounded border border-gray-200 px-3 py-2">
-            <div className="font-semibold text-gray-900">Current deposit</div>
-            <div>{depositedCkb} CKB</div>
-          </div>
-          <div className="rounded border border-gray-200 px-3 py-2">
-            <div className="font-semibold text-gray-900">Summary</div>
-            <div>{record?.summaryDraft || onchainSummary}</div>
-          </div>
-          <div className="rounded border border-gray-200 px-3 py-2">
-            <div className="font-semibold text-gray-900">Ticket price</div>
-            <div>{ticketPriceCkb ? `${ticketPriceCkb} CKB` : "—"}</div>
-          </div>
         </div>
 
         <div className="flex items-center justify-between gap-3 flex-wrap">
