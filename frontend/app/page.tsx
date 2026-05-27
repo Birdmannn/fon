@@ -915,6 +915,7 @@ function CampaignCard({
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const displayTitle = record?.title?.trim() || onchainSummary;
   const displayDescription = record?.description?.trim() || onchainSummary;
+  const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
   const mentions = record?.socialMetadata?.mentions ?? [];
 
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
@@ -1036,7 +1037,30 @@ function CampaignCard({
 
         <div className="flex flex-col gap-2">
           <h3 className="text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
-          <p className="text-sm leading-6 text-gray-700 whitespace-pre-wrap break-words">{displayDescription}</p>
+          <div className="campaign-card-description">
+            {descriptionLines.map((line, index) => {
+              const isQuote = /^\s*>/.test(line);
+              const quoteText = line.replace(/^\s*>\s?/, "");
+
+              if (isQuote) {
+                return (
+                  <div key={`${line}-${index}`} className="campaign-card-description-quote">
+                    {quoteText}
+                  </div>
+                );
+              }
+
+              if (line.trim().length === 0) {
+                return <div key={`blank-${index}`} className="campaign-card-description-spacer" aria-hidden="true" />;
+              }
+
+              return (
+                <p key={`${line}-${index}`} className="campaign-card-description-line">
+                  {line}
+                </p>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs">

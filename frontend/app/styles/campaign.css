@@ -208,6 +208,32 @@
   border-bottom-color: #6b7280;
 }
 
+.campaign-card-description {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  color: #374151;
+  word-break: break-word;
+}
+
+.campaign-card-description-line {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.campaign-card-description-quote {
+  padding-left: 0.85rem;
+  border-left: 2px solid #9ca3af;
+  color: #4b5563;
+  white-space: pre-wrap;
+}
+
+.campaign-card-description-spacer {
+  min-height: 1.5rem;
+}
+
 /* FAB button */
 .create-campaign-fab {
   position: fixed !important;
