@@ -1,0 +1,106 @@
+/* ============================================
+   RAINBOW BUTTON PREVIEW
+   Temporary isolated surface for border/button experiments
+   ============================================ */
+
+:root {
+  --rainbow-color-1: #7c3aed;
+  --rainbow-color-2: #ec4899;
+  --rainbow-color-3: #f59e0b;
+  --rainbow-color-4: #10b981;
+  --rainbow-color-5: #3b82f6;
+}
+
+@keyframes rainbow-preview-shift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+.rainbow-preview-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.rainbow-preview-panel {
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--background) 96%, white 4%);
+}
+
+.rainbow-preview-label {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: #6b7280;
+  font-family: var(--font-mono, monospace);
+}
+
+.rainbow-preview-help {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.rainbow-preview-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  min-height: 2.25rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.125rem;
+  outline: none;
+  cursor: pointer;
+  color: #111827;
+  background-image:
+    linear-gradient(#ffffff, #ffffff),
+    linear-gradient(90deg, var(--rainbow-color-1), var(--rainbow-color-5), var(--rainbow-color-3), var(--rainbow-color-4), var(--rainbow-color-2));
+  background-size: 100% 100%, 200% 100%;
+  background-clip: padding-box, border-box, border-box;
+  background-origin: border-box;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.rainbow-preview-button::before {
+  content: "";
+  position: absolute;
+  bottom: -20%;
+  left: 50%;
+  z-index: 0;
+  width: 60%;
+  height: 20%;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, var(--rainbow-color-1), var(--rainbow-color-5), var(--rainbow-color-3), var(--rainbow-color-4), var(--rainbow-color-2));
+  filter: blur(0.75rem);
+  opacity: 0.75;
+}
+
+.rainbow-preview-button:hover,
+.rainbow-preview-button:focus-visible {
+  /* transform: translateY(-1px); */
+  animation: rainbow-preview-shift 2.4s linear infinite;
+}
+
+.rainbow-preview-button-dark {
+  color: #f9fafb;
+  background-image:
+    linear-gradient(#0a0a0a, #0a0a0a),
+    linear-gradient(#0a0a0a 50%, rgba(255, 255, 255, 0.6) 80%, rgba(0, 0, 0, 0)),
+    linear-gradient(90deg, var(--rainbow-color-1), var(--rainbow-color-5), var(--rainbow-color-3), var(--rainbow-color-4), var(--rainbow-color-2));
+}
