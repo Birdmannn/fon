@@ -66,25 +66,13 @@
   overflow-y: auto;
 }
 
-/* margin-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  color: #6b7280;
-  font-size: 0.85rem;
-  line-height: 1.35;
-  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif; */
-
 .create-review-section-label {
   font-size: 0.85rem;
   margin: 0;
   line-height: 1.35;
   gap: 0.25rem;
-  text-align: center;
-  /* text-transform: uppercase; */
+  text-align: left;
   letter-spacing: 0;
-  /* color: #71717a; */
-  /* font-weight: 700; */
   color: #6b7280;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
 }
