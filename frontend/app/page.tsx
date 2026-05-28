@@ -15,6 +15,7 @@ import {
   Repeat2,
   RotateCcw,
   Search,
+  Ticket,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
@@ -962,6 +963,11 @@ function CampaignCard({
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
   const maxCkb = formatCkbAmount(data.maximumAmount);
   const depositedCkb = formatCkbAmount(data.currentDeposits);
+  const isRaffleCampaign = data.campaignType === 4;
+  const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
+  const totalTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : 0n;
+  const soldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.currentDeposits / ticketPriceShannons : 0n;
+  const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
@@ -1083,8 +1089,13 @@ function CampaignCard({
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
           <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
+          {isRaffleCampaign && ticketPriceShannons > 0n && (
+            <span className="campaign-card-ticket-price">
+              1 <Ticket className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
+            </span>
+          )}
         </div>
 
         <div className="flex flex-col gap-2">
@@ -1188,10 +1199,19 @@ function CampaignCard({
         <button
           onClick={handleDepositClick}
           className={`campaign-action-btn ml-auto ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to deposit" : "Deposit CKB"}
+          data-tooltip={!isConnected ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit") : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")}
         >
-          <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+          {isRaffleCampaign ? (
+            <>
+              <Ticket className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count font-mono">{String(remainingTickets)} tickets left</span>
+            </>
+          ) : (
+            <>
+              <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+            </>
+          )}
         </button>
       </div>
 
