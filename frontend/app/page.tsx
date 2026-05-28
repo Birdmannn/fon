@@ -24,7 +24,8 @@ import CreateCampaignModalContent, {
   CreateConstraintStatus,
   CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
-import { FREIGHT_CONTRACT, CampaignStatus } from "@/lib/contract";
+import FreightInfoModal from "@/app/_components/FreightInfoModal";
+import { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 
@@ -68,6 +69,7 @@ const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
 const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge", "Raffle"];
 const TYPE_TAGS = ["SimpleTask", "FundedTask", "Crowdfunding", "TimedChallenge", "Raffle"];
 const MOUNTABLES_PLACEHOLDER_MESSAGE = "NO MOUNTABLES YET. RAFFLE RAFFLE RAFFLE.   ";
+const CAMPAIGN_CARD_PREVIEW_MAX_CHARS = 280;
 
 type CampaignRecord = {
   _id?: string;
@@ -187,6 +189,21 @@ function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
     text: `${formatCountdownSegment(days)}D ${formatCountdownSegment(hours)}H ${formatCountdownSegment(minutes)}M ${formatCountdownSegment(seconds)}S`,
     tone,
     phase,
+  };
+}
+
+function truncateCampaignDescription(text: string, maxChars: number) {
+  if (text.length <= maxChars) {
+    return { text, truncated: false };
+  }
+
+  const slice = text.slice(0, maxChars);
+  const cutIndex = Math.max(slice.lastIndexOf("\n"), slice.lastIndexOf(" "));
+  const trimmed = (cutIndex > maxChars * 0.55 ? slice.slice(0, cutIndex) : slice).trimEnd();
+
+  return {
+    text: `${trimmed}…`,
+    truncated: true,
   };
 }
 
@@ -479,6 +496,82 @@ export default function Home() {
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
+  const infoModalBody = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
+      {saveDraftPromptError ? (
+        <p className="create-info-constraint-item text-red-500">
+          <span>{saveDraftPromptError}</span>
+        </p>
+      ) : null}
+    </div>
+  ) : showCreateModal ? (
+    <div className="create-info-constraints-copy">
+      {createModalStep === "review" ? (
+        <>
+          <p>{CREATE_INFO_PREVIEW_HEADING}</p>
+          {CREATE_INFO_PREVIEW_ITEMS.map((item) => (
+            <p key={item} className="create-info-constraint-item">
+              <span>{item}</span>
+            </p>
+          ))}
+          {previewError && (
+            <>
+              <p className="mt-3 text-red-500 font-semibold">Errors</p>
+              <p className="create-info-constraint-item text-red-500">
+                <span>{previewError}</span>
+              </p>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
+          {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
+            const passed = constraintStatus[item.key];
+
+            return (
+              <p
+                key={item.key}
+                className={`create-info-constraint-item ${passed ? "create-info-constraint-item-pass" : ""}`}
+              >
+                {passed && (
+                  <span className="create-info-constraint-check" aria-hidden="true">
+                    <CheckCircle size={14} strokeWidth={2.4} />
+                  </span>
+                )}
+                <span>{item.text}</span>
+              </p>
+            );
+          })}
+          <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
+          {CREATE_INFO_TYPING_ITEMS.map((item) => (
+            <p key={item} className="create-info-constraint-item">
+              <span>{item}</span>
+            </p>
+          ))}
+        </>
+      )}
+    </div>
+  ) : null;
+  const infoModalActions = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn"
+        onClick={() => void handleSaveDraftChoice(false)}
+      >
+        No
+      </button>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => void handleSaveDraftChoice(true)}
+      >
+        Yes
+      </button>
+    </div>
+  ) : undefined;
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
@@ -555,102 +648,23 @@ export default function Home() {
             </div>
           </div>
 
-          {showInfoModal && (
-            <div
-              className={`header-info-modal ${isInfoModalClosing ? "header-info-modal-closing" : ""}`}
-              role="dialog"
-              aria-label="Freight information modal"
-              onMouseEnter={keepInfoModalOpen}
-              onMouseLeave={scheduleCloseInfoModal}
-            >
-              <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
-              <p className="text-xs text-gray-400 font-mono break-all mt-2">
-                Contract:{" "}
-                <a
-                  href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
-                </a>
-              </p>
-              {showCreateModal && infoModalMode === "save-draft-confirm" ? (
-                <div className="create-info-constraints-copy">
-                  <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
-                  {saveDraftPromptError ? (
-                    <p className="create-info-constraint-item text-red-500">
-                      <span>{saveDraftPromptError}</span>
-                    </p>
-                  ) : null}
-                  <div className="create-info-confirm-actions">
-                    <button
-                      type="button"
-                      className="create-info-confirm-btn"
-                      onClick={() => void handleSaveDraftChoice(false)}
-                    >
-                      No
-                    </button>
-                    <button
-                      type="button"
-                      className="create-info-confirm-btn create-info-confirm-btn-primary"
-                      onClick={() => void handleSaveDraftChoice(true)}
-                    >
-                      Yes
-                    </button>
-                  </div>
-                </div>
-              ) : showCreateModal ? (
-                <div className="create-info-constraints-copy">
-                  {createModalStep === "review" ? (
-                    <>
-                      <p>{CREATE_INFO_PREVIEW_HEADING}</p>
-                      {CREATE_INFO_PREVIEW_ITEMS.map((item) => (
-                        <p key={item} className="create-info-constraint-item">
-                          <span>{item}</span>
-                        </p>
-                      ))}
-                      {previewError && (
-                        <>
-                          <p className="mt-3 text-red-500 font-semibold">Errors</p>
-                          <p className="create-info-constraint-item text-red-500">
-                            <span>{previewError}</span>
-                          </p>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
-                      {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
-                        const passed = constraintStatus[item.key];
-
-                        return (
-                          <p
-                            key={item.key}
-                            className={`create-info-constraint-item ${passed ? "create-info-constraint-item-pass" : ""}`}
-                          >
-                            {passed && (
-                              <span className="create-info-constraint-check" aria-hidden="true">
-                                <CheckCircle size={14} strokeWidth={2.4} />
-                              </span>
-                            )}
-                            <span>{item.text}</span>
-                          </p>
-                        );
-                      })}
-                      <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
-                      {CREATE_INFO_TYPING_ITEMS.map((item) => (
-                        <p key={item} className="create-info-constraint-item">
-                          <span>{item}</span>
-                        </p>
-                      ))}
-                    </>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          )}
+          <FreightInfoModal
+            open={showInfoModal}
+            closing={isInfoModalClosing}
+            ariaLabel="Freight information modal"
+            body={infoModalBody}
+            actions={infoModalActions}
+            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
+            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm"}
+            activeButtonRect={activeInfoButtonRect}
+            onRequestClose={closeInfoModal}
+            onTriggerToggle={(event) => {
+              event.stopPropagation();
+              toggleInfoModal();
+            }}
+            onKeepOpen={keepInfoModalOpen}
+            onScheduleClose={scheduleCloseInfoModal}
+          />
         </div>
 
         {signer && (
@@ -661,41 +675,6 @@ export default function Home() {
 
         <CampaignListHeader client={client} />
       </div>
-
-      {showInfoModal && (
-        <button
-          type="button"
-          className={`header-info-backdrop ${isInfoModalClosing ? "header-info-backdrop-closing" : ""}`}
-          aria-label={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
-          onClick={closeInfoModal}
-          style={{ pointerEvents: infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" ? "auto" : "none" }}
-        />
-      )}
-
-      {showInfoModal && activeInfoButtonRect && (
-        <button
-          type="button"
-          className="header-info-btn header-info-btn-floating"
-          aria-label="Open Freight information"
-          onClick={(event) => {
-            event.stopPropagation();
-            toggleInfoModal();
-          }}
-          onMouseEnter={keepInfoModalOpen}
-          onMouseLeave={scheduleCloseInfoModal}
-          onFocus={keepInfoModalOpen}
-          onBlur={scheduleCloseInfoModal}
-          style={{
-            left: `${activeInfoButtonRect.left}px`,
-            top: `${activeInfoButtonRect.top}px`,
-            width: `${activeInfoButtonRect.width}px`,
-            height: `${activeInfoButtonRect.height}px`,
-          }}
-        >
-          <span className="header-info-inner-ring" aria-hidden="true" />
-          <span className="header-info-glyph" aria-hidden="true">i</span>
-        </button>
-      )}
 
       {showCreateModal && (
         <button
@@ -973,7 +952,14 @@ function CampaignCard({
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const displayTitle = record?.title?.trim() || onchainSummary;
   const displayDescription = record?.description?.trim() || onchainSummary;
-  const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
+  const collapsedDescription = useMemo(
+    () => truncateCampaignDescription(displayDescription, CAMPAIGN_CARD_PREVIEW_MAX_CHARS),
+    [displayDescription]
+  );
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const shouldShowReadMore = collapsedDescription.truncated;
+  const visibleDescription = isDescriptionExpanded ? displayDescription : collapsedDescription.text;
+  const descriptionLines = visibleDescription.length > 0 ? visibleDescription.split("\n") : [];
   const mentions = record?.socialMetadata?.mentions ?? [];
   const countdown = buildCampaignCountdown(c, nowMs);
   const countdownTitle = countdown.phase === "start" ? "Starts in" : countdown.phase === "duration" ? "Ends in" : "Ended";
@@ -1066,7 +1052,7 @@ function CampaignCard({
 
   return (
     <div className="campaign-card-shell flex flex-col gap-0">
-      <div className="campaign-card-surface border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
+      <div className="campaign-card-surface campaign-card-surface-sized border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button
@@ -1098,32 +1084,43 @@ function CampaignCard({
           )}
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="campaign-card-content">
           <h3 className="text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
-          <div className="campaign-card-description">
-            {descriptionLines.map((line, index) => {
-              const isQuote = /^\s*>/.test(line);
-              const quoteText = line.replace(/^\s*>\s?/, "");
+          <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
+            <div className="campaign-card-description">
+              {descriptionLines.map((line, index) => {
+                const isQuote = /^\s*>/.test(line);
+                const quoteText = line.replace(/^\s*>\s?/, "");
 
-              if (isQuote) {
+                if (isQuote) {
+                  return (
+                    <div key={`${line}-${index}`} className="campaign-card-description-quote">
+                      {quoteText}
+                    </div>
+                  );
+                }
+
+                if (line.trim().length === 0) {
+                  return <div key={`blank-${index}`} className="campaign-card-description-spacer" aria-hidden="true" />;
+                }
+
                 return (
-                  <div key={`${line}-${index}`} className="campaign-card-description-quote">
-                    {quoteText}
-                  </div>
+                  <p key={`${line}-${index}`} className="campaign-card-description-line">
+                    {line}
+                  </p>
                 );
-              }
-
-              if (line.trim().length === 0) {
-                return <div key={`blank-${index}`} className="campaign-card-description-spacer" aria-hidden="true" />;
-              }
-
-              return (
-                <p key={`${line}-${index}`} className="campaign-card-description-line">
-                  {line}
-                </p>
-              );
-            })}
+              })}
+            </div>
           </div>
+          {shouldShowReadMore && (
+            <button
+              type="button"
+              className="campaign-card-read-more"
+              onClick={() => setIsDescriptionExpanded((current) => !current)}
+            >
+              {isDescriptionExpanded ? "Show less" : "Read more..."}
+            </button>
+          )}
         </div>
 
         {mentions.length > 0 && (

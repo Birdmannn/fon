@@ -220,6 +220,29 @@
   white-space: nowrap;
 }
 
+.campaign-card-surface-sized {
+  min-height: 22rem;
+  max-height: 50dvh;
+}
+
+.campaign-card-content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.campaign-card-description-wrap {
+  min-height: 0;
+}
+
+.campaign-card-description-wrap-expanded {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
 .campaign-card-description {
   display: flex;
   flex-direction: column;
@@ -244,6 +267,25 @@
 
 .campaign-card-description-spacer {
   min-height: 1.5rem;
+}
+
+.campaign-card-read-more {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1;
+  font-family: var(--font-mono, monospace);
+  cursor: pointer;
+}
+
+.campaign-card-read-more:hover,
+.campaign-card-read-more:focus-visible {
+  color: #374151;
+  text-decoration: underline;
+  outline: none;
 }
 
 .campaign-card-footer {
