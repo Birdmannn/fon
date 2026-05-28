@@ -705,7 +705,7 @@ export default function Home() {
         </div>
 
         {signer && (
-          <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
             <MountablesPanel />
           </div>
         )}
@@ -761,12 +761,12 @@ function MountablesPanel() {
 
   return (
     <div className="retro-mountables-shell" aria-label="Mountables display">
-      <div className="retro-marquee-viewport">
+      {/* <div className="retro-marquee-viewport"> */}
         <div className="retro-marquee-track">
           <span>{marqueeText}</span>
           <span aria-hidden="true">{marqueeText}</span>
         </div>
-      </div>
+      {/* </div> */}
     </div>
   );
 }

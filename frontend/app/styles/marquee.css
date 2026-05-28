@@ -3,6 +3,14 @@
    Retro scrolling marquee component
    ============================================ */
 
+.retro-mountables-panel {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 10px 10px;
+  background-position: 0 0;
+}
+
 .retro-mountables-shell {
   width: 100%;
   overflow: hidden;
@@ -12,6 +20,11 @@
   width: 100%;
   overflow: hidden;
   height: 2.8rem; /* Fixed height for container */
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.05 ) 1px, transparent 1px);
+  background-size: 10px 10px;
+  background-position: 0 0;
 }
 
 .retro-marquee-track {
@@ -47,6 +60,15 @@
   }
   to {
     transform: translateX(-50%);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .retro-mountables-panel,
+  .retro-marquee-viewport {
+    background-image:
+      linear-gradient(rgba(156, 163, 175, 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(156, 163, 175, 0.12) 1px, transparent 1px);
   }
 }
 
