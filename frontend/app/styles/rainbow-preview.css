@@ -80,15 +80,12 @@
 .rainbow-preview-button::before {
   content: "";
   position: absolute;
-  bottom: -20%;
-  left: 50%;
+  inset: -0.35rem;
   z-index: 0;
-  width: 60%;
-  height: 20%;
-  transform: translateX(-50%);
+  border-radius: inherit;
   background: linear-gradient(90deg, var(--rainbow-color-1), var(--rainbow-color-5), var(--rainbow-color-3), var(--rainbow-color-4), var(--rainbow-color-2));
-  filter: blur(0.75rem);
-  opacity: 0.75;
+  filter: blur(0.85rem);
+  opacity: 0.1;
 }
 
 .rainbow-preview-button:hover,
