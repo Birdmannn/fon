@@ -1336,7 +1336,7 @@ function CampaignCard({
           {isRaffleCampaign ? (
             <>
               <Ticket className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{String(remainingTickets)} tickets left</span>
+              <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
             </>
           ) : (
             <>

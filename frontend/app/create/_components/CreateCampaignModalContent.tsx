@@ -258,6 +258,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const lastHandledStepBackSignalRef = useRef(stepBackSignal);
   const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftListRequestIdRef = useRef(0);
+  const previousShowDraftsPaneRef = useRef(false);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -378,7 +379,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     : isDraftListLoading
       ? "Retrieving"
       : showDraftsPane && draftRecords.length > 0
-        ? `${draftRecords.length} drafts available`
+        ? `${draftRecords.length} draft${draftRecords.length === 1 ? "" : "s"} available`
         : !constraintsPassed
           ? CREATE_CONSTRAINTS_MESSAGE_PENDING
           : "";
@@ -929,6 +930,20 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     renderEditorText(modalDescriptionRef.current, nextDescription);
     renderEditorText(pageEditorRef.current, nextDescription);
   }, [renderEditorText]);
+
+  useEffect(() => {
+    if (!isModal || modalStep !== "compose") {
+      previousShowDraftsPaneRef.current = showDraftsPane;
+      return;
+    }
+
+    const wasShowingDraftsPane = previousShowDraftsPaneRef.current;
+    previousShowDraftsPaneRef.current = showDraftsPane;
+
+    if (wasShowingDraftsPane && !showDraftsPane) {
+      syncEditorsFromState(modalTitle, modalDescription);
+    }
+  }, [isModal, modalDescription, modalStep, modalTitle, showDraftsPane, syncEditorsFromState]);
 
   const getCreatorAddress = useCallback(async () => {
     if (!signer) {
