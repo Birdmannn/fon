@@ -75,6 +75,7 @@
   background-clip: padding-box, border-box, border-box;
   background-origin: border-box;
   transition: transform 180ms ease, box-shadow 180ms ease;
+  animation: rainbow-preview-shift 1.8s linear infinite;
 }
 
 .rainbow-preview-button::before {
@@ -91,7 +92,7 @@
 .rainbow-preview-button:hover,
 .rainbow-preview-button:focus-visible {
   /* transform: translateY(-1px); */
-  animation: rainbow-preview-shift 2.4s linear infinite;
+  animation: rainbow-preview-shift 1.4s linear infinite;
 }
 
 .rainbow-preview-button-dark {
