@@ -7,7 +7,7 @@
   background-image:
     linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
-  background-size: 10px 10px;
+  background-size: 8px 8px;
   background-position: 0 0;
 }
 
@@ -19,11 +19,11 @@
 .retro-marquee-viewport {
   width: 100%;
   overflow: hidden;
-  height: 2.8rem; /* Fixed height for container */
+  height: 3rem;
   background-image:
     linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.05 ) 1px, transparent 1px);
-  background-size: 10px 10px;
+  background-size: 8px 8px;
   background-position: 0 0;
 }
 
@@ -31,14 +31,14 @@
   display: inline-flex;
   align-items: center;
   min-width: max-content;
-  min-height: 2.8rem;
+  min-height: 3rem;
   white-space: nowrap;
   color: var(--foreground);
   font-family: var(--font-pixel), monospace;
-  font-size: clamp(0.96rem, 1.45vw, 1.18rem);
+  font-size: 1.25rem;
   line-height: 1;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
   animation: retro-marquee-scroll 14s linear infinite;
   will-change: transform;
@@ -47,11 +47,12 @@
 
 .retro-marquee-track span {
   display: inline-block;
-  padding-right: 15rem; /* Increased spacing to prevent overlap */
-  padding-left: 10rem;
-  transform: scale(1.15, 1.5); /* Stretch: 15% wider, 50% taller */
+  padding-right: 12rem;
+  padding-left: 8rem;
+  line-height: 1;
+  transform: scale(1, 1.5);
   transform-origin: center;
-  font-weight: 950; /* Extra bold */
+  font-weight: 950;
 }
 
 @keyframes retro-marquee-scroll {

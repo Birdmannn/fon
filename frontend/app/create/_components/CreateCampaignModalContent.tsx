@@ -29,6 +29,8 @@ const getTextBytes = (text: string) => summaryEncoder.encode(text).length;
 const getTextChars = (text: string) => text.length;
 const buildCreateContent = (title: string, description: string) => [title, description].filter(Boolean).join("\n");
 const normalizeSummarySource = (text: string) => text.replace(/\s+/g, " ").trim();
+const stripTagsForCount = (text: string) => text.replace(/(^|\s)([#@]\w+)/g, "$1");
+const getCountableChars = (text: string) => getTextChars(stripTagsForCount(text));
 
 const truncateToUtf8Bytes = (text: string, maxBytes: number) => {
   let truncated = "";
@@ -295,15 +297,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const isReviewStep = isModal && modalStep === "review";
   const descriptionText = isModal ? modalDescription : summary;
   const createContent = isModal ? buildCreateContent(modalTitle, modalDescription) : summary;
-  const createContentChars = getTextChars(createContent);
+  const createContentChars = getCountableChars(createContent);
   const trimmedModalTitle = modalTitle.trim();
   const trimmedModalDescription = modalDescription.trim();
   const generatedOnchainSummary = isModal
     ? buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription })
     : buildOnchainSummary({ title: "", description: summary });
   const activeReviewSummary = isModal ? reviewSummary : generatedOnchainSummary;
-  const modalTitleChars = getTextChars(modalTitle);
-  const modalDescriptionChars = getTextChars(modalDescription);
+  const modalTitleChars = getCountableChars(modalTitle);
+  const modalDescriptionChars = getCountableChars(modalDescription);
   const modalTitleMaxChars = CREATE_MODAL_TITLE_MAX_CHARS;
   const modalDescriptionMaxChars = CREATE_MODAL_BODY_MAX_CHARS;
   const reviewSummaryBytes = getTextBytes(activeReviewSummary);
@@ -320,7 +322,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const isFirstHashtagCompulsory = normalizedFirstHashtag.length > 0 && COMPULSORY_HASHTAG_SET.has(normalizedFirstHashtag);
   const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length === 1;
   const hasRequiredCompulsoryHashtag = isFirstHashtagCompulsory && hasExactlyOneCompulsoryHashtag;
-  const descriptionChars = descriptionText.trim().length;
+  const descriptionChars = getCountableChars(descriptionText.trim());
   const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
   const hasRequiredBodyLength = descriptionChars >= minDescriptionChars;
   const hasRequiredTitle = !isModal || trimmedModalTitle.length > 0;
@@ -335,10 +337,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const parsedMaxAmountCkb = Number.parseFloat(maxAmountCkb);
   const parsedRaffleTicketPriceCkb = Number.parseFloat(raffleTicketPriceCkb);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
+  const parsedTicketCount = Number.parseFloat(maxAmountCkb);
+  const derivedRaffleMaxAmountCkb = shouldCollectRaffleTicketPrice && Number.isFinite(parsedTicketCount) && Number.isFinite(parsedRaffleTicketPriceCkb)
+    ? parsedTicketCount * parsedRaffleTicketPriceCkb
+    : parsedMaxAmountCkb;
   const hasValidReviewSummary = activeReviewSummary.trim().length > 0 && reviewSummaryBytes <= SUMMARY_MAX_BYTES;
   const hasValidStartDelay = Number.isFinite(parsedStartDelayHours) && parsedStartDelayHours >= 0;
   const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
-  const hasValidMaxAmount = Number.isFinite(parsedMaxAmountCkb) && parsedMaxAmountCkb > 0;
+  const hasValidMaxAmount = Number.isFinite(derivedRaffleMaxAmountCkb) && derivedRaffleMaxAmountCkb > 0;
   const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
   const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
@@ -1368,7 +1374,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
 
     if (!hasValidMaxAmount) {
-      setErrorMsg("Please enter a valid max deposit greater than 0 CKB");
+      setErrorMsg(shouldCollectRaffleTicketPrice ? "Please enter a valid number of tickets greater than 0" : "Please enter a valid max deposit greater than 0 CKB");
       setStatus("error");
       return false;
     }
@@ -1411,7 +1417,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     try {
       const startSecs = BigInt(Math.round(parsedStartDelayHours * 3600));
       const taskSecs = BigInt(Math.round(parsedDurationHours * 3600));
-      const maxCkb = BigInt(Math.round(parsedMaxAmountCkb));
+      const maxCkb = BigInt(Math.round(derivedRaffleMaxAmountCkb));
       const auxAmountCkb = shouldCollectRaffleTicketPrice
         ? BigInt(Math.round(parsedRaffleTicketPriceCkb))
         : 0n;
@@ -1487,7 +1493,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       </div>
 
       <div className="create-review-arg-field">
-        <label className="create-review-arg-label">Max deposit</label>
+        <label className="create-review-arg-label">{shouldCollectRaffleTicketPrice ? "Number of tickets" : "Max deposit"}</label>
         <div className="create-review-arg-control">
           <input
             type="number"
@@ -1497,7 +1503,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             onChange={(event) => setMaxAmountCkb(event.target.value)}
             className="create-review-arg-input"
           />
-          <span className="create-review-arg-unit">CKB</span>
+          <span className="create-review-arg-unit">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
         </div>
       </div>
 
@@ -2167,7 +2173,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold theme-fg">💰 Max Deposit</label>
+                      <label className="text-xs font-semibold theme-fg">{shouldCollectRaffleTicketPrice ? "🎟️ Number of Tickets" : "💰 Max Deposit"}</label>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
@@ -2177,7 +2183,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                           onChange={(event) => setMaxAmountCkb(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
-                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
+                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
                       </div>
                     </div>
 
