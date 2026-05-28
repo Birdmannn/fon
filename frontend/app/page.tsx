@@ -176,7 +176,7 @@ function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
 
   if (phase === "ended" || totalSeconds === 0) {
     return {
-      text: "00D 00H 00M 00S",
+      text: "--",
       tone: "ended" as CampaignCountdownTone,
       phase: "ended" as CampaignCountdownPhase,
     };
@@ -184,9 +184,15 @@ function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
 
   const ratio = initialMs > 0 ? remainingMs / initialMs : 0;
   const tone: CampaignCountdownTone = ratio <= 0.2 ? "danger" : ratio <= 0.5 ? "warn" : "good";
+  const segments = [
+    days > 0 ? `${formatCountdownSegment(days)}D` : null,
+    days > 0 || hours > 0 ? `${formatCountdownSegment(hours)}H` : null,
+    days > 0 || hours > 0 || minutes > 0 ? `${formatCountdownSegment(minutes)}M` : null,
+    `${formatCountdownSegment(seconds)}S`,
+  ].filter(Boolean) as string[];
 
   return {
-    text: `${formatCountdownSegment(days)}D ${formatCountdownSegment(hours)}H ${formatCountdownSegment(minutes)}M ${formatCountdownSegment(seconds)}S`,
+    text: segments.join(" "),
     tone,
     phase,
   };
@@ -232,6 +238,17 @@ function copyText(text: string) {
   return Promise.reject(new Error("Clipboard API unavailable"));
 }
 
+function getCampaignIdentity(campaign: CampaignCell) {
+  return `${campaign.outPoint.txHash}:${campaign.outPoint.index}`;
+}
+
+function formatCompactCampaignCount(count: number) {
+  return new Intl.NumberFormat(undefined, {
+    notation: "compact",
+    maximumFractionDigits: 0,
+  }).format(count).toLowerCase();
+}
+
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -255,6 +272,7 @@ export default function Home() {
   });
   const [previewError, setPreviewError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
+  const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -378,6 +396,7 @@ export default function Home() {
   };
 
   const requestCloseCreateModal = useCallback(() => {
+    setPendingDraftSelectionId(null);
     if (createModalContentRef.current?.hasDraftableChanges()) {
       openSaveDraftConfirmModal();
       return;
@@ -386,19 +405,37 @@ export default function Home() {
     finalizeCloseCreateModal();
   }, [finalizeCloseCreateModal, openSaveDraftConfirmModal]);
 
+  const handleDraftSelectionRequest = useCallback((draftId: string) => {
+    setPendingDraftSelectionId(draftId);
+    if (createModalContentRef.current?.hasDraftableChanges()) {
+      openSaveDraftConfirmModal();
+      return;
+    }
+
+    createModalContentRef.current?.applyDraftSelection(draftId);
+  }, [openSaveDraftConfirmModal]);
+
   const handleSaveDraftChoice = useCallback(async (shouldSave: boolean) => {
     try {
       if (shouldSave) {
         await createModalContentRef.current?.saveDraftFromClose();
       }
 
+      if (pendingDraftSelectionId) {
+        createModalContentRef.current?.applyDraftSelection(pendingDraftSelectionId);
+        setPendingDraftSelectionId(null);
+        closeInfoModal();
+        return;
+      }
+
       createModalContentRef.current?.discardDraftSession();
+      setPendingDraftSelectionId(null);
       closeInfoModal();
       finalizeCloseCreateModal();
     } catch (error) {
       setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
     }
-  }, [closeInfoModal, finalizeCloseCreateModal]);
+  }, [closeInfoModal, finalizeCloseCreateModal, pendingDraftSelectionId]);
 
   const resetCreateModal = useCallback(() => {
     setCreateModalStep("compose");
@@ -702,6 +739,7 @@ export default function Home() {
             onConstraintStatusChange={setConstraintStatus}
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
+            onDraftSelectionRequest={handleDraftSelectionRequest}
           />
         </div>
       )}
@@ -736,15 +774,35 @@ function MountablesPanel() {
 function CampaignListHeader({ client }: { client: ccc.Client }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
+  const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
+  const [pendingRecordsByTxHash, setPendingRecordsByTxHash] = useState<Record<string, CampaignRecord> | null>(null);
+  const [unseenCampaignCount, setUnseenCampaignCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const loadCampaigns = useCallback(() => {
-    setLoading(true);
+  const buildRecordsByTxHash = useCallback((records: CampaignRecord[]) => {
+    const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
+
+    for (const record of records) {
+      const key = normalizeHash(record.txHash);
+      if (key && !nextRecordsByTxHash[key]) {
+        nextRecordsByTxHash[key] = record;
+      }
+    }
+
+    return nextRecordsByTxHash;
+  }, []);
+
+  const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns: CampaignCell[] = campaigns) => {
+    if (!preserveVisibleList) {
+      setLoading(true);
+    }
+
     setError("");
     setIsRefreshing(true);
 
@@ -760,34 +818,57 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
       }),
     ])
       .then(([chainCampaigns, records]) => {
-        const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
+        const nextRecordsByTxHash = buildRecordsByTxHash(records);
 
-        for (const record of records) {
-          const key = normalizeHash(record.txHash);
-          if (key && !nextRecordsByTxHash[key]) {
-            nextRecordsByTxHash[key] = record;
+        if (!preserveVisibleList || visibleCampaigns.length === 0) {
+          setCampaigns(chainCampaigns);
+          setRecordsByTxHash(nextRecordsByTxHash);
+          setPendingCampaigns(null);
+          setPendingRecordsByTxHash(null);
+          setUnseenCampaignCount(0);
+          return;
+        }
+
+        const currentKeys = new Set(visibleCampaigns.map(getCampaignIdentity));
+        let nextUnseenCount = 0;
+
+        for (const campaign of chainCampaigns) {
+          const key = getCampaignIdentity(campaign);
+          if (currentKeys.has(key)) {
+            break;
           }
+          nextUnseenCount += 1;
+        }
+
+        if (nextUnseenCount > 0) {
+          setPendingCampaigns(chainCampaigns);
+          setPendingRecordsByTxHash(nextRecordsByTxHash);
+          setUnseenCampaignCount(nextUnseenCount);
+          return;
         }
 
         setCampaigns(chainCampaigns);
         setRecordsByTxHash(nextRecordsByTxHash);
+        setPendingCampaigns(null);
+        setPendingRecordsByTxHash(null);
+        setUnseenCampaignCount(0);
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => {
         setLoading(false);
         setIsRefreshing(false);
       });
-  }, [client]);
+  }, [buildRecordsByTxHash, client]);
 
   useEffect(() => {
     const loadTimer = setTimeout(() => {
-      loadCampaigns();
+      refreshCampaigns(false);
     }, 0);
 
     return () => {
       clearTimeout(loadTimer);
     };
-  }, [loadCampaigns]);
+  }, [refreshCampaigns]);
 
   useEffect(() => {
     if (isSearchOpen && searchInputRef.current) {
@@ -796,7 +877,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   }, [isSearchOpen]);
 
   const handleRefresh = () => {
-    loadCampaigns();
+    refreshCampaigns(campaigns.length > 0, campaigns);
   };
 
   const handleSearchClick = () => {
@@ -807,6 +888,19 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
       }
       return next;
     });
+  };
+
+  const handleShowPendingCampaigns = () => {
+    if (!pendingCampaigns || !pendingRecordsByTxHash) {
+      return;
+    }
+
+    setCampaigns(pendingCampaigns);
+    setRecordsByTxHash(pendingRecordsByTxHash);
+    setPendingCampaigns(null);
+    setPendingRecordsByTxHash(null);
+    setUnseenCampaignCount(0);
+    setShouldScrollToNewest(true);
   };
 
   const mergedCampaigns = useMemo<MergedCampaign[]>(() => {
@@ -847,7 +941,19 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   return (
     <>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>
+        <div className="campaign-heading-row">
+          <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>
+          {unseenCampaignCount > 0 && (
+            <button
+              type="button"
+              className="campaign-refresh-badge"
+              onClick={handleShowPendingCampaigns}
+              aria-label={`Show ${unseenCampaignCount} new campaigns`}
+            >
+              {formatCompactCampaignCount(unseenCampaignCount)}
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2 justify-end">
           <button
             onClick={handleRefresh}
@@ -855,7 +961,9 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
             className="campaign-action-btn"
             data-tooltip="Refresh campaigns"
           >
-            <RefreshCw className={`campaign-action-icon ${isRefreshing ? "refreshing" : ""}`} size={24} strokeWidth={2} aria-hidden="true" />
+            <span className={`campaign-refresh-icon-wrap ${isRefreshing ? "refreshing" : ""}`}>
+              <RefreshCw className="campaign-action-icon" size={24} strokeWidth={2} aria-hidden="true" />
+            </span>
           </button>
           <div className={`campaign-search-wrapper ${isSearchOpen ? "active" : ""}`}>
             <input
@@ -877,14 +985,15 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
         </div>
       </div>
 
-      <CampaignList campaigns={filteredCampaigns} loading={loading} error={error} />
+      <CampaignList campaigns={filteredCampaigns} loading={loading} error={error} shouldScrollToNewest={shouldScrollToNewest} onScrolledToNewest={() => setShouldScrollToNewest(false)} />
     </>
   );
 }
 
-function CampaignList({ campaigns, loading, error }: { campaigns: MergedCampaign[]; loading: boolean; error: string }) {
+function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const newestCampaignRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -895,6 +1004,15 @@ function CampaignList({ campaigns, loading, error }: { campaigns: MergedCampaign
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!shouldScrollToNewest) {
+      return;
+    }
+
+    newestCampaignRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    onScrolledToNewest();
+  }, [onScrolledToNewest, shouldScrollToNewest]);
 
   if (loading) {
     return <p className="text-sm text-gray-400">Loading campaigns…</p>;
@@ -910,15 +1028,16 @@ function CampaignList({ campaigns, loading, error }: { campaigns: MergedCampaign
 
   return (
     <div className="flex flex-col gap-3">
-      {campaigns.map(({ campaign, record, displayStatus }) => (
-        <CampaignCard
-          key={`${campaign.outPoint.txHash}:${campaign.outPoint.index}`}
-          campaign={campaign}
-          record={record}
-          displayStatus={displayStatus}
-          signer={signer ?? null}
-          nowMs={nowMs}
-        />
+      {campaigns.map(({ campaign, record, displayStatus }, index) => (
+        <div key={`${campaign.outPoint.txHash}:${campaign.outPoint.index}`} ref={index === 0 ? newestCampaignRef : null}>
+          <CampaignCard
+            campaign={campaign}
+            record={record}
+            displayStatus={displayStatus}
+            signer={signer ?? null}
+            nowMs={nowMs}
+          />
+        </div>
       ))}
     </div>
   );
@@ -947,6 +1066,7 @@ function CampaignCard({
   const totalTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : 0n;
   const soldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.currentDeposits / ticketPriceShannons : 0n;
   const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
+  const remainingDepositCapacity = data.maximumAmount > data.currentDeposits ? data.maximumAmount - data.currentDeposits : 0n;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
@@ -964,6 +1084,9 @@ function CampaignCard({
   const countdown = buildCampaignCountdown(c, nowMs);
   const countdownTitle = countdown.phase === "start" ? "Starts in" : countdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
+  const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
+  const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
+  const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
 
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
@@ -980,6 +1103,7 @@ function CampaignCard({
   const [isDepositing, setIsDepositing] = useState(false);
 
   const isConnected = !!signer;
+  const isPurchaseDisabled = !isConnected || isCampaignInactive || hasReachedMaxAmount || hasNoRemainingTickets;
 
   const handleLike = () => {
     if (!isConnected) return;
@@ -1017,13 +1141,13 @@ function CampaignCard({
   };
 
   const handleDepositClick = () => {
-    if (!isConnected) return;
+    if (isPurchaseDisabled) return;
     setShowDepositModal(true);
   };
 
   const handleDepositSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!signer || !depositAmount) return;
+    if (!signer || !depositAmount || isPurchaseDisabled) return;
 
     const amount = BigInt(Math.floor(parseFloat(depositAmount) * 100_000_000));
     if (amount <= 0n) {
@@ -1195,8 +1319,19 @@ function CampaignCard({
 
         <button
           onClick={handleDepositClick}
-          className={`campaign-action-btn ml-auto ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit") : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")}
+          disabled={isPurchaseDisabled}
+          className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`}
+          data-tooltip={
+            !isConnected
+              ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
+              : isCampaignInactive
+                ? "Campaign unavailable"
+                : hasNoRemainingTickets
+                  ? "No tickets left"
+                  : hasReachedMaxAmount
+                    ? "Max amount reached"
+                    : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
+          }
         >
           {isRaffleCampaign ? (
             <>
@@ -1228,7 +1363,7 @@ function CampaignCard({
                   onChange={(e) => setDepositAmount(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="0.00"
-                  disabled={isDepositing}
+                  disabled={isDepositing || isPurchaseDisabled}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Max available: {(Number(data.maximumAmount - data.currentDeposits) / 1e8).toFixed(2)} CKB
@@ -1248,7 +1383,7 @@ function CampaignCard({
                 </button>
                 <button
                   type="submit"
-                  disabled={isDepositing || !depositAmount}
+                  disabled={isDepositing || !depositAmount || isPurchaseDisabled}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isDepositing ? "Processing..." : "Deposit"}

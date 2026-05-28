@@ -179,6 +179,7 @@ export type CreateCampaignModalContentHandle = {
   saveDraftFromClose: () => Promise<void>;
   discardDraftSession: () => void;
   toggleDraftList: () => Promise<boolean>;
+  applyDraftSelection: (draftId: string) => void;
 };
 
 export type CreateConstraintStatus = {
@@ -197,6 +198,7 @@ type CreateCampaignModalContentProps = {
   onConstraintStatusChange?: (status: CreateConstraintStatus) => void;
   onPreviewErrorChange?: (message: string) => void;
   onDraftListOpenChange?: (isOpen: boolean) => void;
+  onDraftSelectionRequest?: (draftId: string) => void;
 };
 
 function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
@@ -244,6 +246,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onConstraintStatusChange,
   onPreviewErrorChange,
   onDraftListOpenChange,
+  onDraftSelectionRequest,
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -1263,8 +1266,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
       return loadDraftRecords();
     },
+    applyDraftSelection: (draftId: string) => {
+      const selectedDraft = draftRecords.find((record) => record._id === draftId);
+      if (!selectedDraft) {
+        return;
+      }
+
+      applyDraftRecord(selectedDraft);
+    },
   }), [
+    applyDraftRecord,
     currentDraftSnapshot.summaryDraft,
+    draftRecords,
     hasDraftableChanges,
     isDraftListOpen,
     loadDraftRecords,
@@ -1539,7 +1552,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 <button
                   type="button"
                   className="create-draft-card-main"
-                  onClick={() => applyDraftRecord(record)}
+                  onClick={() => {
+                    if (record._id) {
+                      onDraftSelectionRequest?.(record._id);
+                    }
+                  }}
                 >
                   <div className="create-draft-card-row">
                     <span className="create-draft-card-title">{record.title?.trim() || "Untitled draft"}</span>
