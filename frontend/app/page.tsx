@@ -577,7 +577,7 @@ export default function Home() {
               </p>
               {showCreateModal && infoModalMode === "save-draft-confirm" ? (
                 <div className="create-info-constraints-copy">
-                  <p className="mt-3 font-semibold text-base text-gray-900">Save draft?</p>
+                  <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
                   {saveDraftPromptError ? (
                     <p className="create-info-constraint-item text-red-500">
                       <span>{saveDraftPromptError}</span>
@@ -666,8 +666,8 @@ export default function Home() {
         <button
           type="button"
           className={`header-info-backdrop ${isInfoModalClosing ? "header-info-backdrop-closing" : ""}`}
-          aria-label="Close Freight information modal"
-          onClick={infoModalMode === "save-draft-confirm" ? undefined : closeInfoModal}
+          aria-label={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
+          onClick={closeInfoModal}
           style={{ pointerEvents: infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" ? "auto" : "none" }}
         />
       )}
