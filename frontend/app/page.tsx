@@ -1090,6 +1090,7 @@ function CampaignCard({
   const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
   const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
+  const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
 
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
@@ -1106,7 +1107,7 @@ function CampaignCard({
   const [isDepositing, setIsDepositing] = useState(false);
 
   const isConnected = !!signer;
-  const isPurchaseDisabled = !isConnected || isCampaignInactive || hasReachedMaxAmount || hasNoRemainingTickets;
+  const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
 
   const handleLike = () => {
     if (!isConnected) return;
@@ -1329,11 +1330,13 @@ function CampaignCard({
               ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
               : isCampaignInactive
                 ? "Campaign unavailable"
-                : hasNoRemainingTickets
-                  ? "No tickets left"
-                  : hasReachedMaxAmount
-                    ? "Max amount reached"
-                    : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
+                : hasNotStartedRaffle
+                  ? "Raffle has not started"
+                  : hasNoRemainingTickets
+                    ? "No tickets left"
+                    : hasReachedMaxAmount
+                      ? "Max amount reached"
+                      : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
           }
         >
           {isRaffleCampaign ? (

@@ -20,7 +20,7 @@ const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
 const COMPULSORY_HASHTAG_SET = new Set(Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()));
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
-const CREATE_MODAL_BODY_MAX_CHARS = 250;
+const CREATE_MODAL_BODY_MAX_CHARS = 455;
 const CREATE_TOTAL_MAX_CHARS = 256;
 const SUMMARY_MAX_BYTES = 64;
 const summaryEncoder = new TextEncoder();
