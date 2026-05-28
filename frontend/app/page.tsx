@@ -487,6 +487,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!showCreateModal) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showCreateModal]);
+
+  useEffect(() => {
     const handleEscapeClose = (event: KeyboardEvent) => {
       if (event.key !== "Escape") {
         return;
