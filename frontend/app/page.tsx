@@ -1036,6 +1036,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             displayStatus={displayStatus}
             signer={signer ?? null}
             nowMs={nowMs}
+            isHighlighted={index === 0}
           />
         </div>
       ))}
@@ -1049,12 +1050,14 @@ function CampaignCard({
   displayStatus,
   signer,
   nowMs,
+  isHighlighted = false,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
   nowMs: number;
+  isHighlighted?: boolean;
 }) {
   const { data, outPoint } = c;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
@@ -1176,7 +1179,7 @@ function CampaignCard({
 
   return (
     <div className="campaign-card-shell flex flex-col gap-0">
-      <div className="campaign-card-surface campaign-card-surface-sized border border-gray-200 rounded-lg p-4 flex flex-col gap-4">
+      <div className={`campaign-card-surface campaign-card-surface-sized border border-gray-200 rounded-lg p-4 flex flex-col gap-4 ${isHighlighted ? "campaign-card-highlighted" : ""}`.trim()}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button

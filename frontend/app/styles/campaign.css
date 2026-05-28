@@ -3,6 +3,23 @@
    Campaign cards, actions, status, and search
    ============================================ */
 
+:root {
+  --campaign-highlight-color-1: #7c3aed;
+  --campaign-highlight-color-2: #ec4899;
+  --campaign-highlight-color-3: #f59e0b;
+  --campaign-highlight-color-4: #10b981;
+  --campaign-highlight-color-5: #3b82f6;
+}
+
+@keyframes campaign-highlight-shift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 200% 50%;
+  }
+}
+
 /* Campaign action buttons */
 .campaign-action-btn {
   display: flex;
@@ -257,6 +274,35 @@
   color: #9ca3af;
   font-family: var(--font-mono, monospace);
   white-space: nowrap;
+}
+
+.campaign-card-highlighted {
+  position: relative;
+  border: 1px solid transparent !important;
+  background-image:
+    linear-gradient(#ffffff, #ffffff),
+    linear-gradient(90deg, var(--campaign-highlight-color-1), var(--campaign-highlight-color-5), var(--campaign-highlight-color-3), var(--campaign-highlight-color-4), var(--campaign-highlight-color-2));
+  background-size: 100% 100%, 200% 100%;
+  background-clip: padding-box, border-box;
+  background-origin: border-box;
+  animation: campaign-highlight-shift 1.8s linear infinite;
+}
+
+.campaign-card-highlighted::before {
+  content: "";
+  position: absolute;
+  inset: -0.3rem;
+  z-index: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--campaign-highlight-color-1), var(--campaign-highlight-color-5), var(--campaign-highlight-color-3), var(--campaign-highlight-color-4), var(--campaign-highlight-color-2));
+  filter: blur(20rem);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.campaign-card-highlighted > * {
+  position: relative;
+  z-index: 1;
 }
 
 .campaign-card-surface-sized {
