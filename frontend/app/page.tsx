@@ -1102,7 +1102,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             displayStatus={displayStatus}
             signer={signer ?? null}
             nowMs={nowMs}
-            isHighlighted={index === 0 && !!signer}
+            isHighlighted={index === 99 && !!signer}
           />
         </div>
       ))}
