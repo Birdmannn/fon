@@ -201,6 +201,7 @@ type CreateCampaignModalContentProps = {
   onPreviewErrorChange?: (message: string) => void;
   onDraftListOpenChange?: (isOpen: boolean) => void;
   onDraftSelectionRequest?: (draftId: string) => void;
+  onPublishSuccess?: (txHash: string) => void;
 };
 
 function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
@@ -241,7 +242,6 @@ function formatDraftUpdatedAt(value: string | undefined) {
 
 const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, CreateCampaignModalContentProps>(function CreateCampaignModalContent({
   mode,
-  onRequestClose,
   resetSignal = 0,
   stepBackSignal = 0,
   onStepChange,
@@ -249,6 +249,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onPreviewErrorChange,
   onDraftListOpenChange,
   onDraftSelectionRequest,
+  onPublishSuccess,
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -272,7 +273,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
-  const [txHash, setTxHash] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [showHashtagMenu, setShowHashtagMenu] = useState(false);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
@@ -521,7 +521,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const resetComposer = useCallback(() => {
     setStatus("idle");
-    setTxHash("");
     setSummary("");
     setModalTitle("");
     setModalDescription("");
@@ -1442,7 +1441,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         }
       }
 
-      setTxHash(hash);
+      onPublishSuccess?.(hash);
       setStatus("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1852,48 +1851,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         </div>
       )}
 
-      {status === "success" ? (
-        <div
-          className={
-            isModal
-              ? "w-full h-full p-4 flex flex-col justify-center gap-3"
-              : "w-full p-3 theme-bg border-2 border-green-500 rounded-xl flex flex-col gap-2"
-          }
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">✓</span>
-            <p className="font-semibold text-green-600">Campaign published!</p>
-          </div>
-          <p className="text-xs font-mono break-all text-gray-600">
-            TX:{" "}
-            <a
-              href={`https://pudge.explorer.nervos.org/transaction/${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 underline hover:text-blue-600"
-            >
-              {txHash}
-            </a>
-          </p>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={resetComposer}
-              className="mt-1 text-sm text-blue-500 underline font-medium hover:text-blue-600 self-start"
-            >
-              Create another campaign
-            </button>
-            {mode === "modal" && onRequestClose && (
-              <button
-                type="button"
-                onClick={onRequestClose}
-                className="mt-1 text-sm text-blue-500 underline font-medium hover:text-blue-600 self-start"
-              >
-                Close
-              </button>
-            )}
-          </div>
-        </div>
-      ) : (
+      {status === "success" ? null : (
         <form onSubmit={handleSubmit} className={isModal ? "w-full h-full relative" : "w-full flex flex-col gap-3"}>
           {isModal ? (
             <>

@@ -96,7 +96,7 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm";
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
@@ -273,9 +273,11 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
+  const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submissionSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
 
@@ -297,6 +299,13 @@ export default function Home() {
     if (createHideTimerRef.current) {
       clearTimeout(createHideTimerRef.current);
       createHideTimerRef.current = null;
+    }
+  };
+
+  const clearSubmissionSuccessTimer = () => {
+    if (submissionSuccessTimerRef.current) {
+      clearTimeout(submissionSuccessTimerRef.current);
+      submissionSuccessTimerRef.current = null;
     }
   };
 
@@ -347,12 +356,14 @@ export default function Home() {
   const keepInfoModalOpen = () => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
   };
 
   const closeInfoModal = useCallback(() => {
     clearInfoCloseTimer();
+    clearSubmissionSuccessTimer();
 
     if (!showInfoModal || isInfoModalClosing) return;
 
@@ -364,6 +375,7 @@ export default function Home() {
       setInfoModalInteraction("hover");
       setInfoModalMode("about");
       setSaveDraftPromptError("");
+      setSubmissionSuccessTxHash("");
       setActiveInfoButtonRect(null);
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
@@ -384,6 +396,20 @@ export default function Home() {
       createHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
   }, [showCreateModal, isCreateModalClosing]);
+
+  const openSubmissionSuccessInfoModal = useCallback((txHash: string) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setSubmissionSuccessTxHash(txHash);
+    setInfoModalMode("submission-success");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    submissionSuccessTimerRef.current = setTimeout(() => {
+      closeInfoModal();
+    }, 2500);
+  }, [closeInfoModal]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -448,6 +474,14 @@ export default function Home() {
       return;
     }
 
+    if (infoModalMode === "submission-success") {
+      clearSubmissionSuccessTimer();
+      submissionSuccessTimerRef.current = setTimeout(() => {
+        closeInfoModal();
+      }, 120);
+      return;
+    }
+
     clearInfoCloseTimer();
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal();
@@ -483,6 +517,7 @@ export default function Home() {
       clearInfoCloseTimer();
       clearInfoHideTimer();
       clearCreateHideTimer();
+      clearSubmissionSuccessTimer();
     };
   }, []);
 
@@ -546,7 +581,21 @@ export default function Home() {
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
-  const infoModalBody = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+  const infoModalBody = infoModalMode === "submission-success" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-green-600">Submission successful</p>
+      <p className="create-info-constraint-item text-gray-500 font-mono break-all">
+        <a
+          href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          {submissionSuccessTxHash}
+        </a>
+      </p>
+    </div>
+  ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
       {saveDraftPromptError ? (
@@ -701,11 +750,11 @@ export default function Home() {
           <FreightInfoModal
             open={showInfoModal}
             closing={isInfoModalClosing}
-            ariaLabel="Freight information modal"
+            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
             backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
-            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm"}
+            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
             activeButtonRect={activeInfoButtonRect}
             onRequestClose={closeInfoModal}
             onTriggerToggle={(event) => {
@@ -753,6 +802,10 @@ export default function Home() {
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
             onDraftSelectionRequest={handleDraftSelectionRequest}
+            onPublishSuccess={(txHash) => {
+              finalizeCloseCreateModal();
+              openSubmissionSuccessInfoModal(txHash);
+            }}
           />
         </div>
       )}
