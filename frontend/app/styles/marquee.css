@@ -4,6 +4,7 @@
    ============================================ */
 
 .retro-mountables-panel {
+  background-color: #f3f4f6;
   background-image:
     linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
@@ -20,6 +21,7 @@
   width: 100%;
   overflow: hidden;
   height: 3rem;
+  background-color: #f3f4f6;
   background-image:
     linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.05 ) 1px, transparent 1px);
