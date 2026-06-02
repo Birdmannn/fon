@@ -1,0 +1,35 @@
+/* ============================================
+   WALLET COMPONENTS
+   Wallet connection and action slot
+   ============================================ */
+
+.btn-wallet {
+  background-color: var(--background) !important;
+  border: 2px solid var(--foreground) !important;
+  color: var(--foreground) !important;
+  transition: all 400ms ease !important;
+}
+
+.btn-wallet:hover {
+  background-color: var(--foreground) !important;
+  color: var(--background) !important;
+  border-color: var(--foreground) !important;
+}
+
+.wallet-action-slot {
+  display: inline-flex;
+  align-items: center;
+  transition: opacity 420ms ease, transform 420ms ease, width 420ms ease, margin 420ms ease;
+  opacity: 1;
+  transform: translateX(0);
+  width: auto;
+  overflow: visible;
+}
+
+.wallet-action-slot-hidden {
+  opacity: 0;
+  transform: translateX(14px);
+  margin: 0;
+  pointer-events: none;
+  overflow: hidden;
+}

@@ -1,0 +1,80 @@
+/* ============================================
+   MARQUEE / MOUNTABLES
+   Retro scrolling marquee component
+   ============================================ */
+
+.retro-mountables-panel {
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  background-size: 8px 8px;
+  background-position: 0 0;
+}
+
+.retro-mountables-shell {
+  width: 100%;
+  overflow: hidden;
+}
+
+.retro-marquee-viewport {
+  width: 100%;
+  overflow: hidden;
+  height: 3rem;
+  background-image:
+    linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.05 ) 1px, transparent 1px);
+  background-size: 8px 8px;
+  background-position: 0 0;
+}
+
+.retro-marquee-track {
+  display: inline-flex;
+  align-items: center;
+  min-width: max-content;
+  min-height: 3rem;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-family: var(--font-pixel), monospace;
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  animation: retro-marquee-scroll 14s linear infinite;
+  will-change: transform;
+  transform-origin: center;
+}
+
+.retro-marquee-track span {
+  display: inline-block;
+  padding-right: 12rem;
+  padding-left: 8rem;
+  line-height: 1;
+  transform: scale(1, 1.5);
+  transform-origin: center;
+  font-weight: 950;
+}
+
+@keyframes retro-marquee-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .retro-mountables-panel,
+  .retro-marquee-viewport {
+    background-image:
+      linear-gradient(rgba(156, 163, 175, 0.12) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(156, 163, 175, 0.12) 1px, transparent 1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retro-marquee-track {
+    animation: none;
+  }
+}

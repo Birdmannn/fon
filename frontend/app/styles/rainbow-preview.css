@@ -1,0 +1,66 @@
+/* ============================================
+   RAINBOW BUTTON PREVIEW
+   Temporary isolated surface for border/button experiments
+   ============================================ */
+
+.rainbow-preview-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.rainbow-preview-panel {
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--background) 96%, white 4%);
+}
+
+.rainbow-preview-label {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: #6b7280;
+  font-family: var(--font-mono, monospace);
+}
+
+.rainbow-preview-help {
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #6b7280;
+}
+
+.rainbow-preview-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  min-height: 2.25rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.125rem;
+  outline: none;
+  cursor: pointer;
+  color: #111827;
+  background: #ffffff;
+}
+
+.rainbow-preview-button-dark {
+  color: #f9fafb;
+  background: #0a0a0a;
+}
+
+.rainbow-preview-highlight {
+  animation-duration: 1.8s;
+}
+
+.rainbow-preview-highlight:hover,
+.rainbow-preview-highlight:focus-visible {
+  animation-duration: 1.4s;
+}

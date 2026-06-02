@@ -1,0 +1,281 @@
+/* ============================================
+   CREATE REVIEW STEP
+   Review/preview step in campaign creation
+   ============================================ */
+
+.create-modal-step-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.create-modal-step-track {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transition: transform 420ms ease;
+  transform: translateX(0);
+}
+
+.create-modal-step-track-review {
+  transform: translateX(-50%);
+}
+
+@keyframes create-modal-compose-apply {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.create-modal-step-pane {
+  position: relative;
+  width: 50%;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.create-modal-step-pane-compose-applying {
+  animation: create-modal-compose-apply 420ms ease;
+}
+
+.create-modal-step-pane-review {
+  padding: 1rem 1rem 5.35rem;
+  overflow-y: auto;
+}
+
+.create-review-pane-inner {
+  display: grid;
+  grid-template-rows: minmax(0, 2fr) auto auto auto;
+  gap: 0.8rem;
+  min-height: 100%;
+}
+
+.create-review-preview-card-main {
+  border: none;
+  border-radius: 0;
+  padding: 0 0 0.25rem;
+  background: transparent;
+  box-shadow: none;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.create-review-section-label {
+  font-size: 0.85rem;
+  margin: 0;
+  line-height: 1.35;
+  gap: 0.25rem;
+  text-align: left;
+  letter-spacing: 0;
+  color: #6b7280;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+}
+
+.create-review-preview-title {
+  margin: 0.75rem 0 0;
+  font-size: clamp(1.2rem, 4vw, 1.55rem);
+  line-height: 1.05;
+  font-weight: 800;
+  color: #111;
+}
+
+.create-review-preview-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+}
+
+.create-review-preview-body {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #3f3f46;
+  white-space: pre-wrap;
+}
+
+.create-review-preview-quote-row {
+  margin: 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid #9ca3af;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #52525b;
+  white-space: pre-wrap;
+}
+
+.create-review-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.9rem;
+}
+
+.create-review-primary-tag,
+.create-review-secondary-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.65rem;
+  border-radius: 0.45rem;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.create-review-primary-tag {
+  background: #171717;
+  color: #fff;
+}
+
+.create-review-secondary-tag {
+  border: 1px solid rgba(23, 23, 23, 0.18);
+  color: #3f3f46;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.create-review-summary-bytes {
+  flex-shrink: 0;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 9999px;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.68rem;
+  line-height: 1;
+  color: #52525b;
+  background: rgba(244, 244, 245, 0.82);
+}
+
+.create-review-summary-input {
+  width: 100%;
+  margin-top: 0.8rem;
+  min-height: 2.7rem;
+  height: 2.7rem;
+  resize: none;
+  border: 1px solid rgba(23, 23, 23, 0.88);
+  border-radius: 0.6rem;
+  padding: 0 0.9rem;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 2.7rem;
+  outline: none;
+  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.05);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.create-review-summary-input:focus {
+  border-color: #171717;
+  box-shadow: 0 0 0 3px rgba(23, 23, 23, 0.08);
+}
+
+.create-review-card-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.create-review-offchain-note {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  color: #52525b;
+  text-align: right;
+}
+
+.create-review-args-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.create-review-arg-field {
+  min-width: 0;
+  border: 1px solid rgba(23, 23, 23, 0.13);
+  border-radius: 0.6rem;
+  padding: 0.65rem;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.create-review-arg-label {
+  display: block;
+  margin: 0 0 0.45rem;
+  font-size: 0.68rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #27272a;
+}
+
+.create-review-arg-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.create-review-arg-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.05rem;
+  border: 1px solid rgba(23, 23, 23, 0.8);
+  border-radius: 0.45rem;
+  background: #fff;
+  color: #171717;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  outline: none;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.create-review-arg-input:focus {
+  border-color: #171717;
+  box-shadow: 0 0 0 3px rgba(23, 23, 23, 0.08);
+}
+
+.create-review-arg-unit {
+  font-size: 0.72rem;
+  line-height: 1;
+  color: #52525b;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.create-review-social-control {
+  display: flex;
+  align-items: center;
+  min-height: 2.05rem;
+  gap: 0.25rem;
+  overflow: hidden;
+}
+
+.create-review-social-control span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+  min-height: 1.8rem;
+  border: 1px solid rgba(23, 23, 23, 0.14);
+  border-radius: 0.4rem;
+  padding: 0 0.35rem;
+  font-size: 0.68rem;
+  line-height: 1;
+  font-weight: 700;
+  color: #3f3f46;
+  background: #f4f4f5;
+}
+
+@media (max-width: 768px) {
+  .create-review-args-grid {
+    grid-template-columns: 1fr;
+  }
+}

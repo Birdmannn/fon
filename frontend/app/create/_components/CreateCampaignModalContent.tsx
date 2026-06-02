@@ -1,8 +1,10 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
+import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "lucide-react";
+
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
 import { sendCreateCampaign } from "@/lib/transactions";
 
@@ -17,9 +19,8 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
 const COMPULSORY_HASHTAG_SET = new Set(Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()));
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
-const CREATE_CONSTRAINTS_MESSAGE_SUCCESS = "All contraints passed";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
-const CREATE_MODAL_BODY_MAX_CHARS = 250;
+const CREATE_MODAL_BODY_MAX_CHARS = 455;
 const CREATE_TOTAL_MAX_CHARS = 256;
 const SUMMARY_MAX_BYTES = 64;
 const summaryEncoder = new TextEncoder();
@@ -28,6 +29,8 @@ const getTextBytes = (text: string) => summaryEncoder.encode(text).length;
 const getTextChars = (text: string) => text.length;
 const buildCreateContent = (title: string, description: string) => [title, description].filter(Boolean).join("\n");
 const normalizeSummarySource = (text: string) => text.replace(/\s+/g, " ").trim();
+const stripTagsForCount = (text: string) => text.replace(/(^|\s)([#@]\w+)/g, "$1");
+const getCountableChars = (text: string) => getTextChars(stripTagsForCount(text));
 
 const truncateToUtf8Bytes = (text: string, maxBytes: number) => {
   let truncated = "";
@@ -62,6 +65,125 @@ const buildOnchainSummary = ({ title, description }: { title: string; descriptio
   return truncateToUtf8Bytes(source, SUMMARY_MAX_BYTES);
 };
 
+const getNextListLine = (currentLine: string) => {
+  const numberedMatch = currentLine.match(/^(\s*)(\d+)\.\s+(.*)$/);
+  if (numberedMatch) {
+    const [, indent, number, content] = numberedMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${Number(number) + 1}. ` };
+  }
+
+  const checkboxMatch = currentLine.match(/^(\s*)([-*•]\s+)?\[( |x|X)\]\s+(.*)$/);
+  if (checkboxMatch) {
+    const [, indent, bulletPrefix = "", , content] = checkboxMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${bulletPrefix}[ ] ` };
+  }
+
+  const bulletMatch = currentLine.match(/^(\s*)([-*•])\s+(.*)$/);
+  if (bulletMatch) {
+    const [, indent, bullet, content] = bulletMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${bullet} ` };
+  }
+
+  const quoteMatch = currentLine.match(/^(\s*)(>)\s?(.*)$/);
+  if (quoteMatch) {
+    const [, indent, marker, content] = quoteMatch;
+    if (content.trim().length === 0) return { mode: "exit" as const };
+    return { mode: "continue" as const, insertText: `\n${indent}${marker} ` };
+  }
+
+  return null;
+};
+
+const deriveDefaultCreatorHandle = (address: string | null) => {
+  const normalized = (address || "freightguest0000000000000000")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+  return `freight${normalized.slice(-20)}.ckb`;
+};
+
+const buildPreviewLines = (text: string, maxChars: number) => {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return [] as string[];
+  }
+
+  const lines = trimmed.split("\n");
+  const output: string[] = [];
+  let remaining = maxChars;
+
+  for (const rawLine of lines) {
+    if (remaining <= 0) {
+      break;
+    }
+
+    const line = rawLine.replace(/\s+$/g, "");
+    const take = line.slice(0, remaining);
+    output.push(take);
+    remaining -= take.length;
+
+    if (line.length > take.length) {
+      output[output.length - 1] = `${take.trimEnd()}…`;
+      break;
+    }
+  }
+
+  return output;
+};
+
+export type CreateModalStep = "compose" | "review";
+
+type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
+
+type DraftRecordStatus = "draft" | "published" | "publish_failed";
+
+type DraftRecord = {
+  _id?: string;
+  title?: string;
+  description?: string;
+  campaignType?: number;
+  summaryDraft?: string;
+  argsDraft?: {
+    taskStartDelayHours?: string;
+    taskDurationHours?: string;
+    maxAmountCkb?: string;
+    auxAmountCkb?: string;
+  };
+  socialMetadata?: {
+    mentions?: string[];
+  };
+  creatorAddress?: string | null;
+  creatorHandle?: string | null;
+  status?: DraftRecordStatus;
+  txHash?: string | null;
+  publishError?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type DraftSnapshot = {
+  title: string;
+  description: string;
+  campaignType: CampaignType;
+  summaryDraft: string;
+  taskStartDelayHours: string;
+  taskDurationHours: string;
+  maxAmountCkb: string;
+  auxAmountCkb: string;
+  mentions: string[];
+};
+
+export type CreateCampaignModalContentHandle = {
+  hasDraftableChanges: () => boolean;
+  saveDraftFromClose: () => Promise<void>;
+  discardDraftSession: () => void;
+  toggleDraftList: () => Promise<boolean>;
+  applyDraftSelection: (draftId: string) => void;
+};
+
 export type CreateConstraintStatus = {
   titlePassed: boolean;
   bodyPassed: boolean;
@@ -73,21 +195,62 @@ type CreateCampaignModalContentProps = {
   mode: "modal" | "page";
   onRequestClose?: () => void;
   resetSignal?: number;
-  onInfoEnter?: (target?: DOMRect) => void;
-  onInfoLeave?: () => void;
-  onInfoToggle?: (target?: DOMRect) => void;
+  stepBackSignal?: number;
+  onStepChange?: (step: CreateModalStep) => void;
   onConstraintStatusChange?: (status: CreateConstraintStatus) => void;
+  onPreviewErrorChange?: (message: string) => void;
+  onDraftListOpenChange?: (isOpen: boolean) => void;
+  onDraftSelectionRequest?: (draftId: string) => void;
+  onPublishSuccess?: (txHash: string) => void;
 };
 
-export default function CreateCampaignModalContent({
+function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
+  return {
+    ...snapshot,
+    title: snapshot.title.trim(),
+    description: snapshot.description.trim(),
+    summaryDraft: snapshot.summaryDraft.trim(),
+    mentions: [...snapshot.mentions],
+  };
+}
+
+function areDraftSnapshotsEqual(left: DraftSnapshot | null, right: DraftSnapshot | null) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return JSON.stringify(buildDraftSnapshot(left)) === JSON.stringify(buildDraftSnapshot(right));
+}
+
+function formatDraftUpdatedAt(value: string | undefined) {
+  if (!value) {
+    return "Just now";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "Just now";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, CreateCampaignModalContentProps>(function CreateCampaignModalContent({
   mode,
-  onRequestClose,
   resetSignal = 0,
-  onInfoEnter,
-  onInfoLeave,
-  onInfoToggle,
+  stepBackSignal = 0,
+  onStepChange,
   onConstraintStatusChange,
-}: CreateCampaignModalContentProps) {
+  onPreviewErrorChange,
+  onDraftListOpenChange,
+  onDraftSelectionRequest,
+  onPublishSuccess,
+}: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
   const pageEditorRef = useRef<HTMLDivElement>(null);
@@ -95,40 +258,61 @@ export default function CreateCampaignModalContent({
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
+  const lastHandledStepBackSignalRef = useRef(stepBackSignal);
+  const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftListRequestIdRef = useRef(0);
+  const previousShowDraftsPaneRef = useRef(false);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
   const [modalTitle, setModalTitle] = useState("");
   const [modalDescription, setModalDescription] = useState("");
   const [mentions, setMentions] = useState<string[]>([]);
+  const [taskStartDelayHours, setTaskStartDelayHours] = useState("0");
   const [taskDurationHours, setTaskDurationHours] = useState("24");
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
+  const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
-  const [txHash, setTxHash] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [showHashtagMenu, setShowHashtagMenu] = useState(false);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [hashtagPosition, setHashtagPosition] = useState({ top: 0, left: 0 });
   const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
   const [mentionQuery, setMentionQuery] = useState("");
+  const [modalStep, setModalStep] = useState<CreateModalStep>("compose");
+  const [reviewSummary, setReviewSummary] = useState("");
+  const [activeDraftRecordId, setActiveDraftRecordId] = useState<string | null>(null);
+  const [draftRecords, setDraftRecords] = useState<DraftRecord[]>([]);
+  const [isDraftListOpen, setIsDraftListOpen] = useState(false);
+  const [isDraftListLoading, setIsDraftListLoading] = useState(false);
+  const [draftListError, setDraftListError] = useState("");
+  const [draftDeleteId, setDraftDeleteId] = useState<string | null>(null);
+  const [showNoDraftsMessage, setShowNoDraftsMessage] = useState(false);
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<DraftSnapshot | null>(null);
+  const [isApplyingDraft, setIsApplyingDraft] = useState(false);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
+  const [draftSaveError, setDraftSaveError] = useState("");
 
   const isModal = mode === "modal";
+  const isReviewStep = isModal && modalStep === "review";
   const descriptionText = isModal ? modalDescription : summary;
   const createContent = isModal ? buildCreateContent(modalTitle, modalDescription) : summary;
-  const createContentChars = getTextChars(createContent);
+  const createContentChars = getCountableChars(createContent);
   const trimmedModalTitle = modalTitle.trim();
   const trimmedModalDescription = modalDescription.trim();
-  const onchainSummary = isModal
+  const generatedOnchainSummary = isModal
     ? buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription })
     : buildOnchainSummary({ title: "", description: summary });
-  const modalTitleChars = getTextChars(modalTitle);
-  const modalDescriptionChars = getTextChars(modalDescription);
+  const activeReviewSummary = isModal ? reviewSummary : generatedOnchainSummary;
+  const modalTitleChars = getCountableChars(modalTitle);
+  const modalDescriptionChars = getCountableChars(modalDescription);
   const modalTitleMaxChars = CREATE_MODAL_TITLE_MAX_CHARS;
   const modalDescriptionMaxChars = CREATE_MODAL_BODY_MAX_CHARS;
+  const reviewSummaryBytes = getTextBytes(activeReviewSummary);
 
   const hashtags = useMemo(() => {
     const matches = descriptionText.match(/#\w+/g) || [];
-    return matches.map((h) => h.substring(1));
+    return matches.map((hashtag) => hashtag.substring(1));
   }, [descriptionText]);
 
   const firstHashtag = hashtags[0];
@@ -138,22 +322,86 @@ export default function CreateCampaignModalContent({
   const isFirstHashtagCompulsory = normalizedFirstHashtag.length > 0 && COMPULSORY_HASHTAG_SET.has(normalizedFirstHashtag);
   const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length === 1;
   const hasRequiredCompulsoryHashtag = isFirstHashtagCompulsory && hasExactlyOneCompulsoryHashtag;
-  const descriptionChars = descriptionText.trim().length;
+  const descriptionChars = getCountableChars(descriptionText.trim());
   const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
   const hasRequiredBodyLength = descriptionChars >= minDescriptionChars;
-  const hasRequiredTitle = !isModal || modalTitle.trim().length > 0;
+  const hasRequiredTitle = !isModal || trimmedModalTitle.length > 0;
   const constraintsPassed = hasRequiredTitle && hasRequiredBodyLength && hasRequiredCompulsoryHashtag;
+  const summaryBytes = createContentChars;
+  const title = "Create a Campaign";
+  const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
+  const activeModalError = draftSaveError || errorMsg;
+  const isNextDisabled = status === "pending" || !constraintsPassed;
+  const parsedStartDelayHours = Number.parseFloat(taskStartDelayHours);
+  const parsedDurationHours = Number.parseFloat(taskDurationHours);
+  const parsedMaxAmountCkb = Number.parseFloat(maxAmountCkb);
+  const parsedRaffleTicketPriceCkb = Number.parseFloat(raffleTicketPriceCkb);
+  const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
+  const parsedTicketCount = Number.parseFloat(maxAmountCkb);
+  const derivedRaffleMaxAmountCkb = shouldCollectRaffleTicketPrice && Number.isFinite(parsedTicketCount) && Number.isFinite(parsedRaffleTicketPriceCkb)
+    ? parsedTicketCount * parsedRaffleTicketPriceCkb
+    : parsedMaxAmountCkb;
+  const hasValidReviewSummary = activeReviewSummary.trim().length > 0 && reviewSummaryBytes <= SUMMARY_MAX_BYTES;
+  const hasValidStartDelay = Number.isFinite(parsedStartDelayHours) && parsedStartDelayHours >= 0;
+  const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
+  const hasValidMaxAmount = Number.isFinite(derivedRaffleMaxAmountCkb) && derivedRaffleMaxAmountCkb > 0;
+  const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
+  const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
+  const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
+  const currentDraftSnapshot = useMemo<DraftSnapshot>(() => buildDraftSnapshot({
+    title: trimmedModalTitle,
+    description: trimmedModalDescription,
+    campaignType,
+    summaryDraft: currentDraftSummary,
+    taskStartDelayHours,
+    taskDurationHours,
+    maxAmountCkb,
+    auxAmountCkb: currentAuxAmountCkb,
+    mentions,
+  }), [
+    campaignType,
+    currentAuxAmountCkb,
+    currentDraftSummary,
+    maxAmountCkb,
+    mentions,
+    taskDurationHours,
+    taskStartDelayHours,
+    trimmedModalDescription,
+    trimmedModalTitle,
+  ]);
+  const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
+  const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
+  const isPublishDisabled =
+    status === "pending" ||
+    draftSaveStatus === "saving" ||
+    (!draftSaveError && !hasValidReviewSummary) ||
+    (!draftSaveError && !hasValidStartDelay) ||
+    (!draftSaveError && !hasValidDuration) ||
+    (!draftSaveError && !hasValidMaxAmount) ||
+    (!draftSaveError && !hasValidRaffleTicketPrice);
+  const showDraftsPane = isModal && modalStep === "compose" && isDraftListOpen;
+  const composeHelperMessage = showNoDraftsMessage
+    ? "No saved drafts yet"
+    : isDraftListLoading
+      ? "Retrieving"
+      : showDraftsPane && draftRecords.length > 0
+        ? `${draftRecords.length} draft${draftRecords.length === 1 ? "" : "s"} available`
+        : !constraintsPassed
+          ? CREATE_CONSTRAINTS_MESSAGE_PENDING
+          : "";
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
-      const typeEntry = Object.entries(CAMPAIGN_TYPE_LABELS).find(
-        ([, label]) => label.toLowerCase() === normalizedFirstHashtag
-      );
+      const typeEntry = Object.entries(CAMPAIGN_TYPE_LABELS).find(([, label]) => label.toLowerCase() === normalizedFirstHashtag);
       if (typeEntry) {
         setCampaignType(Number(typeEntry[0]) as CampaignType);
       }
     }
   }, [isFirstHashtagCompulsory, normalizedFirstHashtag]);
+
+  useEffect(() => {
+    onStepChange?.(status === "success" ? "compose" : modalStep);
+  }, [modalStep, onStepChange, status]);
 
   const filteredMentions = MOCK_USERS.filter(
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
@@ -176,20 +424,131 @@ export default function CreateCampaignModalContent({
     return activeEditorRef.current ?? (isModal ? modalDescriptionRef.current : pageEditorRef.current);
   }, [isModal]);
 
+  const getCaretPosition = useCallback((target: HTMLDivElement, selection = window.getSelection()) => {
+    if (!selection || selection.rangeCount === 0) return 0;
+    const range = selection.getRangeAt(0);
+    const preCaretRange = range.cloneRange();
+    preCaretRange.selectNodeContents(target);
+    preCaretRange.setEnd(range.endContainer, range.endOffset);
+    return preCaretRange.toString().length;
+  }, []);
+
+  const setCaretPosition = useCallback((target: HTMLDivElement, position: number) => {
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const fullText = target.textContent || "";
+    if (position >= fullText.length) {
+      const range = document.createRange();
+      range.selectNodeContents(target);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+
+    const walker = document.createTreeWalker(target, NodeFilter.SHOW_TEXT);
+    let remaining = position;
+    let currentNode = walker.nextNode();
+
+    while (currentNode) {
+      const textLength = currentNode.textContent?.length ?? 0;
+      if (remaining <= textLength) {
+        const range = document.createRange();
+        range.setStart(currentNode, remaining);
+        range.setEnd(currentNode, remaining);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
+      }
+      remaining -= textLength;
+      currentNode = walker.nextNode();
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(target);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }, []);
+
+  const renderEditorText = useCallback((target: HTMLDivElement | null, text: string) => {
+    if (!target) return;
+
+    if (target === modalDescriptionRef.current || target === pageEditorRef.current) {
+      if (text.length === 0) {
+        target.replaceChildren();
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      const lines = text.split("\n");
+
+      lines.forEach((line, index) => {
+        if (index > 0) {
+          fragment.appendChild(document.createTextNode("\n"));
+        }
+
+        if (/^\s*##\s+/.test(line)) {
+          const headingLine = document.createElement("span");
+          headingLine.textContent = line;
+          headingLine.style.fontSize = "1.45rem";
+          headingLine.style.lineHeight = "1.25";
+          headingLine.style.fontWeight = "700";
+          fragment.appendChild(headingLine);
+          return;
+        }
+
+        fragment.appendChild(document.createTextNode(line));
+      });
+
+      if (text.endsWith("\n")) {
+        fragment.appendChild(document.createElement("br"));
+      }
+
+      target.replaceChildren(fragment);
+      return;
+    }
+
+    target.textContent = text;
+  }, []);
+
+  const hideMenus = useCallback(() => {
+    setShowHashtagMenu(false);
+    setShowMentionMenu(false);
+    setMentionQuery("");
+  }, []);
+
   const resetComposer = useCallback(() => {
     setStatus("idle");
-    setTxHash("");
     setSummary("");
     setModalTitle("");
     setModalDescription("");
     setErrorMsg("");
     setMentions([]);
     setCampaignType(CampaignType.SimpleTask);
+    setTaskStartDelayHours("0");
     setTaskDurationHours("24");
     setMaxAmountCkb("1000");
-    setShowHashtagMenu(false);
-    setShowMentionMenu(false);
-    setMentionQuery("");
+    setRaffleTicketPriceCkb("1");
+    setModalStep("compose");
+    setReviewSummary("");
+    setActiveDraftRecordId(null);
+    setDraftRecords([]);
+    setIsDraftListOpen(false);
+    setIsDraftListLoading(false);
+    setDraftListError("");
+    setDraftDeleteId(null);
+    setShowNoDraftsMessage(false);
+    setLastSavedSnapshot(null);
+    setIsApplyingDraft(false);
+    if (applyDraftAnimationTimerRef.current) {
+      clearTimeout(applyDraftAnimationTimerRef.current);
+      applyDraftAnimationTimerRef.current = null;
+    }
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    hideMenus();
     if (pageEditorRef.current) {
       pageEditorRef.current.textContent = "";
     }
@@ -200,52 +559,109 @@ export default function CreateCampaignModalContent({
       modalDescriptionRef.current.textContent = "";
     }
     activeEditorRef.current = null;
-  }, []);
+  }, [hideMenus]);
 
-  const handleEditorInput = (e: React.FormEvent<HTMLDivElement>) => {
-    const text = e.currentTarget.textContent || "";
+  useEffect(() => {
+    if (mode === "modal") {
+      resetComposer();
+    }
+  }, [mode, resetSignal, resetComposer]);
+
+  useEffect(() => {
+    if (
+      !isModal ||
+      stepBackSignal === 0 ||
+      stepBackSignal === lastHandledStepBackSignalRef.current ||
+      modalStep !== "review" ||
+      status === "pending"
+    ) {
+      return;
+    }
+
+    lastHandledStepBackSignalRef.current = stepBackSignal;
+    setModalStep("compose");
+    setStatus("idle");
+    setErrorMsg("");
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    hideMenus();
+  }, [hideMenus, isModal, modalStep, status, stepBackSignal]);
+
+  useEffect(() => {
+    onConstraintStatusChange?.({
+      titlePassed: hasRequiredTitle,
+      bodyPassed: hasRequiredBodyLength,
+      firstHashtagPassed: hasRequiredCompulsoryHashtag,
+      additionalHashtagsPassed: true,
+    });
+  }, [
+    hasRequiredTitle,
+    hasRequiredBodyLength,
+    hasRequiredCompulsoryHashtag,
+    onConstraintStatusChange,
+  ]);
+
+  useEffect(() => {
+    onPreviewErrorChange?.(isReviewStep ? activeModalError : "");
+  }, [activeModalError, isReviewStep, onPreviewErrorChange]);
+
+  useEffect(() => {
+    onDraftListOpenChange?.(isDraftListOpen);
+  }, [isDraftListOpen, onDraftListOpenChange]);
+
+  const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
+    setShowNoDraftsMessage(false);
+    const text = event.currentTarget.textContent || "";
     let normalizedText = text.trim().length === 0 ? "" : text;
 
     if (isModal) {
-      if (e.currentTarget === modalTitleRef.current) {
+      if (event.currentTarget === modalTitleRef.current) {
         normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_TITLE_MAX_CHARS);
-      } else if (e.currentTarget === modalDescriptionRef.current) {
+      } else if (event.currentTarget === modalDescriptionRef.current) {
         normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
       }
     }
 
-    if (e.currentTarget.textContent !== normalizedText) {
-      e.currentTarget.textContent = normalizedText;
-      const range = document.createRange();
-      const selection = window.getSelection();
-      range.selectNodeContents(e.currentTarget);
-      range.collapse(false);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    }
+    const selection = window.getSelection();
+    const caretPos = getCaretPosition(event.currentTarget, selection);
 
     if (normalizedText.length === 0) {
-      e.currentTarget.textContent = "";
+      renderEditorText(event.currentTarget, "");
+    } else if (
+      text !== normalizedText ||
+      event.currentTarget === modalDescriptionRef.current ||
+      event.currentTarget === pageEditorRef.current
+    ) {
+      renderEditorText(event.currentTarget, normalizedText);
+      setCaretPosition(event.currentTarget, Math.min(caretPos, normalizedText.length));
     }
 
-    activeEditorRef.current = e.currentTarget;
-    setEditorTextByNode(e.currentTarget, normalizedText);
+    activeEditorRef.current = event.currentTarget;
+    setEditorTextByNode(event.currentTarget, normalizedText);
 
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
+    const activeSelection = window.getSelection();
+    if (activeSelection && activeSelection.rangeCount > 0) {
+      const range = activeSelection.getRangeAt(0);
       const preCaretRange = range.cloneRange();
-      preCaretRange.selectNodeContents(e.currentTarget);
+      preCaretRange.selectNodeContents(event.currentTarget);
       preCaretRange.setEnd(range.endContainer, range.endOffset);
-      const caretPos = preCaretRange.toString().length;
-      const beforeCursor = normalizedText.substring(0, caretPos);
+      const updatedCaretPos = preCaretRange.toString().length;
+      const beforeCursor = normalizedText.substring(0, updatedCaretPos);
 
       const lastHashIndex = beforeCursor.lastIndexOf("#");
       const hashtagMatch =
         lastHashIndex !== -1 ? beforeCursor.substring(lastHashIndex + 1).match(/^[\w]*$/) : null;
 
-      if (hashtagMatch && normalizedText[caretPos - 1] !== " " && normalizedText[caretPos - 1] !== "\n") {
-        const rect = e.currentTarget.getBoundingClientRect();
+      const allowHashtagMenu =
+        event.currentTarget === modalDescriptionRef.current || event.currentTarget === pageEditorRef.current;
+
+      if (
+        allowHashtagMenu &&
+        hashtagMatch &&
+        normalizedText[updatedCaretPos - 1] !== " " &&
+        normalizedText[updatedCaretPos - 1] !== "\n"
+      ) {
+        const rect = event.currentTarget.getBoundingClientRect();
         setHashtagPosition({
           top: rect.top + rect.height,
           left: rect.left,
@@ -259,10 +675,10 @@ export default function CreateCampaignModalContent({
       const mentionMatch =
         lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w]*$/) : null;
 
-      if (mentionMatch && normalizedText[caretPos - 1] !== " " && normalizedText[caretPos - 1] !== "\n") {
+      if (mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
-        const rect = e.currentTarget.getBoundingClientRect();
+        const rect = event.currentTarget.getBoundingClientRect();
         setMentionPosition({
           top: rect.top + rect.height,
           left: rect.left,
@@ -274,9 +690,9 @@ export default function CreateCampaignModalContent({
     }
   };
 
-  const handleModalTitleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
+  const handleModalTitleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
       const descriptionEl = modalDescriptionRef.current;
       if (descriptionEl) {
         descriptionEl.focus();
@@ -291,66 +707,96 @@ export default function CreateCampaignModalContent({
       return;
     }
 
-    handleEditorKeyDown(e);
+    handleEditorKeyDown(event);
   };
 
-  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    activeEditorRef.current = e.currentTarget;
+  const handleEditorKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    activeEditorRef.current = event.currentTarget;
+
+    if (event.key === "Enter") {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        event.preventDefault();
+        const range = selection.getRangeAt(0);
+        const text = event.currentTarget.textContent || "";
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(event.currentTarget);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        const caretPos = preCaretRange.toString().length;
+        const lineStartBreakIndex = text.lastIndexOf("\n", Math.max(caretPos - 1, 0));
+        const lineStartIndex = lineStartBreakIndex === -1 ? 0 : lineStartBreakIndex + 1;
+        const lineEndBreakIndex = text.indexOf("\n", caretPos);
+        const lineEndIndex = lineEndBreakIndex === -1 ? text.length : lineEndBreakIndex;
+        const currentLine = text.slice(lineStartIndex, lineEndIndex);
+        const nextListLine = getNextListLine(currentLine);
+
+        let newText =
+          nextListLine?.mode === "exit"
+            ? text.slice(0, lineStartIndex) + text.slice(lineEndIndex)
+            : text.slice(0, caretPos) + (nextListLine?.insertText ?? "\n") + text.slice(caretPos);
+
+        if (isModal && event.currentTarget === modalDescriptionRef.current) {
+          newText = truncateToTextLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
+        }
+
+        renderEditorText(event.currentTarget, newText);
+        setEditorTextByNode(event.currentTarget, newText);
+        hideMenus();
+
+        const newCaretPos = Math.min(
+          nextListLine?.mode === "exit"
+            ? lineStartIndex
+            : caretPos + (nextListLine?.insertText?.length ?? 1),
+          newText.length
+        );
+
+        setCaretPosition(event.currentTarget, newCaretPos);
+        return;
+      }
+    }
 
     if (
-      e.key === "Backspace" &&
-      e.currentTarget === modalDescriptionRef.current &&
+      event.key === "Backspace" &&
+      event.currentTarget === modalDescriptionRef.current &&
       (modalDescriptionRef.current?.textContent || "").trim().length === 0
     ) {
-      e.preventDefault();
+      event.preventDefault();
       const titleEl = modalTitleRef.current;
       if (titleEl) {
         const titleText = titleEl.textContent || "";
         const newTitleText = titleText.slice(0, -1);
         titleEl.textContent = newTitleText;
+        renderEditorText(titleEl, newTitleText);
         setModalTitle(newTitleText);
         titleEl.focus();
         activeEditorRef.current = titleEl;
-        const range = document.createRange();
-        const selection = window.getSelection();
-        if (titleEl.firstChild) {
-          const endPos = titleEl.firstChild.textContent?.length ?? 0;
-          range.setStart(titleEl.firstChild, endPos);
-          range.collapse(true);
-        } else {
-          range.selectNodeContents(titleEl);
-          range.collapse(false);
-        }
-        selection?.removeAllRanges();
-        selection?.addRange(range);
+        setCaretPosition(titleEl, newTitleText.length);
       }
-      setShowHashtagMenu(false);
-      setShowMentionMenu(false);
+      hideMenus();
       return;
     }
 
-    if (e.key === "Escape") {
-      setShowHashtagMenu(false);
-      setShowMentionMenu(false);
-      e.preventDefault();
+    if (event.key === "Escape") {
+      hideMenus();
+      event.preventDefault();
       return;
     }
 
     const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
-    const modKey = isMac ? e.metaKey : e.ctrlKey;
+    const modKey = isMac ? event.metaKey : event.ctrlKey;
 
     if (modKey) {
-      switch (e.key.toLowerCase()) {
+      switch (event.key.toLowerCase()) {
         case "b":
-          e.preventDefault();
+          event.preventDefault();
           document.execCommand("bold", false);
           break;
         case "i":
-          e.preventDefault();
+          event.preventDefault();
           document.execCommand("italic", false);
           break;
         case "u":
-          e.preventDefault();
+          event.preventDefault();
           document.execCommand("underline", false);
           break;
       }
@@ -394,12 +840,12 @@ export default function CreateCampaignModalContent({
         setTimeout(() => {
           const newPos = Math.min(lastHashIndex + label.length + 2, newText.length);
           const newRange = document.createRange();
-          const sel = window.getSelection();
+          const activeSelection = window.getSelection();
           if (targetEditor.firstChild) {
             newRange.setStart(targetEditor.firstChild, newPos);
             newRange.setEnd(targetEditor.firstChild, newPos);
-            sel?.removeAllRanges();
-            sel?.addRange(newRange);
+            activeSelection?.removeAllRanges();
+            activeSelection?.addRange(newRange);
           }
         }, 0);
       }
@@ -434,18 +880,18 @@ export default function CreateCampaignModalContent({
         setShowMentionMenu(false);
 
         if (!mentions.includes(username) && newText.includes(`@${username}`)) {
-          setMentions([...mentions, username]);
+          setMentions((current) => [...current, username]);
         }
 
         setTimeout(() => {
           const newPos = Math.min(lastAtIndex + username.length + 2, newText.length);
           const newRange = document.createRange();
-          const sel = window.getSelection();
+          const activeSelection = window.getSelection();
           if (targetEditor.firstChild) {
             newRange.setStart(targetEditor.firstChild, newPos);
             newRange.setEnd(targetEditor.firstChild, newPos);
-            sel?.removeAllRanges();
-            sel?.addRange(newRange);
+            activeSelection?.removeAllRanges();
+            activeSelection?.addRange(newRange);
           }
         }, 0);
       }
@@ -453,33 +899,507 @@ export default function CreateCampaignModalContent({
   };
 
   const handleRemoveMention = (mention: string) => {
-    setMentions(mentions.filter((m) => m !== mention));
+    setMentions((current) => current.filter((item) => item !== mention));
   };
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
+  const validateComposeConstraints = () => {
     if (isModal && !hasRequiredTitle) {
       setErrorMsg("Please add a title");
       setStatus("error");
-      return;
+      return false;
     }
 
     if (!hasRequiredBodyLength) {
       setErrorMsg(`Description must be at least ${minDescriptionChars} characters`);
       setStatus("error");
-      return;
+      return false;
     }
 
     if (!isFirstHashtagCompulsory) {
       setErrorMsg("The first hashtag must be one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle");
       setStatus("error");
-      return;
+      return false;
     }
 
     if (!hasExactlyOneCompulsoryHashtag) {
       setErrorMsg("Use exactly one compulsory hashtag (#SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle)");
       setStatus("error");
+      return false;
+    }
+
+    return true;
+  };
+
+  const syncEditorsFromState = useCallback((nextTitle: string, nextDescription: string) => {
+    renderEditorText(modalTitleRef.current, nextTitle);
+    renderEditorText(modalDescriptionRef.current, nextDescription);
+    renderEditorText(pageEditorRef.current, nextDescription);
+  }, [renderEditorText]);
+
+  useEffect(() => {
+    if (!isModal || modalStep !== "compose") {
+      previousShowDraftsPaneRef.current = showDraftsPane;
+      return;
+    }
+
+    const wasShowingDraftsPane = previousShowDraftsPaneRef.current;
+    previousShowDraftsPaneRef.current = showDraftsPane;
+
+    if (wasShowingDraftsPane && !showDraftsPane) {
+      syncEditorsFromState(modalTitle, modalDescription);
+    }
+  }, [isModal, modalDescription, modalStep, modalTitle, showDraftsPane, syncEditorsFromState]);
+
+  const getCreatorAddress = useCallback(async () => {
+    if (!signer) {
+      throw new Error("Connect wallet to manage drafts");
+    }
+
+    const creatorAddress = await signer.getRecommendedAddress();
+    if (!creatorAddress) {
+      throw new Error("Unable to resolve wallet address for drafts");
+    }
+
+    return creatorAddress;
+  }, [signer]);
+
+  const applyDraftRecord = useCallback((record: DraftRecord) => {
+    const nextTitle = record.title?.trim() ?? "";
+    const nextDescription = record.description?.trim() ?? "";
+    const nextCampaignType = typeof record.campaignType === "number"
+      ? (record.campaignType as CampaignType)
+      : CampaignType.SimpleTask;
+    const nextSummary = record.summaryDraft?.trim() ?? "";
+    const nextMentions = Array.isArray(record.socialMetadata?.mentions) ? record.socialMetadata.mentions : [];
+    const nextStartDelay = record.argsDraft?.taskStartDelayHours ?? "0";
+    const nextDuration = record.argsDraft?.taskDurationHours ?? "24";
+    const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
+    const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+
+    setModalTitle(nextTitle);
+    setModalDescription(nextDescription);
+    setSummary(nextDescription);
+    setCampaignType(nextCampaignType);
+    setMentions(nextMentions);
+    setTaskStartDelayHours(nextStartDelay);
+    setTaskDurationHours(nextDuration);
+    setMaxAmountCkb(nextMaxAmount);
+    setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
+    setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
+    setActiveDraftRecordId(record._id ?? null);
+    setModalStep("compose");
+    setIsDraftListOpen(false);
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    setDraftListError("");
+    setStatus("idle");
+    setErrorMsg("");
+    syncEditorsFromState(nextTitle, nextDescription);
+
+    const nextSnapshot = buildDraftSnapshot({
+      title: nextTitle,
+      description: nextDescription,
+      campaignType: nextCampaignType,
+      summaryDraft: nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }),
+      taskStartDelayHours: nextStartDelay,
+      taskDurationHours: nextDuration,
+      maxAmountCkb: nextMaxAmount,
+      auxAmountCkb: nextAuxAmount,
+      mentions: nextMentions,
+    });
+    setLastSavedSnapshot(nextSnapshot);
+
+    setIsApplyingDraft(true);
+    if (applyDraftAnimationTimerRef.current) {
+      clearTimeout(applyDraftAnimationTimerRef.current);
+    }
+    applyDraftAnimationTimerRef.current = setTimeout(() => {
+      setIsApplyingDraft(false);
+      applyDraftAnimationTimerRef.current = null;
+    }, 420);
+  }, [syncEditorsFromState]);
+
+  const loadDraftRecords = useCallback(async () => {
+    const requestId = draftListRequestIdRef.current + 1;
+    draftListRequestIdRef.current = requestId;
+    setIsDraftListOpen(true);
+    setIsDraftListLoading(true);
+    setDraftListError("");
+    setShowNoDraftsMessage(false);
+
+    try {
+      const creatorAddress = await getCreatorAddress();
+      const response = await fetch(`/api/campaign-records/drafts?creatorAddress=${encodeURIComponent(creatorAddress)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Failed to load drafts");
+      }
+
+      if (draftListRequestIdRef.current !== requestId) {
+        return false;
+      }
+
+      const nextRecords = Array.isArray(data?.records) ? (data.records as DraftRecord[]) : [];
+      setDraftRecords(nextRecords);
+      if (nextRecords.length === 0) {
+        setIsDraftListOpen(false);
+        setShowNoDraftsMessage(true);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      if (draftListRequestIdRef.current !== requestId) {
+        return false;
+      }
+
+      setDraftRecords([]);
+      setIsDraftListOpen(true);
+      setDraftListError(error instanceof Error ? error.message : "Failed to load drafts");
+      throw error;
+    } finally {
+      if (draftListRequestIdRef.current === requestId) {
+        setIsDraftListLoading(false);
+      }
+    }
+  }, [getCreatorAddress]);
+
+  const deleteDraftRecord = useCallback(async (recordId: string) => {
+    setDraftDeleteId(recordId);
+    setDraftListError("");
+
+    try {
+      const creatorAddress = await getCreatorAddress();
+      const response = await fetch(`/api/campaign-records/${recordId}?creatorAddress=${encodeURIComponent(creatorAddress)}`, {
+        method: "DELETE",
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error ?? "Failed to delete draft");
+      }
+
+      setDraftRecords((current) => current.filter((record) => record._id !== recordId));
+      if (activeDraftRecordId === recordId) {
+        setActiveDraftRecordId(null);
+        setModalTitle("");
+        setModalDescription("");
+        setSummary("");
+        setReviewSummary("");
+        setCampaignType(CampaignType.SimpleTask);
+        setMentions([]);
+        setTaskStartDelayHours("0");
+        setTaskDurationHours("24");
+        setMaxAmountCkb("1000");
+        setRaffleTicketPriceCkb("1");
+        setLastSavedSnapshot(null);
+        setDraftSaveStatus("idle");
+        setDraftSaveError("");
+        setStatus("idle");
+        setErrorMsg("");
+        setModalStep("compose");
+        hideMenus();
+        syncEditorsFromState("", "");
+        activeEditorRef.current = null;
+      }
+    } catch (error) {
+      setDraftListError(error instanceof Error ? error.message : "Failed to delete draft");
+      throw error;
+    } finally {
+      setDraftDeleteId(null);
+    }
+  }, [activeDraftRecordId, getCreatorAddress, hideMenus, syncEditorsFromState]);
+
+  const buildDraftPayload = useCallback(
+    async (
+      summaryDraft: string,
+      draftStatus: DraftRecordStatus,
+      txHashValue: string | null,
+      publishError: string | null
+    ) => {
+      const creatorAddress = await getCreatorAddress();
+
+      return {
+        title: trimmedModalTitle,
+        description: trimmedModalDescription,
+        campaignType,
+        summaryDraft,
+        argsDraft: {
+          taskStartDelayHours,
+          taskDurationHours,
+          maxAmountCkb,
+          auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+        },
+        socialMetadata: {
+          mentions,
+          comments: [],
+          likeCount: 0,
+          bookmarkCount: 0,
+          reshareCount: 0,
+        },
+        creatorAddress,
+        creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
+        status: draftStatus,
+        txHash: txHashValue,
+        publishError,
+      };
+    },
+    [
+      campaignType,
+      getCreatorAddress,
+      maxAmountCkb,
+      mentions,
+      raffleTicketPriceCkb,
+      shouldCollectRaffleTicketPrice,
+      taskDurationHours,
+      taskStartDelayHours,
+      trimmedModalDescription,
+      trimmedModalTitle,
+    ]
+  );
+
+  const persistDraftRecord = useCallback(
+    async (
+      summaryDraft: string,
+      draftStatus: DraftRecordStatus,
+      txHashValue: string | null = null,
+      publishError: string | null = null
+    ) => {
+      setDraftSaveStatus("saving");
+      setDraftSaveError("");
+
+      try {
+        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError);
+        const response = await fetch(activeDraftRecordId ? `/api/campaign-records/${activeDraftRecordId}` : "/api/campaign-records", {
+          method: activeDraftRecordId ? "PATCH" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(data?.error ?? "Failed to save campaign record");
+        }
+
+        const persistedId = data?.id ?? activeDraftRecordId;
+        if (persistedId) {
+          setActiveDraftRecordId(persistedId);
+        }
+
+        const nextSnapshot = buildDraftSnapshot({
+          title: trimmedModalTitle,
+          description: trimmedModalDescription,
+          campaignType,
+          summaryDraft,
+          taskStartDelayHours,
+          taskDurationHours,
+          maxAmountCkb,
+          auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+          mentions,
+        });
+        setLastSavedSnapshot(nextSnapshot);
+
+        setDraftRecords((current) => {
+          const updatedRecord: DraftRecord = {
+            _id: persistedId ?? undefined,
+            title: trimmedModalTitle,
+            description: trimmedModalDescription,
+            campaignType,
+            summaryDraft,
+            argsDraft: {
+              taskStartDelayHours,
+              taskDurationHours,
+              maxAmountCkb,
+              auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+            },
+            socialMetadata: {
+              mentions,
+            },
+            status: draftStatus,
+            txHash: txHashValue,
+            publishError,
+            updatedAt: new Date().toISOString(),
+          };
+
+          if (!persistedId) {
+            return current;
+          }
+
+          const remaining = current.filter((record) => record._id !== persistedId);
+          if (draftStatus === "published") {
+            return remaining;
+          }
+
+          return [updatedRecord, ...remaining];
+        });
+
+        setDraftSaveStatus("saved");
+        return persistedId;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to save campaign record";
+        setDraftSaveStatus("error");
+        setDraftSaveError(message);
+        throw error;
+      }
+    },
+    [
+      activeDraftRecordId,
+      buildDraftPayload,
+      campaignType,
+      maxAmountCkb,
+      mentions,
+      raffleTicketPriceCkb,
+      shouldCollectRaffleTicketPrice,
+      taskDurationHours,
+      taskStartDelayHours,
+      trimmedModalDescription,
+      trimmedModalTitle,
+    ]
+  );
+
+  useImperativeHandle(ref, () => ({
+    hasDraftableChanges: () => hasDraftableChanges,
+    saveDraftFromClose: async () => {
+      if (!hasDraftableChanges) {
+        return;
+      }
+      const summaryToSave = currentDraftSnapshot.summaryDraft || buildOnchainSummary({
+        title: trimmedModalTitle,
+        description: trimmedModalDescription,
+      });
+      await persistDraftRecord(summaryToSave, "draft");
+    },
+    discardDraftSession: () => {
+      resetComposer();
+    },
+    toggleDraftList: async () => {
+      if (isDraftListOpen) {
+        draftListRequestIdRef.current += 1;
+        setIsDraftListOpen(false);
+        setIsDraftListLoading(false);
+        setDraftListError("");
+        return false;
+      }
+
+      return loadDraftRecords();
+    },
+    applyDraftSelection: (draftId: string) => {
+      const selectedDraft = draftRecords.find((record) => record._id === draftId);
+      if (!selectedDraft) {
+        return;
+      }
+
+      applyDraftRecord(selectedDraft);
+    },
+  }), [
+    applyDraftRecord,
+    currentDraftSnapshot.summaryDraft,
+    draftRecords,
+    hasDraftableChanges,
+    isDraftListOpen,
+    loadDraftRecords,
+    persistDraftRecord,
+    resetComposer,
+    trimmedModalDescription,
+    trimmedModalTitle,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (applyDraftAnimationTimerRef.current) {
+        clearTimeout(applyDraftAnimationTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleAdvanceToReview = async () => {
+    if (!validateComposeConstraints()) {
+      return;
+    }
+
+    const nextSummary = buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription });
+    setReviewSummary(nextSummary);
+    setStatus("idle");
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    setModalStep("review");
+    setErrorMsg("");
+    hideMenus();
+
+    try {
+      await persistDraftRecord(nextSummary, "draft");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const handleRetryDraftSave = async () => {
+    setStatus("idle");
+    setErrorMsg("");
+
+    try {
+      await persistDraftRecord(activeReviewSummary, "draft");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const validateReviewInputs = () => {
+    if (draftSaveStatus === "saving") {
+      setErrorMsg("Please wait while the draft is being saved");
+      setStatus("error");
+      return false;
+    }
+
+    if (draftSaveStatus === "error") {
+      setErrorMsg("Please retry saving the draft before publishing");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidReviewSummary) {
+      setErrorMsg("Summary must be non-empty and fit within 64 UTF-8 bytes");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidDuration) {
+      setErrorMsg("Please enter a valid duration greater than 0 hours");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidMaxAmount) {
+      setErrorMsg(shouldCollectRaffleTicketPrice ? "Please enter a valid number of tickets greater than 0" : "Please enter a valid max deposit greater than 0 CKB");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidRaffleTicketPrice) {
+      setErrorMsg("Please enter a valid raffle ticket price greater than 0 CKB");
+      setStatus("error");
+      return false;
+    }
+
+    return true;
+  };
+
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+
+    if (isModal && modalStep === "compose") {
+      await handleAdvanceToReview();
+      return;
+    }
+
+    if (!validateComposeConstraints()) {
+      return;
+    }
+
+    if (isModal && !validateReviewInputs()) {
       return;
     }
 
@@ -494,50 +1414,423 @@ export default function CreateCampaignModalContent({
     setErrorMsg("");
 
     try {
-      const startSecs = 0n;
-      const taskSecs = BigInt(Math.round(parseFloat(taskDurationHours) * 3600));
-      const maxCkb = BigInt(Math.round(parseFloat(maxAmountCkb)));
+      const startSecs = BigInt(Math.round(parsedStartDelayHours * 3600));
+      const taskSecs = BigInt(Math.round(parsedDurationHours * 3600));
+      const maxCkb = BigInt(Math.round(derivedRaffleMaxAmountCkb));
+      const auxAmountCkb = shouldCollectRaffleTicketPrice
+        ? BigInt(Math.round(parsedRaffleTicketPriceCkb))
+        : 0n;
+      const summaryToPublish = isModal
+        ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
+        : generatedOnchainSummary;
 
       const hash = await sendCreateCampaign(signer, {
         startDurationSecs: startSecs,
         taskDurationSecs: taskSecs,
         campaignType,
         maximumAmountCkb: maxCkb,
-        auxAmountCkb: 0n,
-        summary: onchainSummary,
+        auxAmountCkb,
+        summary: summaryToPublish,
       });
 
-      setTxHash(hash);
+      if (isModal && activeDraftRecordId) {
+        try {
+          await persistDraftRecord(summaryToPublish, "published", hash, null);
+        } catch {
+          // Keep the publish success state even if the off-chain patch fails.
+        }
+      }
+
+      onPublishSuccess?.(hash);
       setStatus("success");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : String(err));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (isModal && activeDraftRecordId) {
+        try {
+          await persistDraftRecord(activeReviewSummary.trim(), "publish_failed", null, message);
+        } catch {
+          // Preserve the original publish failure message.
+        }
+      }
+
+      setErrorMsg(message);
       setStatus("error");
     }
   }
 
-  const summaryBytes = createContentChars;
-  const title = "Create a Campaign";
-  const isSubmitDisabled = status === "pending" || !constraintsPassed;
+  const renderModalArgsInputs = () => (
+    <div className="create-review-args-grid">
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">Start delay</label>
+        <div className="create-review-arg-control">
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={taskStartDelayHours}
+            onChange={(event) => setTaskStartDelayHours(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">hrs</span>
+        </div>
+      </div>
 
-  useEffect(() => {
-    if (mode === "modal") {
-      resetComposer();
-    }
-  }, [mode, resetSignal, resetComposer]);
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">Duration</label>
+        <div className="create-review-arg-control">
+          <input
+            type="number"
+            min="0.5"
+            step="0.5"
+            value={taskDurationHours}
+            onChange={(event) => setTaskDurationHours(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">hrs</span>
+        </div>
+      </div>
 
-  useEffect(() => {
-    onConstraintStatusChange?.({
-      titlePassed: hasRequiredTitle,
-      bodyPassed: hasRequiredBodyLength,
-      firstHashtagPassed: hasRequiredCompulsoryHashtag,
-      additionalHashtagsPassed: true,
-    });
-  }, [
-    hasRequiredTitle,
-    hasRequiredBodyLength,
-    hasRequiredCompulsoryHashtag,
-    onConstraintStatusChange,
-  ]);
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">{shouldCollectRaffleTicketPrice ? "Number of tickets" : "Max deposit"}</label>
+        <div className="create-review-arg-control">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={maxAmountCkb}
+            onChange={(event) => setMaxAmountCkb(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
+        </div>
+      </div>
+
+      {shouldCollectRaffleTicketPrice ? (
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Ticket price</label>
+          <div className="create-review-arg-control">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={raffleTicketPriceCkb}
+              onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">CKB</span>
+          </div>
+        </div>
+      ) : (
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Social</label>
+          <div className="create-review-social-control" aria-label="Social actions enabled">
+            <span>Like</span>
+            <span>Reply</span>
+            <span>Share</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderDraftListSkeleton = () => (
+    <div className="create-drafts-skeleton-list" aria-hidden="true">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div key={index} className="create-draft-card create-draft-card-skeleton">
+          <div className="create-draft-card-main create-draft-card-main-skeleton">
+            <div className="create-draft-card-row">
+              <span className="create-draft-skeleton-block create-draft-skeleton-title" />
+              <span className="create-draft-skeleton-block create-draft-skeleton-time" />
+            </div>
+            <div className="create-draft-skeleton-copy">
+              <span className="create-draft-skeleton-block create-draft-skeleton-line" />
+              <span className="create-draft-skeleton-block create-draft-skeleton-line create-draft-skeleton-line-short" />
+            </div>
+          </div>
+          <span className="create-draft-skeleton-block create-draft-skeleton-delete" />
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderDraftsPane = () => (
+    <div className="create-drafts-pane">
+      <div className="create-drafts-pane-header">
+        <p className="create-review-section-label">Saved drafts</p>
+      </div>
+
+      {draftListError ? <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p> : null}
+      {isDraftListLoading ? renderDraftListSkeleton() : null}
+
+      {!isDraftListLoading && draftRecords.length > 0 ? (
+        <div className="create-drafts-list create-drafts-list-full">
+          {draftRecords.map((record) => {
+            const isDeleting = draftDeleteId === record._id;
+            return (
+              <div key={record._id} className="create-draft-card">
+                <button
+                  type="button"
+                  className="create-draft-card-main"
+                  onClick={() => {
+                    if (record._id) {
+                      onDraftSelectionRequest?.(record._id);
+                    }
+                  }}
+                >
+                  <div className="create-draft-card-row">
+                    <span className="create-draft-card-title">{record.title?.trim() || "Untitled draft"}</span>
+                    <span className="create-draft-card-time">{formatDraftUpdatedAt(record.updatedAt)}</span>
+                  </div>
+                  <p className="create-draft-card-summary">{record.summaryDraft?.trim() || "No summary yet."}</p>
+                </button>
+                <button
+                  type="button"
+                  className="create-draft-card-delete"
+                  onClick={() => {
+                    if (record._id) {
+                      void deleteDraftRecord(record._id).catch(() => undefined);
+                    }
+                  }}
+                  disabled={isDeleting}
+                  aria-label="Delete draft"
+                >
+                  <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const renderModalComposePane = () => (
+    <div className={`create-modal-step-pane create-modal-step-pane-compose ${isApplyingDraft ? "create-modal-step-pane-compose-applying" : ""}`}>
+      <div className="relative w-full h-full flex flex-col">
+        {showDraftsPane ? (
+          renderDraftsPane()
+        ) : (
+          <>
+            <div className="create-modal-title-wrap">
+              <div
+                ref={modalTitleRef}
+                contentEditable="true"
+                suppressContentEditableWarning
+                onInput={handleEditorInput}
+                onKeyDown={handleModalTitleKeyDown}
+                onFocus={(event) => {
+                  activeEditorRef.current = event.currentTarget;
+                }}
+                onBlur={() => {
+                  setTimeout(() => {
+                    hideMenus();
+                  }, 100);
+                }}
+                onPaste={(event) => {
+                  event.preventDefault();
+                  const text = event.clipboardData.getData("text/plain");
+                  document.execCommand("insertText", false, text);
+                }}
+                data-placeholder="title"
+                role="textbox"
+                aria-placeholder="title"
+                className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
+                style={{
+                  wordWrap: "break-word",
+                  overflowWrap: "break-word",
+                  outline: "none",
+                }}
+              />
+              <div className="create-modal-counter create-modal-title-counter">
+                {modalTitleChars}/{modalTitleMaxChars}
+              </div>
+            </div>
+
+            <div
+              ref={modalDescriptionRef}
+              contentEditable="true"
+              suppressContentEditableWarning
+              onInput={handleEditorInput}
+              onKeyDown={handleEditorKeyDown}
+              onFocus={(event) => {
+                activeEditorRef.current = event.currentTarget;
+              }}
+              onBlur={() => {
+                setTimeout(() => {
+                  hideMenus();
+                }, 100);
+              }}
+              onPaste={(event) => {
+                event.preventDefault();
+                const text = event.clipboardData.getData("text/plain");
+                document.execCommand("insertText", false, text);
+              }}
+              data-placeholder="description"
+              role="textbox"
+              aria-placeholder="description"
+              className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
+              style={{
+                wordWrap: "break-word",
+                overflowWrap: "break-word",
+                outline: "none",
+                caretColor: "currentColor",
+              }}
+            />
+
+            <div className="create-modal-counter create-modal-body-counter">
+              {modalDescriptionChars}/{modalDescriptionMaxChars}
+            </div>
+
+            {showHashtagMenu && (
+              <div
+                className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48"
+                style={{
+                  top: `${hashtagPosition.top}px`,
+                  left: `${hashtagPosition.left}px`,
+                }}
+              >
+                <div className="p-2">
+                  {Object.values(CampaignType)
+                    .filter((value) => typeof value === "number")
+                    .map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleHashtagSelect(CAMPAIGN_TYPE_LABELS[type as CampaignType])}
+                        className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
+                      >
+                        #{CAMPAIGN_TYPE_LABELS[type as CampaignType]}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {showMentionMenu && (
+              <div
+                ref={mentionMenuRef}
+                className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48 max-h-40 overflow-y-auto"
+                style={{
+                  top: `${mentionPosition.top}px`,
+                  left: `${mentionPosition.left}px`,
+                }}
+              >
+                <div className="p-2">
+                  {filteredMentions.length > 0 ? (
+                    filteredMentions.map((user) => (
+                      <button
+                        key={user}
+                        type="button"
+                        onClick={() => handleMentionSelect(user)}
+                        className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
+                      >
+                        @{user}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-2 text-xs theme-fg opacity-60">No users found</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {!showDraftsPane && mentions.length > 0 && (
+        <div className="create-modal-mentions-row">
+          {mentions.map((mention) => (
+            <div
+              key={mention}
+              className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
+              style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
+            >
+              <span>@{mention}</span>
+              <button
+                type="button"
+                onClick={() => handleRemoveMention(mention)}
+                className="theme-fg opacity-70 hover:opacity-100 font-bold"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="create-modal-constraints-row">
+        <p className={`create-modal-constraints-text ${constraintsPassed && !showDraftsPane && !isDraftListLoading && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
+          {composeHelperMessage}
+        </p>
+      </div>
+    </div>
+  );
+
+  const renderModalReviewPane = () => (
+    <div className="create-modal-step-pane create-modal-step-pane-review">
+      <div className="create-review-pane-inner">
+        <div className="create-review-preview-card create-review-preview-card-main">
+          <p className="create-review-section-label">Preview</p>
+          {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
+          {createPreviewLines.length > 0 ? (
+            <div className="create-review-preview-content">
+              {createPreviewLines.map((line, index) => {
+                const isQuote = /^\s*>/.test(line);
+
+                return isQuote ? (
+                  <div key={`${line}-${index}`} className="create-review-preview-quote-row">
+                    {line.replace(/^\s*>\s?/, "")}
+                  </div>
+                ) : (
+                  <p key={`${line}-${index}`} className="create-review-preview-body">
+                    {line}
+                  </p>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="create-review-preview-body">No preview available yet.</p>
+          )}
+          {(firstHashtag || otherHashtags.length > 0) && (
+            <div className="create-review-tag-row">
+              {firstHashtag && <span className="create-review-primary-tag">#{firstHashtag}</span>}
+              {otherHashtags.map((tag) => (
+                <span key={tag} className="create-review-secondary-tag">#{tag}</span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="create-review-summary-card">
+          <div className="flex items-center justify-between gap-3">
+            <p className="create-review-section-label">Generated summary</p>
+            <span className="create-review-summary-bytes">{reviewSummaryBytes}/{SUMMARY_MAX_BYTES} bytes</span>
+          </div>
+          <input
+            type="text"
+            value={activeReviewSummary}
+            onChange={(event) => {
+              setReviewSummary(truncateToUtf8Bytes(event.target.value, SUMMARY_MAX_BYTES));
+              setErrorMsg("");
+            }}
+            className="create-review-summary-input theme-input"
+            placeholder="Summary that will be stored on-chain"
+          />
+        </div>
+
+        <div className="create-review-args-card">
+          <div className="create-review-card-heading-row">
+            <p className="create-review-section-label">Campaign args</p>
+            <span className="create-review-offchain-note">Content saved off-chain</span>
+          </div>
+          {renderModalArgsInputs()}
+        </div>
+
+        <div className="create-review-draft-status-row" aria-hidden="true" />
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -558,224 +1851,95 @@ export default function CreateCampaignModalContent({
         </div>
       )}
 
-      {status === "success" ? (
-        <div
-          className={
-            isModal
-              ? "w-full h-full p-4 flex flex-col justify-center gap-3"
-              : "w-full p-3 theme-bg border-2 border-green-500 rounded-xl flex flex-col gap-2"
-          }
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">✓</span>
-            <p className="font-semibold text-green-600">Campaign published!</p>
-          </div>
-          <p className="text-xs font-mono break-all text-gray-600">
-            TX:{" "}
-            <a
-              href={`https://pudge.explorer.nervos.org/transaction/${txHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-500 underline hover:text-blue-600"
-            >
-              {txHash}
-            </a>
-          </p>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={resetComposer}
-              className="mt-1 text-sm text-blue-500 underline font-medium hover:text-blue-600 self-start"
-            >
-              Create another campaign
-            </button>
-            {mode === "modal" && onRequestClose && (
-              <button
-                type="button"
-                onClick={onRequestClose}
-                className="mt-1 text-sm text-blue-500 underline font-medium hover:text-blue-600 self-start"
-              >
-                Close
-              </button>
-            )}
-          </div>
-        </div>
-      ) : (
+      {status === "success" ? null : (
         <form onSubmit={handleSubmit} className={isModal ? "w-full h-full relative" : "w-full flex flex-col gap-3"}>
           {isModal ? (
             <>
-              <div className="relative w-full h-full flex flex-col">
-                <div className="create-modal-title-wrap">
-                  <div
-                    ref={modalTitleRef}
-                    contentEditable="true"
-                    suppressContentEditableWarning
-                    onInput={handleEditorInput}
-                    onKeyDown={handleModalTitleKeyDown}
-                    onFocus={(e) => {
-                      activeEditorRef.current = e.currentTarget;
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setShowHashtagMenu(false);
-                        setShowMentionMenu(false);
-                      }, 100);
-                    }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      const text = e.clipboardData.getData("text/plain");
-                      document.execCommand("insertText", false, text);
-                    }}
-                    data-placeholder="title"
-                    role="textbox"
-                    aria-placeholder="title"
-                    className="w-full px-5 pt-5 pb-2 text-[2.1rem] font-bold leading-[1.1] focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words"
-                    style={{
-                      wordWrap: "break-word",
-                      overflowWrap: "break-word",
-                      outline: "none",
-                    }}
-                  />
-                  <div className="create-modal-counter create-modal-title-counter">
-                    {modalTitleChars}/{modalTitleMaxChars}
-                  </div>
+              <div className="create-modal-step-viewport">
+                <div className={`create-modal-step-track ${isReviewStep ? "create-modal-step-track-review" : ""}`}>
+                  {renderModalComposePane()}
+                  {renderModalReviewPane()}
                 </div>
-
-                <div
-                  ref={modalDescriptionRef}
-                  contentEditable="true"
-                  suppressContentEditableWarning
-                  onInput={handleEditorInput}
-                  onKeyDown={handleEditorKeyDown}
-                  onFocus={(e) => {
-                    activeEditorRef.current = e.currentTarget;
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => {
-                      setShowHashtagMenu(false);
-                      setShowMentionMenu(false);
-                    }, 100);
-                  }}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    const text = e.clipboardData.getData("text/plain");
-                    document.execCommand("insertText", false, text);
-                  }}
-                  data-placeholder="description"
-                  role="textbox"
-                  aria-placeholder="description"
-                  className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
-                  style={{
-                    wordWrap: "break-word",
-                    overflowWrap: "break-word",
-                    outline: "none",
-                    caretColor: "currentColor",
-                  }}
-                />
-
-                <div className="create-modal-counter create-modal-body-counter">
-                  {modalDescriptionChars}/{modalDescriptionMaxChars}
-                </div>
-
-                {showHashtagMenu && (
-                  <div
-                    className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48"
-                    style={{
-                      top: `${hashtagPosition.top}px`,
-                      left: `${hashtagPosition.left}px`,
-                    }}
-                  >
-                    <div className="p-2">
-                      {Object.values(CampaignType)
-                        .filter((v) => typeof v === "number")
-                        .map((type) => (
-                          <button
-                            key={type}
-                            type="button"
-                            onClick={() => handleHashtagSelect(CAMPAIGN_TYPE_LABELS[type as CampaignType])}
-                            className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
-                          >
-                            #{CAMPAIGN_TYPE_LABELS[type as CampaignType]}
-                          </button>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {showMentionMenu && (
-                  <div
-                    ref={mentionMenuRef}
-                    className="fixed theme-bg border-2 theme-border rounded-lg shadow-lg z-50 min-w-48 max-h-40 overflow-y-auto"
-                    style={{
-                      top: `${mentionPosition.top}px`,
-                      left: `${mentionPosition.left}px`,
-                    }}
-                  >
-                    <div className="p-2">
-                      {filteredMentions.length > 0 ? (
-                        filteredMentions.map((user) => (
-                          <button
-                            key={user}
-                            type="button"
-                            onClick={() => handleMentionSelect(user)}
-                            className="w-full text-left px-3 py-2 hover:opacity-80 rounded theme-fg font-medium text-sm transition-colors"
-                          >
-                            @{user}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-2 text-xs theme-fg opacity-60">No users found</div>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {mentions.length > 0 && (
-                <div className="create-modal-mentions-row">
-                  {mentions.map((mention) => (
-                    <div
-                      key={mention}
-                      className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
-                      style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
-                    >
-                      <span>@{mention}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMention(mention)}
-                        className="theme-fg opacity-70 hover:opacity-100 font-bold"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
+              {activeModalError && (
+                isReviewStep ? (
+                  <div className="create-modal-constraints-row">
+                    <p className="create-modal-constraints-text text-red-500">An Error Occurred. Hover on info for more</p>
+                  </div>
+                ) : (
+                  <div
+                    className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
+                    style={{ bottom: mentions.length > 0 ? "7.6rem" : "3.2rem" }}
+                  >
+                    <p className="text-sm font-semibold text-red-500">Error</p>
+                    <p className="text-xs text-red-600 break-all">{activeModalError}</p>
+                  </div>
+                )
               )}
 
-              {/* {status === "error" && (
-                <div
-                  className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
-                  style={{ bottom: mentions.length > 0 ? "7.6rem" : "3.2rem" }}
+              {(!showDraftsPane || isReviewStep) && (
+                <button
+                  type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
+                  disabled={
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? true
+                        : draftSaveStatus === "error"
+                          ? false
+                          : isPublishDisabled
+                      : isNextDisabled
+                  }
+                  onClick={
+                    isReviewStep
+                      ? draftSaveStatus === "error"
+                        ? () => void handleRetryDraftSave()
+                        : undefined
+                      : () => void handleAdvanceToReview()
+                  }
+                  className={`create-modal-send-btn ${(draftSaveStatus === "saving" || status === "pending") ? "create-modal-send-btn-loading" : ""} ${(
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? true
+                        : draftSaveStatus === "error"
+                          ? false
+                          : isPublishDisabled
+                      : isNextDisabled
+                  ) ? "" : "create-modal-send-btn-active"}`.trim()}
+                  aria-label={
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? "Saving preview"
+                        : draftSaveStatus === "error"
+                          ? "Retry saving preview"
+                          : status === "pending"
+                            ? "Publishing"
+                            : "Publish campaign"
+                      : "Next"
+                  }
+                  title={
+                    isReviewStep
+                      ? draftSaveStatus === "saving"
+                        ? "Saving preview..."
+                        : draftSaveStatus === "error"
+                          ? "Retry saving preview"
+                          : status === "pending"
+                            ? "Publishing..."
+                            : "Publish campaign"
+                      : "Next"
+                  }
                 >
-                  <p className="text-sm font-semibold text-red-500">Error</p>
-                  <p className="text-xs text-red-600 break-all">{errorMsg}</p>
-                </div>
-              )} */}
-
-              <div className="create-modal-constraints-row">
-                <p className={`create-modal-constraints-text ${constraintsPassed ? "create-modal-constraints-pass" : ""}`}>
-                  {constraintsPassed ? CREATE_CONSTRAINTS_MESSAGE_SUCCESS : CREATE_CONSTRAINTS_MESSAGE_PENDING}
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitDisabled}
-                className={`create-modal-send-btn ${isSubmitDisabled ? "" : "create-modal-send-btn-active"}`.trim()}
-                aria-label={status === "pending" ? "Publishing" : "Publish campaign"}
-                title={status === "pending" ? "Publishing..." : "Publish Campaign"}
-              >
-                {status === "pending" ? "…" : "➤"}
-              </button>
+                  {draftSaveStatus === "saving" || status === "pending" ? (
+                    <LoaderCircle className="create-modal-send-spinner" size={40} strokeWidth={2} aria-hidden="true" />
+                  ) : draftSaveStatus === "error" ? (
+                    <RefreshCw size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : isReviewStep ? (
+                    <SendHorizontal size={30} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -848,21 +2012,20 @@ export default function CreateCampaignModalContent({
                     suppressContentEditableWarning
                     onInput={handleEditorInput}
                     onKeyDown={handleEditorKeyDown}
-                    onFocus={(e) => {
-                      activeEditorRef.current = e.currentTarget;
-                      e.currentTarget.style.minHeight = "11rem";
-                      e.currentTarget.style.maxHeight = "20rem";
-                      e.currentTarget.style.height = "auto";
+                    onFocus={(event) => {
+                      activeEditorRef.current = event.currentTarget;
+                      event.currentTarget.style.minHeight = "11rem";
+                      event.currentTarget.style.maxHeight = "20rem";
+                      event.currentTarget.style.height = "auto";
                     }}
                     onBlur={() => {
                       setTimeout(() => {
-                        setShowHashtagMenu(false);
-                        setShowMentionMenu(false);
+                        hideMenus();
                       }, 100);
                     }}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      const text = e.clipboardData.getData("text/plain");
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      const text = event.clipboardData.getData("text/plain");
                       document.execCommand("insertText", false, text);
                     }}
                     data-placeholder="What's your campaign about? Type #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle first..."
@@ -888,7 +2051,7 @@ export default function CreateCampaignModalContent({
                     >
                       <div className="p-2">
                         {Object.values(CampaignType)
-                          .filter((v) => typeof v === "number")
+                          .filter((value) => typeof value === "number")
                           .map((type) => (
                             <button
                               key={type}
@@ -960,7 +2123,7 @@ export default function CreateCampaignModalContent({
                           min="0.5"
                           step="0.5"
                           value={taskDurationHours}
-                          onChange={(e) => setTaskDurationHours(e.target.value)}
+                          onChange={(event) => setTaskDurationHours(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
@@ -968,17 +2131,17 @@ export default function CreateCampaignModalContent({
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold theme-fg">💰 Max Deposit</label>
+                      <label className="text-xs font-semibold theme-fg">{shouldCollectRaffleTicketPrice ? "🎟️ Number of Tickets" : "💰 Max Deposit"}</label>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
                           min="1"
                           step="1"
                           value={maxAmountCkb}
-                          onChange={(e) => setMaxAmountCkb(e.target.value)}
+                          onChange={(event) => setMaxAmountCkb(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
-                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">CKB</span>
+                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
                       </div>
                     </div>
 
@@ -1027,7 +2190,7 @@ export default function CreateCampaignModalContent({
 
               <button
                 type="submit"
-                disabled={isSubmitDisabled}
+                disabled={status === "pending" || !constraintsPassed}
                 className="w-full px-6 py-3 rounded-xl theme-button font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {status === "pending" ? "Publishing..." : "Publish Campaign"}
@@ -1038,4 +2201,6 @@ export default function CreateCampaignModalContent({
       )}
     </div>
   );
-}
+});
+
+export default CreateCampaignModalContent;
