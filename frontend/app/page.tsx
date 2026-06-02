@@ -766,11 +766,9 @@ export default function Home() {
           />
         </div>
 
-        {signer && (
-          <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
-            <MountablesPanel />
-          </div>
-        )}
+        <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
+          <MountablesPanel />
+        </div>
 
         <CampaignListHeader client={client} />
       </div>
