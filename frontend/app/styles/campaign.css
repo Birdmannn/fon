@@ -280,24 +280,12 @@
   position: relative;
   border: 1px solid transparent !important;
   background-image:
-    linear-gradient(#ffffff, #ffffff),
+    linear-gradient(var(--background), var(--background)),
     linear-gradient(90deg, var(--campaign-highlight-color-1), var(--campaign-highlight-color-5), var(--campaign-highlight-color-3), var(--campaign-highlight-color-4), var(--campaign-highlight-color-2));
   background-size: 100% 100%, 200% 100%;
   background-clip: padding-box, border-box;
   background-origin: border-box;
   animation: campaign-highlight-shift 1.8s linear infinite;
-}
-
-.campaign-card-highlighted::before {
-  content: "";
-  position: absolute;
-  inset: -0.3rem;
-  z-index: 0;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--campaign-highlight-color-1), var(--campaign-highlight-color-5), var(--campaign-highlight-color-3), var(--campaign-highlight-color-4), var(--campaign-highlight-color-2));
-  filter: blur(20rem);
-  opacity: 0.5;
-  pointer-events: none;
 }
 
 .campaign-card-highlighted > * {
