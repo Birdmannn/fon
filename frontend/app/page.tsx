@@ -766,9 +766,11 @@ export default function Home() {
           />
         </div>
 
-        <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
-          <MountablesPanel />
-        </div>
+        {signer && (
+          <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
+            <MountablesPanel />
+          </div>
+        )}
 
         <CampaignListHeader client={client} />
       </div>
@@ -1100,7 +1102,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             displayStatus={displayStatus}
             signer={signer ?? null}
             nowMs={nowMs}
-            isHighlighted={index === 0}
+            isHighlighted={index === 0 && !!signer}
           />
         </div>
       ))}
