@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { FREIGHT_CONTRACT } from "@/lib/contract";
 
 type FreightInfoModalProps = {
@@ -11,9 +11,7 @@ type FreightInfoModalProps = {
   actions?: ReactNode;
   backdropAriaLabel: string;
   backdropInteractive: boolean;
-  activeButtonRect: DOMRect | null;
   onRequestClose: () => void;
-  onTriggerToggle: (event: MouseEvent<HTMLButtonElement>) => void;
   onKeepOpen: () => void;
   onScheduleClose: () => void;
 };
@@ -26,9 +24,7 @@ export default function FreightInfoModal({
   actions,
   backdropAriaLabel,
   backdropInteractive,
-  activeButtonRect,
   onRequestClose,
-  onTriggerToggle,
   onKeepOpen,
   onScheduleClose,
 }: FreightInfoModalProps) {
@@ -69,27 +65,6 @@ export default function FreightInfoModal({
         style={{ pointerEvents: backdropInteractive ? "auto" : "none" }}
       />
 
-      {activeButtonRect && (
-        <button
-          type="button"
-          className="header-info-btn header-info-btn-floating"
-          aria-label="Open Freight information"
-          onClick={onTriggerToggle}
-          onMouseEnter={onKeepOpen}
-          onMouseLeave={onScheduleClose}
-          onFocus={onKeepOpen}
-          onBlur={onScheduleClose}
-          style={{
-            left: `${activeButtonRect.left}px`,
-            top: `${activeButtonRect.top}px`,
-            width: `${activeButtonRect.width}px`,
-            height: `${activeButtonRect.height}px`,
-          }}
-        >
-          <span className="header-info-inner-ring" aria-hidden="true" />
-          <span className="header-info-glyph" aria-hidden="true">i</span>
-        </button>
-      )}
     </>
   );
 }

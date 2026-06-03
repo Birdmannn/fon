@@ -258,7 +258,6 @@ export default function Home() {
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
-  const [activeInfoButtonRect, setActiveInfoButtonRect] = useState<DOMRect | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
   const [showStickyHeader, setShowStickyHeader] = useState(true);
@@ -310,34 +309,25 @@ export default function Home() {
     }
   };
 
-  const refreshHeaderInfoButtonRect = useCallback(() => {
-    const button = headerInfoButtonRef.current;
-    if (!button) return;
-
-    setActiveInfoButtonRect(button.getBoundingClientRect());
-  }, []);
-
   const showInfoModalForInteraction = useCallback((interaction: "hover" | "click") => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    refreshHeaderInfoButtonRect();
     setInfoModalMode("about");
     setSaveDraftPromptError("");
     setInfoModalInteraction(interaction);
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, [refreshHeaderInfoButtonRect]);
+  }, []);
 
   const openSaveDraftConfirmModal = useCallback(() => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    refreshHeaderInfoButtonRect();
     setInfoModalMode("save-draft-confirm");
     setSaveDraftPromptError("");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, [refreshHeaderInfoButtonRect]);
+  }, []);
 
   const openInfoModalFromHover = () => {
     clearInfoCloseTimer();
@@ -377,7 +367,6 @@ export default function Home() {
       setInfoModalMode("about");
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
-      setActiveInfoButtonRect(null);
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
   }, [showInfoModal, isInfoModalClosing]);
@@ -561,24 +550,6 @@ export default function Home() {
     };
   }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
-  useEffect(() => {
-    if (!showInfoModal) return;
-
-    refreshHeaderInfoButtonRect();
-
-    const handleViewportChange = () => {
-      refreshHeaderInfoButtonRect();
-    };
-
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
-
-    return () => {
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
-    };
-  }, [showInfoModal, refreshHeaderInfoButtonRect]);
-
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
@@ -676,8 +647,8 @@ export default function Home() {
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className="w-full max-w-2xl flex flex-col gap-6 pt-16">
-        <div className={`fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between ${showCreateModal ? "pointer-events-none" : ""}`}>
-          <div className="header-info-wrap pointer-events-auto">
+        <div className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="header-info-wrap">
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
                 ref={headerInfoButtonRef}
@@ -694,7 +665,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="header-right-actions pointer-events-auto">
+          <div className="header-right-actions">
             {showCreateModal && (
               <div
                 className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
@@ -756,12 +727,7 @@ export default function Home() {
             actions={infoModalActions}
             backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
             backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
-            activeButtonRect={activeInfoButtonRect}
             onRequestClose={closeInfoModal}
-            onTriggerToggle={(event) => {
-              event.stopPropagation();
-              toggleInfoModal();
-            }}
             onKeepOpen={keepInfoModalOpen}
             onScheduleClose={scheduleCloseInfoModal}
           />
