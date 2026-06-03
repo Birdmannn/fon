@@ -274,6 +274,8 @@
   color: #9ca3af;
   font-family: var(--font-mono, monospace);
   white-space: nowrap;
+  transform-origin: left center;
+  transition: transform 180ms ease, font-weight 180ms ease;
 }
 
 .campaign-card-highlighted {
@@ -293,8 +295,33 @@
   z-index: 1;
 }
 
+.campaign-card-surface {
+  transition: border-width 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.campaign-card-surface:hover {
+  border-width: 2px;
+  transform: scale(1.008);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
+}
+
+.campaign-card-surface:hover .campaign-card-title,
+.campaign-card-surface:hover .campaign-card-description,
+.campaign-card-surface:hover .campaign-card-ticket-price,
+.campaign-card-surface:hover .campaign-card-created-date,
+.campaign-card-surface:hover .campaign-card-reward-count,
+.campaign-card-surface:hover .campaign-card-countdown {
+  transform: scale(1.015);
+  font-weight: 700;
+}
+
 .campaign-card-surface-sized {
   max-height: 50dvh;
+}
+
+.campaign-card-title {
+  transform-origin: left center;
+  transition: transform 180ms ease, font-weight 180ms ease;
 }
 
 .campaign-card-content {
@@ -323,6 +350,8 @@
   line-height: 1.5rem;
   color: #374151;
   word-break: break-word;
+  transform-origin: left top;
+  transition: transform 180ms ease, font-weight 180ms ease;
 }
 
 .campaign-card-description-line {
@@ -381,6 +410,8 @@
   font-size: 0.75rem;
   line-height: 1;
   color: #9ca3af;
+  transform-origin: left center;
+  transition: transform 180ms ease, font-weight 180ms ease;
 }
 
 .campaign-card-countdown {
@@ -389,6 +420,8 @@
   line-height: 1;
   font-family: var(--font-mono, monospace);
   white-space: nowrap;
+  transform-origin: right center;
+  transition: transform 180ms ease, font-weight 180ms ease;
 }
 
 .campaign-card-countdown-good {

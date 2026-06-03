@@ -1342,7 +1342,7 @@ function CampaignCard({
         </div>
 
         <div className="campaign-card-content">
-          <h3 className="text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
+          <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
           <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
             <div className="campaign-card-description">
               {descriptionLines.map((line, index) => {
