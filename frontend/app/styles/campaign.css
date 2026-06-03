@@ -296,7 +296,7 @@
 }
 
 .campaign-card-surface {
-  transition: border-width 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+  transition: border-width 220ms ease, transform 220ms ease, box-shadow 220ms ease;
 }
 
 .campaign-card-surface:hover {
@@ -310,9 +310,11 @@
 .campaign-card-surface:hover .campaign-card-ticket-price,
 .campaign-card-surface:hover .campaign-card-created-date,
 .campaign-card-surface:hover .campaign-card-reward-count,
-.campaign-card-surface:hover .campaign-card-countdown {
-  transform: scale(1.015);
-  font-weight: 700;
+.campaign-card-surface:hover .campaign-card-countdown,
+.campaign-card-surface:hover .campaign-card-footer-meta,
+.campaign-card-surface:hover .campaign-card-countdown-wrap,
+.campaign-card-surface:hover .campaign-action-icon {
+  transform: scale(1.008);
 }
 
 .campaign-card-surface-sized {
