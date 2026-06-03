@@ -273,6 +273,7 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
+  const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -413,6 +414,7 @@ export default function Home() {
 
   const requestCloseCreateModal = useCallback(() => {
     setPendingDraftSelectionId(null);
+    setPendingCloseAfterWalletConnect(false);
     if (createModalContentRef.current?.hasDraftableChanges()) {
       openSaveDraftConfirmModal();
       return;
@@ -422,6 +424,7 @@ export default function Home() {
   }, [finalizeCloseCreateModal, openSaveDraftConfirmModal]);
 
   const handleDraftSelectionRequest = useCallback((draftId: string) => {
+    setPendingCloseAfterWalletConnect(false);
     setPendingDraftSelectionId(draftId);
     if (createModalContentRef.current?.hasDraftableChanges()) {
       openSaveDraftConfirmModal();
@@ -433,8 +436,31 @@ export default function Home() {
 
   const handleSaveDraftChoice = useCallback(async (shouldSave: boolean) => {
     try {
-      if (shouldSave) {
+      if (!shouldSave) {
+        if (pendingDraftSelectionId) {
+          createModalContentRef.current?.applyDraftSelection(pendingDraftSelectionId);
+          setPendingDraftSelectionId(null);
+          closeInfoModal();
+          return;
+        }
+
+        createModalContentRef.current?.discardDraftSession();
+        setPendingDraftSelectionId(null);
+        setPendingCloseAfterWalletConnect(false);
+        closeInfoModal();
+        finalizeCloseCreateModal();
+        return;
+      }
+
+      try {
         await createModalContentRef.current?.saveDraftFromClose();
+      } catch (error) {
+        if (error instanceof Error && error.message === "Connect wallet to manage drafts") {
+          setPendingCloseAfterWalletConnect(!pendingDraftSelectionId);
+          open();
+          return;
+        }
+        throw error;
       }
 
       if (pendingDraftSelectionId) {
@@ -445,13 +471,13 @@ export default function Home() {
       }
 
       createModalContentRef.current?.discardDraftSession();
-      setPendingDraftSelectionId(null);
+      setPendingCloseAfterWalletConnect(false);
       closeInfoModal();
       finalizeCloseCreateModal();
     } catch (error) {
       setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
     }
-  }, [closeInfoModal, finalizeCloseCreateModal, pendingDraftSelectionId]);
+  }, [closeInfoModal, finalizeCloseCreateModal, open, pendingDraftSelectionId]);
 
   const resetCreateModal = useCallback(() => {
     setCreateModalStep("compose");
@@ -510,6 +536,36 @@ export default function Home() {
       clearSubmissionSuccessTimer();
     };
   }, []);
+
+  useEffect(() => {
+    if (!pendingCloseAfterWalletConnect || !signer) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        await createModalContentRef.current?.saveDraftFromClose();
+        if (cancelled) {
+          return;
+        }
+        createModalContentRef.current?.discardDraftSession();
+        setPendingCloseAfterWalletConnect(false);
+        closeInfoModal();
+        finalizeCloseCreateModal();
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [closeInfoModal, finalizeCloseCreateModal, pendingCloseAfterWalletConnect, signer]);
 
   useEffect(() => {
     if (!showCreateModal) {

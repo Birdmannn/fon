@@ -292,6 +292,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [isApplyingDraft, setIsApplyingDraft] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState("");
+  const [pendingAdvanceToReview, setPendingAdvanceToReview] = useState(false);
 
   const isModal = mode === "modal";
   const isReviewStep = isModal && modalStep === "review";
@@ -1321,11 +1322,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
 
     if (!signer) {
+      setPendingAdvanceToReview(true);
       setStatus("idle");
       setErrorMsg("");
       open();
       return;
     }
+
+    setPendingAdvanceToReview(false);
 
     const nextSummary = buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription });
     setReviewSummary(nextSummary);
@@ -1342,6 +1346,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       setStatus("error");
     }
   };
+
+  useEffect(() => {
+    if (!pendingAdvanceToReview || !signer || !isModal || modalStep !== "compose") {
+      return;
+    }
+
+    void handleAdvanceToReview();
+  }, [handleAdvanceToReview, isModal, modalStep, pendingAdvanceToReview, signer]);
 
   const handleRetryDraftSave = async () => {
     setStatus("idle");
