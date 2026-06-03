@@ -647,8 +647,11 @@ export default function Home() {
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className="w-full max-w-2xl flex flex-col gap-6 pt-16">
-        <div className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="header-info-wrap">
+        <div
+          className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          onClick={showCreateModal ? requestCloseCreateModal : undefined}
+        >
+          <div className="header-info-wrap" onClick={(event) => event.stopPropagation()}>
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
                 ref={headerInfoButtonRef}
@@ -665,7 +668,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="header-right-actions">
+          <div className="header-right-actions" onClick={(event) => event.stopPropagation()}>
             {showCreateModal && (
               <div
                 className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
