@@ -388,6 +388,39 @@ export default function Home() {
     }, INFO_MODAL_ANIMATION_MS);
   }, [showCreateModal, isCreateModalClosing]);
 
+  const closeInfoAndCreateModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearSubmissionSuccessTimer();
+    clearInfoHideTimer();
+    clearCreateHideTimer();
+
+    if (showInfoModal && !isInfoModalClosing) {
+      setIsInfoModalClosing(true);
+      infoHideTimerRef.current = setTimeout(() => {
+        setShowInfoModal(false);
+        setIsInfoModalClosing(false);
+        setInfoModalInteraction("hover");
+        setInfoModalMode("about");
+        setSaveDraftPromptError("");
+        setSubmissionSuccessTxHash("");
+        infoHideTimerRef.current = null;
+      }, INFO_MODAL_ANIMATION_MS);
+    }
+
+    if (showCreateModal && !isCreateModalClosing) {
+      setIsCreateModalClosing(true);
+      createHideTimerRef.current = setTimeout(() => {
+        setShowCreateModal(false);
+        setIsCreateModalClosing(false);
+        setCreateModalStep("compose");
+        setPreviewError("");
+        setSaveDraftPromptError("");
+        setIsCreateDraftListOpen(false);
+        createHideTimerRef.current = null;
+      }, INFO_MODAL_ANIMATION_MS);
+    }
+  }, [isCreateModalClosing, isInfoModalClosing, showCreateModal, showInfoModal]);
+
   const openSubmissionSuccessInfoModal = useCallback((txHash: string) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
@@ -444,11 +477,9 @@ export default function Home() {
           return;
         }
 
-        createModalContentRef.current?.discardDraftSession();
         setPendingDraftSelectionId(null);
         setPendingCloseAfterWalletConnect(false);
-        closeInfoModal();
-        finalizeCloseCreateModal();
+        closeInfoAndCreateModal();
         return;
       }
 
@@ -472,8 +503,7 @@ export default function Home() {
 
       createModalContentRef.current?.discardDraftSession();
       setPendingCloseAfterWalletConnect(false);
-      closeInfoModal();
-      finalizeCloseCreateModal();
+      closeInfoAndCreateModal();
     } catch (error) {
       setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
     }
@@ -552,8 +582,7 @@ export default function Home() {
         }
         createModalContentRef.current?.discardDraftSession();
         setPendingCloseAfterWalletConnect(false);
-        closeInfoModal();
-        finalizeCloseCreateModal();
+        closeInfoAndCreateModal();
       } catch (error) {
         if (cancelled) {
           return;
@@ -677,7 +706,7 @@ export default function Home() {
               <span>{item}</span>
             </p>
           ))}
-          <p className="mt-3 text-yellow-600 font-semibold">Info: Wallet not connected.</p>
+          {!signer && <p className="mt-3 text-yellow-600 font-semibold">Info: Wallet not connected.</p>}
         </>
       )}
     </div>
