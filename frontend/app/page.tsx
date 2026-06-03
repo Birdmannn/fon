@@ -621,6 +621,7 @@ export default function Home() {
               <span>{item}</span>
             </p>
           ))}
+          <p className="mt-3 text-yellow-600 font-semibold">Info: Wallet not connected.</p>
         </>
       )}
     </div>

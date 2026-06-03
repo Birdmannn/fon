@@ -1320,6 +1320,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
+    if (!signer) {
+      setStatus("idle");
+      setErrorMsg("");
+      open();
+      return;
+    }
+
     const nextSummary = buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription });
     setReviewSummary(nextSummary);
     setStatus("idle");
