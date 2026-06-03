@@ -676,7 +676,7 @@ export default function Home() {
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className="w-full max-w-2xl flex flex-col gap-6 pt-16">
-        <div className="fixed top-8 left-4 right-4 z-40 mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="header-info-wrap">
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
