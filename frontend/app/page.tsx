@@ -479,7 +479,8 @@ export default function Home() {
 
         setPendingDraftSelectionId(null);
         setPendingCloseAfterWalletConnect(false);
-        closeInfoAndCreateModal();
+        closeInfoModal();
+        finalizeCloseCreateModal();
         return;
       }
 
@@ -503,7 +504,8 @@ export default function Home() {
 
       createModalContentRef.current?.discardDraftSession();
       setPendingCloseAfterWalletConnect(false);
-      closeInfoAndCreateModal();
+      closeInfoModal();
+      finalizeCloseCreateModal();
     } catch (error) {
       setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
     }
@@ -582,7 +584,8 @@ export default function Home() {
         }
         createModalContentRef.current?.discardDraftSession();
         setPendingCloseAfterWalletConnect(false);
-        closeInfoAndCreateModal();
+        closeInfoModal();
+        finalizeCloseCreateModal();
       } catch (error) {
         if (cancelled) {
           return;
@@ -735,7 +738,11 @@ export default function Home() {
       <div className="w-full max-w-2xl flex flex-col gap-6 pt-16">
         <div
           className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-          onClick={showCreateModal ? requestCloseCreateModal : undefined}
+          onClick={showCreateModal ? (event) => {
+            if (event.target === event.currentTarget) {
+              requestCloseCreateModal();
+            }
+          } : undefined}
         >
           <div className="header-info-wrap" onClick={(event) => event.stopPropagation()}>
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
