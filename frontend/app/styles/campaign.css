@@ -106,7 +106,7 @@
   opacity: 0;
   transition: opacity 200ms ease;
   margin-bottom: 0.375rem;
-  z-index: 10;
+  z-index: 120;
 }
 
 .campaign-action-btn:hover::after {
