@@ -55,7 +55,8 @@
 
 .campaign-action-btn.action-comment.campaign-action-active,
 .campaign-action-btn.action-comment.campaign-action-active:hover {
-  color: #10b981; /* green */
+  /* color: #10b981; green */
+  color: #16a34a;
   opacity: 1;
 }
 
