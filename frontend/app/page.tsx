@@ -1453,8 +1453,12 @@ function CampaignCard({
       }
 
       setComments(nextComments.length);
+      setCommentList(nextComments);
       setUserCommented(true);
       setCommentDraft("");
+      if (commentInputRef.current) {
+        commentInputRef.current.style.height = "32px";
+      }
       setIsCommentComposerOpen(false);
     } catch (error) {
       setCommentError(error instanceof Error ? error.message : "Failed to save comment");
@@ -1700,9 +1704,11 @@ function CampaignCard({
               ref={commentInputRef}
               value={commentDraft}
               onChange={(event) => {
-                setCommentDraft(event.target.value);
+                const nextValue = event.target.value.slice(0, 300);
+                setCommentDraft(nextValue);
+                event.currentTarget.value = nextValue;
                 event.currentTarget.style.height = "auto";
-                const nextHeight = Math.min(Math.max(32, event.currentTarget.scrollHeight), 67);
+                const nextHeight = Math.max(32, event.currentTarget.scrollHeight);
                 event.currentTarget.style.height = `${nextHeight}px`;
               }}
               className="campaign-comment-input"
@@ -1710,18 +1716,18 @@ function CampaignCard({
               rows={1}
               disabled={isSavingComment || !isCommentComposerOpen}
             />
-            <div className="campaign-comment-submit-wrap">
-              <span className="campaign-comment-count">{commentDraft.length}/300</span>
-              <button
-                type="button"
-                className="campaign-comment-submit"
-                onClick={() => void handleSubmitComment()}
-                disabled={isSavingComment || !commentDraft.trim() || !isCommentComposerOpen || commentDraft.length > 300}
-                aria-label="Submit comment"
-              >
-                <Check size={24} strokeWidth={3} aria-hidden="true" />
-              </button>
-            </div>
+            <button
+              type="button"
+              className="campaign-comment-submit"
+              onClick={() => void handleSubmitComment()}
+              disabled={isSavingComment || !commentDraft.trim() || !isCommentComposerOpen}
+              aria-label="Submit comment"
+            >
+              <Check size={24} strokeWidth={3} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="campaign-comment-meta-row">
+            <span className={`campaign-comment-count ${commentDraft.length >= 300 ? "campaign-comment-count-limit" : commentDraft.length >= 250 ? "campaign-comment-count-warn" : ""}`}>{300 - commentDraft.length}</span>
           </div>
           {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
         </div>
