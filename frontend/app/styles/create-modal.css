@@ -443,8 +443,8 @@
 
 .create-info-confirm-btn-primary:hover,
 .create-info-confirm-btn-primary:focus-visible {
-  background: #ffffff;
-  color: #16a34a;
+  background: #16a34a;
+  color: #ffffff;
   border-color: #16a34a;
 }
 
