@@ -1685,36 +1685,38 @@ function CampaignCard({
           </button>
         </div>
 
-        {isCommentComposerOpen && (
-          <div ref={commentComposerRef} className="campaign-comment-composer">
-            <div className="campaign-comment-input-wrap">
-              <textarea
-                ref={commentInputRef}
-                value={commentDraft}
-                onChange={(event) => {
-                  setCommentDraft(event.target.value);
-                  const nextHeight = Math.min(event.currentTarget.scrollHeight, 66);
-                  event.currentTarget.style.height = "auto";
-                  event.currentTarget.style.height = `${nextHeight}px`;
-                }}
-                className="campaign-comment-input"
-                placeholder="Write a comment..."
-                rows={1}
-                disabled={isSavingComment}
-              />
-              <button
-                type="button"
-                className="campaign-comment-submit"
-                onClick={() => void handleSubmitComment()}
-                disabled={isSavingComment || !commentDraft.trim()}
-                aria-label="Submit comment"
-              >
-                <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
-              </button>
-            </div>
-            {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
+        <div
+          ref={commentComposerRef}
+          className={`campaign-comment-composer ${isCommentComposerOpen ? "campaign-comment-composer-open" : "campaign-comment-composer-closed"}`}
+          aria-hidden={!isCommentComposerOpen}
+        >
+          <div className="campaign-comment-input-wrap">
+            <textarea
+              ref={commentInputRef}
+              value={commentDraft}
+              onChange={(event) => {
+                setCommentDraft(event.target.value);
+                const nextHeight = Math.max(32, event.currentTarget.scrollHeight);
+                event.currentTarget.style.height = "auto";
+                event.currentTarget.style.height = `${nextHeight}px`;
+              }}
+              className="campaign-comment-input"
+              placeholder="Write a comment..."
+              rows={1}
+              disabled={isSavingComment || !isCommentComposerOpen}
+            />
+            <button
+              type="button"
+              className="campaign-comment-submit"
+              onClick={() => void handleSubmitComment()}
+              disabled={isSavingComment || !commentDraft.trim() || !isCommentComposerOpen}
+              aria-label="Submit comment"
+            >
+              <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
+            </button>
           </div>
-        )}
+          {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
+        </div>
       </div>
 
       {showDepositModal && (

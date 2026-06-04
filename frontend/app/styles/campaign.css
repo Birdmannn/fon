@@ -392,13 +392,32 @@
 }
 
 .campaign-comment-composer {
-  padding: 0.35rem 0 0;
+  padding: 0;
   background: transparent;
+  overflow: hidden;
+  transform-origin: top;
+  transition: max-height 240ms ease, opacity 220ms ease, transform 220ms ease, padding-top 220ms ease;
+}
+
+.campaign-comment-composer-open {
+  max-height: 8rem;
+  opacity: 1;
+  transform: translateY(0);
+  padding-top: 0.35rem;
+}
+
+.campaign-comment-composer-closed {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-0.25rem);
+  padding-top: 0;
+  pointer-events: none;
 }
 
 .campaign-comment-input-wrap {
   position: relative;
   overflow: visible;
+  transition: transform 220ms ease, opacity 220ms ease;
 }
 
 .campaign-comment-input {
