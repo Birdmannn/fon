@@ -71,12 +71,25 @@ const TYPE_TAGS = ["SimpleTask", "FundedTask", "Crowdfunding", "TimedChallenge",
 const MOUNTABLES_PLACEHOLDER_MESSAGE = "NO MOUNTABLES YET. RAFFLE RAFFLE RAFFLE.   ";
 const CAMPAIGN_CARD_PREVIEW_MAX_CHARS = 280;
 
+type CampaignComment = {
+  text: string;
+  creatorAddress?: string | null;
+  creatorHandle?: string | null;
+  createdAt?: string;
+};
+
 type CampaignRecord = {
   _id?: string;
   title?: string;
   description?: string;
   campaignType?: number;
   summaryDraft?: string;
+  argsDraft?: {
+    taskStartDelayHours?: string;
+    taskDurationHours?: string;
+    maxAmountCkb?: string;
+    auxAmountCkb?: string;
+  };
   socialMetadata?: {
     mentions?: string[];
     comments?: unknown[];
@@ -88,6 +101,7 @@ type CampaignRecord = {
   creatorHandle?: string | null;
   status?: "draft" | "published" | "publish_failed";
   txHash?: string | null;
+  publishError?: string | null;
 };
 
 type MergedCampaign = {
@@ -1221,15 +1235,25 @@ function CampaignCard({
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
 
+  const initialComments = useMemo<CampaignComment[]>(() => (
+    Array.isArray(record?.socialMetadata?.comments)
+      ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
+      : []
+  ), [record?.socialMetadata?.comments]);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
-  const [comments, setComments] = useState(Array.isArray(record?.socialMetadata?.comments) ? record.socialMetadata.comments.length : 0);
+  const [comments, setComments] = useState(initialComments.length);
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
   const [userLiked, setUserLiked] = useState(false);
   const [userBookmarked, setUserBookmarked] = useState(false);
   const [userCommented, setUserCommented] = useState(false);
   const [userReshared, setUserReshared] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [isSavingComment, setIsSavingComment] = useState(false);
+  const [commentError, setCommentError] = useState("");
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
@@ -1252,8 +1276,77 @@ function CampaignCard({
 
   const handleComment = () => {
     if (!isConnected) return;
-    setUserCommented(!userCommented);
-    setComments((prev) => (userCommented ? prev - 1 : prev + 1));
+    setCommentError("");
+    setIsCommentComposerOpen((current) => !current);
+  };
+
+  const handleSubmitComment = async () => {
+    const nextCommentText = commentDraft.trim();
+    if (!nextCommentText) {
+      setCommentError("Comment cannot be empty");
+      return;
+    }
+
+    if (!record?._id) {
+      setCommentError("Comments are not available for this campaign yet");
+      return;
+    }
+
+    setIsSavingComment(true);
+    setCommentError("");
+
+    try {
+      const nextComment: CampaignComment = {
+        text: nextCommentText,
+        creatorAddress,
+        creatorHandle,
+        createdAt: new Date().toISOString(),
+      };
+      const nextComments = [...initialComments, nextComment];
+      const response = await fetch(`/api/campaign-records/${record._id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: record.title ?? displayTitle,
+          description: record.description ?? displayDescription,
+          campaignType: record.campaignType ?? data.campaignType,
+          summaryDraft: record.summaryDraft ?? onchainSummary,
+          argsDraft: {
+            taskStartDelayHours: record.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
+            taskDurationHours: record.argsDraft?.taskDurationHours ?? String(Number(data.taskDurationSecs) / 3600),
+            maxAmountCkb: record.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
+            auxAmountCkb: record.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
+          },
+          socialMetadata: {
+            mentions,
+            comments: nextComments,
+            likeCount: likes,
+            bookmarkCount: bookmarks,
+            reshareCount: reshares,
+          },
+          creatorAddress: record.creatorAddress ?? creatorAddress,
+          creatorHandle: record.creatorHandle ?? creatorHandle,
+          status: record.status ?? "published",
+          txHash: record.txHash ?? outPoint.txHash,
+          publishError: record.publishError ?? null,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save comment");
+      }
+
+      setComments(nextComments.length);
+      setUserCommented(true);
+      setCommentDraft("");
+      setIsCommentComposerOpen(false);
+    } catch (error) {
+      setCommentError(error instanceof Error ? error.message : "Failed to save comment");
+    } finally {
+      setIsSavingComment(false);
+    }
   };
 
   const handleReshare = () => {
@@ -1413,73 +1506,106 @@ function CampaignCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 pt-2 pb-3 text-xs">
-        <button
-          onClick={handleLike}
-          className={`campaign-action-btn ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
-        >
-          <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count">{likes}</span>
-        </button>
+      <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleLike}
+            className={`campaign-action-btn ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
+          >
+            <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+            <span className="campaign-action-count">{likes}</span>
+          </button>
 
-        <button
-          onClick={handleBookmark}
-          className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
-        >
-          <Bookmark className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count">{bookmarks}</span>
-        </button>
+          <button
+            onClick={handleBookmark}
+            className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
+          >
+            <Bookmark className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+            <span className="campaign-action-count">{bookmarks}</span>
+          </button>
 
-        <button
-          onClick={handleComment}
-          className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
-        >
-          <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count">{comments}</span>
-        </button>
+          <button
+            onClick={handleComment}
+            className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
+          >
+            <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+            <span className="campaign-action-count">{comments}</span>
+          </button>
 
-        <button
-          onClick={handleReshare}
-          className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
-        >
-          <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
-          <span className="campaign-action-count">{reshares}</span>
-        </button>
+          <button
+            onClick={handleReshare}
+            className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
+          >
+            <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
+            <span className="campaign-action-count">{reshares}</span>
+          </button>
 
-        <button
-          onClick={handleDepositClick}
-          disabled={isPurchaseDisabled}
-          className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`}
-          data-tooltip={
-            !isConnected
-              ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-              : isCampaignInactive
-                ? "Campaign unavailable"
-                : hasNotStartedRaffle
-                  ? "Raffle has not started"
-                  : hasNoRemainingTickets
-                    ? "No tickets left"
-                    : hasReachedMaxAmount
-                      ? "Max amount reached"
-                      : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
-          }
-        >
-          {isRaffleCampaign ? (
-            <>
-              <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
-            </>
-          ) : (
-            <>
-              <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
-            </>
-          )}
-        </button>
+          <button
+            onClick={handleDepositClick}
+            disabled={isPurchaseDisabled}
+            className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`}
+            data-tooltip={
+              !isConnected
+                ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
+                : isCampaignInactive
+                  ? "Campaign unavailable"
+                  : hasNotStartedRaffle
+                    ? "Raffle has not started"
+                    : hasNoRemainingTickets
+                      ? "No tickets left"
+                      : hasReachedMaxAmount
+                        ? "Max amount reached"
+                        : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
+            }
+          >
+            {isRaffleCampaign ? (
+              <>
+                <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+              </>
+            ) : (
+              <>
+                <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {isCommentComposerOpen && (
+          <div className="campaign-comment-composer">
+            <div className="campaign-comment-input-wrap">
+              <textarea
+                ref={commentInputRef}
+                value={commentDraft}
+                onChange={(event) => {
+                  setCommentDraft(event.target.value);
+                  const nextHeight = Math.min(event.currentTarget.scrollHeight, 66);
+                  event.currentTarget.style.height = "auto";
+                  event.currentTarget.style.height = `${nextHeight}px`;
+                }}
+                className="campaign-comment-input"
+                placeholder="Write a comment..."
+                rows={1}
+                disabled={isSavingComment}
+              />
+              <button
+                type="button"
+                className="campaign-comment-submit"
+                onClick={() => void handleSubmitComment()}
+                disabled={isSavingComment || !commentDraft.trim()}
+                aria-label="Submit comment"
+              >
+                <ArrowUp size={16} strokeWidth={2} aria-hidden="true" />
+              </button>
+            </div>
+            {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
+          </div>
+        )}
       </div>
 
       {showDepositModal && (

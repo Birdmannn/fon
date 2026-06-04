@@ -391,6 +391,64 @@
   outline: none;
 }
 
+.campaign-comment-composer {
+  padding: 0.35rem 0 0;
+  background: transparent;
+}
+
+.campaign-comment-input-wrap {
+  position: relative;
+  border: 1px solid rgba(23, 23, 23, 0.2);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.96);
+  overflow: hidden;
+}
+
+.campaign-comment-input {
+  width: 100%;
+  min-height: 2.2rem;
+  max-height: 6.6rem;
+  resize: none;
+  overflow-y: auto;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.5rem 3rem 0.5rem 0.9rem;
+  background: transparent;
+  color: #171717;
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  outline: none;
+}
+
+.campaign-comment-error {
+  margin: 0.35rem 0 0;
+  color: #dc2626;
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.campaign-comment-submit {
+  position: absolute;
+  right: 0.45rem;
+  bottom: 0.4rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #171717;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.campaign-comment-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .campaign-card-footer {
   display: flex;
   align-items: center;
