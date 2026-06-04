@@ -398,27 +398,30 @@
 
 .campaign-comment-input-wrap {
   position: relative;
-  border: 1px solid rgba(23, 23, 23, 0.2);
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.96);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .campaign-comment-input {
   width: 100%;
-  min-height: 2.2rem;
-  max-height: 6.6rem;
+  min-height: 2rem;
   resize: none;
-  overflow-y: auto;
+  overflow: hidden;
   border: none;
-  border-radius: 9999px;
-  padding: 0.5rem 3rem 0.5rem 0.9rem;
+  border-bottom: 2px solid #9ca3af;
+  border-radius: 0;
+  padding: 0 2.8rem 0.35rem 0;
   background: transparent;
-  color: #171717;
+  color: #9ca3af;
   font: inherit;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   line-height: 1.4;
   outline: none;
+  transition: color 200ms ease, border-bottom-color 200ms ease;
+}
+
+.campaign-comment-input:focus {
+  color: #6b7280;
+  border-bottom-color: #6b7280;
 }
 
 .campaign-comment-error {
@@ -430,8 +433,8 @@
 
 .campaign-comment-submit {
   position: absolute;
-  right: 0.45rem;
-  bottom: 0.4rem;
+  right: 0;
+  bottom: 0.15rem;
   width: 1.9rem;
   height: 1.9rem;
   border: none;

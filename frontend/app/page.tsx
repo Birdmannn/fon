@@ -110,7 +110,7 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success";
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "discard-comment-confirm";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
@@ -287,6 +287,8 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
+  const [pendingCommentDiscardId, setPendingCommentDiscardId] = useState<string | null>(null);
+  const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -481,6 +483,28 @@ export default function Home() {
     createModalContentRef.current?.applyDraftSelection(draftId);
   }, [openSaveDraftConfirmModal]);
 
+  const handleCommentDiscardRequest = useCallback((cardId: string) => {
+    setPendingCommentDiscardId(cardId);
+    setCommentDiscardDecision(null);
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("discard-comment-confirm");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, []);
+
+  const handleCommentDiscardChoice = useCallback((discard: boolean) => {
+    if (!pendingCommentDiscardId) {
+      closeInfoModal();
+      return;
+    }
+
+    setCommentDiscardDecision({ cardId: pendingCommentDiscardId, discard });
+    setPendingCommentDiscardId(null);
+    closeInfoModal();
+  }, [closeInfoModal, pendingCommentDiscardId]);
+
   const handleSaveDraftChoice = useCallback(async (shouldSave: boolean) => {
     try {
       if (!shouldSave) {
@@ -669,6 +693,10 @@ export default function Home() {
         </a>
       </p>
     </div>
+  ) : infoModalMode === "discard-comment-confirm" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Discard comment?</p>
+    </div>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
@@ -741,6 +769,23 @@ export default function Home() {
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => void handleSaveDraftChoice(true)}
+      >
+        Yes
+      </button>
+    </div>
+  ) : infoModalMode === "discard-comment-confirm" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn"
+        onClick={() => void handleCommentDiscardChoice(false)}
+      >
+        No
+      </button>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => void handleCommentDiscardChoice(true)}
       >
         Yes
       </button>
@@ -849,7 +894,11 @@ export default function Home() {
           </div>
         )}
 
-        <CampaignListHeader client={client} />
+        <CampaignListHeader
+          client={client}
+          onCommentDiscardRequest={handleCommentDiscardRequest}
+          commentDiscardDecision={commentDiscardDecision}
+        />
       </div>
 
       {showCreateModal && (
@@ -914,7 +963,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client }: { client: ccc.Client }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1128,12 +1177,20 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
         </div>
       </div>
 
-      <CampaignList campaigns={filteredCampaigns} loading={loading} error={error} shouldScrollToNewest={shouldScrollToNewest} onScrolledToNewest={() => setShouldScrollToNewest(false)} />
+      <CampaignList
+        campaigns={filteredCampaigns}
+        loading={loading}
+        error={error}
+        shouldScrollToNewest={shouldScrollToNewest}
+        onScrolledToNewest={() => setShouldScrollToNewest(false)}
+        onCommentDiscardRequest={onCommentDiscardRequest}
+        commentDiscardDecision={commentDiscardDecision}
+      />
     </>
   );
 }
 
-function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void }) {
+function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
@@ -1180,6 +1237,8 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             signer={signer ?? null}
             nowMs={nowMs}
             isHighlighted={index === 99 && !!signer}
+            onCommentDiscardRequest={onCommentDiscardRequest}
+            commentDiscardDecision={commentDiscardDecision}
           />
         </div>
       ))}
@@ -1194,6 +1253,8 @@ function CampaignCard({
   signer,
   nowMs,
   isHighlighted = false,
+  onCommentDiscardRequest,
+  commentDiscardDecision,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
@@ -1201,8 +1262,11 @@ function CampaignCard({
   signer: ccc.Signer | null;
   nowMs: number;
   isHighlighted?: boolean;
+  onCommentDiscardRequest: (cardId: string) => void;
+  commentDiscardDecision: { cardId: string; discard: boolean } | null;
 }) {
   const { data, outPoint } = c;
+  const cardId = `${outPoint.txHash}:${outPoint.index}`;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
   const maxCkb = formatCkbAmount(data.maximumAmount);
@@ -1242,6 +1306,7 @@ function CampaignCard({
   ), [record?.socialMetadata?.comments]);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
+  const [commentList, setCommentList] = useState<CampaignComment[]>(initialComments);
   const [comments, setComments] = useState(initialComments.length);
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
   const [userLiked, setUserLiked] = useState(false);
@@ -1253,6 +1318,7 @@ function CampaignCard({
   const [commentDraft, setCommentDraft] = useState("");
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState("");
+  const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -1261,6 +1327,20 @@ function CampaignCard({
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
+
+  useEffect(() => {
+    if (!commentDiscardDecision || commentDiscardDecision.cardId !== cardId) {
+      return;
+    }
+
+    if (commentDiscardDecision.discard) {
+      setCommentDraft("");
+      setCommentError("");
+      setIsCommentComposerOpen(false);
+    } else {
+      setIsCommentComposerOpen(true);
+    }
+  }, [cardId, commentDiscardDecision]);
 
   const handleLike = () => {
     if (!isConnected) return;
@@ -1279,6 +1359,35 @@ function CampaignCard({
     setCommentError("");
     setIsCommentComposerOpen((current) => !current);
   };
+
+  useEffect(() => {
+    if (!isCommentComposerOpen) {
+      return;
+    }
+
+    const handleOutsidePointerDown = (event: MouseEvent) => {
+      if (!commentComposerRef.current) {
+        return;
+      }
+
+      if (commentComposerRef.current.contains(event.target as Node)) {
+        return;
+      }
+
+      if (commentDraft.trim().length === 0) {
+        setCommentError("");
+        setIsCommentComposerOpen(false);
+        return;
+      }
+
+      onCommentDiscardRequest(cardId);
+    };
+
+    document.addEventListener("mousedown", handleOutsidePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsidePointerDown);
+    };
+  }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest]);
 
   const handleSubmitComment = async () => {
     const nextCommentText = commentDraft.trim();
@@ -1577,7 +1686,7 @@ function CampaignCard({
         </div>
 
         {isCommentComposerOpen && (
-          <div className="campaign-comment-composer">
+          <div ref={commentComposerRef} className="campaign-comment-composer">
             <div className="campaign-comment-input-wrap">
               <textarea
                 ref={commentInputRef}
