@@ -481,11 +481,11 @@
 .campaign-comment-submit {
   position: absolute;
   right: 0;
-  bottom: 0.15rem;
+  bottom: 0.55rem;
   width: 1.9rem;
   height: 1.9rem;
   border: none;
-  border-radius: 9999px;
+  border-radius: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -499,7 +499,8 @@
 
 .campaign-comment-submit:hover,
 .campaign-comment-submit:focus-visible {
-  color: #16a34a;
+  color: #ffffff;
+  background-color: #16a34a;
   outline: none;
 }
 

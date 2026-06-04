@@ -48,7 +48,7 @@ export function bytesToHex(bytes: Uint8Array): string {
 // ─── Script args encoding ─────────────────────────────────────────────────────
 
 /** args for selector 0 – create_campaign
- *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)]
+ *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
  */
 export function encodeCreateCampaignArgs(
   startDurationSecs: bigint,
@@ -56,7 +56,8 @@ export function encodeCreateCampaignArgs(
   campaignType: CampaignType,
   maximumAmount: bigint,
   auxAmount: bigint,
-  randomnessHash: Uint8Array
+  randomnessHash: Uint8Array,
+  rewardCount: bigint
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
@@ -66,7 +67,8 @@ export function encodeCreateCampaignArgs(
     new Uint8Array([campaignType]),
     u64LE(maximumAmount),
     u64LE(auxAmount),
-    randomnessHash
+    randomnessHash,
+    u64LE(rewardCount)
   );
 }
 

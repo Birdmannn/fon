@@ -17,8 +17,8 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         }
     };
 
-    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)]
-    if args.len() < 65 {
+    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
+    if args.len() < 73 {
         return Err(Error::InvalidCampaignArgs);
     }
 
@@ -29,6 +29,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     let aux_amount = u64::from_le_bytes(args[25..33].try_into().unwrap());
     let mut randomness_hash = [0u8; 32];
     randomness_hash.copy_from_slice(&args[33..65]);
+    let reward_count = u64::from_le_bytes(args[65..73].try_into().unwrap());
 
     if !is_campaign_creation()? {
         return Err(Error::InvalidCampaignArgs);
@@ -70,7 +71,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         maximum_amount,
         current_deposits: 0,
         status: CampaignStatus::Created,
-        reward_count: 0,
+        reward_count,
         randomness_hash,
         summary,
         aux_amount,

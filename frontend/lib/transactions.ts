@@ -38,11 +38,12 @@ export async function sendCreateCampaign(
     campaignType: CampaignType;
     maximumAmountCkb: bigint;
     auxAmountCkb: bigint; // ticket_price for Raffle (in CKB), 0 otherwise
+    rewardCount: bigint;
     summary: string;
     randomnessHash: Uint8Array;
   }
 ): Promise<string> {
-  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, summary, randomnessHash } = opts;
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, summary, randomnessHash } = opts;
   const maximumAmount = maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
 
@@ -66,7 +67,8 @@ export async function sendCreateCampaign(
     campaignType,
     maximumAmount,
     auxAmount,
-    randomnessHash
+    randomnessHash,
+    rewardCount
   );
 
   // Campaign cell data (174 bytes).
@@ -79,7 +81,7 @@ export async function sendCreateCampaign(
     maximumAmount,
     currentDeposits: 0n,
     status: CampaignStatus.Created,
-    rewardCount: 0n,
+    rewardCount,
     randomnessHash,
     summary: encodeSummary(summary),
     auxAmount,
