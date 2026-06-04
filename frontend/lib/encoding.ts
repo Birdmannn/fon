@@ -48,22 +48,25 @@ export function bytesToHex(bytes: Uint8Array): string {
 // ─── Script args encoding ─────────────────────────────────────────────────────
 
 /** args for selector 0 – create_campaign
- *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)]
+ *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)]
  */
 export function encodeCreateCampaignArgs(
   startDurationSecs: bigint,
   taskDurationSecs: bigint,
   campaignType: CampaignType,
   maximumAmount: bigint,
-  auxAmount: bigint
+  auxAmount: bigint,
+  randomnessHash: Uint8Array
 ): Uint8Array {
+  if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
     new Uint8Array([Selector.CreateCampaign]),
     u64LE(startDurationSecs),
     u64LE(taskDurationSecs),
     new Uint8Array([campaignType]),
     u64LE(maximumAmount),
-    u64LE(auxAmount)
+    u64LE(auxAmount),
+    randomnessHash
   );
 }
 

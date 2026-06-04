@@ -6,6 +6,7 @@ import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "luc
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
+import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
 import { sendCreateCampaign } from "@/lib/transactions";
 
 const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
@@ -160,6 +161,7 @@ type DraftRecord = {
   status?: DraftRecordStatus;
   txHash?: string | null;
   publishError?: string | null;
+  randomnessPreimage?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -1117,7 +1119,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       summaryDraft: string,
       draftStatus: DraftRecordStatus,
       txHashValue: string | null,
-      publishError: string | null
+      publishError: string | null,
+      randomnessPreimage: string | null = null
     ) => {
       const creatorAddress = await getCreatorAddress();
 
@@ -1144,6 +1147,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         status: draftStatus,
         txHash: txHashValue,
         publishError,
+        randomnessPreimage,
       };
     },
     [
@@ -1165,13 +1169,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       summaryDraft: string,
       draftStatus: DraftRecordStatus,
       txHashValue: string | null = null,
-      publishError: string | null = null
+      publishError: string | null = null,
+      randomnessPreimage: string | null = null
     ) => {
       setDraftSaveStatus("saving");
       setDraftSaveError("");
 
       try {
-        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError);
+        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage);
         const response = await fetch(activeDraftRecordId ? `/api/campaign-records/${activeDraftRecordId}` : "/api/campaign-records", {
           method: activeDraftRecordId ? "PATCH" : "POST",
           headers: {
@@ -1222,6 +1227,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             status: draftStatus,
             txHash: txHashValue,
             publishError,
+            randomnessPreimage,
             updatedAt: new Date().toISOString(),
           };
 
@@ -1442,6 +1448,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const summaryToPublish = isModal
         ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
         : generatedOnchainSummary;
+      const randomnessCommitment = shouldCollectRaffleTicketPrice ? createRandomnessCommitment() : null;
+      const randomnessHash = randomnessCommitment?.commitment ?? new Uint8Array(32);
+      const randomnessPreimageHex = randomnessCommitment ? randomnessPreimageToHex(randomnessCommitment.preimage) : null;
 
       const hash = await sendCreateCampaign(signer, {
         startDurationSecs: startSecs,
@@ -1450,11 +1459,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         maximumAmountCkb: maxCkb,
         auxAmountCkb,
         summary: summaryToPublish,
+        randomnessHash,
       });
 
       if (isModal && activeDraftRecordId) {
         try {
-          await persistDraftRecord(summaryToPublish, "published", hash, null);
+          await persistDraftRecord(summaryToPublish, "published", hash, null, randomnessPreimageHex);
         } catch {
           // Keep the publish success state even if the off-chain patch fails.
         }
