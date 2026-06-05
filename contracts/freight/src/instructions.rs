@@ -17,8 +17,8 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         }
     };
 
-    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)]
-    if args.len() < 33 {
+    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
+    if args.len() < 73 {
         return Err(Error::InvalidCampaignArgs);
     }
 
@@ -27,6 +27,9 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     let campaign_type_byte = args[16];
     let maximum_amount = u64::from_le_bytes(args[17..25].try_into().unwrap());
     let aux_amount = u64::from_le_bytes(args[25..33].try_into().unwrap());
+    let mut randomness_hash = [0u8; 32];
+    randomness_hash.copy_from_slice(&args[33..65]);
+    let reward_count = u64::from_le_bytes(args[65..73].try_into().unwrap());
 
     if !is_campaign_creation()? {
         return Err(Error::InvalidCampaignArgs);
@@ -68,8 +71,8 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         maximum_amount,
         current_deposits: 0,
         status: CampaignStatus::Created,
-        reward_count: 0,
-        randomness_hash: [0u8; 32],
+        reward_count,
+        randomness_hash,
         summary,
         aux_amount,
     };
@@ -283,6 +286,58 @@ pub fn refund(_args: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
+fn compare_participants(left: &ParticipantEntry, right: &ParticipantEntry) -> core::cmp::Ordering {
+    left.participant.joined_at
+        .cmp(&right.participant.joined_at)
+        .then_with(|| left.participant.participant_address.cmp(&right.participant.participant_address))
+        .then_with(|| left.participant.campaign_tx_hash.cmp(&right.participant.campaign_tx_hash))
+        .then_with(|| left.participant.campaign_index.cmp(&right.participant.campaign_index))
+}
+
+fn derive_shuffle_seed(revealed: &[u8; 32], participants_len: usize, campaign_tx_hash: &[u8; 32], campaign_index: u32) -> [u8; 32] {
+    let mut material = [0u8; 32 + 32 + 4 + 8];
+    material[0..32].copy_from_slice(revealed);
+    material[32..64].copy_from_slice(campaign_tx_hash);
+    material[64..68].copy_from_slice(&campaign_index.to_le_bytes());
+    material[68..76].copy_from_slice(&(participants_len as u64).to_le_bytes());
+    blake2b_256(&material)
+}
+
+fn derive_round_hash(seed: &[u8; 32], round: u64) -> [u8; 32] {
+    let mut material = [0u8; 40];
+    material[0..32].copy_from_slice(seed);
+    material[32..40].copy_from_slice(&round.to_le_bytes());
+    blake2b_256(&material)
+}
+
+fn draw_uniform_index(seed: &[u8; 32], round: &mut u64, upper_bound: usize) -> usize {
+    let range = upper_bound as u64;
+    let threshold = u64::MAX - (u64::MAX % range);
+
+    loop {
+        let round_hash = derive_round_hash(seed, *round);
+        *round = round.saturating_add(1);
+        let candidate = u64::from_le_bytes(round_hash[0..8].try_into().unwrap());
+        if candidate < threshold {
+            return (candidate % range) as usize;
+        }
+    }
+}
+
+fn deterministic_shuffle(participants: &mut [ParticipantEntry], seed: &[u8; 32]) {
+    if participants.len() <= 1 {
+        return;
+    }
+
+    let mut round = 0u64;
+    let mut i = participants.len();
+    while i > 1 {
+        i -= 1;
+        let j = draw_uniform_index(seed, &mut round, i + 1);
+        participants.swap(i, j);
+    }
+}
+
 pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     let campaign_data = load_cell_data(0, Source::GroupInput)?;
     let mut campaign = parse_campaign_data(&campaign_data)?;
@@ -296,7 +351,30 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
         return Err(Error::InvalidOperation);
     }
 
-    let requires_randomness = campaign.randomness_hash != [0u8; 32];
+    let campaign_input = load_input(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+    let outpoint = campaign_input.previous_output();
+    let mut campaign_tx_hash = [0u8; 32];
+    campaign_tx_hash.copy_from_slice(outpoint.tx_hash().as_slice());
+    let campaign_index = u32::from_le_bytes(outpoint.index().as_slice().try_into().unwrap());
+
+    let mut participants = collect_verified_participants(&campaign_tx_hash, campaign_index)?;
+    let participant_count = participants.len();
+    if participant_count == 0 {
+        return Err(Error::InvalidOperation);
+    }
+
+    participants.sort_by(compare_participants);
+
+    let winner_count = if campaign.reward_count == 0 {
+        participant_count
+    } else {
+        campaign.reward_count as usize
+    };
+    if winner_count == 0 || winner_count > participant_count {
+        return Err(Error::InvalidOperation);
+    }
+
+    let requires_randomness = campaign.randomness_hash != [0u8; 32] && participant_count > winner_count;
     if requires_randomness {
         if args.len() < 32 {
             return Err(Error::InvalidVerificationArgs);
@@ -305,27 +383,19 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
         if blake2b_256(revealed) != campaign.randomness_hash {
             return Err(Error::RandomnessMismatch);
         }
+        let seed = derive_shuffle_seed(revealed, participant_count, &campaign_tx_hash, campaign_index);
+        deterministic_shuffle(&mut participants, &seed);
     }
 
-    let batch_size = count_participant_inputs()?;
-    if batch_size == 0 {
-        return Err(Error::InvalidOperation);
-    }
+    let winners = &participants[..winner_count];
+    let reward_per_participant = campaign.current_deposits
+        .checked_div(winner_count as u64)
+        .ok_or(Error::InvalidOperation)?;
 
-    let reward_per_participant = if campaign.reward_count == 0 {
-        campaign.current_deposits
-            .checked_div(batch_size as u64)
-            .ok_or(Error::InvalidOperation)?
-    } else {
-        campaign.current_deposits
-            .checked_div(campaign.reward_count)
-            .ok_or(Error::InvalidOperation)?
-    };
-
-    validate_batch_delivery(reward_per_participant)?;
+    validate_batch_delivery_for_winners(winners, reward_per_participant)?;
 
     let total_payout = reward_per_participant
-        .checked_mul(batch_size as u64)
+        .checked_mul(winner_count as u64)
         .ok_or(Error::AmountMismatch)?;
     campaign.current_deposits = campaign.current_deposits
         .checked_sub(total_payout)

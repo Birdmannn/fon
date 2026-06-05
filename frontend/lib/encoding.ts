@@ -1,3 +1,4 @@
+import type { ccc } from "@ckb-ccc/connector-react";
 import { CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -45,25 +46,38 @@ export function bytesToHex(bytes: Uint8Array): string {
   return "0x" + Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+export function lockScriptToAddressBytes(lock: ccc.ScriptLike): Uint8Array {
+  const lockArgs = typeof lock.args === "string" ? hexToBytes(lock.args) : hexToBytes(String(lock.args));
+  if (lockArgs.length < 20) {
+    throw new Error("Lock args too short to derive address bytes");
+  }
+  return lockArgs.slice(0, 20);
+}
+
 // ─── Script args encoding ─────────────────────────────────────────────────────
 
 /** args for selector 0 – create_campaign
- *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)]
+ *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
  */
 export function encodeCreateCampaignArgs(
   startDurationSecs: bigint,
   taskDurationSecs: bigint,
   campaignType: CampaignType,
   maximumAmount: bigint,
-  auxAmount: bigint
+  auxAmount: bigint,
+  randomnessHash: Uint8Array,
+  rewardCount: bigint
 ): Uint8Array {
+  if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
     new Uint8Array([Selector.CreateCampaign]),
     u64LE(startDurationSecs),
     u64LE(taskDurationSecs),
     new Uint8Array([campaignType]),
     u64LE(maximumAmount),
-    u64LE(auxAmount)
+    u64LE(auxAmount),
+    randomnessHash,
+    u64LE(rewardCount)
   );
 }
 

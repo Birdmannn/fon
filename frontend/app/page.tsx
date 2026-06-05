@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Bookmark,
+  Check,
   CheckCircle,
   Coins,
   Copy,
@@ -15,6 +16,7 @@ import {
   Repeat2,
   RotateCcw,
   Search,
+  Share2,
   Ticket,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -26,7 +28,7 @@ import CreateCampaignModalContent, {
 } from "@/app/create/_components/CreateCampaignModalContent";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
-import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
+import { fetchCampaigns, sendDeposit, sendVerifyParticipantRaffle, CampaignCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
@@ -65,11 +67,29 @@ const CREATE_INFO_PREVIEW_ITEMS = [
   "The full title, description, mentions, and review snapshot are saved off-chain.",
 ];
 
+const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
+const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
+const HOME_INFO_TYPES_HEADING = "Freight types:";
+const HOME_INFO_TYPE_ITEMS = [
+  "1. Simple Task — a basic freight for posting a task without pooled deposits.",
+  "2. Funded Task — a task funded up front so rewards can be distributed from the pool.",
+  "3. Crowdfunding — an open funding freight where supporters deposit toward a shared pool.",
+  "4. Timed Challenge — a challenge with a defined start and end window.",
+  "5. Raffle — a ticket-based freight where entrants buy tickets for a randomized outcome.",
+];
+
 const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
 const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge", "Raffle"];
 const TYPE_TAGS = ["SimpleTask", "FundedTask", "Crowdfunding", "TimedChallenge", "Raffle"];
 const MOUNTABLES_PLACEHOLDER_MESSAGE = "NO MOUNTABLES YET. RAFFLE RAFFLE RAFFLE.   ";
 const CAMPAIGN_CARD_PREVIEW_MAX_CHARS = 280;
+
+type CampaignComment = {
+  text: string;
+  creatorAddress?: string | null;
+  creatorHandle?: string | null;
+  createdAt?: string;
+};
 
 type CampaignRecord = {
   _id?: string;
@@ -77,10 +97,17 @@ type CampaignRecord = {
   description?: string;
   campaignType?: number;
   summaryDraft?: string;
+  argsDraft?: {
+    taskStartDelayHours?: string;
+    taskDurationHours?: string;
+    maxAmountCkb?: string;
+    auxAmountCkb?: string;
+  };
   socialMetadata?: {
     mentions?: string[];
     comments?: unknown[];
     likeCount?: number;
+    likedByAddresses?: string[];
     bookmarkCount?: number;
     reshareCount?: number;
   };
@@ -88,6 +115,7 @@ type CampaignRecord = {
   creatorHandle?: string | null;
   status?: "draft" | "published" | "publish_failed";
   txHash?: string | null;
+  publishError?: string | null;
 };
 
 type MergedCampaign = {
@@ -96,7 +124,7 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success";
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
@@ -249,6 +277,18 @@ function formatCompactCampaignCount(count: number) {
   }).format(count).toLowerCase();
 }
 
+function deriveChainLabel(client: ccc.Client) {
+  if (client instanceof ccc.ClientPublicMainnet) {
+    return "Mainnet";
+  }
+
+  if (client instanceof ccc.ClientPublicTestnet) {
+    return "Testnet";
+  }
+
+  return "Custom";
+}
+
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -258,9 +298,9 @@ export default function Home() {
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
-  const [activeInfoButtonRect, setActiveInfoButtonRect] = useState<DOMRect | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
+  const [showStickyHeader, setShowStickyHeader] = useState(true);
   const [createResetSignal, setCreateResetSignal] = useState(0);
   const [createStepBackSignal, setCreateStepBackSignal] = useState(0);
   const [createModalStep, setCreateModalStep] = useState<CreateModalStep>("compose");
@@ -273,7 +313,21 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
+  const [pendingCommentDiscardId, setPendingCommentDiscardId] = useState<string | null>(null);
+  const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
+  const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
+  const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
+  const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
+  const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
+  const [ticketPurchaseError, setTicketPurchaseError] = useState("");
+  const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
+  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletBalance, setWalletBalance] = useState<bigint | null>(null);
+  const [walletInfoError, setWalletInfoError] = useState("");
+  const [walletInfoLoading, setWalletInfoLoading] = useState(false);
+  const [walletCopyFeedback, setWalletCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -309,34 +363,99 @@ export default function Home() {
     }
   };
 
-  const refreshHeaderInfoButtonRect = useCallback(() => {
-    const button = headerInfoButtonRef.current;
-    if (!button) return;
-
-    setActiveInfoButtonRect(button.getBoundingClientRect());
+  const resetTicketPurchaseState = useCallback(() => {
+    setTicketPurchaseCampaign(null);
+    setTicketPurchaseQuantity("1");
+    setTicketPurchaseError("");
+    setIsPurchasingTickets(false);
   }, []);
+  const walletChainLabel = useMemo(() => deriveChainLabel(client), [client]);
 
   const showInfoModalForInteraction = useCallback((interaction: "hover" | "click") => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    refreshHeaderInfoButtonRect();
+    resetTicketPurchaseState();
     setInfoModalMode("about");
     setSaveDraftPromptError("");
     setInfoModalInteraction(interaction);
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, [refreshHeaderInfoButtonRect]);
+  }, [resetTicketPurchaseState]);
 
   const openSaveDraftConfirmModal = useCallback(() => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    refreshHeaderInfoButtonRect();
     setInfoModalMode("save-draft-confirm");
     setSaveDraftPromptError("");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, [refreshHeaderInfoButtonRect]);
+  }, []);
+
+  const handleCopyWalletAddress = useCallback(async () => {
+    if (!walletAddress) {
+      return;
+    }
+
+    try {
+      await copyText(walletAddress);
+      setWalletCopyFeedback("copied");
+      window.setTimeout(() => setWalletCopyFeedback("idle"), 1200);
+    } catch {
+      setWalletCopyFeedback("error");
+      window.setTimeout(() => setWalletCopyFeedback("idle"), 1200);
+    }
+  }, [walletAddress]);
+
+  useEffect(() => {
+    if (!signer) {
+      setShowWalletInfoModal(false);
+      setWalletAddress("");
+      setWalletBalance(null);
+      setWalletInfoError("");
+      setWalletInfoLoading(false);
+      return;
+    }
+
+    if (!showWalletInfoModal) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setWalletInfoLoading(true);
+    setWalletInfoError("");
+
+    void (async () => {
+      try {
+        const [nextAddress, nextBalance] = await Promise.all([
+          signer.getRecommendedAddress(),
+          signer.getBalance(),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setWalletAddress(nextAddress ?? "");
+        setWalletBalance(nextBalance);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setWalletInfoError(error instanceof Error ? error.message : "Unable to load wallet details");
+      } finally {
+        if (!cancelled) {
+          setWalletInfoLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showWalletInfoModal, signer]);
 
   const openInfoModalFromHover = () => {
     clearInfoCloseTimer();
@@ -376,10 +495,11 @@ export default function Home() {
       setInfoModalMode("about");
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
-      setActiveInfoButtonRect(null);
+      setSubmissionErrorMessage("");
+      resetTicketPurchaseState();
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
-  }, [showInfoModal, isInfoModalClosing]);
+  }, [showInfoModal, isInfoModalClosing, resetTicketPurchaseState]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
@@ -397,10 +517,44 @@ export default function Home() {
     }, INFO_MODAL_ANIMATION_MS);
   }, [showCreateModal, isCreateModalClosing]);
 
+  const closeInfoAndCreateModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearSubmissionSuccessTimer();
+    clearInfoHideTimer();
+    clearCreateHideTimer();
+
+    if (showInfoModal && !isInfoModalClosing) {
+      setIsInfoModalClosing(true);
+      infoHideTimerRef.current = setTimeout(() => {
+        setShowInfoModal(false);
+        setIsInfoModalClosing(false);
+        setInfoModalInteraction("hover");
+        setInfoModalMode("about");
+        setSaveDraftPromptError("");
+        setSubmissionSuccessTxHash("");
+        infoHideTimerRef.current = null;
+      }, INFO_MODAL_ANIMATION_MS);
+    }
+
+    if (showCreateModal && !isCreateModalClosing) {
+      setIsCreateModalClosing(true);
+      createHideTimerRef.current = setTimeout(() => {
+        setShowCreateModal(false);
+        setIsCreateModalClosing(false);
+        setCreateModalStep("compose");
+        setPreviewError("");
+        setSaveDraftPromptError("");
+        setIsCreateDraftListOpen(false);
+        createHideTimerRef.current = null;
+      }, INFO_MODAL_ANIMATION_MS);
+    }
+  }, [isCreateModalClosing, isInfoModalClosing, showCreateModal, showInfoModal]);
+
   const openSubmissionSuccessInfoModal = useCallback((txHash: string) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
+    setSubmissionErrorMessage("");
     setSubmissionSuccessTxHash(txHash);
     setInfoModalMode("submission-success");
     setInfoModalInteraction("click");
@@ -410,6 +564,80 @@ export default function Home() {
       closeInfoModal();
     }, 2500);
   }, [closeInfoModal]);
+
+  const openSubmissionErrorInfoModal = useCallback((message: string) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setSubmissionSuccessTxHash("");
+    setSubmissionErrorMessage(message);
+    setInfoModalMode("submission-error");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, []);
+
+  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setTicketPurchaseCampaign(campaign);
+    setTicketPurchaseQuantity("1");
+    setTicketPurchaseError("");
+    setIsPurchasingTickets(false);
+    setInfoModalMode("ticket-purchase");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, []);
+
+  const handleTicketPurchaseSubmit = useCallback(async () => {
+    if (!signer || !ticketPurchaseCampaign) {
+      return;
+    }
+
+    const quantity = Number.parseInt(ticketPurchaseQuantity.trim(), 10);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setTicketPurchaseError("Enter a valid number of tickets");
+      return;
+    }
+
+    const requestedTickets = BigInt(quantity);
+    if (requestedTickets !== 1n) {
+      setTicketPurchaseError("One ticket at a time for now");
+      return;
+    }
+
+    const totalCostShannons = ticketPurchaseCampaign.data.auxAmount;
+    if (totalCostShannons <= 0n) {
+      setTicketPurchaseError("Ticket price is unavailable for this raffle");
+      return;
+    }
+
+    const remainingCapacity = ticketPurchaseCampaign.data.maximumAmount > ticketPurchaseCampaign.data.currentDeposits
+      ? ticketPurchaseCampaign.data.maximumAmount - ticketPurchaseCampaign.data.currentDeposits
+      : 0n;
+    const remainingTickets = ticketPurchaseCampaign.data.auxAmount > 0n
+      ? remainingCapacity / ticketPurchaseCampaign.data.auxAmount
+      : 0n;
+    if (remainingTickets <= 0n || totalCostShannons > remainingCapacity) {
+      setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
+      return;
+    }
+
+    setIsPurchasingTickets(true);
+    setTicketPurchaseError("");
+
+    try {
+      const txHash = await sendVerifyParticipantRaffle(signer, ticketPurchaseCampaign);
+      openSubmissionSuccessInfoModal(txHash);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to buy tickets";
+      setTicketPurchaseError(message);
+      setIsPurchasingTickets(false);
+      openSubmissionErrorInfoModal(message);
+    }
+  }, [openSubmissionErrorInfoModal, openSubmissionSuccessInfoModal, signer, ticketPurchaseCampaign, ticketPurchaseQuantity]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -423,6 +651,7 @@ export default function Home() {
 
   const requestCloseCreateModal = useCallback(() => {
     setPendingDraftSelectionId(null);
+    setPendingCloseAfterWalletConnect(false);
     if (createModalContentRef.current?.hasDraftableChanges()) {
       openSaveDraftConfirmModal();
       return;
@@ -432,6 +661,7 @@ export default function Home() {
   }, [finalizeCloseCreateModal, openSaveDraftConfirmModal]);
 
   const handleDraftSelectionRequest = useCallback((draftId: string) => {
+    setPendingCloseAfterWalletConnect(false);
     setPendingDraftSelectionId(draftId);
     if (createModalContentRef.current?.hasDraftableChanges()) {
       openSaveDraftConfirmModal();
@@ -441,10 +671,54 @@ export default function Home() {
     createModalContentRef.current?.applyDraftSelection(draftId);
   }, [openSaveDraftConfirmModal]);
 
+  const handleCommentDiscardRequest = useCallback((cardId: string) => {
+    setPendingCommentDiscardId(cardId);
+    setCommentDiscardDecision(null);
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("discard-comment-confirm");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, []);
+
+  const handleCommentDiscardChoice = useCallback((discard: boolean) => {
+    if (!pendingCommentDiscardId) {
+      closeInfoModal();
+      return;
+    }
+
+    setCommentDiscardDecision({ cardId: pendingCommentDiscardId, discard });
+    setPendingCommentDiscardId(null);
+    closeInfoModal();
+  }, [closeInfoModal, pendingCommentDiscardId]);
+
   const handleSaveDraftChoice = useCallback(async (shouldSave: boolean) => {
     try {
-      if (shouldSave) {
+      if (!shouldSave) {
+        if (pendingDraftSelectionId) {
+          createModalContentRef.current?.applyDraftSelection(pendingDraftSelectionId);
+          setPendingDraftSelectionId(null);
+          closeInfoModal();
+          return;
+        }
+
+        setPendingDraftSelectionId(null);
+        setPendingCloseAfterWalletConnect(false);
+        closeInfoModal();
+        finalizeCloseCreateModal();
+        return;
+      }
+
+      try {
         await createModalContentRef.current?.saveDraftFromClose();
+      } catch (error) {
+        if (error instanceof Error && error.message === "Connect wallet to manage drafts") {
+          setPendingCloseAfterWalletConnect(!pendingDraftSelectionId);
+          open();
+          return;
+        }
+        throw error;
       }
 
       if (pendingDraftSelectionId) {
@@ -455,13 +729,13 @@ export default function Home() {
       }
 
       createModalContentRef.current?.discardDraftSession();
-      setPendingDraftSelectionId(null);
+      setPendingCloseAfterWalletConnect(false);
       closeInfoModal();
       finalizeCloseCreateModal();
     } catch (error) {
       setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
     }
-  }, [closeInfoModal, finalizeCloseCreateModal, pendingDraftSelectionId]);
+  }, [closeInfoModal, finalizeCloseCreateModal, open, pendingDraftSelectionId]);
 
   const resetCreateModal = useCallback(() => {
     setCreateModalStep("compose");
@@ -522,6 +796,36 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!pendingCloseAfterWalletConnect || !signer) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        await createModalContentRef.current?.saveDraftFromClose();
+        if (cancelled) {
+          return;
+        }
+        createModalContentRef.current?.discardDraftSession();
+        setPendingCloseAfterWalletConnect(false);
+        closeInfoModal();
+        finalizeCloseCreateModal();
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [closeInfoModal, finalizeCloseCreateModal, pendingCloseAfterWalletConnect, signer]);
+
+  useEffect(() => {
     if (!showCreateModal) {
       return;
     }
@@ -560,24 +864,6 @@ export default function Home() {
     };
   }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
-  useEffect(() => {
-    if (!showInfoModal) return;
-
-    refreshHeaderInfoButtonRect();
-
-    const handleViewportChange = () => {
-      refreshHeaderInfoButtonRect();
-    };
-
-    window.addEventListener("resize", handleViewportChange);
-    window.addEventListener("scroll", handleViewportChange, true);
-
-    return () => {
-      window.removeEventListener("resize", handleViewportChange);
-      window.removeEventListener("scroll", handleViewportChange, true);
-    };
-  }, [showInfoModal, refreshHeaderInfoButtonRect]);
-
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
@@ -595,12 +881,37 @@ export default function Home() {
         </a>
       </p>
     </div>
+  ) : infoModalMode === "submission-error" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-red-500">Oops, an error occurred</p>
+      <p className="create-info-constraint-item text-red-500 break-words">
+        <span>{submissionErrorMessage}</span>
+      </p>
+    </div>
+  ) : infoModalMode === "discard-comment-confirm" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Discard comment?</p>
+    </div>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
       {saveDraftPromptError ? (
         <p className="create-info-constraint-item text-red-500">
           <span>{saveDraftPromptError}</span>
+        </p>
+      ) : null}
+    </div>
+  ) : infoModalMode === "ticket-purchase" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">How many tickets?</p>
+      {/* {ticketPurchaseCampaign ? (
+        <p className="create-info-constraint-item text-gray-500">
+          <span>1 ticket = {formatCkbAmount(ticketPurchaseCampaign.data.auxAmount)} CKB</span>
+        </p>
+      ) : null} */}
+      {ticketPurchaseError ? (
+        <p className="create-info-constraint-item text-red-500">
+          <span>{ticketPurchaseError}</span>
         </p>
       ) : null}
     </div>
@@ -649,11 +960,64 @@ export default function Home() {
               <span>{item}</span>
             </p>
           ))}
+          {!signer && <p className="mt-3 text-yellow-600 font-semibold">Info: Wallet not connected.</p>}
         </>
       )}
     </div>
-  ) : null;
-  const infoModalActions = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+  ) : (
+    <div className="create-info-constraints-copy">
+      <p>{HOME_INFO_MOUNTABLES_HEADING}</p>
+      {HOME_INFO_MOUNTABLES_ITEMS.map((item) => (
+        <p key={item} className="create-info-constraint-item">
+          <span>{item}</span>
+        </p>
+      ))}
+      <p className="mt-3">{HOME_INFO_TYPES_HEADING}</p>
+      {HOME_INFO_TYPE_ITEMS.map((item) => (
+        <p key={item} className="create-info-constraint-item">
+          <span>{item}</span>
+        </p>
+      ))}
+    </div>
+  );
+  const infoModalActions = infoModalMode === "ticket-purchase" ? (
+    <form
+      className="create-info-confirm-actions"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleTicketPurchaseSubmit();
+      }}
+    >
+      <input
+        type="number"
+        min="1"
+        step="1"
+        inputMode="numeric"
+        value={ticketPurchaseQuantity}
+        onChange={(event) => {
+          setTicketPurchaseQuantity(event.target.value);
+          if (ticketPurchaseError) {
+            setTicketPurchaseError("");
+          }
+        }}
+        onFocus={(event) => {
+          if (event.currentTarget.value.length > 0) {
+            event.currentTarget.select();
+          }
+        }}
+        className="create-info-ticket-input"
+        aria-label="Number of tickets"
+        disabled={isPurchasingTickets}
+      />
+      <button
+        type="submit"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isPurchasingTickets}
+      >
+        {isPurchasingTickets ? "Processing..." : "Continue"}
+      </button>
+    </form>
+  ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
         type="button"
@@ -670,13 +1034,37 @@ export default function Home() {
         Yes
       </button>
     </div>
+  ) : infoModalMode === "discard-comment-confirm" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn"
+        onClick={() => void handleCommentDiscardChoice(false)}
+      >
+        No
+      </button>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => void handleCommentDiscardChoice(true)}
+      >
+        Yes
+      </button>
+    </div>
   ) : undefined;
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
-      <div className="w-full max-w-2xl flex flex-col gap-6">
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="header-info-wrap">
+      <div className="w-full max-w-2xl flex flex-col gap-6 pt-16">
+        <div
+          className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          onClick={showCreateModal ? (event) => {
+            if (event.target === event.currentTarget) {
+              requestCloseCreateModal();
+            }
+          } : undefined}
+        >
+          <div className="header-info-wrap" onClick={(event) => event.stopPropagation()}>
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
                 ref={headerInfoButtonRef}
@@ -693,7 +1081,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="header-right-actions">
+          <div className="header-right-actions" onClick={(event) => event.stopPropagation()}>
             {showCreateModal && (
               <div
                 className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
@@ -730,12 +1118,53 @@ export default function Home() {
 
             <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
               {signer ? (
-                <button
-                  onClick={disconnect}
-                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+                <div
+                  className="wallet-info-wrap"
+                  onMouseEnter={() => setShowWalletInfoModal(true)}
+                  onMouseLeave={() => setShowWalletInfoModal(false)}
                 >
-                  Disconnect
-                </button>
+                  <button
+                    onClick={disconnect}
+                    className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+                  >
+                    Disconnect
+                  </button>
+                  {showWalletInfoModal && (
+                    <div className="wallet-info-modal" role="dialog" aria-label="Wallet details">
+                      <p className="wallet-info-heading">Wallet details</p>
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">Address</span>
+                        <div className="wallet-info-address-row">
+                          <span className="wallet-info-address">{walletAddress || "Loading…"}</span>
+                          <button
+                            type="button"
+                            className="wallet-info-copy-btn"
+                            onClick={() => void handleCopyWalletAddress()}
+                            title={walletAddress}
+                            aria-label="Copy wallet address"
+                          >
+                            <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        </div>
+                        {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
+                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
+                      </div>
+                      <div className="wallet-info-grid">
+                        <div className="wallet-info-section">
+                          <span className="wallet-info-label">Balance</span>
+                          <span className="wallet-info-value">
+                            {walletInfoLoading ? "Loading…" : walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--"}
+                          </span>
+                        </div>
+                        <div className="wallet-info-section">
+                          <span className="wallet-info-label">Chain</span>
+                          <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
+                        </div>
+                      </div>
+                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <button
                   onClick={open}
@@ -750,17 +1179,12 @@ export default function Home() {
           <FreightInfoModal
             open={showInfoModal}
             closing={isInfoModalClosing}
-            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : "Freight information modal"}
+            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
-            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
-            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
-            activeButtonRect={activeInfoButtonRect}
+            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : "Close Freight information modal"}
+            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase"}
             onRequestClose={closeInfoModal}
-            onTriggerToggle={(event) => {
-              event.stopPropagation();
-              toggleInfoModal();
-            }}
             onKeepOpen={keepInfoModalOpen}
             onScheduleClose={scheduleCloseInfoModal}
           />
@@ -772,7 +1196,12 @@ export default function Home() {
           </div>
         )}
 
-        <CampaignListHeader client={client} />
+        <CampaignListHeader
+          client={client}
+          onCommentDiscardRequest={handleCommentDiscardRequest}
+          commentDiscardDecision={commentDiscardDecision}
+          onTicketPurchaseRequest={openTicketPurchaseInfoModal}
+        />
       </div>
 
       {showCreateModal && (
@@ -837,7 +1266,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client }: { client: ccc.Client }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -850,6 +1279,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const campaignsRef = useRef<CampaignCell[]>(campaigns);
 
   const buildRecordsByTxHash = useCallback((records: CampaignRecord[]) => {
     const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
@@ -864,7 +1294,12 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
     return nextRecordsByTxHash;
   }, []);
 
-  const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns: CampaignCell[] = campaigns) => {
+  useEffect(() => {
+    campaignsRef.current = campaigns;
+  }, [campaigns]);
+
+  const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns?: CampaignCell[]) => {
+    const activeVisibleCampaigns: CampaignCell[] = visibleCampaigns ?? campaignsRef.current;
     if (!preserveVisibleList) {
       setLoading(true);
     }
@@ -886,7 +1321,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
       .then(([chainCampaigns, records]) => {
         const nextRecordsByTxHash = buildRecordsByTxHash(records);
 
-        if (!preserveVisibleList || visibleCampaigns.length === 0) {
+        if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
           setCampaigns(chainCampaigns);
           setRecordsByTxHash(nextRecordsByTxHash);
           setPendingCampaigns(null);
@@ -895,7 +1330,7 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
           return;
         }
 
-        const currentKeys = new Set(visibleCampaigns.map(getCampaignIdentity));
+        const currentKeys = new Set(activeVisibleCampaigns.map(getCampaignIdentity));
         let nextUnseenCount = 0;
 
         for (const campaign of chainCampaigns) {
@@ -1051,14 +1486,24 @@ function CampaignListHeader({ client }: { client: ccc.Client }) {
         </div>
       </div>
 
-      <CampaignList campaigns={filteredCampaigns} loading={loading} error={error} shouldScrollToNewest={shouldScrollToNewest} onScrolledToNewest={() => setShouldScrollToNewest(false)} />
+      <CampaignList
+        campaigns={filteredCampaigns}
+        loading={loading}
+        error={error}
+        shouldScrollToNewest={shouldScrollToNewest}
+        onScrolledToNewest={() => setShouldScrollToNewest(false)}
+        onCommentDiscardRequest={onCommentDiscardRequest}
+        commentDiscardDecision={commentDiscardDecision}
+        onTicketPurchaseRequest={onTicketPurchaseRequest}
+      />
     </>
   );
 }
 
-function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void }) {
+function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1070,6 +1515,34 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      if (!signer) {
+        if (!cancelled) {
+          setCurrentWalletAddress(null);
+        }
+        return;
+      }
+
+      try {
+        const nextWalletAddress = await signer.getRecommendedAddress();
+        if (!cancelled) {
+          setCurrentWalletAddress(nextWalletAddress ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentWalletAddress(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [signer]);
 
   useEffect(() => {
     if (!shouldScrollToNewest) {
@@ -1101,8 +1574,12 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             record={record}
             displayStatus={displayStatus}
             signer={signer ?? null}
+            currentWalletAddress={currentWalletAddress}
             nowMs={nowMs}
-            isHighlighted={index === 0 && !!signer}
+            isHighlighted={index === 99 && !!signer}
+            onCommentDiscardRequest={onCommentDiscardRequest}
+            commentDiscardDecision={commentDiscardDecision}
+            onTicketPurchaseRequest={onTicketPurchaseRequest}
           />
         </div>
       ))}
@@ -1115,17 +1592,26 @@ function CampaignCard({
   record,
   displayStatus,
   signer,
+  currentWalletAddress,
   nowMs,
   isHighlighted = false,
+  onCommentDiscardRequest,
+  commentDiscardDecision,
+  onTicketPurchaseRequest,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
+  currentWalletAddress: string | null;
   nowMs: number;
   isHighlighted?: boolean;
+  onCommentDiscardRequest: (cardId: string) => void;
+  commentDiscardDecision: { cardId: string; discard: boolean } | null;
+  onTicketPurchaseRequest: (campaign: CampaignCell) => void;
 }) {
   const { data, outPoint } = c;
+  const cardId = `${outPoint.txHash}:${outPoint.index}`;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
   const maxCkb = formatCkbAmount(data.maximumAmount);
@@ -1157,16 +1643,34 @@ function CampaignCard({
   const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
-
+  const rewardCountValue = Number(data.rewardCount);
+  const hasPendingRewardDistribution = rewardCountValue > 0 && Number(data.currentDeposits) > 0 && displayStatus === CampaignStatus.Active;
+  const initialComments = useMemo<CampaignComment[]>(() => (
+    Array.isArray(record?.socialMetadata?.comments)
+      ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
+      : []
+  ), [record?.socialMetadata?.comments]);
+  const initialLikedByAddresses = useMemo(() => (
+    Array.isArray(record?.socialMetadata?.likedByAddresses)
+      ? record.socialMetadata.likedByAddresses.map((value) => normalizeHash(value)).filter(Boolean)
+      : []
+  ), [record?.socialMetadata?.likedByAddresses]);
+  const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
+  const [likedByAddresses, setLikedByAddresses] = useState<string[]>(initialLikedByAddresses);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
-  const [comments, setComments] = useState(Array.isArray(record?.socialMetadata?.comments) ? record.socialMetadata.comments.length : 0);
+  const [commentList, setCommentList] = useState<CampaignComment[]>(initialComments);
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
-  const [userLiked, setUserLiked] = useState(false);
   const [userBookmarked, setUserBookmarked] = useState(false);
-  const [userCommented, setUserCommented] = useState(false);
   const [userReshared, setUserReshared] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [isSavingLike, setIsSavingLike] = useState(false);
+  const [isSavingComment, setIsSavingComment] = useState(false);
+  const [commentError, setCommentError] = useState("");
+  const commentComposerRef = useRef<HTMLDivElement>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
@@ -1174,11 +1678,111 @@ function CampaignCard({
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
+  const comments = commentList.length;
+  const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
+  const userCommented = normalizedCurrentWalletAddress.length > 0
+    && commentList.some((comment) => normalizeHash(comment.creatorAddress) === normalizedCurrentWalletAddress);
 
-  const handleLike = () => {
-    if (!isConnected) return;
-    setUserLiked(!userLiked);
-    setLikes((prev) => (userLiked ? prev - 1 : prev + 1));
+  useEffect(() => {
+    setLikes(record?.socialMetadata?.likeCount ?? 0);
+    setLikedByAddresses(initialLikedByAddresses);
+    setBookmarks(record?.socialMetadata?.bookmarkCount ?? 0);
+    setCommentList(initialComments);
+    setReshares(record?.socialMetadata?.reshareCount ?? 0);
+  }, [
+    initialComments,
+    initialLikedByAddresses,
+    record?.socialMetadata?.bookmarkCount,
+    record?.socialMetadata?.likeCount,
+    record?.socialMetadata?.reshareCount,
+  ]);
+
+  const buildCampaignRecordPayload = (nextSocialMetadata: {
+    comments: CampaignComment[];
+    likeCount: number;
+    likedByAddresses: string[];
+    bookmarkCount: number;
+    reshareCount: number;
+  }) => ({
+    title: record?.title ?? displayTitle,
+    description: record?.description ?? displayDescription,
+    campaignType: record?.campaignType ?? data.campaignType,
+    summaryDraft: record?.summaryDraft ?? onchainSummary,
+    argsDraft: {
+      taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
+      taskDurationHours: record?.argsDraft?.taskDurationHours ?? String(Number(data.taskDurationSecs) / 3600),
+      maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
+      auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
+    },
+    socialMetadata: {
+      mentions,
+      comments: nextSocialMetadata.comments,
+      likeCount: nextSocialMetadata.likeCount,
+      likedByAddresses: nextSocialMetadata.likedByAddresses,
+      bookmarkCount: nextSocialMetadata.bookmarkCount,
+      reshareCount: nextSocialMetadata.reshareCount,
+    },
+    creatorAddress: record?.creatorAddress ?? creatorAddress,
+    creatorHandle: record?.creatorHandle ?? creatorHandle,
+    status: record?.status ?? "published",
+    txHash: record?.txHash ?? outPoint.txHash,
+    publishError: record?.publishError ?? null,
+  });
+
+  useEffect(() => {
+    if (!commentDiscardDecision || commentDiscardDecision.cardId !== cardId) {
+      return;
+    }
+
+    if (commentDiscardDecision.discard) {
+      setCommentDraft("");
+      setCommentError("");
+      setIsCommentComposerOpen(false);
+    } else {
+      setIsCommentComposerOpen(true);
+    }
+  }, [cardId, commentDiscardDecision]);
+
+  const handleLike = async () => {
+    if (!isConnected || !record?._id || !normalizedCurrentWalletAddress || isSavingLike) {
+      return;
+    }
+
+    const previousLikedByAddresses = likedByAddresses;
+    const previousLikeCount = likes;
+    const nextLikedByAddresses = userLiked
+      ? likedByAddresses.filter((address) => address !== normalizedCurrentWalletAddress)
+      : [...likedByAddresses, normalizedCurrentWalletAddress];
+    const nextLikeCount = nextLikedByAddresses.length;
+
+    setLikedByAddresses(nextLikedByAddresses);
+    setLikes(nextLikeCount);
+    setIsSavingLike(true);
+
+    try {
+      const response = await fetch(`/api/campaign-records/${record._id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildCampaignRecordPayload({
+          comments: commentList,
+          likeCount: nextLikeCount,
+          likedByAddresses: nextLikedByAddresses,
+          bookmarkCount: bookmarks,
+          reshareCount: reshares,
+        })),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save like");
+      }
+    } catch {
+      setLikedByAddresses(previousLikedByAddresses);
+      setLikes(previousLikeCount);
+    } finally {
+      setIsSavingLike(false);
+    }
   };
 
   const handleBookmark = () => {
@@ -1189,8 +1793,99 @@ function CampaignCard({
 
   const handleComment = () => {
     if (!isConnected) return;
-    setUserCommented(!userCommented);
-    setComments((prev) => (userCommented ? prev - 1 : prev + 1));
+    setCommentError("");
+    setIsCommentComposerOpen((current) => !current);
+  };
+
+  useEffect(() => {
+    if (!isCommentComposerOpen) {
+      return;
+    }
+
+    const handleOutsidePointerDown = (event: MouseEvent) => {
+      if (!commentComposerRef.current) {
+        return;
+      }
+
+      if (commentComposerRef.current.contains(event.target as Node)) {
+        return;
+      }
+
+      if (commentDraft.trim().length === 0) {
+        setCommentError("");
+        setCommentDraft("");
+        if (commentInputRef.current) {
+          commentInputRef.current.style.height = "32px";
+        }
+        setIsCommentComposerOpen(false);
+        return;
+      }
+
+      onCommentDiscardRequest(cardId);
+    };
+
+    document.addEventListener("mousedown", handleOutsidePointerDown);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsidePointerDown);
+    };
+  }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest]);
+
+  const handleSubmitComment = async () => {
+    const nextCommentText = commentDraft.trim();
+    if (!nextCommentText) {
+      setCommentError("Comment cannot be empty");
+      return;
+    }
+
+    if (!record?._id) {
+      setCommentError("Comments are not available for this campaign yet");
+      return;
+    }
+
+    setIsSavingComment(true);
+    setCommentError("");
+
+    try {
+      if (!currentWalletAddress) {
+        throw new Error("Unable to resolve wallet address for comment");
+      }
+
+      const nextComment: CampaignComment = {
+        text: nextCommentText,
+        creatorAddress: currentWalletAddress,
+        creatorHandle: buildDefaultHandle(currentWalletAddress),
+        createdAt: new Date().toISOString(),
+      };
+      const nextComments = [...commentList, nextComment];
+      const response = await fetch(`/api/campaign-records/${record._id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildCampaignRecordPayload({
+          comments: nextComments,
+          likeCount: likes,
+          likedByAddresses,
+          bookmarkCount: bookmarks,
+          reshareCount: reshares,
+        })),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save comment");
+      }
+
+      setCommentList(nextComments);
+      setCommentDraft("");
+      if (commentInputRef.current) {
+        commentInputRef.current.style.height = "32px";
+      }
+      setIsCommentComposerOpen(false);
+    } catch (error) {
+      setCommentError(error instanceof Error ? error.message : "Failed to save comment");
+    } finally {
+      setIsSavingComment(false);
+    }
   };
 
   const handleReshare = () => {
@@ -1215,7 +1910,7 @@ function CampaignCard({
     setShowDepositModal(true);
   };
 
-  const handleDepositSubmit = async (e: React.FormEvent) => {
+  const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
     if (!signer || !depositAmount || isPurchaseDisabled) return;
 
@@ -1279,7 +1974,7 @@ function CampaignCard({
         </div>
 
         <div className="campaign-card-content">
-          <h3 className="text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
+          <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
           <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
             <div className="campaign-card-description">
               {descriptionLines.map((line, index) => {
@@ -1350,73 +2045,141 @@ function CampaignCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 pt-2 pb-3 text-xs">
-        <button
-          onClick={handleLike}
-          className={`campaign-action-btn ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
-        >
-          <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count">{likes}</span>
-        </button>
+      <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => void handleLike()}
+            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
+          >
+            <Heart className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+            <span className="campaign-action-count">{likes}</span>
+          </button>
 
-        <button
-          onClick={handleBookmark}
-          className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
-        >
-          <Bookmark className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count">{bookmarks}</span>
-        </button>
+          <button
+            onClick={handleBookmark}
+            className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
+          >
+            <Bookmark className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+            <span className="campaign-action-count">{bookmarks}</span>
+          </button>
 
-        <button
-          onClick={handleComment}
-          className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
-        >
-          <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-          <span className="campaign-action-count">{comments}</span>
-        </button>
+          <button
+            onClick={handleComment}
+            className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
+          >
+            <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+            <span className="campaign-action-count">{comments}</span>
+          </button>
 
-        <button
-          onClick={handleReshare}
-          className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-          data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
-        >
-          <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
-          <span className="campaign-action-count">{reshares}</span>
-        </button>
+          <button
+            onClick={handleReshare}
+            className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
+          >
+            <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
+            <span className="campaign-action-count">{reshares}</span>
+          </button>
 
-        <button
-          onClick={handleDepositClick}
-          disabled={isPurchaseDisabled}
-          className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`}
-          data-tooltip={
-            !isConnected
-              ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-              : isCampaignInactive
-                ? "Campaign unavailable"
-                : hasNotStartedRaffle
-                  ? "Raffle has not started"
-                  : hasNoRemainingTickets
-                    ? "No tickets left"
-                    : hasReachedMaxAmount
-                      ? "Max amount reached"
-                      : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
-          }
-        >
-          {isRaffleCampaign ? (
-            <>
-              <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
-            </>
-          ) : (
-            <>
-              <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
-            </>
+          {!hasNotStartedRaffle && hasPendingRewardDistribution && (
+            <button
+              type="button"
+              className="campaign-action-btn action-winners campaign-action-active"
+              data-tooltip="Pending reward distribution"
+            >
+              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count">{rewardCountValue}</span>
+            </button>
           )}
-        </button>
+
+          {hasNotStartedRaffle && (
+            <button
+              type="button"
+              disabled
+              className="campaign-action-btn ml-auto campaign-action-disabled"
+              data-tooltip="Coming soon"
+            >
+              <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
+            </button>
+          )}
+
+          <button
+            onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c) : handleDepositClick}
+            disabled={isPurchaseDisabled}
+            className={`campaign-action-btn ${!hasNotStartedRaffle ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+            data-tooltip={
+              !isConnected
+                ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
+                : isCampaignInactive
+                  ? "Freight unavailable"
+                  : hasNotStartedRaffle
+                    ? "Raffle has not started"
+                    : hasNoRemainingTickets
+                      ? "No tickets left"
+                      : hasReachedMaxAmount
+                        ? "Max amount reached"
+                        : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
+            }
+          >
+            {isRaffleCampaign ? (
+              <>
+                <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+              </>
+            ) : (
+              <>
+                <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        <div
+          ref={commentComposerRef}
+          className={`campaign-comment-composer ${isCommentComposerOpen ? "campaign-comment-composer-open" : "campaign-comment-composer-closed"}`}
+          aria-hidden={!isCommentComposerOpen}
+        >
+          <div className="campaign-comment-input-wrap">
+            <textarea
+              ref={commentInputRef}
+              value={commentDraft}
+              onChange={(event) => {
+                const nextValue = event.target.value.slice(0, 300);
+                setCommentDraft(nextValue);
+                event.currentTarget.value = nextValue;
+                event.currentTarget.style.height = "auto";
+                const nextHeight = Math.max(32, event.currentTarget.scrollHeight);
+                event.currentTarget.style.height = `${nextHeight}px`;
+              }}
+              onFocus={(event) => {
+                if (event.currentTarget.value.length > 0) {
+                  event.currentTarget.select();
+                }
+              }}
+              className="campaign-comment-input"
+              placeholder="Write a comment..."
+              rows={1}
+              disabled={isSavingComment || !isCommentComposerOpen}
+            />
+            <button
+              type="button"
+              className="campaign-comment-submit"
+              onClick={() => void handleSubmitComment()}
+              disabled={isSavingComment || !commentDraft.trim() || !isCommentComposerOpen}
+              aria-label="Submit comment"
+            >
+              <Check size={24} strokeWidth={3} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="campaign-comment-meta-row">
+            <span className={`campaign-comment-count ${commentDraft.length >= 300 ? "campaign-comment-count-limit" : commentDraft.length >= 250 ? "campaign-comment-count-warn" : ""}`}>{300 - commentDraft.length}</span>
+          </div>
+          {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
+        </div>
       </div>
 
       {showDepositModal && (

@@ -78,7 +78,7 @@ pub struct Campaign {
 
 // Participant data, we use one cell per participant.
 // Layout: [32][4][20][8][1][8] = 73 bytes
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParticipantData {
     pub campaign_tx_hash: [u8; 32],  // which campaign (32 bytes)
     pub campaign_index: u32,         // which campaign output (4 bytes)

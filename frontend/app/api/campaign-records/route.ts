@@ -18,6 +18,7 @@ type CampaignRecordPayload = {
     mentions?: unknown;
     comments?: unknown;
     likeCount?: unknown;
+    likedByAddresses?: unknown;
     bookmarkCount?: unknown;
     reshareCount?: unknown;
   };
@@ -26,6 +27,7 @@ type CampaignRecordPayload = {
   status?: unknown;
   txHash?: unknown;
   publishError?: unknown;
+  randomnessPreimage?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -100,6 +102,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const publishError = ensureOptionalString(payload.publishError, "publishError");
   const creatorAddress = ensureOptionalString(payload.creatorAddress, "creatorAddress");
   const creatorHandle = ensureOptionalString(payload.creatorHandle, "creatorHandle");
+  const randomnessPreimage = ensureOptionalString(payload.randomnessPreimage, "randomnessPreimage");
 
   return {
     title,
@@ -116,6 +119,9 @@ function normalizePayload(payload: CampaignRecordPayload) {
       mentions,
       comments: Array.isArray(payload.socialMetadata?.comments) ? payload.socialMetadata?.comments : [],
       likeCount: typeof payload.socialMetadata?.likeCount === "number" ? payload.socialMetadata.likeCount : 0,
+      likedByAddresses: Array.isArray(payload.socialMetadata?.likedByAddresses)
+        ? payload.socialMetadata.likedByAddresses.map((value) => ensureString(value, "socialMetadata.likedByAddresses[]").toLowerCase())
+        : [],
       bookmarkCount: typeof payload.socialMetadata?.bookmarkCount === "number" ? payload.socialMetadata.bookmarkCount : 0,
       reshareCount: typeof payload.socialMetadata?.reshareCount === "number" ? payload.socialMetadata.reshareCount : 0,
     },
@@ -124,6 +130,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
     status,
     txHash,
     publishError,
+    randomnessPreimage,
   };
 }
 

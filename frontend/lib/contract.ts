@@ -5,7 +5,7 @@ export const FREIGHT_CONTRACT = {
   hashType: "type" as const,
   outPoint: {
     txHash:
-      "0x6c7ca5d847c82e89b0206cde92591e129edc5545f230105ca627bde201d8b048",
+      "0x8cd7529e7a15ef5f9da1253d1e35d95bf023b1e70d548211623bd7fae128967e",
     index: 0,
   },
 } as const;

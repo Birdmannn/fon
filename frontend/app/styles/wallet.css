@@ -33,3 +33,115 @@
   pointer-events: none;
   overflow: hidden;
 }
+
+.wallet-info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.wallet-info-modal {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  right: 0;
+  width: min(18rem, calc(100vw - 2rem));
+  padding: 0.95rem 1rem;
+  border-radius: 1.15rem;
+  background: var(--background);
+  color: var(--foreground);
+  border: 2px solid var(--foreground);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+  z-index: 84;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wallet-info-heading {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.wallet-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.wallet-info-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.wallet-info-label {
+  font-size: 0.72rem;
+  line-height: 1.1;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wallet-info-value,
+.wallet-info-address {
+  font-size: 0.82rem;
+  line-height: 1.3;
+  font-family: var(--font-mono, monospace);
+  color: var(--foreground);
+}
+
+.wallet-info-address {
+  display: inline-block;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.wallet-info-address-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.wallet-info-copy-btn {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  cursor: pointer;
+}
+
+.wallet-info-copy-btn:hover,
+.wallet-info-copy-btn:focus-visible {
+  color: #16a34a;
+  outline: none;
+}
+
+.wallet-info-feedback {
+  font-size: 0.72rem;
+  line-height: 1.1;
+  color: #16a34a;
+}
+
+.wallet-info-feedback-error,
+.wallet-info-error {
+  color: #dc2626;
+}
+
+.wallet-info-error {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+
+.wallet-chain-indicator {
+  color: #2563eb;
+}

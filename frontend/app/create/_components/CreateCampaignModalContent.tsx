@@ -6,6 +6,7 @@ import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "luc
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
+import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
 import { sendCreateCampaign } from "@/lib/transactions";
 
 const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
@@ -151,6 +152,7 @@ type DraftRecord = {
     taskDurationHours?: string;
     maxAmountCkb?: string;
     auxAmountCkb?: string;
+    rewardCount?: string;
   };
   socialMetadata?: {
     mentions?: string[];
@@ -160,6 +162,7 @@ type DraftRecord = {
   status?: DraftRecordStatus;
   txHash?: string | null;
   publishError?: string | null;
+  randomnessPreimage?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -172,6 +175,7 @@ type DraftSnapshot = {
   taskStartDelayHours: string;
   taskDurationHours: string;
   maxAmountCkb: string;
+  rewardCount: string;
   auxAmountCkb: string;
   mentions: string[];
 };
@@ -271,6 +275,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [taskStartDelayHours, setTaskStartDelayHours] = useState("0");
   const [taskDurationHours, setTaskDurationHours] = useState("24");
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
+  const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -292,6 +297,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [isApplyingDraft, setIsApplyingDraft] = useState(false);
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState("");
+  const [pendingAdvanceToReview, setPendingAdvanceToReview] = useState(false);
 
   const isModal = mode === "modal";
   const isReviewStep = isModal && modalStep === "review";
@@ -335,6 +341,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const parsedStartDelayHours = Number.parseFloat(taskStartDelayHours);
   const parsedDurationHours = Number.parseFloat(taskDurationHours);
   const parsedMaxAmountCkb = Number.parseFloat(maxAmountCkb);
+  const parsedRewardCount = Number.parseFloat(rewardCount);
   const parsedRaffleTicketPriceCkb = Number.parseFloat(raffleTicketPriceCkb);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
   const parsedTicketCount = Number.parseFloat(maxAmountCkb);
@@ -345,6 +352,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const hasValidStartDelay = Number.isFinite(parsedStartDelayHours) && parsedStartDelayHours >= 0;
   const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
   const hasValidMaxAmount = Number.isFinite(derivedRaffleMaxAmountCkb) && derivedRaffleMaxAmountCkb > 0;
+  const hasValidRewardCount = Number.isFinite(parsedRewardCount) && parsedRewardCount > 0 && Number.isInteger(parsedRewardCount);
   const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
   const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
@@ -356,6 +364,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     taskStartDelayHours,
     taskDurationHours,
     maxAmountCkb,
+    rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
     mentions,
   }), [
@@ -364,6 +373,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     currentDraftSummary,
     maxAmountCkb,
     mentions,
+    rewardCount,
     taskDurationHours,
     taskStartDelayHours,
     trimmedModalDescription,
@@ -378,6 +388,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     (!draftSaveError && !hasValidStartDelay) ||
     (!draftSaveError && !hasValidDuration) ||
     (!draftSaveError && !hasValidMaxAmount) ||
+    (!draftSaveError && !hasValidRewardCount) ||
     (!draftSaveError && !hasValidRaffleTicketPrice);
   const showDraftsPane = isModal && modalStep === "compose" && isDraftListOpen;
   const composeHelperMessage = showNoDraftsMessage
@@ -974,6 +985,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextStartDelay = record.argsDraft?.taskStartDelayHours ?? "0";
     const nextDuration = record.argsDraft?.taskDurationHours ?? "24";
     const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
+    const nextRewardCount = record.argsDraft?.rewardCount ?? "1";
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
 
@@ -985,6 +997,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setTaskStartDelayHours(nextStartDelay);
     setTaskDurationHours(nextDuration);
     setMaxAmountCkb(nextMaxAmount);
+    setRewardCount(nextRewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
     setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
     setActiveDraftRecordId(record._id ?? null);
@@ -1005,6 +1018,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       taskStartDelayHours: nextStartDelay,
       taskDurationHours: nextDuration,
       maxAmountCkb: nextMaxAmount,
+      rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
       mentions: nextMentions,
     });
@@ -1116,7 +1130,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       summaryDraft: string,
       draftStatus: DraftRecordStatus,
       txHashValue: string | null,
-      publishError: string | null
+      publishError: string | null,
+      randomnessPreimage: string | null = null
     ) => {
       const creatorAddress = await getCreatorAddress();
 
@@ -1129,12 +1144,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           taskStartDelayHours,
           taskDurationHours,
           maxAmountCkb,
+          rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
         },
         socialMetadata: {
           mentions,
           comments: [],
           likeCount: 0,
+          likedByAddresses: [],
           bookmarkCount: 0,
           reshareCount: 0,
         },
@@ -1143,6 +1160,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         status: draftStatus,
         txHash: txHashValue,
         publishError,
+        randomnessPreimage,
       };
     },
     [
@@ -1164,13 +1182,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       summaryDraft: string,
       draftStatus: DraftRecordStatus,
       txHashValue: string | null = null,
-      publishError: string | null = null
+      publishError: string | null = null,
+      randomnessPreimage: string | null = null
     ) => {
       setDraftSaveStatus("saving");
       setDraftSaveError("");
 
       try {
-        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError);
+        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage);
         const response = await fetch(activeDraftRecordId ? `/api/campaign-records/${activeDraftRecordId}` : "/api/campaign-records", {
           method: activeDraftRecordId ? "PATCH" : "POST",
           headers: {
@@ -1197,6 +1216,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           taskStartDelayHours,
           taskDurationHours,
           maxAmountCkb,
+          rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
           mentions,
         });
@@ -1213,6 +1233,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               taskStartDelayHours,
               taskDurationHours,
               maxAmountCkb,
+              rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
             },
             socialMetadata: {
@@ -1221,6 +1242,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             status: draftStatus,
             txHash: txHashValue,
             publishError,
+            randomnessPreimage,
             updatedAt: new Date().toISOString(),
           };
 
@@ -1320,6 +1342,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
+    if (!signer) {
+      setPendingAdvanceToReview(true);
+      setStatus("idle");
+      setErrorMsg("");
+      open();
+      return;
+    }
+
+    setPendingAdvanceToReview(false);
+
     const nextSummary = buildOnchainSummary({ title: trimmedModalTitle, description: trimmedModalDescription });
     setReviewSummary(nextSummary);
     setStatus("idle");
@@ -1335,6 +1367,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       setStatus("error");
     }
   };
+
+  useEffect(() => {
+    if (!pendingAdvanceToReview || !signer || !isModal || modalStep !== "compose") {
+      return;
+    }
+
+    void handleAdvanceToReview();
+  }, [handleAdvanceToReview, isModal, modalStep, pendingAdvanceToReview, signer]);
 
   const handleRetryDraftSave = async () => {
     setStatus("idle");
@@ -1374,6 +1414,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
     if (!hasValidMaxAmount) {
       setErrorMsg(shouldCollectRaffleTicketPrice ? "Please enter a valid number of tickets greater than 0" : "Please enter a valid max deposit greater than 0 CKB");
+      setStatus("error");
+      return false;
+    }
+
+    if (!hasValidRewardCount) {
+      setErrorMsg("Please enter a valid split count greater than 0");
       setStatus("error");
       return false;
     }
@@ -1423,6 +1469,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const summaryToPublish = isModal
         ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
         : generatedOnchainSummary;
+      const randomnessCommitment = shouldCollectRaffleTicketPrice ? createRandomnessCommitment() : null;
+      const randomnessHash = randomnessCommitment?.commitment ?? new Uint8Array(32);
+      const randomnessPreimageHex = randomnessCommitment ? randomnessPreimageToHex(randomnessCommitment.preimage) : null;
 
       const hash = await sendCreateCampaign(signer, {
         startDurationSecs: startSecs,
@@ -1430,12 +1479,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         campaignType,
         maximumAmountCkb: maxCkb,
         auxAmountCkb,
+        rewardCount: BigInt(Math.round(parsedRewardCount)),
         summary: summaryToPublish,
+        randomnessHash,
       });
 
       if (isModal && activeDraftRecordId) {
         try {
-          await persistDraftRecord(summaryToPublish, "published", hash, null);
+          await persistDraftRecord(summaryToPublish, "published", hash, null, randomnessPreimageHex);
         } catch {
           // Keep the publish success state even if the off-chain patch fails.
         }
@@ -1503,6 +1554,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             className="create-review-arg-input"
           />
           <span className="create-review-arg-unit">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
+        </div>
+      </div>
+
+      <div className="create-review-arg-field">
+        <label className="create-review-arg-label">Split count</label>
+        <div className="create-review-arg-control">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={rewardCount}
+            onChange={(event) => setRewardCount(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">people</span>
         </div>
       </div>
 
@@ -2142,6 +2208,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold theme-fg">🎁 Split Count</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={rewardCount}
+                          onChange={(event) => setRewardCount(event.target.value)}
+                          className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-emerald-500"
+                        />
+                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">people</span>
                       </div>
                     </div>
 

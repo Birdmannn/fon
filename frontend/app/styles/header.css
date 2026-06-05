@@ -83,6 +83,48 @@
   animation: header-info-modal-reveal 620ms ease forwards;
 }
 
+.header-info-modal-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.header-info-modal-project-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  padding-top: 0.22rem;
+}
+
+.header-info-modal-project-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--foreground);
+  line-height: 1;
+  transition: opacity 180ms ease;
+}
+
+.header-info-modal-project-link:hover,
+.header-info-modal-project-link:focus-visible {
+  opacity: 0.72;
+  /* transform: translateY(-1px); */
+}
+
+.header-info-modal-project-link svg {
+  width: 1.9rem;
+  height: 1.9rem;
+  display: block;
+  fill: currentColor;
+}
+
+.header-info-modal-project-link-disabled {
+  color: #000000;
+  cursor: default;
+}
+
 .header-info-backdrop {
   position: fixed;
   inset: 0;

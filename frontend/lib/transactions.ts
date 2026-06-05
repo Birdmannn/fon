@@ -1,14 +1,20 @@
 import { ccc } from "@ckb-ccc/connector-react";
-import { FREIGHT_CONTRACT, CampaignStatus, CampaignType } from "./contract";
+import { blake2b } from "@nervosnetwork/ckb-sdk-utils";
+import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus } from "./contract";
 import {
+  encodeBatchDeliverArgs,
   encodeCreateCampaignArgs,
   encodeDepositArgs,
   encodeCampaignData,
+  encodeParticipantData,
   encodeSummary,
   decodeCampaignData,
+  decodeParticipantData,
   bytesToHex,
   hexToBytes,
+  lockScriptToAddressBytes,
   CampaignData,
+  ParticipantData,
 } from "./encoding";
 
 // ─── Cell dep for the freight contract ───────────────────────────────────────
@@ -38,10 +44,12 @@ export async function sendCreateCampaign(
     campaignType: CampaignType;
     maximumAmountCkb: bigint;
     auxAmountCkb: bigint; // ticket_price for Raffle (in CKB), 0 otherwise
+    rewardCount: bigint;
     summary: string;
+    randomnessHash: Uint8Array;
   }
 ): Promise<string> {
-  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, summary } = opts;
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, summary, randomnessHash } = opts;
   const maximumAmount = maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
 
@@ -64,7 +72,9 @@ export async function sendCreateCampaign(
     taskDurationSecs,
     campaignType,
     maximumAmount,
-    auxAmount
+    auxAmount,
+    randomnessHash,
+    rewardCount
   );
 
   // Campaign cell data (174 bytes).
@@ -77,8 +87,8 @@ export async function sendCreateCampaign(
     maximumAmount,
     currentDeposits: 0n,
     status: CampaignStatus.Created,
-    rewardCount: 0n,
-    randomnessHash: new Uint8Array(32),
+    rewardCount,
+    randomnessHash,
     summary: encodeSummary(summary),
     auxAmount,
   });
@@ -103,13 +113,11 @@ export async function sendCreateCampaign(
 
 // ─── deposit ─────────────────────────────────────────────────────────────────
 
-export async function sendDeposit(
+export async function sendDepositShannons(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
-  amountCkb: bigint // in CKB (not shannons)
+  amountShannons: bigint
 ): Promise<string> {
-  const amountShannons = amountCkb * 100_000_000n; // CKB → shannons
-
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
 
@@ -146,6 +154,171 @@ export async function sendDeposit(
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = actionArgsHex;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
+}
+
+export async function sendDeposit(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  amountCkb: bigint // in CKB (not shannons)
+): Promise<string> {
+  return sendDepositShannons(signer, campaignCell, amountCkb * 100_000_000n);
+}
+
+export async function sendVerifyParticipantRaffle(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell
+): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  const depositorAddressObj = await signer.getRecommendedAddressObj();
+  const depositorAddressBytes = lockScriptToAddressBytes(depositorAddressObj.script);
+  const joinedAt = tipHeader.timestamp;
+  const ticketPrice = campaignCell.data.auxAmount;
+
+  if (ticketPrice <= 0n) {
+    throw new Error("Ticket price is unavailable for this raffle");
+  }
+
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
+  };
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons + ticketPrice,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  tx.addOutput(
+    {
+      lock: depositorAddressObj.script,
+    },
+    bytesToHex(encodeParticipantData({
+      campaignTxHash: hexToBytes(campaignCell.outPoint.txHash),
+      campaignIndex: campaignCell.outPoint.index,
+      participantAddress: depositorAddressBytes,
+      joinedAt,
+      status: ParticipantStatus.Verified,
+      depositedAmount: ticketPrice,
+    }))
+  );
+
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([3])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
+}
+
+export async function sendUpdateCampaignStatus(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell
+): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(campaignCell.data))
+  );
+
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([4])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
+}
+
+export async function sendBatchDeliver(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  winners: ParticipantCell[],
+  revealedPreimage?: Uint8Array
+): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  for (const winner of winners) {
+    tx.addInput({
+      previousOutput: winner.outPoint,
+      since: "0x0",
+    });
+  }
+
+  const rewardCount = campaignCell.data.rewardCount === 0n ? BigInt(winners.length) : campaignCell.data.rewardCount;
+  const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits - rewardPerWinner * BigInt(winners.length),
+  };
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons - rewardPerWinner * BigInt(winners.length),
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  for (const winner of winners) {
+    tx.addOutput(
+      {
+        capacity: winner.capacityShannons + rewardPerWinner,
+        lock: winner.lock,
+        type: winner.type ?? undefined,
+      },
+      bytesToHex(encodeParticipantData({
+        ...winner.data,
+        status: ParticipantStatus.Rewarded,
+      }))
+    );
+  }
+
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(encodeBatchDeliverArgs(revealedPreimage)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
   return signer.sendTransaction(tx);
@@ -206,4 +379,143 @@ export async function fetchCampaigns(
   }
 
   return results;
+}
+
+export interface ParticipantCell {
+  outPoint: { txHash: string; index: number };
+  data: ParticipantData;
+  capacityShannons: bigint;
+  lock: ccc.ScriptLike;
+  type: ccc.ScriptLike | null;
+}
+
+export async function fetchParticipants(
+  client: ccc.Client,
+  campaign: CampaignCell,
+  limit = 500
+): Promise<ParticipantCell[]> {
+  const results: ParticipantCell[] = [];
+  const campaignTxHashBytes = hexToBytes(campaign.outPoint.txHash);
+
+  let count = 0;
+  for await (const cell of client.findCells(
+    {
+      script: {
+        codeHash: FREIGHT_CONTRACT.codeHash,
+        hashType: FREIGHT_CONTRACT.hashType,
+        args: "0x",
+      },
+      scriptType: "type",
+      scriptSearchMode: "prefix",
+      withData: true,
+    },
+    "asc",
+    limit
+  )) {
+    if (count++ >= limit) break;
+    try {
+      const rawData = hexToBytes(cell.outputData);
+      if (rawData.length !== 73) continue;
+      const data = decodeParticipantData(rawData);
+      if (bytesToHex(data.campaignTxHash) !== bytesToHex(campaignTxHashBytes) || data.campaignIndex !== campaign.outPoint.index) {
+        continue;
+      }
+      results.push({
+        outPoint: {
+          txHash: cell.outPoint.txHash,
+          index: Number(cell.outPoint.index),
+        },
+        data,
+        capacityShannons: cell.cellOutput.capacity,
+        lock: cell.cellOutput.lock,
+        type: cell.cellOutput.type ?? null,
+      });
+    } catch {
+      // Skip malformed cells.
+    }
+  }
+
+  return results;
+}
+
+function compareParticipants(left: ParticipantCell, right: ParticipantCell) {
+  const joinedDiff = Number(left.data.joinedAt - right.data.joinedAt);
+  if (joinedDiff !== 0) {
+    return joinedDiff;
+  }
+
+  const leftAddress = bytesToHex(left.data.participantAddress);
+  const rightAddress = bytesToHex(right.data.participantAddress);
+  if (leftAddress !== rightAddress) {
+    return leftAddress < rightAddress ? -1 : 1;
+  }
+
+  if (left.outPoint.txHash !== right.outPoint.txHash) {
+    return left.outPoint.txHash < right.outPoint.txHash ? -1 : 1;
+  }
+
+  return left.outPoint.index - right.outPoint.index;
+}
+
+function deriveRoundHash(seed: Uint8Array, round: bigint) {
+  const roundBytes = new Uint8Array(8);
+  let value = round;
+  for (let i = 0; i < 8; i += 1) {
+    roundBytes[i] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+
+  const input = new Uint8Array(seed.length + roundBytes.length);
+  input.set(seed, 0);
+  input.set(roundBytes, seed.length);
+  const hasher = blake2b(32, null, null, null);
+  hasher.update(input);
+  return hasher.digest("binary") as Uint8Array;
+}
+
+function drawUniformIndex(seed: Uint8Array, roundRef: { current: bigint }, upperBound: number) {
+  const range = BigInt(upperBound);
+  const maxUint64 = (1n << 64n) - 1n;
+  const threshold = maxUint64 - (maxUint64 % range);
+
+  while (true) {
+    const roundHash = deriveRoundHash(seed, roundRef.current);
+    roundRef.current += 1n;
+    const view = new DataView(roundHash.buffer, roundHash.byteOffset, 8);
+    const candidate = view.getBigUint64(0, true);
+    if (candidate < threshold) {
+      return Number(candidate % range);
+    }
+  }
+}
+
+export function previewDeterministicWinners(
+  participants: ParticipantCell[],
+  rewardCount: bigint,
+  revealedPreimage: Uint8Array,
+  campaign: CampaignCell
+): ParticipantCell[] {
+  const ordered = [...participants].sort(compareParticipants);
+  const winnerCount = rewardCount === 0n ? ordered.length : Number(rewardCount);
+  if (winnerCount >= ordered.length) {
+    return ordered;
+  }
+
+  const seedInput = new Uint8Array(32 + 32 + 4 + 8);
+  seedInput.set(revealedPreimage, 0);
+  seedInput.set(hexToBytes(campaign.outPoint.txHash), 32);
+  const view = new DataView(seedInput.buffer);
+  view.setUint32(64, campaign.outPoint.index, true);
+  view.setBigUint64(68, BigInt(ordered.length), true);
+  const hasher = blake2b(32, null, null, null);
+  hasher.update(seedInput);
+  const seed = hasher.digest("binary") as Uint8Array;
+
+  const roundRef = { current: 0n };
+  for (let i = ordered.length - 1; i > 0; i -= 1) {
+    const j = drawUniformIndex(seed, roundRef, i + 1);
+    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+  }
+
+  return ordered.slice(0, winnerCount);
 }
