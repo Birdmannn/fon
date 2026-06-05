@@ -16,6 +16,7 @@ import {
   Repeat2,
   RotateCcw,
   Search,
+  Share2,
   Ticket,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -1299,6 +1300,8 @@ function CampaignCard({
   const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
+  const rewardCountValue = Number(data.rewardCount);
+  const hasPendingRewardDistribution = rewardCountValue > 0 && Number(data.currentDeposits) > 0 && displayStatus === CampaignStatus.Active;
 
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
@@ -1661,6 +1664,17 @@ function CampaignCard({
             <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
             <span className="campaign-action-count">{reshares}</span>
           </button>
+
+          {hasPendingRewardDistribution && (
+            <button
+              type="button"
+              className="campaign-action-btn action-winners campaign-action-active"
+              data-tooltip="Pending reward distribution"
+            >
+              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count">{rewardCountValue}</span>
+            </button>
+          )}
 
           <button
             onClick={handleDepositClick}
