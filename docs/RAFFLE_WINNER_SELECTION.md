@@ -120,16 +120,28 @@ The seed should be a 32-byte array.
 
 ## 7. Winner selection
 
-The cleanest approach is not repeated random draws with retries.
-Instead, use the seed to derive a deterministic ordering of participants and then take the first `reward_count` entries.
+The current implementation direction is deterministic shuffle.
+Instead of repeated random draws with retries, the contract:
+- builds a canonical participant order
+- derives a deterministic seed from the revealed preimage and campaign identity
+- runs a deterministic shuffle
+- selects the first `reward_count` participants as winners
 
-### Recommended high-level algorithm
+### Current high-level algorithm
 
-1. Build the ordered participant list
-2. Derive a seed from the revealed preimage
-3. Produce deterministic pseudorandom rounds from that seed
-4. Use those rounds to generate a deterministic shuffle / ordering
+1. Collect verified participant inputs
+2. Order them canonically by:
+   - `joined_at`
+   - then `participant_address`
+   - then campaign identity tie-break fields
+3. Derive a 32-byte seed from:
+   - revealed preimage
+   - campaign transaction hash
+   - campaign index
+   - participant count
+4. Shuffle the ordered list deterministically
 5. Select the first `reward_count` participants as winners
+6. Require only those winners to appear as `Rewarded` outputs in delivery
 
 ### Pseudocode shape
 
@@ -139,6 +151,17 @@ seed = blake2b_256(revealed_preimage || campaign_tx_hash || campaign_index || pa
 shuffled = deterministic_shuffle(participants, seed)
 winners = shuffled[0..reward_count]
 ```
+
+### Avoiding modulo bias
+The shuffle should not use naïve `% n` reduction directly from raw random bytes.
+Instead, the implementation should use rejection sampling:
+
+1. derive a 64-bit candidate from a round hash
+2. compute the largest acceptable threshold divisible by the target range
+3. reject candidates outside that threshold
+4. only then reduce into the required index range
+
+This keeps winner selection uniform and avoids subtle bias in smaller index ranges.
 
 ### Why this is better than repeated draws
 It avoids:

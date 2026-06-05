@@ -1,14 +1,18 @@
 import { ccc } from "@ckb-ccc/connector-react";
-import { FREIGHT_CONTRACT, CampaignStatus, CampaignType } from "./contract";
+import { blake2b } from "@nervosnetwork/ckb-sdk-utils";
+import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus } from "./contract";
 import {
+  encodeBatchDeliverArgs,
   encodeCreateCampaignArgs,
   encodeDepositArgs,
   encodeCampaignData,
   encodeSummary,
   decodeCampaignData,
+  decodeParticipantData,
   bytesToHex,
   hexToBytes,
   CampaignData,
+  ParticipantData,
 } from "./encoding";
 
 // ─── Cell dep for the freight contract ───────────────────────────────────────
@@ -210,4 +214,143 @@ export async function fetchCampaigns(
   }
 
   return results;
+}
+
+export interface ParticipantCell {
+  outPoint: { txHash: string; index: number };
+  data: ParticipantData;
+  capacityShannons: bigint;
+  lock: ccc.ScriptLike;
+  type: ccc.ScriptLike | null;
+}
+
+export async function fetchParticipants(
+  client: ccc.Client,
+  campaign: CampaignCell,
+  limit = 500
+): Promise<ParticipantCell[]> {
+  const results: ParticipantCell[] = [];
+  const campaignTxHashBytes = hexToBytes(campaign.outPoint.txHash);
+
+  let count = 0;
+  for await (const cell of client.findCells(
+    {
+      script: {
+        codeHash: FREIGHT_CONTRACT.codeHash,
+        hashType: FREIGHT_CONTRACT.hashType,
+        args: "0x",
+      },
+      scriptType: "type",
+      scriptSearchMode: "prefix",
+      withData: true,
+    },
+    "asc",
+    limit
+  )) {
+    if (count++ >= limit) break;
+    try {
+      const rawData = hexToBytes(cell.outputData);
+      if (rawData.length !== 73) continue;
+      const data = decodeParticipantData(rawData);
+      if (bytesToHex(data.campaignTxHash) !== bytesToHex(campaignTxHashBytes) || data.campaignIndex !== campaign.outPoint.index) {
+        continue;
+      }
+      results.push({
+        outPoint: {
+          txHash: cell.outPoint.txHash,
+          index: Number(cell.outPoint.index),
+        },
+        data,
+        capacityShannons: cell.cellOutput.capacity,
+        lock: cell.cellOutput.lock,
+        type: cell.cellOutput.type,
+      });
+    } catch {
+      // Skip malformed cells.
+    }
+  }
+
+  return results;
+}
+
+function compareParticipants(left: ParticipantCell, right: ParticipantCell) {
+  const joinedDiff = Number(left.data.joinedAt - right.data.joinedAt);
+  if (joinedDiff !== 0) {
+    return joinedDiff;
+  }
+
+  const leftAddress = bytesToHex(left.data.participantAddress);
+  const rightAddress = bytesToHex(right.data.participantAddress);
+  if (leftAddress !== rightAddress) {
+    return leftAddress < rightAddress ? -1 : 1;
+  }
+
+  if (left.outPoint.txHash !== right.outPoint.txHash) {
+    return left.outPoint.txHash < right.outPoint.txHash ? -1 : 1;
+  }
+
+  return left.outPoint.index - right.outPoint.index;
+}
+
+function deriveRoundHash(seed: Uint8Array, round: bigint) {
+  const roundBytes = new Uint8Array(8);
+  let value = round;
+  for (let i = 0; i < 8; i += 1) {
+    roundBytes[i] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+
+  const input = new Uint8Array(seed.length + roundBytes.length);
+  input.set(seed, 0);
+  input.set(roundBytes, seed.length);
+  const hasher = blake2b(32, null, null, null);
+  hasher.update(input);
+  return hasher.digest("binary") as Uint8Array;
+}
+
+function drawUniformIndex(seed: Uint8Array, roundRef: { current: bigint }, upperBound: number) {
+  const range = BigInt(upperBound);
+  const maxUint64 = (1n << 64n) - 1n;
+  const threshold = maxUint64 - (maxUint64 % range);
+
+  while (true) {
+    const roundHash = deriveRoundHash(seed, roundRef.current);
+    roundRef.current += 1n;
+    const view = new DataView(roundHash.buffer, roundHash.byteOffset, 8);
+    const candidate = view.getBigUint64(0, true);
+    if (candidate < threshold) {
+      return Number(candidate % range);
+    }
+  }
+}
+
+export function previewDeterministicWinners(
+  participants: ParticipantCell[],
+  rewardCount: bigint,
+  revealedPreimage: Uint8Array,
+  campaign: CampaignCell
+): ParticipantCell[] {
+  const ordered = [...participants].sort(compareParticipants);
+  const winnerCount = rewardCount === 0n ? ordered.length : Number(rewardCount);
+  if (winnerCount >= ordered.length) {
+    return ordered;
+  }
+
+  const seedInput = new Uint8Array(32 + 32 + 4 + 8);
+  seedInput.set(revealedPreimage, 0);
+  seedInput.set(hexToBytes(campaign.outPoint.txHash), 32);
+  const view = new DataView(seedInput.buffer);
+  view.setUint32(64, campaign.outPoint.index, true);
+  view.setBigUint64(68, BigInt(ordered.length), true);
+  const hasher = blake2b(32, null, null, null);
+  hasher.update(seedInput);
+  const seed = hasher.digest("binary") as Uint8Array;
+
+  const roundRef = { current: 0n };
+  for (let i = ordered.length - 1; i > 0; i -= 1) {
+    const j = drawUniformIndex(seed, roundRef, i + 1);
+    [ordered[i], ordered[j]] = [ordered[j], ordered[i]];
+  }
+
+  return ordered.slice(0, winnerCount);
 }
