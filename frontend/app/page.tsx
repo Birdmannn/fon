@@ -67,6 +67,17 @@ const CREATE_INFO_PREVIEW_ITEMS = [
   "The full title, description, mentions, and review snapshot are saved off-chain.",
 ];
 
+const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
+const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
+const HOME_INFO_TYPES_HEADING = "Freight types:";
+const HOME_INFO_TYPE_ITEMS = [
+  "1. Simple Task — a basic freight for posting a task without pooled deposits.",
+  "2. Funded Task — a task funded up front so rewards can be distributed from the pool.",
+  "3. Crowdfunding — an open funding freight where supporters deposit toward a shared pool.",
+  "4. Timed Challenge — a challenge with a defined start and end window.",
+  "5. Raffle — a ticket-based freight where entrants buy tickets for a randomized outcome.",
+];
+
 const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
 const TYPE_LABELS = ["Simple Task", "Funded Task", "Crowdfunding", "Timed Challenge", "Raffle"];
 const TYPE_TAGS = ["SimpleTask", "FundedTask", "Crowdfunding", "TimedChallenge", "Raffle"];
@@ -758,7 +769,22 @@ export default function Home() {
         </>
       )}
     </div>
-  ) : null;
+  ) : (
+    <div className="create-info-constraints-copy">
+      <p>{HOME_INFO_MOUNTABLES_HEADING}</p>
+      {HOME_INFO_MOUNTABLES_ITEMS.map((item) => (
+        <p key={item} className="create-info-constraint-item">
+          <span>{item}</span>
+        </p>
+      ))}
+      <p className="mt-3">{HOME_INFO_TYPES_HEADING}</p>
+      {HOME_INFO_TYPE_ITEMS.map((item) => (
+        <p key={item} className="create-info-constraint-item">
+          <span>{item}</span>
+        </p>
+      ))}
+    </div>
+  );
   const infoModalActions = showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
@@ -1374,7 +1400,6 @@ function CampaignCard({
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
-  const isPreStartFundingDisabled = !isConnected || !hasNotStartedRaffle || isCampaignInactive || hasReachedMaxAmount;
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userCommented = normalizedCurrentWalletAddress.length > 0
@@ -1602,20 +1627,14 @@ function CampaignCard({
     }
   };
 
-  const handleDepositClick = (mode: "default" | "prestart-funding" = "default") => {
-    if (mode === "prestart-funding") {
-      if (isPreStartFundingDisabled) return;
-      setShowDepositModal(true);
-      return;
-    }
-
+  const handleDepositClick = () => {
     if (isPurchaseDisabled) return;
     setShowDepositModal(true);
   };
 
   const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    if (!signer || !depositAmount || (showDepositModal && hasNotStartedRaffle ? isPreStartFundingDisabled : isPurchaseDisabled)) return;
+    if (!signer || !depositAmount || isPurchaseDisabled) return;
 
     const amount = BigInt(Math.floor(parseFloat(depositAmount) * 100_000_000));
     if (amount <= 0n) {
@@ -1800,33 +1819,24 @@ function CampaignCard({
           {hasNotStartedRaffle && (
             <button
               type="button"
-              onClick={() => handleDepositClick("prestart-funding")}
-              disabled={isPreStartFundingDisabled}
-              className={`campaign-action-btn ${isPreStartFundingDisabled ? "campaign-action-disabled" : ""}`}
-              data-tooltip={
-                !isConnected
-                  ? "Connect wallet to fund raffle"
-                  : isCampaignInactive
-                    ? "Campaign unavailable"
-                    : hasReachedMaxAmount
-                      ? "Max amount reached"
-                      : "Fund raffle without joining"
-              }
+              disabled
+              className="campaign-action-btn ml-auto campaign-action-disabled"
+              data-tooltip="Coming soon"
             >
               <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+              <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
             </button>
           )}
 
           <button
-            onClick={() => handleDepositClick()}
+            onClick={handleDepositClick}
             disabled={isPurchaseDisabled}
-            className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`}
+            className={`campaign-action-btn ${!hasNotStartedRaffle ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
             data-tooltip={
               !isConnected
                 ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
                 : isCampaignInactive
-                  ? "Campaign unavailable"
+                  ? "Freight unavailable"
                   : hasNotStartedRaffle
                     ? "Raffle has not started"
                     : hasNoRemainingTickets
@@ -1843,7 +1853,7 @@ function CampaignCard({
               </>
             ) : (
               <>
-                <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+                <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
               </>
             )}
