@@ -1,11 +1,11 @@
 // ─── Deployed contract (CKB Testnet) ─────────────────────────────────────────
 export const FREIGHT_CONTRACT = {
   codeHash:
-    "0xec267d9dea748406b4fcba135eef140d5ab0fa3a62214e08af4e30ec2033533a",
+    "0x262009f7daa271428b37e0b804451fb389deb23f1d146ad9a0356a93bcf0edfe",
   hashType: "type" as const,
   outPoint: {
     txHash:
-      "0x8cd7529e7a15ef5f9da1253d1e35d95bf023b1e70d548211623bd7fae128967e",
+      "0xefe7f8dca3d1e2621eca414162c52e36f48dd8a034a4bf9ad5d6bd5561f44d4d",
     index: 0,
   },
 } as const;
