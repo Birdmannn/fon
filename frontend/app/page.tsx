@@ -28,7 +28,7 @@ import CreateCampaignModalContent, {
 } from "@/app/create/_components/CreateCampaignModalContent";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
-import { fetchCampaigns, sendDeposit, sendDepositShannons, CampaignCell } from "@/lib/transactions";
+import { fetchCampaigns, sendDeposit, sendVerifyParticipantRaffle, CampaignCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
@@ -124,7 +124,7 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "discard-comment-confirm" | "ticket-purchase";
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
@@ -277,6 +277,18 @@ function formatCompactCampaignCount(count: number) {
   }).format(count).toLowerCase();
 }
 
+function deriveChainLabel(client: ccc.Client) {
+  if (client instanceof ccc.ClientPublicMainnet) {
+    return "Mainnet";
+  }
+
+  if (client instanceof ccc.ClientPublicTestnet) {
+    return "Testnet";
+  }
+
+  return "Custom";
+}
+
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -305,10 +317,17 @@ export default function Home() {
   const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
+  const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
   const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
+  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [walletAddress, setWalletAddress] = useState("");
+  const [walletBalance, setWalletBalance] = useState<bigint | null>(null);
+  const [walletInfoError, setWalletInfoError] = useState("");
+  const [walletInfoLoading, setWalletInfoLoading] = useState(false);
+  const [walletCopyFeedback, setWalletCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -350,6 +369,7 @@ export default function Home() {
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
   }, []);
+  const walletChainLabel = useMemo(() => deriveChainLabel(client), [client]);
 
   const showInfoModalForInteraction = useCallback((interaction: "hover" | "click") => {
     clearInfoCloseTimer();
@@ -371,6 +391,71 @@ export default function Home() {
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
   }, []);
+
+  const handleCopyWalletAddress = useCallback(async () => {
+    if (!walletAddress) {
+      return;
+    }
+
+    try {
+      await copyText(walletAddress);
+      setWalletCopyFeedback("copied");
+      window.setTimeout(() => setWalletCopyFeedback("idle"), 1200);
+    } catch {
+      setWalletCopyFeedback("error");
+      window.setTimeout(() => setWalletCopyFeedback("idle"), 1200);
+    }
+  }, [walletAddress]);
+
+  useEffect(() => {
+    if (!signer) {
+      setShowWalletInfoModal(false);
+      setWalletAddress("");
+      setWalletBalance(null);
+      setWalletInfoError("");
+      setWalletInfoLoading(false);
+      return;
+    }
+
+    if (!showWalletInfoModal) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setWalletInfoLoading(true);
+    setWalletInfoError("");
+
+    void (async () => {
+      try {
+        const [nextAddress, nextBalance] = await Promise.all([
+          signer.getRecommendedAddress(),
+          signer.getBalance(),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        setWalletAddress(nextAddress ?? "");
+        setWalletBalance(nextBalance);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setWalletInfoError(error instanceof Error ? error.message : "Unable to load wallet details");
+      } finally {
+        if (!cancelled) {
+          setWalletInfoLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showWalletInfoModal, signer]);
 
   const openInfoModalFromHover = () => {
     clearInfoCloseTimer();
@@ -410,6 +495,7 @@ export default function Home() {
       setInfoModalMode("about");
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
+      setSubmissionErrorMessage("");
       resetTicketPurchaseState();
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
@@ -468,6 +554,7 @@ export default function Home() {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
+    setSubmissionErrorMessage("");
     setSubmissionSuccessTxHash(txHash);
     setInfoModalMode("submission-success");
     setInfoModalInteraction("click");
@@ -477,6 +564,18 @@ export default function Home() {
       closeInfoModal();
     }, 2500);
   }, [closeInfoModal]);
+
+  const openSubmissionErrorInfoModal = useCallback((message: string) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setSubmissionSuccessTxHash("");
+    setSubmissionErrorMessage(message);
+    setInfoModalMode("submission-error");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, []);
 
   const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell) => {
     clearInfoCloseTimer();
@@ -504,7 +603,12 @@ export default function Home() {
     }
 
     const requestedTickets = BigInt(quantity);
-    const totalCostShannons = ticketPurchaseCampaign.data.auxAmount * requestedTickets;
+    if (requestedTickets !== 1n) {
+      setTicketPurchaseError("One ticket at a time for now");
+      return;
+    }
+
+    const totalCostShannons = ticketPurchaseCampaign.data.auxAmount;
     if (totalCostShannons <= 0n) {
       setTicketPurchaseError("Ticket price is unavailable for this raffle");
       return;
@@ -516,7 +620,7 @@ export default function Home() {
     const remainingTickets = ticketPurchaseCampaign.data.auxAmount > 0n
       ? remainingCapacity / ticketPurchaseCampaign.data.auxAmount
       : 0n;
-    if (requestedTickets > remainingTickets || totalCostShannons > remainingCapacity) {
+    if (remainingTickets <= 0n || totalCostShannons > remainingCapacity) {
       setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
       return;
     }
@@ -525,17 +629,15 @@ export default function Home() {
     setTicketPurchaseError("");
 
     try {
-      const txHash = await sendDepositShannons(signer, ticketPurchaseCampaign, totalCostShannons);
-      resetTicketPurchaseState();
-      closeInfoModal();
-      window.setTimeout(() => {
-        openSubmissionSuccessInfoModal(txHash);
-      }, INFO_MODAL_ANIMATION_MS);
+      const txHash = await sendVerifyParticipantRaffle(signer, ticketPurchaseCampaign);
+      openSubmissionSuccessInfoModal(txHash);
     } catch (error) {
-      setTicketPurchaseError(error instanceof Error ? error.message : "Failed to buy tickets");
+      const message = error instanceof Error ? error.message : "Failed to buy tickets";
+      setTicketPurchaseError(message);
       setIsPurchasingTickets(false);
+      openSubmissionErrorInfoModal(message);
     }
-  }, [closeInfoModal, openSubmissionSuccessInfoModal, resetTicketPurchaseState, signer, ticketPurchaseCampaign, ticketPurchaseQuantity]);
+  }, [openSubmissionErrorInfoModal, openSubmissionSuccessInfoModal, signer, ticketPurchaseCampaign, ticketPurchaseQuantity]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -779,6 +881,13 @@ export default function Home() {
         </a>
       </p>
     </div>
+  ) : infoModalMode === "submission-error" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-red-500">Oops, an error occurred</p>
+      <p className="create-info-constraint-item text-red-500 break-words">
+        <span>{submissionErrorMessage}</span>
+      </p>
+    </div>
   ) : infoModalMode === "discard-comment-confirm" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Discard comment?</p>
@@ -889,6 +998,11 @@ export default function Home() {
           setTicketPurchaseQuantity(event.target.value);
           if (ticketPurchaseError) {
             setTicketPurchaseError("");
+          }
+        }}
+        onFocus={(event) => {
+          if (event.currentTarget.value.length > 0) {
+            event.currentTarget.select();
           }
         }}
         className="create-info-ticket-input"
@@ -1004,12 +1118,53 @@ export default function Home() {
 
             <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
               {signer ? (
-                <button
-                  onClick={disconnect}
-                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+                <div
+                  className="wallet-info-wrap"
+                  onMouseEnter={() => setShowWalletInfoModal(true)}
+                  onMouseLeave={() => setShowWalletInfoModal(false)}
                 >
-                  Disconnect
-                </button>
+                  <button
+                    onClick={disconnect}
+                    className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
+                  >
+                    Disconnect
+                  </button>
+                  {showWalletInfoModal && (
+                    <div className="wallet-info-modal" role="dialog" aria-label="Wallet details">
+                      <p className="wallet-info-heading">Wallet details</p>
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">Address</span>
+                        <div className="wallet-info-address-row">
+                          <span className="wallet-info-address">{walletAddress || "Loading…"}</span>
+                          <button
+                            type="button"
+                            className="wallet-info-copy-btn"
+                            onClick={() => void handleCopyWalletAddress()}
+                            title={walletAddress}
+                            aria-label="Copy wallet address"
+                          >
+                            <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        </div>
+                        {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
+                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
+                      </div>
+                      <div className="wallet-info-grid">
+                        <div className="wallet-info-section">
+                          <span className="wallet-info-label">Balance</span>
+                          <span className="wallet-info-value">
+                            {walletInfoLoading ? "Loading…" : walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--"}
+                          </span>
+                        </div>
+                        <div className="wallet-info-section">
+                          <span className="wallet-info-label">Chain</span>
+                          <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
+                        </div>
+                      </div>
+                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <button
                   onClick={open}
@@ -1024,7 +1179,7 @@ export default function Home() {
           <FreightInfoModal
             open={showInfoModal}
             closing={isInfoModalClosing}
-            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : "Freight information modal"}
+            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
             backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : "Close Freight information modal"}
@@ -1897,7 +2052,7 @@ function CampaignCard({
             className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
             data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
           >
-            <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+            <Heart className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{likes}</span>
           </button>
 
@@ -1906,7 +2061,7 @@ function CampaignCard({
             className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
             data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
           >
-            <Bookmark className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+            <Bookmark className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{bookmarks}</span>
           </button>
 
@@ -1999,6 +2154,11 @@ function CampaignCard({
                 event.currentTarget.style.height = "auto";
                 const nextHeight = Math.max(32, event.currentTarget.scrollHeight);
                 event.currentTarget.style.height = `${nextHeight}px`;
+              }}
+              onFocus={(event) => {
+                if (event.currentTarget.value.length > 0) {
+                  event.currentTarget.select();
+                }
               }}
               className="campaign-comment-input"
               placeholder="Write a comment..."

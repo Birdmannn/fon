@@ -1,3 +1,4 @@
+import type { ccc } from "@ckb-ccc/connector-react";
 import { CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -43,6 +44,14 @@ export function hexToBytes(hex: string): Uint8Array {
 
 export function bytesToHex(bytes: Uint8Array): string {
   return "0x" + Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function lockScriptToAddressBytes(lock: ccc.ScriptLike): Uint8Array {
+  const lockArgs = typeof lock.args === "string" ? hexToBytes(lock.args) : hexToBytes(String(lock.args));
+  if (lockArgs.length < 20) {
+    throw new Error("Lock args too short to derive address bytes");
+  }
+  return lockArgs.slice(0, 20);
 }
 
 // ─── Script args encoding ─────────────────────────────────────────────────────

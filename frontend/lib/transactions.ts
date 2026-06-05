@@ -12,6 +12,7 @@ import {
   decodeParticipantData,
   bytesToHex,
   hexToBytes,
+  lockScriptToAddressBytes,
   CampaignData,
   ParticipantData,
 } from "./encoding";
@@ -164,6 +165,67 @@ export async function sendDeposit(
   amountCkb: bigint // in CKB (not shannons)
 ): Promise<string> {
   return sendDepositShannons(signer, campaignCell, amountCkb * 100_000_000n);
+}
+
+export async function sendVerifyParticipantRaffle(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell
+): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  const depositorAddressObj = await signer.getRecommendedAddressObj();
+  const depositorAddressBytes = lockScriptToAddressBytes(depositorAddressObj.script);
+  const joinedAt = tipHeader.timestamp;
+  const ticketPrice = campaignCell.data.auxAmount;
+
+  if (ticketPrice <= 0n) {
+    throw new Error("Ticket price is unavailable for this raffle");
+  }
+
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
+  };
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons + ticketPrice,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  tx.addOutput(
+    {
+      lock: depositorAddressObj.script,
+    },
+    bytesToHex(encodeParticipantData({
+      campaignTxHash: hexToBytes(campaignCell.outPoint.txHash),
+      campaignIndex: campaignCell.outPoint.index,
+      participantAddress: depositorAddressBytes,
+      joinedAt,
+      status: ParticipantStatus.Verified,
+      depositedAmount: ticketPrice,
+    }))
+  );
+
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([3])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
 }
 
 export async function sendUpdateCampaignStatus(
