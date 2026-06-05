@@ -48,15 +48,21 @@
 }
 
 /* Per-action color overrides — must come after the base active rule */
+.campaign-action-btn.action-like.campaign-action-active,
+.campaign-action-btn.action-like.campaign-action-active:hover {
+  color: #ef4444; /* red */
+  opacity: 1;
+}
+
 .campaign-action-btn.action-bookmark.campaign-action-active,
 .campaign-action-btn.action-bookmark.campaign-action-active:hover {
   color: #3b82f6; /* blue */
+  opacity: 1;
 }
 
 .campaign-action-btn.action-comment.campaign-action-active,
 .campaign-action-btn.action-comment.campaign-action-active:hover {
-  /* color: #10b981; green */
-  color: #16a34a;
+  color: #16a34a; /* green */
   opacity: 1;
 }
 

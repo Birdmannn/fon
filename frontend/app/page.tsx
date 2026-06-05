@@ -96,6 +96,7 @@ type CampaignRecord = {
     mentions?: string[];
     comments?: unknown[];
     likeCount?: number;
+    likedByAddresses?: string[];
     bookmarkCount?: number;
     reshareCount?: number;
   };
@@ -978,6 +979,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   const [searchQuery, setSearchQuery] = useState("");
   const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const campaignsRef = useRef<CampaignCell[]>(campaigns);
 
   const buildRecordsByTxHash = useCallback((records: CampaignRecord[]) => {
     const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
@@ -992,7 +994,12 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
     return nextRecordsByTxHash;
   }, []);
 
-  const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns: CampaignCell[] = campaigns) => {
+  useEffect(() => {
+    campaignsRef.current = campaigns;
+  }, [campaigns]);
+
+  const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns?: CampaignCell[]) => {
+    const activeVisibleCampaigns: CampaignCell[] = visibleCampaigns ?? campaignsRef.current;
     if (!preserveVisibleList) {
       setLoading(true);
     }
@@ -1014,7 +1021,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
       .then(([chainCampaigns, records]) => {
         const nextRecordsByTxHash = buildRecordsByTxHash(records);
 
-        if (!preserveVisibleList || visibleCampaigns.length === 0) {
+        if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
           setCampaigns(chainCampaigns);
           setRecordsByTxHash(nextRecordsByTxHash);
           setPendingCampaigns(null);
@@ -1023,7 +1030,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
           return;
         }
 
-        const currentKeys = new Set(visibleCampaigns.map(getCampaignIdentity));
+        const currentKeys = new Set(activeVisibleCampaigns.map(getCampaignIdentity));
         let nextUnseenCount = 0;
 
         for (const campaign of chainCampaigns) {
@@ -1195,6 +1202,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
 function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -1206,6 +1214,34 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
       window.clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      if (!signer) {
+        if (!cancelled) {
+          setCurrentWalletAddress(null);
+        }
+        return;
+      }
+
+      try {
+        const nextWalletAddress = await signer.getRecommendedAddress();
+        if (!cancelled) {
+          setCurrentWalletAddress(nextWalletAddress ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentWalletAddress(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [signer]);
 
   useEffect(() => {
     if (!shouldScrollToNewest) {
@@ -1237,6 +1273,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             record={record}
             displayStatus={displayStatus}
             signer={signer ?? null}
+            currentWalletAddress={currentWalletAddress}
             nowMs={nowMs}
             isHighlighted={index === 99 && !!signer}
             onCommentDiscardRequest={onCommentDiscardRequest}
@@ -1253,6 +1290,7 @@ function CampaignCard({
   record,
   displayStatus,
   signer,
+  currentWalletAddress,
   nowMs,
   isHighlighted = false,
   onCommentDiscardRequest,
@@ -1262,6 +1300,7 @@ function CampaignCard({
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
+  currentWalletAddress: string | null;
   nowMs: number;
   isHighlighted?: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
@@ -1302,24 +1341,28 @@ function CampaignCard({
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const rewardCountValue = Number(data.rewardCount);
   const hasPendingRewardDistribution = rewardCountValue > 0 && Number(data.currentDeposits) > 0 && displayStatus === CampaignStatus.Active;
-
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
       ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
       : []
   ), [record?.socialMetadata?.comments]);
+  const initialLikedByAddresses = useMemo(() => (
+    Array.isArray(record?.socialMetadata?.likedByAddresses)
+      ? record.socialMetadata.likedByAddresses.map((value) => normalizeHash(value)).filter(Boolean)
+      : []
+  ), [record?.socialMetadata?.likedByAddresses]);
+  const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
+  const [likedByAddresses, setLikedByAddresses] = useState<string[]>(initialLikedByAddresses);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
   const [commentList, setCommentList] = useState<CampaignComment[]>(initialComments);
-  const [comments, setComments] = useState(initialComments.length);
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
-  const [userLiked, setUserLiked] = useState(false);
   const [userBookmarked, setUserBookmarked] = useState(false);
-  const [userCommented, setUserCommented] = useState(false);
   const [userReshared, setUserReshared] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
   const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
+  const [isSavingLike, setIsSavingLike] = useState(false);
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState("");
   const commentComposerRef = useRef<HTMLDivElement>(null);
@@ -1331,6 +1374,57 @@ function CampaignCard({
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
+  const isPreStartFundingDisabled = !isConnected || !hasNotStartedRaffle || isCampaignInactive || hasReachedMaxAmount;
+  const comments = commentList.length;
+  const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
+  const userCommented = normalizedCurrentWalletAddress.length > 0
+    && commentList.some((comment) => normalizeHash(comment.creatorAddress) === normalizedCurrentWalletAddress);
+
+  useEffect(() => {
+    setLikes(record?.socialMetadata?.likeCount ?? 0);
+    setLikedByAddresses(initialLikedByAddresses);
+    setBookmarks(record?.socialMetadata?.bookmarkCount ?? 0);
+    setCommentList(initialComments);
+    setReshares(record?.socialMetadata?.reshareCount ?? 0);
+  }, [
+    initialComments,
+    initialLikedByAddresses,
+    record?.socialMetadata?.bookmarkCount,
+    record?.socialMetadata?.likeCount,
+    record?.socialMetadata?.reshareCount,
+  ]);
+
+  const buildCampaignRecordPayload = (nextSocialMetadata: {
+    comments: CampaignComment[];
+    likeCount: number;
+    likedByAddresses: string[];
+    bookmarkCount: number;
+    reshareCount: number;
+  }) => ({
+    title: record?.title ?? displayTitle,
+    description: record?.description ?? displayDescription,
+    campaignType: record?.campaignType ?? data.campaignType,
+    summaryDraft: record?.summaryDraft ?? onchainSummary,
+    argsDraft: {
+      taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
+      taskDurationHours: record?.argsDraft?.taskDurationHours ?? String(Number(data.taskDurationSecs) / 3600),
+      maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
+      auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
+    },
+    socialMetadata: {
+      mentions,
+      comments: nextSocialMetadata.comments,
+      likeCount: nextSocialMetadata.likeCount,
+      likedByAddresses: nextSocialMetadata.likedByAddresses,
+      bookmarkCount: nextSocialMetadata.bookmarkCount,
+      reshareCount: nextSocialMetadata.reshareCount,
+    },
+    creatorAddress: record?.creatorAddress ?? creatorAddress,
+    creatorHandle: record?.creatorHandle ?? creatorHandle,
+    status: record?.status ?? "published",
+    txHash: record?.txHash ?? outPoint.txHash,
+    publishError: record?.publishError ?? null,
+  });
 
   useEffect(() => {
     if (!commentDiscardDecision || commentDiscardDecision.cardId !== cardId) {
@@ -1346,10 +1440,46 @@ function CampaignCard({
     }
   }, [cardId, commentDiscardDecision]);
 
-  const handleLike = () => {
-    if (!isConnected) return;
-    setUserLiked(!userLiked);
-    setLikes((prev) => (userLiked ? prev - 1 : prev + 1));
+  const handleLike = async () => {
+    if (!isConnected || !record?._id || !normalizedCurrentWalletAddress || isSavingLike) {
+      return;
+    }
+
+    const previousLikedByAddresses = likedByAddresses;
+    const previousLikeCount = likes;
+    const nextLikedByAddresses = userLiked
+      ? likedByAddresses.filter((address) => address !== normalizedCurrentWalletAddress)
+      : [...likedByAddresses, normalizedCurrentWalletAddress];
+    const nextLikeCount = nextLikedByAddresses.length;
+
+    setLikedByAddresses(nextLikedByAddresses);
+    setLikes(nextLikeCount);
+    setIsSavingLike(true);
+
+    try {
+      const response = await fetch(`/api/campaign-records/${record._id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildCampaignRecordPayload({
+          comments: commentList,
+          likeCount: nextLikeCount,
+          likedByAddresses: nextLikedByAddresses,
+          bookmarkCount: bookmarks,
+          reshareCount: reshares,
+        })),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save like");
+      }
+    } catch {
+      setLikedByAddresses(previousLikedByAddresses);
+      setLikes(previousLikeCount);
+    } finally {
+      setIsSavingLike(false);
+    }
   };
 
   const handleBookmark = () => {
@@ -1413,51 +1543,36 @@ function CampaignCard({
     setCommentError("");
 
     try {
+      if (!currentWalletAddress) {
+        throw new Error("Unable to resolve wallet address for comment");
+      }
+
       const nextComment: CampaignComment = {
         text: nextCommentText,
-        creatorAddress,
-        creatorHandle,
+        creatorAddress: currentWalletAddress,
+        creatorHandle: buildDefaultHandle(currentWalletAddress),
         createdAt: new Date().toISOString(),
       };
-      const nextComments = [...initialComments, nextComment];
+      const nextComments = [...commentList, nextComment];
       const response = await fetch(`/api/campaign-records/${record._id}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          title: record.title ?? displayTitle,
-          description: record.description ?? displayDescription,
-          campaignType: record.campaignType ?? data.campaignType,
-          summaryDraft: record.summaryDraft ?? onchainSummary,
-          argsDraft: {
-            taskStartDelayHours: record.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
-            taskDurationHours: record.argsDraft?.taskDurationHours ?? String(Number(data.taskDurationSecs) / 3600),
-            maxAmountCkb: record.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
-            auxAmountCkb: record.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
-          },
-          socialMetadata: {
-            mentions,
-            comments: nextComments,
-            likeCount: likes,
-            bookmarkCount: bookmarks,
-            reshareCount: reshares,
-          },
-          creatorAddress: record.creatorAddress ?? creatorAddress,
-          creatorHandle: record.creatorHandle ?? creatorHandle,
-          status: record.status ?? "published",
-          txHash: record.txHash ?? outPoint.txHash,
-          publishError: record.publishError ?? null,
-        }),
+        body: JSON.stringify(buildCampaignRecordPayload({
+          comments: nextComments,
+          likeCount: likes,
+          likedByAddresses,
+          bookmarkCount: bookmarks,
+          reshareCount: reshares,
+        })),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to save comment");
       }
 
-      setComments(nextComments.length);
       setCommentList(nextComments);
-      setUserCommented(true);
       setCommentDraft("");
       if (commentInputRef.current) {
         commentInputRef.current.style.height = "32px";
@@ -1487,14 +1602,20 @@ function CampaignCard({
     }
   };
 
-  const handleDepositClick = () => {
+  const handleDepositClick = (mode: "default" | "prestart-funding" = "default") => {
+    if (mode === "prestart-funding") {
+      if (isPreStartFundingDisabled) return;
+      setShowDepositModal(true);
+      return;
+    }
+
     if (isPurchaseDisabled) return;
     setShowDepositModal(true);
   };
 
-  const handleDepositSubmit = async (e: React.FormEvent) => {
+  const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    if (!signer || !depositAmount || isPurchaseDisabled) return;
+    if (!signer || !depositAmount || (showDepositModal && hasNotStartedRaffle ? isPreStartFundingDisabled : isPurchaseDisabled)) return;
 
     const amount = BigInt(Math.floor(parseFloat(depositAmount) * 100_000_000));
     if (amount <= 0n) {
@@ -1630,9 +1751,9 @@ function CampaignCard({
       <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
         <div className="flex items-center gap-2">
           <button
-            onClick={handleLike}
-            className={`campaign-action-btn ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
+            onClick={() => void handleLike()}
+            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${(!isConnected || !record?._id || isSavingLike) ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to like" : !record?._id ? "Likes unavailable for this campaign yet" : "Like"}
           >
             <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{likes}</span>
@@ -1665,7 +1786,7 @@ function CampaignCard({
             <span className="campaign-action-count">{reshares}</span>
           </button>
 
-          {hasPendingRewardDistribution && (
+          {!hasNotStartedRaffle && hasPendingRewardDistribution && (
             <button
               type="button"
               className="campaign-action-btn action-winners campaign-action-active"
@@ -1676,8 +1797,29 @@ function CampaignCard({
             </button>
           )}
 
+          {hasNotStartedRaffle && (
+            <button
+              type="button"
+              onClick={() => handleDepositClick("prestart-funding")}
+              disabled={isPreStartFundingDisabled}
+              className={`campaign-action-btn ${isPreStartFundingDisabled ? "campaign-action-disabled" : ""}`}
+              data-tooltip={
+                !isConnected
+                  ? "Connect wallet to fund raffle"
+                  : isCampaignInactive
+                    ? "Campaign unavailable"
+                    : hasReachedMaxAmount
+                      ? "Max amount reached"
+                      : "Fund raffle without joining"
+              }
+            >
+              <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+            </button>
+          )}
+
           <button
-            onClick={handleDepositClick}
+            onClick={() => handleDepositClick()}
             disabled={isPurchaseDisabled}
             className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`}
             data-tooltip={
