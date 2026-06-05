@@ -6,6 +6,7 @@ import {
   encodeCreateCampaignArgs,
   encodeDepositArgs,
   encodeCampaignData,
+  encodeParticipantData,
   encodeSummary,
   decodeCampaignData,
   decodeParticipantData,
@@ -159,6 +160,102 @@ export async function sendDeposit(
   return signer.sendTransaction(tx);
 }
 
+export async function sendUpdateCampaignStatus(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell
+): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(campaignCell.data))
+  );
+
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([4])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
+}
+
+export async function sendBatchDeliver(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  winners: ParticipantCell[],
+  revealedPreimage?: Uint8Array
+): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+  });
+
+  for (const winner of winners) {
+    tx.addInput({
+      previousOutput: winner.outPoint,
+      since: "0x0",
+    });
+  }
+
+  const rewardCount = campaignCell.data.rewardCount === 0n ? BigInt(winners.length) : campaignCell.data.rewardCount;
+  const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits - rewardPerWinner * BigInt(winners.length),
+  };
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons - rewardPerWinner * BigInt(winners.length),
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  for (const winner of winners) {
+    tx.addOutput(
+      {
+        capacity: winner.capacityShannons + rewardPerWinner,
+        lock: winner.lock,
+        type: winner.type ?? undefined,
+      },
+      bytesToHex(encodeParticipantData({
+        ...winner.data,
+        status: ParticipantStatus.Rewarded,
+      }))
+    );
+  }
+
+  await tx.completeFeeBy(signer, 1000n);
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(encodeBatchDeliverArgs(revealedPreimage)) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  return signer.sendTransaction(tx);
+}
+
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────
 
 export interface CampaignCell {
@@ -263,7 +360,7 @@ export async function fetchParticipants(
         data,
         capacityShannons: cell.cellOutput.capacity,
         lock: cell.cellOutput.lock,
-        type: cell.cellOutput.type,
+        type: cell.cellOutput.type ?? null,
       });
     } catch {
       // Skip malformed cells.
