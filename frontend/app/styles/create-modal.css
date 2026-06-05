@@ -468,6 +468,17 @@
   border-color: #16a34a;
 }
 
+.create-info-ticket-input::-webkit-outer-spin-button,
+.create-info-ticket-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.create-info-ticket-input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .create-drafts-pane {
   display: flex;
   flex: 1;
