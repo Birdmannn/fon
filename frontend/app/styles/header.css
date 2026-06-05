@@ -95,7 +95,7 @@
   align-items: center;
   gap: 0.75rem;
   margin-left: auto;
-  padding-top: 0.1rem;
+  padding-top: 0.22rem;
 }
 
 .header-info-modal-project-link {
@@ -114,8 +114,8 @@
 }
 
 .header-info-modal-project-link svg {
-  width: 1.7rem;
-  height: 1.7rem;
+  width: 1.9rem;
+  height: 1.9rem;
   display: block;
   fill: currentColor;
 }
