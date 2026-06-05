@@ -28,7 +28,7 @@ import CreateCampaignModalContent, {
 } from "@/app/create/_components/CreateCampaignModalContent";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
-import { fetchCampaigns, sendDeposit, CampaignCell } from "@/lib/transactions";
+import { fetchCampaigns, sendDeposit, sendDepositShannons, CampaignCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
@@ -124,7 +124,7 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "discard-comment-confirm";
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "discard-comment-confirm" | "ticket-purchase";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
@@ -305,6 +305,10 @@ export default function Home() {
   const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
+  const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
+  const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
+  const [ticketPurchaseError, setTicketPurchaseError] = useState("");
+  const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -340,15 +344,23 @@ export default function Home() {
     }
   };
 
+  const resetTicketPurchaseState = useCallback(() => {
+    setTicketPurchaseCampaign(null);
+    setTicketPurchaseQuantity("1");
+    setTicketPurchaseError("");
+    setIsPurchasingTickets(false);
+  }, []);
+
   const showInfoModalForInteraction = useCallback((interaction: "hover" | "click") => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
+    resetTicketPurchaseState();
     setInfoModalMode("about");
     setSaveDraftPromptError("");
     setInfoModalInteraction(interaction);
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, []);
+  }, [resetTicketPurchaseState]);
 
   const openSaveDraftConfirmModal = useCallback(() => {
     clearInfoCloseTimer();
@@ -398,9 +410,10 @@ export default function Home() {
       setInfoModalMode("about");
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
+      resetTicketPurchaseState();
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
-  }, [showInfoModal, isInfoModalClosing]);
+  }, [showInfoModal, isInfoModalClosing, resetTicketPurchaseState]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
@@ -464,6 +477,65 @@ export default function Home() {
       closeInfoModal();
     }, 2500);
   }, [closeInfoModal]);
+
+  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setTicketPurchaseCampaign(campaign);
+    setTicketPurchaseQuantity("1");
+    setTicketPurchaseError("");
+    setIsPurchasingTickets(false);
+    setInfoModalMode("ticket-purchase");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, []);
+
+  const handleTicketPurchaseSubmit = useCallback(async () => {
+    if (!signer || !ticketPurchaseCampaign) {
+      return;
+    }
+
+    const quantity = Number.parseInt(ticketPurchaseQuantity.trim(), 10);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setTicketPurchaseError("Enter a valid number of tickets");
+      return;
+    }
+
+    const requestedTickets = BigInt(quantity);
+    const totalCostShannons = ticketPurchaseCampaign.data.auxAmount * requestedTickets;
+    if (totalCostShannons <= 0n) {
+      setTicketPurchaseError("Ticket price is unavailable for this raffle");
+      return;
+    }
+
+    const remainingCapacity = ticketPurchaseCampaign.data.maximumAmount > ticketPurchaseCampaign.data.currentDeposits
+      ? ticketPurchaseCampaign.data.maximumAmount - ticketPurchaseCampaign.data.currentDeposits
+      : 0n;
+    const remainingTickets = ticketPurchaseCampaign.data.auxAmount > 0n
+      ? remainingCapacity / ticketPurchaseCampaign.data.auxAmount
+      : 0n;
+    if (requestedTickets > remainingTickets || totalCostShannons > remainingCapacity) {
+      setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
+      return;
+    }
+
+    setIsPurchasingTickets(true);
+    setTicketPurchaseError("");
+
+    try {
+      const txHash = await sendDepositShannons(signer, ticketPurchaseCampaign, totalCostShannons);
+      resetTicketPurchaseState();
+      closeInfoModal();
+      window.setTimeout(() => {
+        openSubmissionSuccessInfoModal(txHash);
+      }, INFO_MODAL_ANIMATION_MS);
+    } catch (error) {
+      setTicketPurchaseError(error instanceof Error ? error.message : "Failed to buy tickets");
+      setIsPurchasingTickets(false);
+    }
+  }, [closeInfoModal, openSubmissionSuccessInfoModal, resetTicketPurchaseState, signer, ticketPurchaseCampaign, ticketPurchaseQuantity]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -720,6 +792,20 @@ export default function Home() {
         </p>
       ) : null}
     </div>
+  ) : infoModalMode === "ticket-purchase" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">How many tickets?</p>
+      {/* {ticketPurchaseCampaign ? (
+        <p className="create-info-constraint-item text-gray-500">
+          <span>1 ticket = {formatCkbAmount(ticketPurchaseCampaign.data.auxAmount)} CKB</span>
+        </p>
+      ) : null} */}
+      {ticketPurchaseError ? (
+        <p className="create-info-constraint-item text-red-500">
+          <span>{ticketPurchaseError}</span>
+        </p>
+      ) : null}
+    </div>
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
       {createModalStep === "review" ? (
@@ -785,7 +871,39 @@ export default function Home() {
       ))}
     </div>
   );
-  const infoModalActions = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+  const infoModalActions = infoModalMode === "ticket-purchase" ? (
+    <form
+      className="create-info-confirm-actions"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleTicketPurchaseSubmit();
+      }}
+    >
+      <input
+        type="number"
+        min="1"
+        step="1"
+        inputMode="numeric"
+        value={ticketPurchaseQuantity}
+        onChange={(event) => {
+          setTicketPurchaseQuantity(event.target.value);
+          if (ticketPurchaseError) {
+            setTicketPurchaseError("");
+          }
+        }}
+        className="create-info-ticket-input"
+        aria-label="Number of tickets"
+        disabled={isPurchasingTickets}
+      />
+      <button
+        type="submit"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isPurchasingTickets}
+      >
+        {isPurchasingTickets ? "Processing..." : "Continue"}
+      </button>
+    </form>
+  ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
         type="button"
@@ -906,11 +1024,11 @@ export default function Home() {
           <FreightInfoModal
             open={showInfoModal}
             closing={isInfoModalClosing}
-            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : "Freight information modal"}
+            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
-            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : "Close Freight information modal"}
-            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
+            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : "Close Freight information modal"}
+            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase"}
             onRequestClose={closeInfoModal}
             onKeepOpen={keepInfoModalOpen}
             onScheduleClose={scheduleCloseInfoModal}
@@ -927,6 +1045,7 @@ export default function Home() {
           client={client}
           onCommentDiscardRequest={handleCommentDiscardRequest}
           commentDiscardDecision={commentDiscardDecision}
+          onTicketPurchaseRequest={openTicketPurchaseInfoModal}
         />
       </div>
 
@@ -992,7 +1111,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1220,12 +1339,13 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
         onScrolledToNewest={() => setShouldScrollToNewest(false)}
         onCommentDiscardRequest={onCommentDiscardRequest}
         commentDiscardDecision={commentDiscardDecision}
+        onTicketPurchaseRequest={onTicketPurchaseRequest}
       />
     </>
   );
 }
 
-function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; }) {
+function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
@@ -1304,6 +1424,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             isHighlighted={index === 99 && !!signer}
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
+            onTicketPurchaseRequest={onTicketPurchaseRequest}
           />
         </div>
       ))}
@@ -1321,6 +1442,7 @@ function CampaignCard({
   isHighlighted = false,
   onCommentDiscardRequest,
   commentDiscardDecision,
+  onTicketPurchaseRequest,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
@@ -1331,6 +1453,7 @@ function CampaignCard({
   isHighlighted?: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
+  onTicketPurchaseRequest: (campaign: CampaignCell) => void;
 }) {
   const { data, outPoint } = c;
   const cardId = `${outPoint.txHash}:${outPoint.index}`;
@@ -1771,8 +1894,8 @@ function CampaignCard({
         <div className="flex items-center gap-2">
           <button
             onClick={() => void handleLike()}
-            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${(!isConnected || !record?._id || isSavingLike) ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to like" : !record?._id ? "Likes unavailable for this campaign yet" : "Like"}
+            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
           >
             <Heart className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{likes}</span>
@@ -1829,7 +1952,7 @@ function CampaignCard({
           )}
 
           <button
-            onClick={handleDepositClick}
+            onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c) : handleDepositClick}
             disabled={isPurchaseDisabled}
             className={`campaign-action-btn ${!hasNotStartedRaffle ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
             data-tooltip={

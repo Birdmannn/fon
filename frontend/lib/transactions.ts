@@ -112,13 +112,11 @@ export async function sendCreateCampaign(
 
 // ─── deposit ─────────────────────────────────────────────────────────────────
 
-export async function sendDeposit(
+export async function sendDepositShannons(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
-  amountCkb: bigint // in CKB (not shannons)
+  amountShannons: bigint
 ): Promise<string> {
-  const amountShannons = amountCkb * 100_000_000n; // CKB → shannons
-
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
 
@@ -158,6 +156,14 @@ export async function sendDeposit(
   tx.setWitnessArgsAt(0, witness);
 
   return signer.sendTransaction(tx);
+}
+
+export async function sendDeposit(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  amountCkb: bigint // in CKB (not shannons)
+): Promise<string> {
+  return sendDepositShannons(signer, campaignCell, amountCkb * 100_000_000n);
 }
 
 export async function sendUpdateCampaignStatus(

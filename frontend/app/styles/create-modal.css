@@ -448,6 +448,26 @@
   border-color: #16a34a;
 }
 
+.create-info-ticket-input {
+  margin: 0;
+  flex: 1;
+  width: 100%;
+  min-height: 1.2rem;
+  padding: 0.32rem 0.9rem;
+  border-radius: 0;
+  border: 2px solid #9ca3af;
+  background: var(--background);
+  color: #111827;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  outline: none;
+}
+
+.create-info-ticket-input:focus {
+  border-color: #16a34a;
+}
+
 .create-drafts-pane {
   display: flex;
   flex: 1;
