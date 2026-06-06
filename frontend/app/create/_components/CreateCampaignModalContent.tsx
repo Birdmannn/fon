@@ -1887,7 +1887,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
         <div className="create-review-args-card">
           <div className="create-review-card-heading-row">
-            <p className="create-review-section-label">Campaign args</p>
+            <p className="create-review-section-label">Freight args</p>
             <span className="create-review-offchain-note">Content saved off-chain</span>
           </div>
           {renderModalArgsInputs()}
