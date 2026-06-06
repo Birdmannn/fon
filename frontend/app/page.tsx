@@ -318,6 +318,9 @@ export default function Home() {
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
+  const handleFreightsLoadError = useCallback((message: string) => {
+    setSubmissionErrorMessage(message);
+  }, []);
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
@@ -978,6 +981,14 @@ export default function Home() {
           <span>{item}</span>
         </p>
       ))}
+      {submissionErrorMessage ? (
+        <>
+          <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+          <p className="create-info-constraint-item text-red-500 break-words">
+            <span>{submissionErrorMessage}</span>
+          </p>
+        </>
+      ) : null}
     </div>
   );
   const infoModalActions = infoModalMode === "ticket-purchase" ? (
@@ -1201,6 +1212,7 @@ export default function Home() {
           onCommentDiscardRequest={handleCommentDiscardRequest}
           commentDiscardDecision={commentDiscardDecision}
           onTicketPurchaseRequest={openTicketPurchaseInfoModal}
+          onErrorChange={handleFreightsLoadError}
         />
       </div>
 
@@ -1266,7 +1278,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onErrorChange: (message: string) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1354,12 +1366,16 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
         setPendingRecordsByTxHash(null);
         setUnseenCampaignCount(0);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => {
+        const message = e instanceof Error ? e.message : String(e);
+        setError(message);
+        onErrorChange(message);
+      })
       .finally(() => {
         setLoading(false);
         setIsRefreshing(false);
       });
-  }, [buildRecordsByTxHash, client]);
+  }, [buildRecordsByTxHash, client, onErrorChange]);
 
   useEffect(() => {
     const loadTimer = setTimeout(() => {
@@ -1558,7 +1574,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
   }
 
   if (error) {
-    return <p className="text-sm text-red-500">{error}</p>;
+    return <p className="text-sm text-gray-400">Sorry, an error occurred while loading freights</p>;
   }
 
   if (campaigns.length === 0) {
