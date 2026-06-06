@@ -1182,7 +1182,7 @@ export default function Home() {
             ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
-            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create campaign modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : "Close Freight information modal"}
+            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : "Close Freight information modal"}
             backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase"}
             onRequestClose={closeInfoModal}
             onKeepOpen={keepInfoModalOpen}
@@ -1208,7 +1208,7 @@ export default function Home() {
         <button
           type="button"
           className={`create-campaign-backdrop ${isCreateModalClosing ? "create-campaign-backdrop-closing" : ""}`}
-          aria-label="Close create campaign modal"
+          aria-label="Close create freight modal"
           onClick={requestCloseCreateModal}
         />
       )}
@@ -1217,7 +1217,7 @@ export default function Home() {
         <div
           className={`create-campaign-modal ${isCreateModalClosing ? "create-campaign-modal-closing" : ""}`}
           role="dialog"
-          aria-label="Create campaign modal"
+          aria-label="Create freight modal"
           aria-modal="true"
         >
           <CreateCampaignModalContent
@@ -1241,7 +1241,7 @@ export default function Home() {
 
       <button
         type="button"
-        aria-label="Open create campaign modal"
+        aria-label="Open create freight modal"
         className="fixed left-8 create-campaign-fab"
         onClick={openCreateModal}
       >
@@ -1449,7 +1449,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
               type="button"
               className="campaign-refresh-badge"
               onClick={handleShowPendingCampaigns}
-              aria-label={`Show ${unseenCampaignCount} new campaigns`}
+              aria-label={`Show ${unseenCampaignCount} new freights`}
             >
               {formatCompactCampaignCount(unseenCampaignCount)}
             </button>
@@ -1460,7 +1460,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
             onClick={handleRefresh}
             disabled={isRefreshing}
             className="campaign-action-btn"
-            data-tooltip="Refresh campaigns"
+            data-tooltip="Refresh freights"
           >
             <span className={`campaign-refresh-icon-wrap ${isRefreshing ? "refreshing" : ""}`}>
               <RefreshCw className="campaign-action-icon" size={24} strokeWidth={2} aria-hidden="true" />
@@ -1470,7 +1470,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
             <input
               ref={searchInputRef}
               type="text"
-              placeholder="Search campaigns..."
+              placeholder="Search freights..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="campaign-search-input"
@@ -1479,7 +1479,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
           <button
             onClick={handleSearchClick}
             className="campaign-action-btn"
-            data-tooltip="Search campaigns"
+            data-tooltip="Search freights"
           >
             <Search className="campaign-action-icon" size={24} strokeWidth={2} aria-hidden="true" />
           </button>
@@ -1554,7 +1554,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
   }, [onScrolledToNewest, shouldScrollToNewest]);
 
   if (loading) {
-    return <p className="text-sm text-gray-400">Loading campaigns…</p>;
+    return <p className="text-sm text-gray-400">Loading freights…</p>;
   }
 
   if (error) {
@@ -1562,7 +1562,7 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
   }
 
   if (campaigns.length === 0) {
-    return <p className="text-sm text-gray-400">No campaigns found on testnet yet.</p>;
+    return <p className="text-sm text-gray-400">No freights found on testnet yet.</p>;
   }
 
   return (
