@@ -94,6 +94,23 @@ clean:
 	rm -rf build
 	cargo clean
 
+DEVNET_DIR ?= $(TOP).devnet
+DEVNET_RPC_URL ?= http://127.0.0.1:8114
+DEVNET_CKB_BIN ?=
+DEVNET_FROM_ADDRESS ?=
+DEVNET_FROM_ACCOUNT ?= $(DEVNET_FROM_ADDRESS)
+
+.PHONY: devnet-start devnet-stop devnet-clean
+
+devnet-start:
+	./scripts/devnet.sh start --devnet-dir "$(DEVNET_DIR)" --rpc-url "$(DEVNET_RPC_URL)" $(if $(DEVNET_CKB_BIN),--ckb-bin "$(DEVNET_CKB_BIN)") --from-address "$(DEVNET_FROM_ADDRESS)" --from-account "$(DEVNET_FROM_ACCOUNT)"
+
+devnet-stop:
+	./scripts/devnet.sh stop --devnet-dir "$(DEVNET_DIR)" --rpc-url "$(DEVNET_RPC_URL)"
+
+devnet-clean:
+	./scripts/devnet.sh clean --devnet-dir "$(DEVNET_DIR)" --rpc-url "$(DEVNET_RPC_URL)"
+
 TEMPLATE_TYPE := --git
 TEMPLATE_REPO := https://github.com/cryptape/ckb-script-templates
 CRATE :=
