@@ -135,6 +135,7 @@ type SettlementModalData = {
   evidenceItems: string[];
   recipients: string[];
   distributionTxHash: string | null;
+  errorMessage?: string | null;
 };
 
 function normalizeHash(value: string | null | undefined) {
@@ -328,6 +329,7 @@ export default function Home() {
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
+  const [isLoadingSettlementModal, setIsLoadingSettlementModal] = useState(false);
   const handleFreightsLoadError = useCallback((message: string) => {
     setSubmissionErrorMessage(message);
   }, []);
@@ -510,6 +512,7 @@ export default function Home() {
       setSubmissionSuccessTxHash("");
       setSubmissionErrorMessage("");
       setSettlementModalData(null);
+      setIsLoadingSettlementModal(false);
       resetTicketPurchaseState();
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
@@ -932,22 +935,40 @@ export default function Home() {
         <span>{settlementModalData?.randomnessHash ?? "Unavailable"}</span>
       </p>
       <p className="mt-3 text-gray-900 font-semibold">Evidence:</p>
-      {(settlementModalData?.evidenceItems ?? []).map((item) => (
-        <p key={item} className="create-info-constraint-item">
-          <span>{item}</span>
-        </p>
-      ))}
-      <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
-      {(settlementModalData?.recipients ?? []).length > 0 ? (
-        (settlementModalData?.recipients ?? []).map((recipient) => (
-          <p key={recipient} className="create-info-constraint-item text-gray-500 font-mono break-all">
-            <span>{recipient}</span>
-          </p>
-        ))
+      {isLoadingSettlementModal ? (
+        <div className="create-info-skeleton-list" aria-hidden="true">
+          <span className="create-info-skeleton-line" />
+          <span className="create-info-skeleton-line" />
+          <span className="create-info-skeleton-line" />
+        </div>
       ) : (
-        <p className="create-info-constraint-item text-gray-500">
-          <span>No recipients found.</span>
-        </p>
+        <>
+          {(settlementModalData?.evidenceItems ?? []).map((item, index) => (
+            <p key={item} className="create-info-constraint-item create-info-typed-line" style={{ animationDelay: `${index * 90}ms` }}>
+              <span>{item}</span>
+            </p>
+          ))}
+          <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
+          {(settlementModalData?.recipients ?? []).length > 0 ? (
+            (settlementModalData?.recipients ?? []).map((recipient, index) => (
+              <p key={recipient} className="create-info-constraint-item text-gray-500 font-mono break-all create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
+                <span>{recipient}</span>
+              </p>
+            ))
+          ) : (
+            <p className="create-info-constraint-item text-gray-500">
+              <span>No recipients found.</span>
+            </p>
+          )}
+          {settlementModalData?.errorMessage ? (
+            <>
+              <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+              <p className="create-info-constraint-item text-red-500 break-words">
+                <span>{settlementModalData.errorMessage}</span>
+              </p>
+            </>
+          ) : null}
+        </>
       )}
       {settlementModalData?.distributionTxHash ? (
         <>
@@ -1255,12 +1276,12 @@ export default function Home() {
           onErrorChange={handleFreightsLoadError}
           onSettlementInfoRequest={(data) => {
             setSettlementModalData(data);
+            setIsLoadingSettlementModal(false);
             setInfoModalMode("raffle-settlement");
             setInfoModalInteraction("click");
             setIsInfoModalClosing(false);
             setShowInfoModal(true);
           }}
-          onSubmissionErrorRequest={openSubmissionErrorInfoModal}
         />
       </div>
 
@@ -1326,7 +1347,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest, onSubmissionErrorRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; onSubmissionErrorRequest: (message: string) => void; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1572,13 +1593,12 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
         commentDiscardDecision={commentDiscardDecision}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
         onSettlementInfoRequest={onSettlementInfoRequest}
-        onSubmissionErrorRequest={onSubmissionErrorRequest}
       />
     </>
   );
 }
 
-function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onSettlementInfoRequest, onSubmissionErrorRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; onSubmissionErrorRequest: (message: string) => void; }) {
+function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
@@ -1670,7 +1690,6 @@ function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest,
             commentDiscardDecision={commentDiscardDecision}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onSettlementInfoRequest={onSettlementInfoRequest}
-            onSubmissionErrorRequest={onSubmissionErrorRequest}
           />
         </div>
       ))}
@@ -1691,7 +1710,6 @@ function CampaignCard({
   commentDiscardDecision,
   onTicketPurchaseRequest,
   onSettlementInfoRequest,
-  onSubmissionErrorRequest,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
@@ -1705,7 +1723,6 @@ function CampaignCard({
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onTicketPurchaseRequest: (campaign: CampaignCell) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
-  onSubmissionErrorRequest: (message: string) => void;
 }) {
   const { data, outPoint } = c;
   const cardId = `${outPoint.txHash}:${outPoint.index}`;
@@ -2040,14 +2057,24 @@ function CampaignCard({
   const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && !hasSettledRewards;
 
   const handleSettlementClick = async () => {
-    if (!isRaffleCampaign || !signer) {
+    if (!isRaffleCampaign) {
       return;
     }
 
+    const randomnessHash = bytesToHex(data.randomnessHash);
+    const randomnessPreimage = record?.randomnessPreimage ?? null;
+    onSettlementInfoRequest({
+      campaignTitle: displayTitle,
+      randomnessHash,
+      randomnessPreimage,
+      evidenceItems: [],
+      recipients: [],
+      distributionTxHash: null,
+      errorMessage: null,
+    });
+
     try {
       const participants = await fetchParticipants(client, c);
-      const randomnessHash = bytesToHex(data.randomnessHash);
-      const randomnessPreimage = record?.randomnessPreimage ?? null;
       const revealedPreimage = randomnessPreimage ? hexToBytes(randomnessPreimage) : null;
       const winners = revealedPreimage
         ? previewDeterministicWinners(participants, data.rewardCount, revealedPreimage, c)
@@ -2062,16 +2089,15 @@ function CampaignCard({
       ];
 
       let distributionTxHash: string | null = null;
+      let errorMessage: string | null = null;
       if (shouldGlowSettlement) {
-        if (!hasCreatorPermissionForSettlement) {
-          onSubmissionErrorRequest("Only the freight creator can distribute raffle rewards.");
-          return;
+        if (!signer || !hasCreatorPermissionForSettlement) {
+          errorMessage = "Only the freight creator can distribute raffle rewards.";
+        } else if (!revealedPreimage) {
+          errorMessage = "Randomness preimage is not available for settlement.";
+        } else {
+          distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
         }
-        if (!revealedPreimage) {
-          onSubmissionErrorRequest("Randomness preimage is not available for settlement.");
-          return;
-        }
-        distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
       }
 
       onSettlementInfoRequest({
@@ -2081,9 +2107,18 @@ function CampaignCard({
         evidenceItems,
         recipients: recipientAddresses,
         distributionTxHash,
+        errorMessage,
       });
     } catch (error) {
-      onSubmissionErrorRequest(error instanceof Error ? error.message : "Failed to distribute raffle rewards");
+      onSettlementInfoRequest({
+        campaignTitle: displayTitle,
+        randomnessHash,
+        randomnessPreimage,
+        evidenceItems: [],
+        recipients: [],
+        distributionTxHash: null,
+        errorMessage: error instanceof Error ? error.message : "Failed to distribute raffle rewards",
+      });
     }
   };
 
@@ -2246,22 +2281,22 @@ function CampaignCard({
             </button>
           )}
 
-          {isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && (
+          {isRaffleCampaign && displayStatus === CampaignStatus.Completed && soldTickets > 0n && (
             <button
               type="button"
               onClick={() => void handleSettlementClick()}
-              className={`campaign-action-btn action-winners ${!hasNotStartedRaffle ? "ml-auto " : ""}${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
+              className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
               data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
             >
               <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count">{rewardCountValue}</span>
+              <span className="campaign-action-count">{String(soldTickets)}</span>
             </button>
           )}
 
           <button
             onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c) : handleDepositClick}
             disabled={isPurchaseDisabled}
-            className={`campaign-action-btn ${!hasNotStartedRaffle && !(isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0) ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+            className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
             data-tooltip={
               !isConnected
                 ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
