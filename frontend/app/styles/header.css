@@ -81,8 +81,19 @@
   border: 2px solid var(--foreground);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
   z-index: 82;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: header-info-modal-reveal 620ms ease forwards;
+}
+
+.header-info-modal-header {
+  flex-shrink: 0;
+}
+
+.header-info-modal-scroll-area {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .header-info-modal-title-row {
