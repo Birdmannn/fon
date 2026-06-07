@@ -2234,18 +2234,6 @@ function CampaignCard({
             <span className="campaign-action-count">{reshares}</span>
           </button>
 
-          {isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && (
-            <button
-              type="button"
-              onClick={() => void handleSettlementClick()}
-              className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`}
-              data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
-            >
-              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count">{rewardCountValue}</span>
-            </button>
-          )}
-
           {hasNotStartedRaffle && (
             <button
               type="button"
@@ -2258,10 +2246,22 @@ function CampaignCard({
             </button>
           )}
 
+          {isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && (
+            <button
+              type="button"
+              onClick={() => void handleSettlementClick()}
+              className={`campaign-action-btn action-winners ${!hasNotStartedRaffle ? "ml-auto " : ""}${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
+              data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
+            >
+              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count">{rewardCountValue}</span>
+            </button>
+          )}
+
           <button
             onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c) : handleDepositClick}
             disabled={isPurchaseDisabled}
-            className={`campaign-action-btn ${!hasNotStartedRaffle ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+            className={`campaign-action-btn ${!hasNotStartedRaffle && !(isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0) ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
             data-tooltip={
               !isConnected
                 ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
