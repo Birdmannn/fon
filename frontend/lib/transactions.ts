@@ -186,15 +186,33 @@ export async function sendVerifyParticipantRaffle(
     throw new Error("Ticket price is unavailable for this raffle");
   }
 
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
-  };
-
   tx.addInput({
     previousOutput: campaignCell.outPoint,
     since: "0x0",
   });
+
+  let depositorInputCell: ccc.Cell | null = null;
+  for await (const cell of signer.findCells({}, true, "asc", 1)) {
+    if (cell.outPoint.txHash === campaignCell.outPoint.txHash && Number(cell.outPoint.index) === campaignCell.outPoint.index) {
+      continue;
+    }
+    depositorInputCell = cell;
+    break;
+  }
+
+  if (!depositorInputCell) {
+    throw new Error("Unable to find a depositor input cell for raffle purchase");
+  }
+
+  tx.addInput({
+    previousOutput: depositorInputCell.outPoint,
+    since: "0x0",
+  });
+
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
+  };
 
   tx.addOutput(
     {
@@ -203,6 +221,19 @@ export async function sendVerifyParticipantRaffle(
       type: campaignCell.type,
     },
     bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  const depositorChangeCapacity = depositorInputCell.cellOutput.capacity - ticketPrice;
+  if (depositorChangeCapacity < 0n) {
+    throw new Error("Depositor input capacity is smaller than the ticket price");
+  }
+
+  tx.addOutput(
+    {
+      capacity: depositorChangeCapacity,
+      lock: depositorAddressObj.script,
+    },
+    "0x"
   );
 
   tx.addOutput(
@@ -219,7 +250,9 @@ export async function sendVerifyParticipantRaffle(
     }))
   );
 
-  await tx.completeFeeBy(signer, 1000n);
+  await tx.completeFeeBy(signer, 1000n, undefined, {
+    shouldAddInputs: false,
+  });
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(new Uint8Array([3])) as `0x${string}`;
