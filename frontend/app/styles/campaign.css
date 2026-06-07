@@ -217,7 +217,7 @@
   color: #d1d5db;
   font-size: 0.76rem;
   line-height: 1;
-  font-family: var(--font-mono, monospace);
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
   cursor: pointer;
   transition: transform 180ms ease, background-color 180ms ease, color 180ms ease;
 }

@@ -141,13 +141,13 @@ function normalizeHash(value: string | null | undefined) {
   return (value ?? "").toLowerCase();
 }
 
-function deriveDisplayStatus(campaign: CampaignCell) {
+function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
   if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
     return campaign.data.status;
   }
 
   const createdAtSeconds = Number(campaign.data.createdAt) / 1000;
-  const nowSeconds = Date.now() / 1000;
+  const nowSeconds = nowMs / 1000;
   const startsAtSeconds = createdAtSeconds + Number(campaign.data.startDurationSecs);
   const endsAtSeconds = startsAtSeconds + Number(campaign.data.taskDurationSecs);
 
@@ -1338,6 +1338,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const searchInputRef = useRef<HTMLInputElement>(null);
   const campaignsRef = useRef<CampaignCell[]>(campaigns);
 
@@ -1357,6 +1358,16 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   useEffect(() => {
     campaignsRef.current = campaigns;
   }, [campaigns]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns?: CampaignCell[]) => {
     const activeVisibleCampaigns: CampaignCell[] = visibleCampaigns ?? campaignsRef.current;
@@ -1472,9 +1483,9 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
     return campaigns.map((campaign) => ({
       campaign,
       record: recordsByTxHash[normalizeHash(campaign.outPoint.txHash)] ?? null,
-      displayStatus: deriveDisplayStatus(campaign),
+      displayStatus: deriveDisplayStatus(campaign, nowMs),
     }));
-  }, [campaigns, recordsByTxHash]);
+  }, [campaigns, nowMs, recordsByTxHash]);
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const filteredCampaigns = useMemo(() => {
@@ -1572,6 +1583,16 @@ function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest,
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
