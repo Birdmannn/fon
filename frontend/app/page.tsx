@@ -28,7 +28,7 @@ import CreateCampaignModalContent, {
 } from "@/app/create/_components/CreateCampaignModalContent";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
-import { fetchCampaigns, sendDeposit, sendVerifyParticipantRaffle, CampaignCell } from "@/lib/transactions";
+import { fetchCampaigns, fetchParticipants, previewDeterministicWinners, sendBatchDeliver, sendDeposit, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, CampaignCell, ParticipantCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
@@ -1691,6 +1691,12 @@ function CampaignCard({
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositing, setIsDepositing] = useState(false);
+  const [showSettlementPanel, setShowSettlementPanel] = useState(false);
+  const [isLoadingSettlementData, setIsLoadingSettlementData] = useState(false);
+  const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
+  const [settlementError, setSettlementError] = useState("");
+  const [settlementParticipants, setSettlementParticipants] = useState<ParticipantCell[]>([]);
+  const [settlementWinners, setSettlementWinners] = useState<ParticipantCell[]>([]);
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
