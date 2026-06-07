@@ -448,6 +448,48 @@
   border-color: #16a34a;
 }
 
+.create-info-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.25rem;
+}
+
+.create-info-skeleton-line {
+  display: block;
+  width: 100%;
+  height: 0.78rem;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: create-info-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.create-info-typed-line {
+  opacity: 0;
+  animation: create-info-typed-reveal 260ms ease forwards;
+}
+
+@keyframes create-info-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes create-info-typed-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .create-info-ticket-input {
   margin: 0;
   flex: 1;

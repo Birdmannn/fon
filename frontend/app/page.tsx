@@ -28,8 +28,8 @@ import CreateCampaignModalContent, {
 } from "@/app/create/_components/CreateCampaignModalContent";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
-import { fetchCampaigns, sendDeposit, sendVerifyParticipantRaffle, CampaignCell } from "@/lib/transactions";
-import { bytesToHex, decodeSummary } from "@/lib/encoding";
+import { fetchCampaigns, fetchParticipants, previewDeterministicWinners, sendBatchDeliver, sendDeposit, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, CampaignCell, ParticipantCell } from "@/lib/transactions";
+import { bytesToHex, decodeSummary, hexToBytes } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
 
@@ -116,6 +116,7 @@ type CampaignRecord = {
   status?: "draft" | "published" | "publish_failed";
   txHash?: string | null;
   publishError?: string | null;
+  randomnessPreimage?: string | null;
 };
 
 type MergedCampaign = {
@@ -124,21 +125,30 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase";
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
+type SettlementModalData = {
+  campaignTitle: string;
+  randomnessHash: string;
+  randomnessPreimage: string | null;
+  evidenceItems: string[];
+  recipients: string[];
+  distributionTxHash: string | null;
+  errorMessage?: string | null;
+};
 
 function normalizeHash(value: string | null | undefined) {
   return (value ?? "").toLowerCase();
 }
 
-function deriveDisplayStatus(campaign: CampaignCell) {
+function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
   if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
     return campaign.data.status;
   }
 
   const createdAtSeconds = Number(campaign.data.createdAt) / 1000;
-  const nowSeconds = Date.now() / 1000;
+  const nowSeconds = nowMs / 1000;
   const startsAtSeconds = createdAtSeconds + Number(campaign.data.startDurationSecs);
   const endsAtSeconds = startsAtSeconds + Number(campaign.data.taskDurationSecs);
 
@@ -318,6 +328,8 @@ export default function Home() {
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
+  const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
+  const [isLoadingSettlementModal, setIsLoadingSettlementModal] = useState(false);
   const handleFreightsLoadError = useCallback((message: string) => {
     setSubmissionErrorMessage(message);
   }, []);
@@ -499,6 +511,8 @@ export default function Home() {
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
       setSubmissionErrorMessage("");
+      setSettlementModalData(null);
+      setIsLoadingSettlementModal(false);
       resetTicketPurchaseState();
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
@@ -907,15 +921,62 @@ export default function Home() {
   ) : infoModalMode === "ticket-purchase" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">How many tickets?</p>
-      {/* {ticketPurchaseCampaign ? (
-        <p className="create-info-constraint-item text-gray-500">
-          <span>1 ticket = {formatCkbAmount(ticketPurchaseCampaign.data.auxAmount)} CKB</span>
-        </p>
-      ) : null} */}
       {ticketPurchaseError ? (
         <p className="create-info-constraint-item text-red-500">
           <span>{ticketPurchaseError}</span>
         </p>
+      ) : null}
+    </div>
+  ) : infoModalMode === "raffle-settlement" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">{settlementModalData?.campaignTitle ?? "Raffle settlement"}</p>
+      <p className="mt-3 text-gray-900 font-semibold">Random hash:</p>
+      <p className="create-info-constraint-item text-gray-500 font-mono break-all">
+        <span>{settlementModalData?.randomnessHash ?? "Unavailable"}</span>
+      </p>
+      <p className="mt-3 text-gray-900 font-semibold">Evidence:</p>
+      {isLoadingSettlementModal ? (
+        <div className="create-info-skeleton-list" aria-hidden="true">
+          <span className="create-info-skeleton-line" />
+          <span className="create-info-skeleton-line" />
+          <span className="create-info-skeleton-line" />
+        </div>
+      ) : (
+        <>
+          {(settlementModalData?.evidenceItems ?? []).map((item, index) => (
+            <p key={item} className="create-info-constraint-item create-info-typed-line" style={{ animationDelay: `${index * 90}ms` }}>
+              <span>{item}</span>
+            </p>
+          ))}
+          <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
+          {(settlementModalData?.recipients ?? []).length > 0 ? (
+            (settlementModalData?.recipients ?? []).map((recipient, index) => (
+              <p key={recipient} className="create-info-constraint-item text-gray-500 font-mono break-all create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
+                <span>{recipient}</span>
+              </p>
+            ))
+          ) : (
+            <p className="create-info-constraint-item text-gray-500">
+              <span>No recipients found.</span>
+            </p>
+          )}
+          {settlementModalData?.errorMessage ? (
+            <>
+              <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+              <p className="create-info-constraint-item text-red-500 break-words">
+                <span>{settlementModalData.errorMessage}</span>
+              </p>
+            </>
+          ) : null}
+        </>
+      )}
+      {settlementModalData?.distributionTxHash ? (
+        <>
+          <p className="mt-3 text-gray-900 font-semibold">Distribution tx:</p>
+          <p className="create-info-constraint-item text-gray-500 font-mono break-all">
+            <span>{settlementModalData.distributionTxHash}</span>
+          </p>
+        </>
       ) : null}
     </div>
   ) : showCreateModal ? (
@@ -1190,11 +1251,11 @@ export default function Home() {
           <FreightInfoModal
             open={showInfoModal}
             closing={isInfoModalClosing}
-            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : "Freight information modal"}
+            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
-            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : "Close Freight information modal"}
-            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase"}
+            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
+            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
             onRequestClose={closeInfoModal}
             onKeepOpen={keepInfoModalOpen}
             onScheduleClose={scheduleCloseInfoModal}
@@ -1213,6 +1274,14 @@ export default function Home() {
           commentDiscardDecision={commentDiscardDecision}
           onTicketPurchaseRequest={openTicketPurchaseInfoModal}
           onErrorChange={handleFreightsLoadError}
+          onSettlementInfoRequest={(data) => {
+            setSettlementModalData(data);
+            setIsLoadingSettlementModal(false);
+            setInfoModalMode("raffle-settlement");
+            setInfoModalInteraction("click");
+            setIsInfoModalClosing(false);
+            setShowInfoModal(true);
+          }}
         />
       </div>
 
@@ -1278,7 +1347,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onErrorChange: (message: string) => void; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1290,6 +1359,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const searchInputRef = useRef<HTMLInputElement>(null);
   const campaignsRef = useRef<CampaignCell[]>(campaigns);
 
@@ -1309,6 +1379,16 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   useEffect(() => {
     campaignsRef.current = campaigns;
   }, [campaigns]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns?: CampaignCell[]) => {
     const activeVisibleCampaigns: CampaignCell[] = visibleCampaigns ?? campaignsRef.current;
@@ -1424,9 +1504,9 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
     return campaigns.map((campaign) => ({
       campaign,
       record: recordsByTxHash[normalizeHash(campaign.outPoint.txHash)] ?? null,
-      displayStatus: deriveDisplayStatus(campaign),
+      displayStatus: deriveDisplayStatus(campaign, nowMs),
     }));
-  }, [campaigns, recordsByTxHash]);
+  }, [campaigns, nowMs, recordsByTxHash]);
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const filteredCampaigns = useMemo(() => {
@@ -1504,6 +1584,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
 
       <CampaignList
         campaigns={filteredCampaigns}
+        client={client}
         loading={loading}
         error={error}
         shouldScrollToNewest={shouldScrollToNewest}
@@ -1511,16 +1592,27 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
         onCommentDiscardRequest={onCommentDiscardRequest}
         commentDiscardDecision={commentDiscardDecision}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
+        onSettlementInfoRequest={onSettlementInfoRequest}
       />
     </>
   );
 }
 
-function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest }: { campaigns: MergedCampaign[]; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; }) {
+function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -1590,12 +1682,14 @@ function CampaignList({ campaigns, loading, error, shouldScrollToNewest, onScrol
             record={record}
             displayStatus={displayStatus}
             signer={signer ?? null}
+            client={client}
             currentWalletAddress={currentWalletAddress}
             nowMs={nowMs}
             isHighlighted={index === 99 && !!signer}
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
+            onSettlementInfoRequest={onSettlementInfoRequest}
           />
         </div>
       ))}
@@ -1608,23 +1702,27 @@ function CampaignCard({
   record,
   displayStatus,
   signer,
+  client,
   currentWalletAddress,
   nowMs,
   isHighlighted = false,
   onCommentDiscardRequest,
   commentDiscardDecision,
   onTicketPurchaseRequest,
+  onSettlementInfoRequest,
 }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
+  client: ccc.Client;
   currentWalletAddress: string | null;
   nowMs: number;
   isHighlighted?: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onTicketPurchaseRequest: (campaign: CampaignCell) => void;
+  onSettlementInfoRequest: (data: SettlementModalData) => void;
 }) {
   const { data, outPoint } = c;
   const cardId = `${outPoint.txHash}:${outPoint.index}`;
@@ -1660,7 +1758,6 @@ function CampaignCard({
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const rewardCountValue = Number(data.rewardCount);
-  const hasPendingRewardDistribution = rewardCountValue > 0 && Number(data.currentDeposits) > 0 && displayStatus === CampaignStatus.Active;
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
       ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
@@ -1955,6 +2052,76 @@ function CampaignCard({
     }
   };
 
+  const hasCreatorPermissionForSettlement = isConnected && normalizeHash(currentWalletAddress) === normalizeHash(creatorAddress);
+  const hasSettledRewards = isRaffleCampaign && displayStatus === CampaignStatus.Completed && data.currentDeposits === 0n;
+  const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && !hasSettledRewards;
+
+  const handleSettlementClick = async () => {
+    if (!isRaffleCampaign) {
+      return;
+    }
+
+    const randomnessHash = bytesToHex(data.randomnessHash);
+    const randomnessPreimage = record?.randomnessPreimage ?? null;
+    onSettlementInfoRequest({
+      campaignTitle: displayTitle,
+      randomnessHash,
+      randomnessPreimage,
+      evidenceItems: [],
+      recipients: [],
+      distributionTxHash: null,
+      errorMessage: null,
+    });
+
+    try {
+      const participants = await fetchParticipants(client, c);
+      const revealedPreimage = randomnessPreimage ? hexToBytes(randomnessPreimage) : null;
+      const winners = revealedPreimage
+        ? previewDeterministicWinners(participants, data.rewardCount, revealedPreimage, c)
+        : [];
+      const recipientAddresses = winners.map((winner) => bytesToHex(winner.data.participantAddress));
+      const evidenceItems = [
+        `Stored randomness hash: ${randomnessHash}`,
+        randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage is not available in the current record store.",
+        `Participant count used: ${String(participants.length)}`,
+        `Reward count: ${String(data.rewardCount)}`,
+        "Winner ordering is deterministic by join time, participant address, then outpoint.",
+      ];
+
+      let distributionTxHash: string | null = null;
+      let errorMessage: string | null = null;
+      if (shouldGlowSettlement) {
+        if (!signer || !hasCreatorPermissionForSettlement) {
+          errorMessage = "Only the freight creator can distribute raffle rewards.";
+        } else if (!revealedPreimage) {
+          errorMessage = "Randomness preimage is not available for settlement.";
+        } else {
+          distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
+        }
+      }
+
+      onSettlementInfoRequest({
+        campaignTitle: displayTitle,
+        randomnessHash,
+        randomnessPreimage,
+        evidenceItems,
+        recipients: recipientAddresses,
+        distributionTxHash,
+        errorMessage,
+      });
+    } catch (error) {
+      onSettlementInfoRequest({
+        campaignTitle: displayTitle,
+        randomnessHash,
+        randomnessPreimage,
+        evidenceItems: [],
+        recipients: [],
+        distributionTxHash: null,
+        errorMessage: error instanceof Error ? error.message : "Failed to distribute raffle rewards",
+      });
+    }
+  };
+
   return (
     <div className="campaign-card-shell flex flex-col gap-0">
       <div className={`campaign-card-surface campaign-card-surface-sized border border-gray-200 rounded-lg p-4 flex flex-col gap-4 ${isHighlighted ? "campaign-card-highlighted" : ""}`.trim()}>
@@ -1980,12 +2147,20 @@ function CampaignCard({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
           <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
           {isRaffleCampaign && ticketPriceShannons > 0n && (
-            <span className="campaign-card-ticket-price">
-              1 <Ticket className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
-            </span>
+            <>
+              <span className="campaign-card-ticket-price">
+                1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
+              </span>
+              {data.rewardCount > 0n && (
+                <>
+                  <span className="font-medium text-gray-800">then:</span>
+                  <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`}>take {String(data.rewardCount)}</span>
+                </>
+              )}
+            </>
           )}
         </div>
 
@@ -2049,11 +2224,6 @@ function CampaignCard({
               </a>
             </span>
             <span className="campaign-card-created-date">Created {createdAtDate}</span>
-            {data.rewardCount > 0n && (
-              <span className="campaign-card-reward-count">
-                Reward count: <strong className="text-gray-800">{String(data.rewardCount)}</strong>
-              </span>
-            )}
           </div>
           <span className={countdownClassName} title={countdownTitle} aria-label={`${countdownTitle} ${countdown.text}`}>
             {countdown.text}
@@ -2099,17 +2269,6 @@ function CampaignCard({
             <span className="campaign-action-count">{reshares}</span>
           </button>
 
-          {!hasNotStartedRaffle && hasPendingRewardDistribution && (
-            <button
-              type="button"
-              className="campaign-action-btn action-winners campaign-action-active"
-              data-tooltip="Pending reward distribution"
-            >
-              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count">{rewardCountValue}</span>
-            </button>
-          )}
-
           {hasNotStartedRaffle && (
             <button
               type="button"
@@ -2122,10 +2281,22 @@ function CampaignCard({
             </button>
           )}
 
+          {isRaffleCampaign && displayStatus === CampaignStatus.Completed && soldTickets > 0n && (
+            <button
+              type="button"
+              onClick={() => void handleSettlementClick()}
+              className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
+              data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
+            >
+              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+              <span className="campaign-action-count">{String(soldTickets)}</span>
+            </button>
+          )}
+
           <button
             onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c) : handleDepositClick}
             disabled={isPurchaseDisabled}
-            className={`campaign-action-btn ${!hasNotStartedRaffle ? "ml-auto " : ""}${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+            className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
             data-tooltip={
               !isConnected
                 ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")

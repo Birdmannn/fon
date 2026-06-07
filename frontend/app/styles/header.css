@@ -73,6 +73,7 @@
   right: 0;
   width: auto;
   min-width: min(26rem, calc(100vw - 2rem));
+  max-height: 60vh;
   padding: 0.9rem 1rem;
   border-radius: 1.5rem;
   background-color: var(--background);
@@ -80,7 +81,19 @@
   border: 2px solid var(--foreground);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
   z-index: 82;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: header-info-modal-reveal 620ms ease forwards;
+}
+
+.header-info-modal-header {
+  flex-shrink: 0;
+}
+
+.header-info-modal-scroll-area {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .header-info-modal-title-row {

@@ -56,51 +56,55 @@ export default function FreightInfoModal({
         onMouseEnter={onKeepOpen}
         onMouseLeave={onScheduleClose}
       >
-        <div className="header-info-modal-title-row">
-          <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
-          <div className="header-info-modal-project-links" aria-label="Project links">
-            <a
-              href={PROJECT_GITHUB_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="header-info-modal-project-link"
-              aria-label="Open FreightOnNervos GitHub repository"
-            >
-              {GITHUB_ICON}
-            </a>
-            {PROJECT_X_URL ? (
+        <div className="header-info-modal-header">
+          <div className="header-info-modal-title-row">
+            <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
+            <div className="header-info-modal-project-links" aria-label="Project links">
               <a
-                href={PROJECT_X_URL}
+                href={PROJECT_GITHUB_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="header-info-modal-project-link"
-                aria-label="Open FreightOnNervos X profile"
+                aria-label="Open FreightOnNervos GitHub repository"
               >
-                {X_ICON}
+                {GITHUB_ICON}
               </a>
-            ) : (
-              <span
-                className="header-info-modal-project-link header-info-modal-project-link-disabled"
-                aria-label="FreightOnNervos X link coming soon"
-              >
-                {X_ICON}
-              </span>
-            )}
+              {PROJECT_X_URL ? (
+                <a
+                  href={PROJECT_X_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="header-info-modal-project-link"
+                  aria-label="Open FreightOnNervos X profile"
+                >
+                  {X_ICON}
+                </a>
+              ) : (
+                <span
+                  className="header-info-modal-project-link header-info-modal-project-link-disabled"
+                  aria-label="FreightOnNervos X link coming soon"
+                >
+                  {X_ICON}
+                </span>
+              )}
+            </div>
           </div>
+          <p className="text-xs text-gray-400 font-mono break-all mt-2">
+            Contract:{" "}
+            <a
+              href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
+            </a>
+          </p>
         </div>
-        <p className="text-xs text-gray-400 font-mono break-all mt-2">
-          Contract:{" "}
-          <a
-            href={`https://pudge.explorer.nervos.org/transaction/${FREIGHT_CONTRACT.outPoint.txHash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            {FREIGHT_CONTRACT.outPoint.txHash.slice(0, 22)}…
-          </a>
-        </p>
-        {body}
-        {actions}
+        <div className="header-info-modal-scroll-area">
+          {body}
+          {actions}
+        </div>
       </div>
 
       <button

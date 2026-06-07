@@ -1,12 +1,15 @@
-// ─── Deployed contract (CKB Testnet) ─────────────────────────────────────────
+const FREIGHT_CONTRACT_CODE_HASH = process.env.NEXT_PUBLIC_FREIGHT_CODE_HASH || "0x262009f7daa271428b37e0b804451fb389deb23f1d146ad9a0356a93bcf0edfe";
+const FREIGHT_CONTRACT_HASH_TYPE = (process.env.NEXT_PUBLIC_FREIGHT_HASH_TYPE || "type") as "type" | "data" | "data1";
+const FREIGHT_CONTRACT_OUTPOINT_TX_HASH = process.env.NEXT_PUBLIC_FREIGHT_OUTPOINT_TX_HASH || "0xefe7f8dca3d1e2621eca414162c52e36f48dd8a034a4bf9ad5d6bd5561f44d4d";
+const FREIGHT_CONTRACT_OUTPOINT_INDEX = Number.parseInt(process.env.NEXT_PUBLIC_FREIGHT_OUTPOINT_INDEX || "0", 10);
+
+// ─── Deployed contract (environment-configurable) ─────────────────────────────
 export const FREIGHT_CONTRACT = {
-  codeHash:
-    "0x262009f7daa271428b37e0b804451fb389deb23f1d146ad9a0356a93bcf0edfe",
-  hashType: "type" as const,
+  codeHash: FREIGHT_CONTRACT_CODE_HASH,
+  hashType: FREIGHT_CONTRACT_HASH_TYPE,
   outPoint: {
-    txHash:
-      "0xefe7f8dca3d1e2621eca414162c52e36f48dd8a034a4bf9ad5d6bd5561f44d4d",
-    index: 0,
+    txHash: FREIGHT_CONTRACT_OUTPOINT_TX_HASH,
+    index: Number.isFinite(FREIGHT_CONTRACT_OUTPOINT_INDEX) ? FREIGHT_CONTRACT_OUTPOINT_INDEX : 0,
   },
 } as const;
 
