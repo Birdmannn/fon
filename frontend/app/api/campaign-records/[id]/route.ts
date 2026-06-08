@@ -29,6 +29,7 @@ type CampaignRecordPayload = {
   txHash?: unknown;
   publishError?: unknown;
   randomnessPreimage?: unknown;
+  activatedTxHash?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -105,6 +106,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const creatorAddress = ensureOptionalString(payload.creatorAddress, "creatorAddress");
   const creatorHandle = ensureOptionalString(payload.creatorHandle, "creatorHandle");
   const randomnessPreimage = ensureOptionalString(payload.randomnessPreimage, "randomnessPreimage");
+  const activatedTxHash = ensureOptionalString(payload.activatedTxHash, "activatedTxHash");
 
   return {
     title,
@@ -133,6 +135,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
     txHash,
     publishError,
     randomnessPreimage,
+    activatedTxHash,
   };
 }
 

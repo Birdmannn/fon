@@ -9,6 +9,8 @@ use freight::types::{CampaignStatus, CampaignType, ParticipantStatus};
 use secp256k1::global::SECP256K1;
 use secp256k1::{Message as SecpMessage, PublicKey, SecretKey};
 
+mod raffle_e2e;
+
 const CREATOR: u8 = 11;
 const DEPOSITOR: u8 = 42;
 const DEFAULT_CAPACITY: u64 = 100_000;
@@ -84,7 +86,8 @@ fn default_summary() -> [u8; 64] {
 }
 
 /// Build create_campaign type script args.
-/// Format: [0x00][start(8)][task(8)][type(1)][max(8)][aux(8)] = 34 bytes
+/// Format: [0x00][start(8)][task(8)][type(1)][max(8)][aux(8)][randomness_hash(32)][reward_count(8)] = 74 bytes
+/// Existing tests default to zero randomness and zero reward count.
 fn build_create_campaign_script_args(
     start_duration: u64,
     task_duration: u64,
@@ -92,13 +95,15 @@ fn build_create_campaign_script_args(
     maximum_amount: u64,
     aux_amount: u64,
 ) -> Bytes {
-    let mut args = Vec::with_capacity(34);
+    let mut args = Vec::with_capacity(74);
     args.push(0u8);
     args.extend_from_slice(&start_duration.to_le_bytes());
     args.extend_from_slice(&task_duration.to_le_bytes());
     args.push(campaign_type as u8);
     args.extend_from_slice(&maximum_amount.to_le_bytes());
     args.extend_from_slice(&aux_amount.to_le_bytes());
+    args.extend_from_slice(&[0u8; 32]);
+    args.extend_from_slice(&0u64.to_le_bytes());
     Bytes::from(args)
 }
 
