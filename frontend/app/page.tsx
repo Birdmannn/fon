@@ -128,7 +128,8 @@ type MergedCampaign = {
   displayStatus: CampaignStatus;
 };
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+  // Add a new mode for ticket purchase success (separate from generic submission-success)
+type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 type SettlementModalData = {
@@ -338,6 +339,7 @@ export default function Home() {
   }, []);
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
+  const ticketBoughtCallbackRef = useRef<((campaignTxHash: string, ticketPrice: bigint) => void) | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
   const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
@@ -385,6 +387,7 @@ export default function Home() {
   const resetTicketPurchaseState = useCallback(() => {
     setTicketPurchaseCampaign(null);
     setTicketPurchaseRecord(null);
+    ticketBoughtCallbackRef.current = null;
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
@@ -505,6 +508,7 @@ export default function Home() {
     clearSubmissionSuccessTimer();
 
     if (!showInfoModal || isInfoModalClosing) return;
+    if (infoModalMode === "ticket-purchase" && isPurchasingTickets) return;
 
     setIsInfoModalClosing(true);
     clearInfoHideTimer();
@@ -521,7 +525,7 @@ export default function Home() {
       resetTicketPurchaseState();
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
-  }, [showInfoModal, isInfoModalClosing, resetTicketPurchaseState]);
+  }, [showInfoModal, isInfoModalClosing, infoModalMode, isPurchasingTickets, resetTicketPurchaseState]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
@@ -587,6 +591,21 @@ export default function Home() {
     }, 2500);
   }, [closeInfoModal]);
 
+  const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setSubmissionErrorMessage("");
+    setSubmissionSuccessTxHash(txHash);
+    setInfoModalMode("ticket-buy-success");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    submissionSuccessTimerRef.current = setTimeout(() => {
+      closeInfoModal();
+    }, 3000);
+  }, [closeInfoModal]);
+
   const openSubmissionErrorInfoModal = useCallback((message: string) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
@@ -599,12 +618,13 @@ export default function Home() {
     setShowInfoModal(true);
   }, []);
 
-  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null) => {
+  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
     setTicketPurchaseCampaign(campaign);
     setTicketPurchaseRecord(record);
+    ticketBoughtCallbackRef.current = onTicketBought;
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
@@ -697,19 +717,23 @@ export default function Home() {
         }
 
         campaignForPurchase = updated;
-        setTicketPurchaseError("Step 2/2 — Buying ticket…");
+        setTicketPurchaseError("Step 2/2 — Buying ticket… Please hold…");
       }
 
       // Tx 2 (or Tx 1 if already active): buy the ticket
       const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase);
-      openSubmissionSuccessInfoModal(txHash);
+
+      // Optimistically reduce ticket count in the campaign list so user sees it immediately
+      ticketBoughtCallbackRef.current?.(campaignForPurchase.outPoint.txHash, campaignForPurchase.data.auxAmount);
+
+      openTicketBuySuccessInfoModal(txHash);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to buy tickets";
       setTicketPurchaseError(message);
       setIsPurchasingTickets(false);
       openSubmissionErrorInfoModal(message);
     }
-  }, [openSubmissionErrorInfoModal, openSubmissionSuccessInfoModal, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
+  }, [openSubmissionErrorInfoModal, openTicketBuySuccessInfoModal, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -817,6 +841,10 @@ export default function Home() {
 
   const scheduleCloseInfoModal = () => {
     if (infoModalMode === "save-draft-confirm") {
+      return;
+    }
+
+    if (infoModalMode === "ticket-purchase" && isPurchasingTickets) {
       return;
     }
 
@@ -942,7 +970,22 @@ export default function Home() {
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-green-600">Submission successful</p>
+      <p className="create-info-constraint-item text-gray-500 font-mono break-all"> tx hash: 
+        <a
+          href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          {submissionSuccessTxHash}
+        </a>
+      </p>
+    </div>
+  ) : infoModalMode === "ticket-buy-success" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-green-600">Buy Successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">
+        <span className="text-gray-400">tx hash: </span>
         <a
           href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
           target="_blank"
@@ -1306,7 +1349,7 @@ export default function Home() {
           <FreightInfoModal
             open={showInfoModal}
             closing={isInfoModalClosing}
-            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
+            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
             body={infoModalBody}
             actions={infoModalActions}
             backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
@@ -1402,7 +1445,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1413,6 +1456,18 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Optimistically increment currentDeposits on a campaign cell after a ticket purchase,
+  // so the remaining ticket count updates immediately without waiting for a refresh.
+  const handleTicketBought = useCallback((campaignTxHash: string, ticketPrice: bigint) => {
+    setCampaigns((prev) =>
+      prev.map((c) =>
+        c.outPoint.txHash === campaignTxHash
+          ? { ...c, data: { ...c.data, currentDeposits: c.data.currentDeposits + ticketPrice } }
+          : c
+      )
+    );
+  }, []);
   const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -1647,13 +1702,14 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
         onCommentDiscardRequest={onCommentDiscardRequest}
         commentDiscardDecision={commentDiscardDecision}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
+        onTicketBought={handleTicketBought}
         onSettlementInfoRequest={onSettlementInfoRequest}
       />
     </>
   );
 }
 
-function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
+function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onTicketBought, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => void; onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
@@ -1744,6 +1800,7 @@ function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest,
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
+            onTicketBought={onTicketBought}
             onSettlementInfoRequest={onSettlementInfoRequest}
           />
         </div>
@@ -1764,6 +1821,7 @@ function CampaignCard({
   onCommentDiscardRequest,
   commentDiscardDecision,
   onTicketPurchaseRequest,
+  onTicketBought,
   onSettlementInfoRequest,
 }: {
   campaign: CampaignCell;
@@ -1776,7 +1834,8 @@ function CampaignCard({
   isHighlighted?: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
-  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => void;
+  onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 }) {
   const { data, outPoint } = c;
@@ -2354,7 +2413,7 @@ function CampaignCard({
                 <span className="campaign-action-count">{String(soldTickets)}</span>
               </button>
               <button
-                onClick={() => onTicketPurchaseRequest(c, record)}
+                onClick={() => onTicketPurchaseRequest(c, record, onTicketBought)}
                 disabled={isPurchaseDisabled}
                 className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
                 data-tooltip={!isConnected ? "Connect wallet to buy tickets" : "Freight unavailable"}
@@ -2367,7 +2426,7 @@ function CampaignCard({
 
           {!(isRaffleCampaign && displayStatus === CampaignStatus.Completed && soldTickets > 0n) && !hasNotStartedRaffle && (
             <button
-              onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c, record) : handleDepositClick}
+              onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c, record, onTicketBought) : handleDepositClick}
               disabled={isPurchaseDisabled}
               className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
               data-tooltip={
