@@ -134,9 +134,16 @@ export async function sendDepositShannons(
   };
 
   // Add the campaign cell as input (GroupInput[0])
+  // Provide full cell data so ccc can resolve capacity without an extra RPC call.
   tx.addInput({
     previousOutput: campaignCell.outPoint,
     since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
   });
 
   // Output[0]: updated campaign cell with new deposit amount and new type script
@@ -187,9 +194,16 @@ export async function sendVerifyParticipantRaffle(
   }
 
   // Input[0]: campaign cell — must be GroupInput[0] so the contract finds it
+  // Provide full cell data so ccc can resolve capacity without an extra RPC call.
   tx.addInput({
     previousOutput: campaignCell.outPoint,
     since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
   });
 
   // Output[0]: updated campaign cell with ticket price added to capacity + deposits
@@ -254,18 +268,44 @@ export async function sendUpdateCampaignStatus(
   const tipHeader = await signer.client.getTipHeader();
   tx.headerDeps.push(tipHeader.hash);
 
+  const nowMs = Number(tipHeader.timestamp);
+  const createdAtMs = Number(campaignCell.data.createdAt);
+  const startDelayMs = Number(campaignCell.data.startDurationSecs) * 1000;
+  const durationMs = Number(campaignCell.data.taskDurationSecs) * 1000;
+  const startsAtMs = createdAtMs + startDelayMs;
+  const endsAtMs = startsAtMs + durationMs;
+
+  // Derive the new status the contract will compute and write it in the output cell.
+  // The contract's update_campaign_status does exactly this same derivation.
+  let newStatus: CampaignStatus;
+  if (nowMs >= endsAtMs) {
+    newStatus = CampaignStatus.Completed;
+  } else if (nowMs >= startsAtMs) {
+    newStatus = CampaignStatus.Active;
+  } else {
+    throw new Error("Campaign has not started yet — cannot update status");
+  }
+
   tx.addInput({
     previousOutput: campaignCell.outPoint,
     since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
   });
 
+  // Output must have the new status — the contract verifies this
+  const updatedData = { ...campaignCell.data, status: newStatus };
   tx.addOutput(
     {
       capacity: campaignCell.capacityShannons,
       lock: campaignCell.lock,
       type: campaignCell.type,
     },
-    bytesToHex(encodeCampaignData(campaignCell.data))
+    bytesToHex(encodeCampaignData(updatedData))
   );
 
   await tx.completeFeeBy(signer, 1000n);
@@ -292,12 +332,24 @@ export async function sendBatchDeliver(
   tx.addInput({
     previousOutput: campaignCell.outPoint,
     since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
   });
 
   for (const winner of winners) {
     tx.addInput({
       previousOutput: winner.outPoint,
       since: "0x0",
+      cellOutput: {
+        capacity: winner.capacityShannons,
+        lock: winner.lock,
+        type: winner.type ?? undefined,
+      },
+      outputData: bytesToHex(encodeParticipantData(winner.data)),
     });
   }
 

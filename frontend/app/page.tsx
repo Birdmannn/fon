@@ -117,6 +117,9 @@ type CampaignRecord = {
   txHash?: string | null;
   publishError?: string | null;
   randomnessPreimage?: string | null;
+  // Set by the first ticket buyer after calling update_campaign_status.
+  // Presence means the campaign is already Active on-chain — skip activate tx.
+  activatedTxHash?: string | null;
 };
 
 type MergedCampaign = {
@@ -334,6 +337,7 @@ export default function Home() {
     setSubmissionErrorMessage(message);
   }, []);
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
+  const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
   const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
@@ -380,6 +384,7 @@ export default function Home() {
 
   const resetTicketPurchaseState = useCallback(() => {
     setTicketPurchaseCampaign(null);
+    setTicketPurchaseRecord(null);
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
@@ -594,11 +599,12 @@ export default function Home() {
     setShowInfoModal(true);
   }, []);
 
-  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell) => {
+  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
     setTicketPurchaseCampaign(campaign);
+    setTicketPurchaseRecord(record);
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
@@ -646,7 +652,56 @@ export default function Home() {
     setTicketPurchaseError("");
 
     try {
-      const txHash = await sendVerifyParticipantRaffle(signer, ticketPurchaseCampaign);
+      // Check if the campaign needs to be activated on-chain first.
+      // - If the record already has activatedTxHash, someone else already did it — skip.
+      // - If data.status is already Active on-chain, skip.
+      // - Otherwise this is the first buyer: send activate tx (tx 1), record the flag
+      //   off-chain, then send the ticket purchase tx (tx 2).
+      const needsActivation =
+        ticketPurchaseCampaign.data.status !== CampaignStatus.Active &&
+        !ticketPurchaseRecord?.activatedTxHash;
+
+      let campaignForPurchase = ticketPurchaseCampaign;
+
+      if (needsActivation) {
+        setTicketPurchaseError("Step 1/2 — Activating raffle on-chain…");
+
+        // Tx 1: update_campaign_status
+        const activateTxHash = await sendUpdateCampaignStatus(signer, ticketPurchaseCampaign);
+
+        // Persist the flag off-chain so subsequent buyers skip this step
+        if (ticketPurchaseRecord?._id) {
+          await fetch(`/api/campaign-records/${ticketPurchaseRecord._id}/activate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ activatedTxHash: activateTxHash }),
+          }).catch(() => {
+            // Non-fatal — the on-chain state is the source of truth
+          });
+        }
+
+        // Wait for the tx to confirm then re-fetch to get the updated cell
+        setTicketPurchaseError("Step 1/2 — Waiting for confirmation…");
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+
+        const updatedCampaigns = await fetchCampaigns(signer.client);
+        const updated = updatedCampaigns.find(
+          (c) =>
+            c.data.status === CampaignStatus.Active &&
+            bytesToHex(c.data.createdBy) === bytesToHex(ticketPurchaseCampaign.data.createdBy) &&
+            c.data.createdAt === ticketPurchaseCampaign.data.createdAt
+        );
+
+        if (!updated) {
+          throw new Error("Activation confirmed but updated campaign cell not found yet. Please try again in a moment.");
+        }
+
+        campaignForPurchase = updated;
+        setTicketPurchaseError("Step 2/2 — Buying ticket…");
+      }
+
+      // Tx 2 (or Tx 1 if already active): buy the ticket
+      const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase);
       openSubmissionSuccessInfoModal(txHash);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to buy tickets";
@@ -654,7 +709,7 @@ export default function Home() {
       setIsPurchasingTickets(false);
       openSubmissionErrorInfoModal(message);
     }
-  }, [openSubmissionErrorInfoModal, openSubmissionSuccessInfoModal, signer, ticketPurchaseCampaign, ticketPurchaseQuantity]);
+  }, [openSubmissionErrorInfoModal, openSubmissionSuccessInfoModal, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -922,7 +977,7 @@ export default function Home() {
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">How many tickets?</p>
       {ticketPurchaseError ? (
-        <p className="create-info-constraint-item text-red-500">
+        <p className={`create-info-constraint-item ${isPurchasingTickets ? "text-gray-500" : "text-red-500"}`}>
           <span>{ticketPurchaseError}</span>
         </p>
       ) : null}
@@ -1347,7 +1402,7 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -1598,7 +1653,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   );
 }
 
-function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
+function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
@@ -1721,7 +1776,7 @@ function CampaignCard({
   isHighlighted?: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
-  onTicketPurchaseRequest: (campaign: CampaignCell) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 }) {
   const { data, outPoint } = c;
@@ -1757,8 +1812,12 @@ function CampaignCard({
   const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
-  // On-chain status lags behind time-derived status — needs explicit update_campaign_status tx
-  const needsOnChainStatusUpdate = isRaffleCampaign && displayStatus === CampaignStatus.Active && data.status !== CampaignStatus.Active;
+  // True only when time says Active but on-chain cell still says Created AND no one has
+  // activated it yet (no activatedTxHash flag in the off-chain record).
+  const needsOnChainStatusUpdate = isRaffleCampaign &&
+    displayStatus === CampaignStatus.Active &&
+    data.status !== CampaignStatus.Active &&
+    !record?.activatedTxHash;
   const rewardCountValue = Number(data.rewardCount);
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
@@ -2296,7 +2355,7 @@ function CampaignCard({
           )}
 
           <button
-            onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c) : handleDepositClick}
+            onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c, record) : handleDepositClick}
             disabled={isPurchaseDisabled}
             className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
             data-tooltip={
