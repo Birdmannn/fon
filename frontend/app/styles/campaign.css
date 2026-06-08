@@ -73,8 +73,12 @@
 
 .campaign-action-btn.action-winners.campaign-action-active,
 .campaign-action-btn.action-winners.campaign-action-active:hover {
-  color: #7c3aed; /* purple */
-  animation: purple-blink 1s step-end infinite;
+  color: #9ca3af; /* off state — JS toggles .blink-on on body */
+}
+
+.blink-on .campaign-action-btn.action-winners.campaign-action-active,
+.blink-on .campaign-action-btn.action-winners.campaign-action-active:hover {
+  color: #7c3aed; /* purple — on state */
 }
 
 .campaign-action-btn.campaign-action-disabled {
@@ -298,8 +302,11 @@
 }
 
 .campaign-card-ticket-price-pending {
-  color: #7c3aed;
-  animation: purple-blink 1s step-end infinite;
+  color: #9ca3af; /* off state */
+}
+
+.blink-on .campaign-card-ticket-price-pending {
+  color: #7c3aed; /* purple — on state */
 }
 
 .campaign-card-ticket-price-settled {
