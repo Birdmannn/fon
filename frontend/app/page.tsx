@@ -1757,6 +1757,8 @@ function CampaignCard({
   const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
+  // On-chain status lags behind time-derived status — needs explicit update_campaign_status tx
+  const needsOnChainStatusUpdate = isRaffleCampaign && displayStatus === CampaignStatus.Active && data.status !== CampaignStatus.Active;
   const rewardCountValue = Number(data.rewardCount);
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)

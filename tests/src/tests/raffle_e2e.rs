@@ -241,9 +241,55 @@ fn test_raffle_full_lifecycle_e2e() {
         committed_campaign_data.clone(),
     );
 
-    // 3. Add raffle participants before start time.
+    // 3. Advance status to Active (start_duration has elapsed, ticket sales open).
+    let active_timestamp = created_at + start_duration * 1_000;
+    let pre_sales_header_hash = insert_header(&mut context, active_timestamp);
+    let active_committed_campaign_data = build_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        CampaignType::Raffle,
+        maximum_amount,
+        0,
+        CampaignStatus::Active,
+        reward_count,
+        randomness_hash,
+        &summary,
+        ticket_price,
+    );
+    let active_campaign_output_pre = CellOutput::new_builder()
+        .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+        .lock(creator_lock.clone())
+        .type_(Some(campaign_type_script.clone()).pack())
+        .build();
+    let advance_status_tx = TransactionBuilder::default()
+        .input(
+            CellInput::new_builder()
+                .previous_output(campaign_out_point.clone())
+                .build(),
+        )
+        .header_dep(pre_sales_header_hash)
+        .outputs(vec![active_campaign_output_pre.clone()])
+        .outputs_data(vec![active_committed_campaign_data.clone()].pack())
+        .witness(witness_with_output_type(vec![4u8]).as_bytes().pack())
+        .build();
+    let advance_status_tx = context.complete_tx(advance_status_tx);
+    context
+        .verify_tx(&advance_status_tx, 10_000_000)
+        .expect("advance status to Active should pass");
+    context.create_cell_with_out_point(
+        campaign_out_point.clone(),
+        active_campaign_output_pre,
+        active_committed_campaign_data,
+    );
+
+    // 4. Add raffle participants after start time (during Active window).
+    // Timestamps must be after created_at + start_duration * 1_000 and before
+    // created_at + start_duration * 1_000 + task_duration * 1_000.
+    let sales_open = created_at + start_duration * 1_000;
     let participant_seeds = [DEPOSITOR, DEPOSITOR.wrapping_add(1), DEPOSITOR.wrapping_add(2)];
-    let participant_joined_at = [created_at + 1_000, created_at + 2_000, created_at + 3_000];
+    let participant_joined_at = [sales_open + 1_000, sales_open + 2_000, sales_open + 3_000];
     let mut participants = Vec::new();
     let mut current_deposits = 0u64;
 
@@ -274,7 +320,7 @@ fn test_raffle_full_lifecycle_e2e() {
             CampaignType::Raffle,
             maximum_amount,
             updated_deposits,
-            CampaignStatus::Created,
+            CampaignStatus::Active, // campaign is Active during ticket sales
             reward_count,
             randomness_hash,
             &summary,
@@ -366,49 +412,6 @@ fn test_raffle_full_lifecycle_e2e() {
     }
 
     assert_eq!(current_deposits, 300, "expected three ticket purchases");
-
-    // 4. Advance status to Active.
-    let active_timestamp = created_at + start_duration * 1_000;
-    let active_header_hash = insert_header(&mut context, active_timestamp);
-    let active_campaign_data = build_campaign_bytes(
-        created_at,
-        start_duration,
-        task_duration,
-        &creator_address,
-        CampaignType::Raffle,
-        maximum_amount,
-        current_deposits,
-        CampaignStatus::Active,
-        reward_count,
-        randomness_hash,
-        &summary,
-        ticket_price,
-    );
-    let active_campaign_output = CellOutput::new_builder()
-        .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + current_deposits)))
-        .lock(creator_lock.clone())
-        .type_(Some(campaign_type_script.clone()).pack())
-        .build();
-    let activate_tx = TransactionBuilder::default()
-        .input(
-            CellInput::new_builder()
-                .previous_output(campaign_out_point.clone())
-                .build(),
-        )
-        .header_dep(active_header_hash)
-        .outputs(vec![active_campaign_output.clone()])
-        .outputs_data(vec![active_campaign_data.clone()].pack())
-        .witness(witness_with_output_type(vec![4u8]).as_bytes().pack())
-        .build();
-    let activate_tx = context.complete_tx(activate_tx);
-    context
-        .verify_tx(&activate_tx, 10_000_000)
-        .expect("update to active should pass");
-    context.create_cell_with_out_point(
-        campaign_out_point.clone(),
-        active_campaign_output,
-        active_campaign_data,
-    );
 
     // 5. Advance status to Completed.
     let completed_timestamp = created_at + (start_duration + task_duration) * 1_000 + 1_000;

@@ -141,13 +141,30 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
     let mut campaign = parse_campaign_data(&campaign_data)?;
 
     if campaign.is_raffle() {
-        // Campaign must be in Created status and within deposit window.
+        // Ticket purchases are only allowed after the campaign has started
+        // (i.e. after the momentum-building start_duration has elapsed)
+        // and before the task_duration window has closed.
+        //
+        // Timeline:
+        //   created_at
+        //     └─ + start_duration ──► sales open  (status transitions to Active)
+        //          └─ + task_duration ──► sales close (draw can happen)
         let timestamp = get_current_timestamp()?;
-        if timestamp > campaign.created_at + campaign.start_duration_in_seconds * 1_000 {
-            return Err(Error::DepositNotCompleted);
+        let sales_open = campaign.created_at
+            .checked_add(campaign.start_duration_in_seconds * 1_000)
+            .ok_or(Error::InvalidCampaignArgs)?;
+        let sales_close = sales_open
+            .checked_add(campaign.task_duration_in_seconds * 1_000)
+            .ok_or(Error::InvalidCampaignArgs)?;
+
+        if timestamp < sales_open {
+            return Err(Error::DepositNotCompleted); // too early — still in momentum window
         }
-        if campaign.status != CampaignStatus::Created {
-            return Err(Error::DepositNotCompleted);
+        if timestamp >= sales_close {
+            return Err(Error::DepositNotCompleted); // too late — sales window closed
+        }
+        if campaign.status != CampaignStatus::Active {
+            return Err(Error::DepositNotCompleted); // must be Active
         }
 
         let ticket_price = campaign.ticket_price();

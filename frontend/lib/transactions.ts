@@ -186,34 +186,17 @@ export async function sendVerifyParticipantRaffle(
     throw new Error("Ticket price is unavailable for this raffle");
   }
 
+  // Input[0]: campaign cell — must be GroupInput[0] so the contract finds it
   tx.addInput({
     previousOutput: campaignCell.outPoint,
     since: "0x0",
   });
 
-  let depositorInputCell: ccc.Cell | null = null;
-  for await (const cell of signer.findCells({}, true, "asc", 1)) {
-    if (cell.outPoint.txHash === campaignCell.outPoint.txHash && Number(cell.outPoint.index) === campaignCell.outPoint.index) {
-      continue;
-    }
-    depositorInputCell = cell;
-    break;
-  }
-
-  if (!depositorInputCell) {
-    throw new Error("Unable to find a depositor input cell for raffle purchase");
-  }
-
-  tx.addInput({
-    previousOutput: depositorInputCell.outPoint,
-    since: "0x0",
-  });
-
+  // Output[0]: updated campaign cell with ticket price added to capacity + deposits
   const updatedCampaignData = {
     ...campaignCell.data,
     currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
   };
-
   tx.addOutput(
     {
       capacity: campaignCell.capacityShannons + ticketPrice,
@@ -223,24 +206,9 @@ export async function sendVerifyParticipantRaffle(
     bytesToHex(encodeCampaignData(updatedCampaignData))
   );
 
-  // Minimum capacity for a participant cell:
-  // cell overhead (61 bytes) + lock script (~53 bytes secp256k1) + data (73 bytes) = ~187 bytes = 18_700_000_000 shannons
-  // Use a safe fixed value of 20,000,000,000 shannons (200 CKB) to be safe.
-  const PARTICIPANT_CELL_CAPACITY = 20_000_000_000n; // shannons
-
-  const depositorChangeCapacity = depositorInputCell.cellOutput.capacity - ticketPrice - PARTICIPANT_CELL_CAPACITY;
-  if (depositorChangeCapacity < 6_100_000_000n) {
-    throw new Error("Depositor input capacity is too small to cover ticket price + participant cell + change cell");
-  }
-
-  tx.addOutput(
-    {
-      capacity: depositorChangeCapacity,
-      lock: depositorAddressObj.script,
-    },
-    "0x"
-  );
-
+  // Output[1]: participant cell
+  // Minimum: cell overhead (61) + secp256k1 lock (~53) + data (73) = 187 bytes → 18_700_000_000 shannons
+  const PARTICIPANT_CELL_CAPACITY = 18_700_000_000n;
   tx.addOutput(
     {
       capacity: PARTICIPANT_CELL_CAPACITY,
@@ -256,10 +224,19 @@ export async function sendVerifyParticipantRaffle(
     }))
   );
 
-  await tx.completeFeeBy(signer, 1000n, undefined, {
-    shouldAddInputs: false,
-  });
+  // Output[2]: change cell back to depositor — completeFeeBy will fill the capacity
+  tx.addOutput(
+    {
+      lock: depositorAddressObj.script,
+    },
+    "0x"
+  );
 
+  // Let completeFeeBy pull in whatever inputs are needed to cover:
+  // ticket price (transferred to campaign cell) + participant cell + change + fee
+  await tx.completeFeeBy(signer, 1000n);
+
+  // Set witness at index 0 (campaign cell position) with selector byte 0x03
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(new Uint8Array([3])) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
