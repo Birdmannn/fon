@@ -2337,7 +2337,7 @@ function CampaignCard({
               className="campaign-action-btn ml-auto campaign-action-disabled"
               data-tooltip="Ticket sales open after start delay"
             >
-              <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
+              <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
               <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
             </button>
           )}

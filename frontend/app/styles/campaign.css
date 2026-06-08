@@ -74,6 +74,7 @@
 .campaign-action-btn.action-winners.campaign-action-active,
 .campaign-action-btn.action-winners.campaign-action-active:hover {
   color: #7c3aed; /* purple */
+  animation: purple-blink 1s step-end infinite;
 }
 
 .campaign-action-btn.campaign-action-disabled {
@@ -298,6 +299,7 @@
 
 .campaign-card-ticket-price-pending {
   color: #7c3aed;
+  animation: purple-blink 1s step-end infinite;
 }
 
 .campaign-card-ticket-price-settled {

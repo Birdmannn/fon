@@ -70,3 +70,13 @@
     transform: scale(1.4);
   }
 }
+
+/* Purple blink — hard on/off, no easing, 1 second per cycle */
+@keyframes purple-blink {
+  0%, 49.9% {
+    color: #7c3aed;
+  }
+  50%, 100% {
+    color: #9ca3af;
+  }
+}
