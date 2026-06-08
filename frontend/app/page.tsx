@@ -2335,7 +2335,7 @@ function CampaignCard({
               type="button"
               disabled
               className="campaign-action-btn ml-auto campaign-action-disabled"
-              data-tooltip="Coming soon"
+              data-tooltip="Ticket sales open after start delay"
             >
               <Coins className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
               <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
@@ -2343,47 +2343,58 @@ function CampaignCard({
           )}
 
           {isRaffleCampaign && displayStatus === CampaignStatus.Completed && soldTickets > 0n && (
-            <button
-              type="button"
-              onClick={() => void handleSettlementClick()}
-              className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
-              data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
-            >
-              <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count">{String(soldTickets)}</span>
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSettlementClick()}
+                className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
+                data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
+              >
+                <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count">{String(soldTickets)}</span>
+              </button>
+              <button
+                onClick={() => onTicketPurchaseRequest(c, record)}
+                disabled={isPurchaseDisabled}
+                className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                data-tooltip={!isConnected ? "Connect wallet to buy tickets" : "Freight unavailable"}
+              >
+                <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+              </button>
+            </div>
           )}
 
-          <button
-            onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c, record) : handleDepositClick}
-            disabled={isPurchaseDisabled}
-            className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-            data-tooltip={
-              !isConnected
-                ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-                : isCampaignInactive
-                  ? "Freight unavailable"
-                  : hasNotStartedRaffle
-                    ? "Raffle has not started"
+          {!(isRaffleCampaign && displayStatus === CampaignStatus.Completed && soldTickets > 0n) && !hasNotStartedRaffle && (
+            <button
+              onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(c, record) : handleDepositClick}
+              disabled={isPurchaseDisabled}
+              className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+              data-tooltip={
+                !isConnected
+                  ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
+                  : isCampaignInactive
+                    ? "Freight unavailable"
                     : hasNoRemainingTickets
                       ? "No tickets left"
                       : hasReachedMaxAmount
                         ? "Max amount reached"
                         : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
-            }
-          >
-            {isRaffleCampaign ? (
-              <>
-                <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
-              </>
-            ) : (
-              <>
-                <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
-              </>
-            )}
-          </button>
+              }
+            >
+              {isRaffleCampaign ? (
+                <>
+                  <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+                </>
+              ) : (
+                <>
+                  <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         <div
