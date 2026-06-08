@@ -223,9 +223,14 @@ export async function sendVerifyParticipantRaffle(
     bytesToHex(encodeCampaignData(updatedCampaignData))
   );
 
-  const depositorChangeCapacity = depositorInputCell.cellOutput.capacity - ticketPrice;
-  if (depositorChangeCapacity < 0n) {
-    throw new Error("Depositor input capacity is smaller than the ticket price");
+  // Minimum capacity for a participant cell:
+  // cell overhead (61 bytes) + lock script (~53 bytes secp256k1) + data (73 bytes) = ~187 bytes = 18_700_000_000 shannons
+  // Use a safe fixed value of 20,000,000,000 shannons (200 CKB) to be safe.
+  const PARTICIPANT_CELL_CAPACITY = 20_000_000_000n; // shannons
+
+  const depositorChangeCapacity = depositorInputCell.cellOutput.capacity - ticketPrice - PARTICIPANT_CELL_CAPACITY;
+  if (depositorChangeCapacity < 6_100_000_000n) {
+    throw new Error("Depositor input capacity is too small to cover ticket price + participant cell + change cell");
   }
 
   tx.addOutput(
@@ -238,6 +243,7 @@ export async function sendVerifyParticipantRaffle(
 
   tx.addOutput(
     {
+      capacity: PARTICIPANT_CELL_CAPACITY,
       lock: depositorAddressObj.script,
     },
     bytesToHex(encodeParticipantData({
