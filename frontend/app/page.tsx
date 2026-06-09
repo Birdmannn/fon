@@ -29,7 +29,7 @@ import CreateCampaignModalContent, {
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, fetchParticipants, previewDeterministicWinners, sendBatchDeliver, sendDeposit, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, CampaignCell, ParticipantCell } from "@/lib/transactions";
-import { bytesToHex, decodeSummary, hexToBytes } from "@/lib/encoding";
+import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
 
@@ -270,6 +270,38 @@ function buildDefaultHandle(addressHex: string) {
 
 function decodeCreatedByAddress(campaign: CampaignCell) {
   return bytesToHex(campaign.data.createdBy);
+}
+
+async function hasSettlementCreatorPermission(
+  signer: ccc.Signer | null,
+  client: ccc.Client,
+  campaign: CampaignCell,
+  currentWalletAddress: string | null,
+  record: CampaignRecord | null
+): Promise<boolean> {
+  if (!signer || !currentWalletAddress) {
+    return false;
+  }
+
+  const walletAddressObj = await signer.getRecommendedAddressObj();
+  const walletHash = bytesToHex(lockScriptToAddressBytes(walletAddressObj.script));
+
+  if (record?.creatorAddress) {
+    try {
+      const recordAddress = await ccc.Address.fromString(record.creatorAddress, client);
+      const recordHash = bytesToHex(lockScriptToAddressBytes(recordAddress.script));
+      if (recordHash === walletHash) {
+        return true;
+      }
+    } catch {
+      const normalizedCreatorHex = record.creatorAddress.toLowerCase().replace(/^0x/, "");
+      if (normalizedCreatorHex.length === 40) {
+        return walletHash.slice(2) === normalizedCreatorHex;
+      }
+    }
+  }
+
+  return walletHash === bytesToHex(campaign.data.createdBy);
 }
 
 function copyText(text: string) {
@@ -2172,7 +2204,6 @@ function CampaignCard({
     }
   };
 
-  const hasCreatorPermissionForSettlement = isConnected && normalizeHash(currentWalletAddress) === normalizeHash(creatorAddress);
   const hasSettledRewards = isRaffleCampaign && displayStatus === CampaignStatus.Completed && data.currentDeposits === 0n;
   const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && !hasSettledRewards;
 
@@ -2211,7 +2242,8 @@ function CampaignCard({
       let distributionTxHash: string | null = null;
       let errorMessage: string | null = null;
       if (shouldGlowSettlement) {
-        if (!signer || !hasCreatorPermissionForSettlement) {
+        const userHasPermission = signer ? await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record) : false;
+        if (!signer || !userHasPermission) {
           errorMessage = "Only the freight creator can distribute raffle rewards.";
         } else if (!revealedPreimage) {
           errorMessage = "Randomness preimage is not available for settlement.";
