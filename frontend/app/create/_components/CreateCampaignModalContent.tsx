@@ -205,7 +205,7 @@ type CreateCampaignModalContentProps = {
   onPreviewErrorChange?: (message: string) => void;
   onDraftListOpenChange?: (isOpen: boolean) => void;
   onDraftSelectionRequest?: (draftId: string) => void;
-  onPublishSuccess?: (txHash: string) => void;
+  onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
 };
 
 function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
@@ -1484,7 +1484,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         randomnessHash,
       });
 
-      if (isModal && activeDraftRecordId) {
+      if (isModal) {
         try {
           await persistDraftRecord(summaryToPublish, "published", hash, null, randomnessPreimageHex);
         } catch {
@@ -1492,7 +1492,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         }
       }
 
-      onPublishSuccess?.(hash);
+      onPublishSuccess?.(hash, randomnessPreimageHex);
       setStatus("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

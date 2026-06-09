@@ -363,6 +363,7 @@ export default function Home() {
   const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
+  const [submissionSuccessPreimage, setSubmissionSuccessPreimage] = useState<string | null>(null);
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
   const [isLoadingSettlementModal, setIsLoadingSettlementModal] = useState(false);
@@ -551,6 +552,7 @@ export default function Home() {
       setInfoModalMode("about");
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
+      setSubmissionSuccessPreimage(null);
       setSubmissionErrorMessage("");
       setSettlementModalData(null);
       setIsLoadingSettlementModal(false);
@@ -608,19 +610,22 @@ export default function Home() {
     }
   }, [isCreateModalClosing, isInfoModalClosing, showCreateModal, showInfoModal]);
 
-  const openSubmissionSuccessInfoModal = useCallback((txHash: string) => {
+  const openSubmissionSuccessInfoModal = useCallback((txHash: string, preimage: string | null = null) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
     setSubmissionErrorMessage("");
     setSubmissionSuccessTxHash(txHash);
+    setSubmissionSuccessPreimage(preimage);
     setInfoModalMode("submission-success");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
+    // Give extra time when showing a preimage — user needs to copy it
+    const autoCloseMs = preimage ? 12000 : 2500;
     submissionSuccessTimerRef.current = setTimeout(() => {
       closeInfoModal();
-    }, 2500);
+    }, autoCloseMs);
   }, [closeInfoModal]);
 
   const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
@@ -1012,6 +1017,17 @@ export default function Home() {
           {submissionSuccessTxHash}
         </a>
       </p>
+      {submissionSuccessPreimage && (
+        <>
+          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
+          <p className="text-xs text-amber-600 mt-1">
+            Save this — you need it to distribute raffle rewards.
+          </p>
+          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
+            {submissionSuccessPreimage}
+          </p>
+        </>
+      )}
     </div>
   ) : infoModalMode === "ticket-buy-success" ? (
     <div className="create-info-constraints-copy">
@@ -1442,9 +1458,9 @@ export default function Home() {
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
             onDraftSelectionRequest={handleDraftSelectionRequest}
-            onPublishSuccess={(txHash) => {
+            onPublishSuccess={(txHash, randomnessPreimage) => {
               finalizeCloseCreateModal();
-              openSubmissionSuccessInfoModal(txHash);
+              openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
             }}
           />
         </div>
@@ -1992,6 +2008,8 @@ function CampaignCard({
     status: record?.status ?? "published",
     txHash: record?.txHash ?? outPoint.txHash,
     publishError: record?.publishError ?? null,
+    randomnessPreimage: record?.randomnessPreimage ?? null,
+    activatedTxHash: record?.activatedTxHash ?? null,
   });
 
   useEffect(() => {
@@ -2246,7 +2264,7 @@ function CampaignCard({
         if (!signer || !userHasPermission) {
           errorMessage = "Only the freight creator can distribute raffle rewards.";
         } else if (!revealedPreimage) {
-          errorMessage = "Randomness preimage is not available for settlement.";
+          errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added. The preimage was shown in the creation success modal — check your notes.";
         } else {
           distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
         }
