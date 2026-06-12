@@ -140,6 +140,8 @@ type SettlementModalData = {
   recipients: string[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
+  _campaign?: CampaignCell;
+  _record?: CampaignRecord | null;
 };
 
 function normalizeHash(value: string | null | undefined) {
@@ -1006,7 +1008,7 @@ export default function Home() {
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-green-600">Submission successful</p>
+      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all"> tx hash: 
         <a
           href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
@@ -1031,7 +1033,7 @@ export default function Home() {
     </div>
   ) : infoModalMode === "ticket-buy-success" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-green-600">Buy Successful</p>
+      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Buy Successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">
         <span className="text-gray-400">tx hash: </span>
         <a
@@ -2240,6 +2242,8 @@ function CampaignCard({
       recipients: [],
       distributionTxHash: null,
       errorMessage: null,
+      _campaign: c,
+      _record: record,
     });
 
     try {
@@ -2278,6 +2282,8 @@ function CampaignCard({
         recipients: recipientAddresses,
         distributionTxHash,
         errorMessage,
+        _campaign: c,
+        _record: record,
       });
     } catch (error) {
       onSettlementInfoRequest({
@@ -2288,6 +2294,8 @@ function CampaignCard({
         recipients: [],
         distributionTxHash: null,
         errorMessage: error instanceof Error ? error.message : "Failed to distribute raffle rewards",
+        _campaign: c,
+        _record: record,
       });
     }
   };

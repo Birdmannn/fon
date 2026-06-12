@@ -6,6 +6,12 @@ import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "luc
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { CampaignType } from "@/lib/contract";
+import {
+  MIN_TASK_DURATION_MINUTES,
+  MINUTES_PER_HOUR,
+  normalizeCreateCampaignParams,
+  TIMING_MINUTE_STEP,
+} from "@/lib/campaignValidation";
 import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
 import { sendCreateCampaign } from "@/lib/transactions";
 
@@ -64,6 +70,38 @@ const truncateToTextLimit = (text: string, maxChars: number) => {
 const buildOnchainSummary = ({ title, description }: { title: string; description: string }) => {
   const source = normalizeSummarySource(description) || normalizeSummarySource(title);
   return truncateToUtf8Bytes(source, SUMMARY_MAX_BYTES);
+};
+
+const parseStoredTimingHours = (value: string, minimumMinutes: number) => {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) {
+    return minimumMinutes;
+  }
+
+  const clamped = Math.max(minimumMinutes, Math.round(parsed * MINUTES_PER_HOUR));
+  return Math.round(clamped / TIMING_MINUTE_STEP) * TIMING_MINUTE_STEP;
+};
+
+const splitTimingParts = (value: string, minimumMinutes: number) => {
+  const totalMinutes = parseStoredTimingHours(value, minimumMinutes);
+  return {
+    hours: Math.floor(totalMinutes / MINUTES_PER_HOUR),
+    minutes: totalMinutes % MINUTES_PER_HOUR,
+  };
+};
+
+const buildTimingHoursFromParts = (hoursPart: string, minutesPart: string, minimumMinutes: number) => {
+  const hours = Number.parseInt(hoursPart, 10);
+  const minutes = Number.parseInt(minutesPart, 10);
+  const safeHours = Number.isFinite(hours) && hours >= 0 ? hours : 0;
+  const safeMinutes = Number.isFinite(minutes) && minutes >= 0 ? Math.min(minutes, 59) : 0;
+  const normalizedMinutes = Math.round(Math.max(minimumMinutes, safeHours * MINUTES_PER_HOUR + safeMinutes) / TIMING_MINUTE_STEP) * TIMING_MINUTE_STEP;
+  const totalHours = normalizedMinutes / MINUTES_PER_HOUR;
+  if (Number.isInteger(totalHours)) {
+    return String(totalHours);
+  }
+
+  return totalHours.toFixed(10).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
 };
 
 const getNextListLine = (currentLine: string) => {
@@ -178,6 +216,13 @@ type DraftSnapshot = {
   rewardCount: string;
   auxAmountCkb: string;
   mentions: string[];
+};
+
+type PendingPublishedRecordSync = {
+  draftRecordId: string;
+  summaryDraft: string;
+  txHash: string;
+  randomnessPreimage: string | null;
 };
 
 export type CreateCampaignModalContentHandle = {
@@ -298,6 +343,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState("");
   const [pendingAdvanceToReview, setPendingAdvanceToReview] = useState(false);
+  const [pendingPublishedRecordSync, setPendingPublishedRecordSync] = useState<PendingPublishedRecordSync | null>(null);
 
   const isModal = mode === "modal";
   const isReviewStep = isModal && modalStep === "review";
@@ -338,22 +384,56 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
   const activeModalError = draftSaveError || errorMsg;
   const isNextDisabled = status === "pending" || !constraintsPassed;
-  const parsedStartDelayHours = Number.parseFloat(taskStartDelayHours);
-  const parsedDurationHours = Number.parseFloat(taskDurationHours);
-  const parsedMaxAmountCkb = Number.parseFloat(maxAmountCkb);
-  const parsedRewardCount = Number.parseFloat(rewardCount);
-  const parsedRaffleTicketPriceCkb = Number.parseFloat(raffleTicketPriceCkb);
+  const startDelayParts = useMemo(() => splitTimingParts(taskStartDelayHours, 0), [taskStartDelayHours]);
+  const durationParts = useMemo(() => splitTimingParts(taskDurationHours, MIN_TASK_DURATION_MINUTES), [taskDurationHours]);
+  const updateStartDelayFromParts = useCallback((hoursPart: string, minutesPart: string) => {
+    setTaskStartDelayHours(buildTimingHoursFromParts(hoursPart, minutesPart, 0));
+  }, []);
+  const updateDurationFromParts = useCallback((hoursPart: string, minutesPart: string) => {
+    setTaskDurationHours(buildTimingHoursFromParts(hoursPart, minutesPart, MIN_TASK_DURATION_MINUTES));
+  }, []);
+  const handleStartDelayHoursChange = useCallback((value: string) => {
+    updateStartDelayFromParts(value, String(startDelayParts.minutes));
+  }, [startDelayParts.minutes, updateStartDelayFromParts]);
+  const handleStartDelayMinutesChange = useCallback((value: string) => {
+    updateStartDelayFromParts(String(startDelayParts.hours), value);
+  }, [startDelayParts.hours, updateStartDelayFromParts]);
+  const handleDurationHoursChange = useCallback((value: string) => {
+    updateDurationFromParts(value, String(durationParts.minutes));
+  }, [durationParts.minutes, updateDurationFromParts]);
+  const handleDurationMinutesChange = useCallback((value: string) => {
+    updateDurationFromParts(String(durationParts.hours), value);
+  }, [durationParts.hours, updateDurationFromParts]);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
-  const parsedTicketCount = Number.parseFloat(maxAmountCkb);
-  const derivedRaffleMaxAmountCkb = shouldCollectRaffleTicketPrice && Number.isFinite(parsedTicketCount) && Number.isFinite(parsedRaffleTicketPriceCkb)
-    ? parsedTicketCount * parsedRaffleTicketPriceCkb
-    : parsedMaxAmountCkb;
-  const hasValidReviewSummary = activeReviewSummary.trim().length > 0 && reviewSummaryBytes <= SUMMARY_MAX_BYTES;
-  const hasValidStartDelay = Number.isFinite(parsedStartDelayHours) && parsedStartDelayHours >= 0;
-  const hasValidDuration = Number.isFinite(parsedDurationHours) && parsedDurationHours > 0;
-  const hasValidMaxAmount = Number.isFinite(derivedRaffleMaxAmountCkb) && derivedRaffleMaxAmountCkb > 0;
-  const hasValidRewardCount = Number.isFinite(parsedRewardCount) && parsedRewardCount > 0 && Number.isInteger(parsedRewardCount);
-  const hasValidRaffleTicketPrice = !shouldCollectRaffleTicketPrice || (Number.isFinite(parsedRaffleTicketPriceCkb) && parsedRaffleTicketPriceCkb > 0);
+  const normalizedCreateParams = useMemo(() => {
+    try {
+      return {
+        value: normalizeCreateCampaignParams({
+          maxAmountCkb,
+          raffleTicketPriceCkb,
+          rewardCount,
+          shouldCollectRaffleTicketPrice,
+          summary: activeReviewSummary,
+          taskDurationHours,
+          taskStartDelayHours,
+        }),
+        error: null as string | null,
+      };
+    } catch (error) {
+      return {
+        value: null,
+        error: error instanceof Error ? error.message : "Invalid campaign parameters",
+      };
+    }
+  }, [
+    activeReviewSummary,
+    maxAmountCkb,
+    raffleTicketPriceCkb,
+    rewardCount,
+    shouldCollectRaffleTicketPrice,
+    taskDurationHours,
+    taskStartDelayHours,
+  ]);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
   const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
   const currentDraftSnapshot = useMemo<DraftSnapshot>(() => buildDraftSnapshot({
@@ -384,12 +464,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const isPublishDisabled =
     status === "pending" ||
     draftSaveStatus === "saving" ||
-    (!draftSaveError && !hasValidReviewSummary) ||
-    (!draftSaveError && !hasValidStartDelay) ||
-    (!draftSaveError && !hasValidDuration) ||
-    (!draftSaveError && !hasValidMaxAmount) ||
-    (!draftSaveError && !hasValidRewardCount) ||
-    (!draftSaveError && !hasValidRaffleTicketPrice);
+    (!draftSaveError && normalizedCreateParams.error !== null);
   const showDraftsPane = isModal && modalStep === "compose" && isDraftListOpen;
   const composeHelperMessage = showNoDraftsMessage
     ? "No saved drafts yet"
@@ -552,6 +627,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setDraftDeleteId(null);
     setShowNoDraftsMessage(false);
     setLastSavedSnapshot(null);
+    setPendingPublishedRecordSync(null);
     setIsApplyingDraft(false);
     if (applyDraftAnimationTimerRef.current) {
       clearTimeout(applyDraftAnimationTimerRef.current);
@@ -1006,6 +1082,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setDraftSaveStatus("idle");
     setDraftSaveError("");
     setDraftListError("");
+    setPendingPublishedRecordSync(null);
     setStatus("idle");
     setErrorMsg("");
     syncEditorsFromState(nextTitle, nextDescription);
@@ -1169,6 +1246,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       maxAmountCkb,
       mentions,
       raffleTicketPriceCkb,
+      rewardCount,
       shouldCollectRaffleTicketPrice,
       taskDurationHours,
       taskStartDelayHours,
@@ -1183,15 +1261,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       draftStatus: DraftRecordStatus,
       txHashValue: string | null = null,
       publishError: string | null = null,
-      randomnessPreimage: string | null = null
+      randomnessPreimage: string | null = null,
+      recordIdOverride: string | null = activeDraftRecordId
     ) => {
       setDraftSaveStatus("saving");
       setDraftSaveError("");
 
       try {
         const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage);
-        const response = await fetch(activeDraftRecordId ? `/api/campaign-records/${activeDraftRecordId}` : "/api/campaign-records", {
-          method: activeDraftRecordId ? "PATCH" : "POST",
+        const response = await fetch(recordIdOverride ? `/api/campaign-records/${recordIdOverride}` : "/api/campaign-records", {
+          method: recordIdOverride ? "PATCH" : "POST",
           headers: {
             "Content-Type": "application/json",
           },
@@ -1203,7 +1282,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           throw new Error(data?.error ?? "Failed to save campaign record");
         }
 
-        const persistedId = data?.id ?? activeDraftRecordId;
+        const persistedId = data?.id ?? recordIdOverride;
         if (persistedId) {
           setActiveDraftRecordId(persistedId);
         }
@@ -1274,6 +1353,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       maxAmountCkb,
       mentions,
       raffleTicketPriceCkb,
+      rewardCount,
       shouldCollectRaffleTicketPrice,
       taskDurationHours,
       taskStartDelayHours,
@@ -1337,7 +1417,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     };
   }, []);
 
-  const handleAdvanceToReview = async () => {
+  const handleAdvanceToReview = useCallback(async () => {
     if (!validateComposeConstraints()) {
       return;
     }
@@ -1366,7 +1446,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch {
       setStatus("error");
     }
-  };
+  }, [hideMenus, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
 
   useEffect(() => {
     if (!pendingAdvanceToReview || !signer || !isModal || modalStep !== "compose") {
@@ -1376,11 +1456,39 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     void handleAdvanceToReview();
   }, [handleAdvanceToReview, isModal, modalStep, pendingAdvanceToReview, signer]);
 
+  const finalizePublishedRecordSync = useCallback(
+    async (sync: PendingPublishedRecordSync) => {
+      const persistedId = await persistDraftRecord(
+        sync.summaryDraft,
+        "published",
+        sync.txHash,
+        null,
+        sync.randomnessPreimage,
+        sync.draftRecordId
+      );
+
+      if (!persistedId) {
+        throw new Error("Failed to finalize published campaign record");
+      }
+
+      setPendingPublishedRecordSync(null);
+      return persistedId;
+    },
+    [persistDraftRecord]
+  );
+
   const handleRetryDraftSave = async () => {
     setStatus("idle");
     setErrorMsg("");
 
     try {
+      if (pendingPublishedRecordSync) {
+        await finalizePublishedRecordSync(pendingPublishedRecordSync);
+        onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage);
+        setStatus("success");
+        return;
+      }
+
       await persistDraftRecord(activeReviewSummary, "draft");
     } catch {
       setStatus("error");
@@ -1394,38 +1502,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return false;
     }
 
-    if (draftSaveStatus === "error") {
+    if (draftSaveStatus === "error" && !pendingPublishedRecordSync) {
       setErrorMsg("Please retry saving the draft before publishing");
       setStatus("error");
       return false;
     }
 
-    if (!hasValidReviewSummary) {
-      setErrorMsg("Summary must be non-empty and fit within 64 UTF-8 bytes");
-      setStatus("error");
-      return false;
-    }
-
-    if (!hasValidDuration) {
-      setErrorMsg("Please enter a valid duration greater than 0 hours");
-      setStatus("error");
-      return false;
-    }
-
-    if (!hasValidMaxAmount) {
-      setErrorMsg(shouldCollectRaffleTicketPrice ? "Please enter a valid number of tickets greater than 0" : "Please enter a valid max deposit greater than 0 CKB");
-      setStatus("error");
-      return false;
-    }
-
-    if (!hasValidRewardCount) {
-      setErrorMsg("Please enter a valid split count greater than 0");
-      setStatus("error");
-      return false;
-    }
-
-    if (!hasValidRaffleTicketPrice) {
-      setErrorMsg("Please enter a valid raffle ticket price greater than 0 CKB");
+    if (normalizedCreateParams.error) {
+      setErrorMsg(normalizedCreateParams.error);
       setStatus("error");
       return false;
     }
@@ -1456,40 +1540,59 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
+    const summaryToPublish = isModal
+      ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
+      : generatedOnchainSummary;
+    let stagedDraftRecordId: string | null = null;
+    let attemptedOnchainPublish = false;
+    let pendingSync: PendingPublishedRecordSync | null = null;
+
     setStatus("pending");
     setErrorMsg("");
+    setPendingPublishedRecordSync(null);
 
     try {
-      const startSecs = BigInt(Math.round(parsedStartDelayHours * 3600));
-      const taskSecs = BigInt(Math.round(parsedDurationHours * 3600));
-      const maxCkb = BigInt(Math.round(derivedRaffleMaxAmountCkb));
-      const auxAmountCkb = shouldCollectRaffleTicketPrice
-        ? BigInt(Math.round(parsedRaffleTicketPriceCkb))
-        : 0n;
-      const summaryToPublish = isModal
-        ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
-        : generatedOnchainSummary;
+      const normalizedParams = normalizedCreateParams.value;
+      if (!normalizedParams) {
+        throw new Error(normalizedCreateParams.error ?? "Invalid campaign parameters");
+      }
+
       const randomnessCommitment = shouldCollectRaffleTicketPrice ? createRandomnessCommitment() : null;
       const randomnessHash = randomnessCommitment?.commitment ?? new Uint8Array(32);
       const randomnessPreimageHex = randomnessCommitment ? randomnessPreimageToHex(randomnessCommitment.preimage) : null;
 
+      if (isModal && randomnessPreimageHex) {
+        stagedDraftRecordId = await persistDraftRecord(summaryToPublish, "draft", null, null, randomnessPreimageHex);
+        if (!stagedDraftRecordId) {
+          throw new Error("Failed to save the raffle preimage before publishing");
+        }
+      }
+
+      attemptedOnchainPublish = true;
       const hash = await sendCreateCampaign(signer, {
-        startDurationSecs: startSecs,
-        taskDurationSecs: taskSecs,
+        startDurationSecs: normalizedParams.startDurationSecs,
+        taskDurationSecs: normalizedParams.taskDurationSecs,
         campaignType,
-        maximumAmountCkb: maxCkb,
-        auxAmountCkb,
-        rewardCount: BigInt(Math.round(parsedRewardCount)),
+        maximumAmountCkb: normalizedParams.maximumAmountCkb,
+        auxAmountCkb: normalizedParams.auxAmountCkb,
+        rewardCount: normalizedParams.rewardCount,
         summary: summaryToPublish,
         randomnessHash,
       });
 
       if (isModal) {
-        try {
-          await persistDraftRecord(summaryToPublish, "published", hash, null, randomnessPreimageHex);
-        } catch {
-          // Keep the publish success state even if the off-chain patch fails.
+        const draftRecordId = stagedDraftRecordId ?? activeDraftRecordId;
+        if (!draftRecordId) {
+          throw new Error("Failed to resolve the campaign record after publishing");
         }
+
+        pendingSync = {
+          draftRecordId,
+          summaryDraft: summaryToPublish,
+          txHash: hash,
+          randomnessPreimage: randomnessPreimageHex,
+        };
+        await finalizePublishedRecordSync(pendingSync);
       }
 
       onPublishSuccess?.(hash, randomnessPreimageHex);
@@ -1497,14 +1600,27 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
-      if (isModal && activeDraftRecordId) {
-        try {
-          await persistDraftRecord(activeReviewSummary.trim(), "publish_failed", null, message);
-        } catch {
-          // Preserve the original publish failure message.
+      if (pendingSync) {
+        setPendingPublishedRecordSync(pendingSync);
+        setDraftSaveStatus("error");
+        setDraftSaveError(`Campaign published on-chain, but saving the published record failed: ${message}`);
+        setErrorMsg("");
+        setStatus("error");
+        return;
+      }
+
+      if (isModal && attemptedOnchainPublish) {
+        const failedRecordId = stagedDraftRecordId ?? activeDraftRecordId;
+        if (failedRecordId) {
+          try {
+            await persistDraftRecord(summaryToPublish, "publish_failed", null, message, null, failedRecordId);
+          } catch {
+            // Preserve the original publish failure message.
+          }
         }
       }
 
+      setPendingPublishedRecordSync(null);
       setErrorMsg(message);
       setStatus("error");
     }
@@ -1514,31 +1630,51 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     <div className="create-review-args-grid">
       <div className="create-review-arg-field">
         <label className="create-review-arg-label">Start delay</label>
-        <div className="create-review-arg-control">
+        <div className="create-review-arg-control gap-2">
           <input
             type="number"
             min="0"
-            step="0.5"
-            value={taskStartDelayHours}
-            onChange={(event) => setTaskStartDelayHours(event.target.value)}
+            step="1"
+            value={String(startDelayParts.hours)}
+            onChange={(event) => handleStartDelayHoursChange(event.target.value)}
             className="create-review-arg-input"
           />
           <span className="create-review-arg-unit">hrs</span>
+          <input
+            type="number"
+            min="0"
+            max="55"
+            step={TIMING_MINUTE_STEP}
+            value={String(startDelayParts.minutes)}
+            onChange={(event) => handleStartDelayMinutesChange(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">min</span>
         </div>
       </div>
 
       <div className="create-review-arg-field">
         <label className="create-review-arg-label">Duration</label>
-        <div className="create-review-arg-control">
+        <div className="create-review-arg-control gap-2">
           <input
             type="number"
-            min="0.5"
-            step="0.5"
-            value={taskDurationHours}
-            onChange={(event) => setTaskDurationHours(event.target.value)}
+            min="0"
+            step="1"
+            value={String(durationParts.hours)}
+            onChange={(event) => handleDurationHoursChange(event.target.value)}
             className="create-review-arg-input"
           />
           <span className="create-review-arg-unit">hrs</span>
+          <input
+            type="number"
+            min={MIN_TASK_DURATION_MINUTES}
+            max="55"
+            step={TIMING_MINUTE_STEP}
+            value={String(durationParts.minutes)}
+            onChange={(event) => handleDurationMinutesChange(event.target.value)}
+            className="create-review-arg-input"
+          />
+          <span className="create-review-arg-unit">min</span>
         </div>
       </div>
 
@@ -1977,7 +2113,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       ? draftSaveStatus === "saving"
                         ? "Saving preview"
                         : draftSaveStatus === "error"
-                          ? "Retry saving preview"
+                          ? pendingPublishedRecordSync
+                            ? "Retry saving published record"
+                            : "Retry saving preview"
                           : status === "pending"
                             ? "Publishing"
                             : "Publish campaign"
@@ -1988,7 +2126,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       ? draftSaveStatus === "saving"
                         ? "Saving preview..."
                         : draftSaveStatus === "error"
-                          ? "Retry saving preview"
+                          ? pendingPublishedRecordSync
+                            ? "Retry saving published record"
+                            : "Retry saving preview"
                           : status === "pending"
                             ? "Publishing..."
                             : "Publish campaign"
@@ -2186,13 +2326,23 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
-                          min="0.5"
-                          step="0.5"
-                          value={taskDurationHours}
-                          onChange={(event) => setTaskDurationHours(event.target.value)}
+                          min="0"
+                          step="1"
+                          value={String(durationParts.hours)}
+                          onChange={(event) => handleDurationHoursChange(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
+                        <input
+                          type="number"
+                          min={MIN_TASK_DURATION_MINUTES}
+                          max="55"
+                          step={TIMING_MINUTE_STEP}
+                          value={String(durationParts.minutes)}
+                          onChange={(event) => handleDurationMinutesChange(event.target.value)}
+                          className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+                        />
+                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">min</span>
                       </div>
                     </div>
 
