@@ -29,7 +29,7 @@ import CreateCampaignModalContent, {
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, fetchParticipants, previewDeterministicWinners, sendBatchDeliver, sendDeposit, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, CampaignCell, ParticipantCell } from "@/lib/transactions";
-import { bytesToHex, decodeSummary, hexToBytes } from "@/lib/encoding";
+import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
 
@@ -140,6 +140,8 @@ type SettlementModalData = {
   recipients: string[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
+  _campaign?: CampaignCell;
+  _record?: CampaignRecord | null;
 };
 
 function normalizeHash(value: string | null | undefined) {
@@ -272,6 +274,38 @@ function decodeCreatedByAddress(campaign: CampaignCell) {
   return bytesToHex(campaign.data.createdBy);
 }
 
+async function hasSettlementCreatorPermission(
+  signer: ccc.Signer | null,
+  client: ccc.Client,
+  campaign: CampaignCell,
+  currentWalletAddress: string | null,
+  record: CampaignRecord | null
+): Promise<boolean> {
+  if (!signer || !currentWalletAddress) {
+    return false;
+  }
+
+  const walletAddressObj = await signer.getRecommendedAddressObj();
+  const walletHash = bytesToHex(lockScriptToAddressBytes(walletAddressObj.script));
+
+  if (record?.creatorAddress) {
+    try {
+      const recordAddress = await ccc.Address.fromString(record.creatorAddress, client);
+      const recordHash = bytesToHex(lockScriptToAddressBytes(recordAddress.script));
+      if (recordHash === walletHash) {
+        return true;
+      }
+    } catch {
+      const normalizedCreatorHex = record.creatorAddress.toLowerCase().replace(/^0x/, "");
+      if (normalizedCreatorHex.length === 40) {
+        return walletHash.slice(2) === normalizedCreatorHex;
+      }
+    }
+  }
+
+  return walletHash === bytesToHex(campaign.data.createdBy);
+}
+
 function copyText(text: string) {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text);
@@ -331,6 +365,7 @@ export default function Home() {
   const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
+  const [submissionSuccessPreimage, setSubmissionSuccessPreimage] = useState<string | null>(null);
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
   const [isLoadingSettlementModal, setIsLoadingSettlementModal] = useState(false);
@@ -519,6 +554,7 @@ export default function Home() {
       setInfoModalMode("about");
       setSaveDraftPromptError("");
       setSubmissionSuccessTxHash("");
+      setSubmissionSuccessPreimage(null);
       setSubmissionErrorMessage("");
       setSettlementModalData(null);
       setIsLoadingSettlementModal(false);
@@ -576,19 +612,22 @@ export default function Home() {
     }
   }, [isCreateModalClosing, isInfoModalClosing, showCreateModal, showInfoModal]);
 
-  const openSubmissionSuccessInfoModal = useCallback((txHash: string) => {
+  const openSubmissionSuccessInfoModal = useCallback((txHash: string, preimage: string | null = null) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
     setSubmissionErrorMessage("");
     setSubmissionSuccessTxHash(txHash);
+    setSubmissionSuccessPreimage(preimage);
     setInfoModalMode("submission-success");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
+    // Give extra time when showing a preimage — user needs to copy it
+    const autoCloseMs = preimage ? 12000 : 2500;
     submissionSuccessTimerRef.current = setTimeout(() => {
       closeInfoModal();
-    }, 2500);
+    }, autoCloseMs);
   }, [closeInfoModal]);
 
   const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
@@ -969,7 +1008,7 @@ export default function Home() {
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-green-600">Submission successful</p>
+      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all"> tx hash: 
         <a
           href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
@@ -980,10 +1019,21 @@ export default function Home() {
           {submissionSuccessTxHash}
         </a>
       </p>
+      {submissionSuccessPreimage && (
+        <>
+          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
+          <p className="text-xs text-amber-600 mt-1">
+            Save this — you need it to distribute raffle rewards.
+          </p>
+          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
+            {submissionSuccessPreimage}
+          </p>
+        </>
+      )}
     </div>
   ) : infoModalMode === "ticket-buy-success" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-green-600">Buy Successful</p>
+      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Buy Successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">
         <span className="text-gray-400">tx hash: </span>
         <a
@@ -1410,9 +1460,9 @@ export default function Home() {
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
             onDraftSelectionRequest={handleDraftSelectionRequest}
-            onPublishSuccess={(txHash) => {
+            onPublishSuccess={(txHash, randomnessPreimage) => {
               finalizeCloseCreateModal();
-              openSubmissionSuccessInfoModal(txHash);
+              openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
             }}
           />
         </div>
@@ -1960,6 +2010,8 @@ function CampaignCard({
     status: record?.status ?? "published",
     txHash: record?.txHash ?? outPoint.txHash,
     publishError: record?.publishError ?? null,
+    randomnessPreimage: record?.randomnessPreimage ?? null,
+    activatedTxHash: record?.activatedTxHash ?? null,
   });
 
   useEffect(() => {
@@ -2172,7 +2224,6 @@ function CampaignCard({
     }
   };
 
-  const hasCreatorPermissionForSettlement = isConnected && normalizeHash(currentWalletAddress) === normalizeHash(creatorAddress);
   const hasSettledRewards = isRaffleCampaign && displayStatus === CampaignStatus.Completed && data.currentDeposits === 0n;
   const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && !hasSettledRewards;
 
@@ -2191,6 +2242,8 @@ function CampaignCard({
       recipients: [],
       distributionTxHash: null,
       errorMessage: null,
+      _campaign: c,
+      _record: record,
     });
 
     try {
@@ -2211,10 +2264,11 @@ function CampaignCard({
       let distributionTxHash: string | null = null;
       let errorMessage: string | null = null;
       if (shouldGlowSettlement) {
-        if (!signer || !hasCreatorPermissionForSettlement) {
+        const userHasPermission = signer ? await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record) : false;
+        if (!signer || !userHasPermission) {
           errorMessage = "Only the freight creator can distribute raffle rewards.";
         } else if (!revealedPreimage) {
-          errorMessage = "Randomness preimage is not available for settlement.";
+          errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added. The preimage was shown in the creation success modal — check your notes.";
         } else {
           distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
         }
@@ -2228,6 +2282,8 @@ function CampaignCard({
         recipients: recipientAddresses,
         distributionTxHash,
         errorMessage,
+        _campaign: c,
+        _record: record,
       });
     } catch (error) {
       onSettlementInfoRequest({
@@ -2238,6 +2294,8 @@ function CampaignCard({
         recipients: [],
         distributionTxHash: null,
         errorMessage: error instanceof Error ? error.message : "Failed to distribute raffle rewards",
+        _campaign: c,
+        _record: record,
       });
     }
   };

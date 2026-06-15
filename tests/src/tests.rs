@@ -303,6 +303,145 @@ fn test_create_campaign_empty_summary_rejected() {
     assert!(result.is_err(), "empty summary must be rejected");
 }
 
+#[test]
+fn test_create_campaign_one_minute_duration_passes() {
+    let mut context = Context::default();
+    let out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let creator_address = address_from(CREATOR);
+    let current_timestamp = 1_700_000_000u64;
+    let start_duration = 86400u64;
+    let task_duration = 60u64;
+    let maximum_amount = 1000u64;
+    let summary = default_summary();
+
+    let block_header = HeaderBuilder::default()
+        .timestamp(current_timestamp)
+        .number(100u64)
+        .epoch(EpochNumberWithFraction::new(1, 0, 1))
+        .build();
+    let block_header_hash = block_header.hash();
+    context.insert_header(block_header);
+
+    let type_args = build_create_campaign_script_args(
+        start_duration, task_duration, CampaignType::FundedTask, maximum_amount, 0,
+    );
+    let campaign_type_script = context
+        .build_script(&out_point, type_args)
+        .expect("build type script");
+
+    let creator_lock = context
+        .build_script(&always_success_out_point, Bytes::from(creator_address.to_vec()))
+        .expect("build creator lock");
+
+    let creator_input_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let creator_input = CellInput::new_builder().previous_output(creator_input_out_point).build();
+
+    let campaign_data = build_campaign_bytes(
+        current_timestamp, start_duration, task_duration, &creator_address,
+        CampaignType::FundedTask, maximum_amount, 0, CampaignStatus::Created, 0, [0u8; 32],
+        &summary, 0,
+    );
+
+    let tx = TransactionBuilder::default()
+        .input(creator_input)
+        .header_dep(block_header_hash)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY / 2)))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY / 2)))
+                .lock(creator_lock.clone())
+                .build(),
+        ])
+        .outputs_data(vec![campaign_data, Bytes::new()].pack())
+        .build();
+    let tx = context.complete_tx(tx);
+
+    context
+        .verify_tx(&tx, 10_000_000)
+        .expect("1-minute campaign should pass");
+}
+
+#[test]
+fn test_create_campaign_sub_minute_duration_rejected() {
+    let mut context = Context::default();
+    let out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let creator_address = address_from(CREATOR);
+    let current_timestamp = 1_700_000_000u64;
+    let start_duration = 86400u64;
+    let task_duration = 59u64;
+    let maximum_amount = 1000u64;
+    let summary = default_summary();
+
+    let block_header = HeaderBuilder::default()
+        .timestamp(current_timestamp)
+        .number(100u64)
+        .epoch(EpochNumberWithFraction::new(1, 0, 1))
+        .build();
+    let block_header_hash = block_header.hash();
+    context.insert_header(block_header);
+
+    let type_args = build_create_campaign_script_args(
+        start_duration, task_duration, CampaignType::FundedTask, maximum_amount, 0,
+    );
+    let campaign_type_script = context
+        .build_script(&out_point, type_args)
+        .expect("build type script");
+
+    let creator_lock = context
+        .build_script(&always_success_out_point, Bytes::from(creator_address.to_vec()))
+        .expect("build creator lock");
+
+    let creator_input_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let creator_input = CellInput::new_builder().previous_output(creator_input_out_point).build();
+
+    let campaign_data = build_campaign_bytes(
+        current_timestamp, start_duration, task_duration, &creator_address,
+        CampaignType::FundedTask, maximum_amount, 0, CampaignStatus::Created, 0, [0u8; 32],
+        &summary, 0,
+    );
+
+    let tx = TransactionBuilder::default()
+        .input(creator_input)
+        .header_dep(block_header_hash)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY / 2)))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY / 2)))
+                .lock(creator_lock.clone())
+                .build(),
+        ])
+        .outputs_data(vec![campaign_data, Bytes::new()].pack())
+        .build();
+    let tx = context.complete_tx(tx);
+
+    let result = context.verify_tx(&tx, 10_000_000);
+    assert!(result.is_err(), "sub-minute campaign must be rejected");
+}
+
 /// SUCCESS – Raffle campaign creation with valid ticket price.
 #[test]
 fn test_create_raffle_campaign_success() {

@@ -18,6 +18,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     };
 
     // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
+    debug!("create_campaign args len={}", args.len());
     if args.len() < 73 {
         return Err(Error::InvalidCampaignArgs);
     }
@@ -32,15 +33,19 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     let reward_count = u64::from_le_bytes(args[65..73].try_into().unwrap());
 
     if !is_campaign_creation()? {
+        debug!("create_campaign rejected because group input exists");
         return Err(Error::InvalidCampaignArgs);
     }
 
     let creator_address = extract_caller_address(AddressKey::Creator)?;
+    debug!("create_campaign creator={:x?}", creator_address);
     if !is_authorized_by_address(&creator_address)? {
+        debug!("create_campaign unauthorized creator");
         return Err(Error::Unauthorized);
     }
 
     let campaign_type: CampaignType = campaign_type_byte.try_into().unwrap();
+    debug!("create_campaign params start={} task={} type={:?} max={} aux={} reward={}", start_duration_in_seconds, task_duration_in_seconds, campaign_type, maximum_amount, aux_amount, reward_count);
     validate_campaign_params(
         start_duration_in_seconds,
         task_duration_in_seconds,

@@ -163,13 +163,17 @@ pub fn validate_campaign_params(
     aux_amount: u64,
 ) -> Result<(), Error> {
     let max_duration = 365 * 24 * 60 * 60;
+    debug!("validate_campaign_params start={} task={} max_duration={}", start_duration, task_duration, max_duration);
     if start_duration > max_duration {
+        debug!("validate_campaign_params rejected start_duration");
         return Err(Error::InvalidCampaignArgs);
     }
 
-    let min_task_duration = 30 * 60;
+    let min_task_duration = 60;
     let max_task_duration = 365 * 24 * 60 * 60;
+    debug!("validate_campaign_params min_task_duration={} max_task_duration={}", min_task_duration, max_task_duration);
     if task_duration < min_task_duration || task_duration > max_task_duration {
+        debug!("validate_campaign_params rejected task_duration");
         return Err(Error::InvalidCampaignArgs);
     }
 

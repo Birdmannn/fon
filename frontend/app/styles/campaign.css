@@ -74,13 +74,15 @@
 .campaign-action-btn.action-winners.campaign-action-active,
 .campaign-action-btn.action-winners.campaign-action-active:hover {
   color: #9ca3af; /* off state — JS toggles .blink-on on body */
+  transition: none; /* must be instant — no easing or the hard blink is lost */
 }
 
 .blink-on .campaign-action-btn.action-winners.campaign-action-active,
 .blink-on .campaign-action-btn.action-winners.campaign-action-active:hover {
-  color: #7c3aed; /* purple — on state */
+  color: #961cac; /* purple — on state */
+  transition: none;
 }
-
+/* #961cac */
 .campaign-action-btn.campaign-action-disabled {
   cursor: not-allowed;
   opacity: 0.6;
@@ -306,7 +308,7 @@
 }
 
 .blink-on .campaign-card-ticket-price-pending {
-  color: #7c3aed; /* purple — on state */
+  color: #961cac; /* purple — on state */
 }
 
 .campaign-card-ticket-price-settled {
