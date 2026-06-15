@@ -1557,6 +1557,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         throw new Error(normalizedCreateParams.error ?? "Invalid campaign parameters");
       }
 
+      // debug
       const randomnessCommitment = shouldCollectRaffleTicketPrice ? createRandomnessCommitment() : null;
       const randomnessHash = randomnessCommitment?.commitment ?? new Uint8Array(32);
       const randomnessPreimageHex = randomnessCommitment ? randomnessPreimageToHex(randomnessCommitment.preimage) : null;
