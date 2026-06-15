@@ -79,7 +79,9 @@
 
 .blink-on .campaign-action-btn.action-winners.campaign-action-active,
 .blink-on .campaign-action-btn.action-winners.campaign-action-active:hover {
-  color: #961cac; /* purple — on state */
+  color: #450451;
+  /* #36033f; purple — on state
+  #450451 */
   transition: none;
 }
 /* #961cac */
