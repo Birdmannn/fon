@@ -585,6 +585,13 @@
   gap: 1.5rem;
 }
 
+.campaign-detail-content-shell {
+  padding-top: 4.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
 .campaign-detail-header {
   display: flex;
   flex-direction: column;
@@ -707,6 +714,36 @@
   margin: 0;
   font-size: 0.9rem;
   color: #6b7280;
+}
+
+.campaign-detail-skeleton-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 24rem;
+}
+
+.campaign-detail-skeleton-line {
+  display: block;
+  height: 0.9rem;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 50%, #e5e7eb 100%);
+}
+
+.campaign-detail-skeleton-line-short {
+  width: 28%;
+}
+
+.campaign-detail-skeleton-line-medium {
+  width: 62%;
+}
+
+.campaign-detail-skeleton-line-full {
+  width: 100%;
 }
 
 @media (max-width: 960px) {
