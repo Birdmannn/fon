@@ -1531,6 +1531,97 @@ fn test_batch_deliver_wrong_preimage() {
 }
 
 #[test]
+fn test_batch_deliver_missing_randomness_args_rejected() {
+    let mut context = Context::default();
+    let freight_out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let created_at = 1_700_000_000u64;
+    let start_duration = 1_000u64;
+    let task_duration = 604_800u64;
+    let deliver_timestamp = created_at + (start_duration + task_duration + 1_000) * 1_000;
+    let creator_address = address_from(CREATOR);
+    let winner_address = address_from(DEPOSITOR);
+    let summary = default_summary();
+    let reward_count = 1u64;
+    let total_reward = 500u64;
+    let preimage = [7u8; 32];
+    let randomness_hash = blake2b_256(&preimage);
+
+    let campaign_args = {
+        let mut args = Vec::with_capacity(74);
+        args.push(0u8);
+        args.extend_from_slice(&start_duration.to_le_bytes());
+        args.extend_from_slice(&task_duration.to_le_bytes());
+        args.push(CampaignType::Raffle as u8);
+        args.extend_from_slice(&total_reward.to_le_bytes());
+        args.extend_from_slice(&1u64.to_le_bytes());
+        args.extend_from_slice(&randomness_hash);
+        args.extend_from_slice(&reward_count.to_le_bytes());
+        args
+    };
+
+    let (campaign_input, winner_input, winner_lock_output, header_hash) = build_verify_participant_base(
+        &mut context,
+        &freight_out_point,
+        &always_success_out_point,
+        campaign_args.clone(),
+        build_campaign_bytes(
+            created_at, start_duration, task_duration, &creator_address,
+            CampaignType::Raffle, total_reward, total_reward, CampaignStatus::Active,
+            reward_count, randomness_hash, &summary, 1,
+        ),
+        deliver_timestamp,
+    );
+
+    let winner_participant = build_participant_bytes(
+        &campaign_input.previous_output().tx_hash().as_slice().try_into().unwrap(),
+        0,
+        &winner_address,
+        created_at + 5_000,
+        ParticipantStatus::Verified,
+        1,
+    );
+    let winner_output = CellOutput::new_builder()
+        .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + total_reward)))
+        .lock(winner_lock_output.lock())
+        .build();
+
+    let tx = TransactionBuilder::default()
+        .input(campaign_input)
+        .input(winner_input)
+        .header_dep(header_hash)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&0u64))
+                .lock(winner_lock_output.lock())
+                .type_(Some(context.build_script(&freight_out_point, Bytes::from(campaign_args)).expect("build freight type script")).pack())
+                .build(),
+            winner_output,
+        ])
+        .outputs_data(vec![
+            build_campaign_bytes(
+                created_at, start_duration, task_duration, &creator_address,
+                CampaignType::Raffle, total_reward, 0, CampaignStatus::Active,
+                reward_count, randomness_hash, &summary, 1,
+            ),
+            winner_participant,
+        ].pack())
+        .witness(
+            WitnessArgs::new_builder()
+                .output_type(Some(Bytes::from(vec![2u8])).pack())
+                .build()
+                .as_bytes()
+                .pack(),
+        )
+        .build();
+    let tx = context.complete_tx(tx);
+
+    let result = context.verify_tx(&tx, 10_000_000);
+    assert!(result.is_err(), "missing randomness args must be rejected");
+}
+
+#[test]
 fn test_batch_deliver_deadline_not_passed() {
     let summary = default_summary();
     let mut context = Context::default();

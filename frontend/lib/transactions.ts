@@ -498,6 +498,9 @@ export async function fetchParticipants(
       if (bytesToHex(data.campaignTxHash) !== bytesToHex(campaignTxHashBytes) || data.campaignIndex !== campaign.outPoint.index) {
         continue;
       }
+      if (data.status !== ParticipantStatus.Verified) {
+        continue;
+      }
       results.push({
         outPoint: {
           txHash: cell.outPoint.txHash,

@@ -2209,7 +2209,7 @@ function CampaignCard({
       const evidenceItems = [
         `Stored randomness hash: ${randomnessHash}`,
         randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage is not available in the current record store.",
-        `Participant count used: ${String(participants.length)}`,
+        `Verified participant count used: ${String(participants.length)}`,
         `Reward count: ${String(data.rewardCount)}`,
         "Winner ordering is deterministic by join time, participant address, then outpoint.",
       ];
