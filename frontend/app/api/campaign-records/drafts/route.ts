@@ -28,6 +28,9 @@ export async function GET(request: Request) {
           projection: {
             title: 1,
             description: 1,
+            campaignId: 1,
+            createdByHash: 1,
+            chainCreatedAt: 1,
             campaignType: 1,
             summaryDraft: 1,
             argsDraft: 1,
@@ -37,6 +40,7 @@ export async function GET(request: Request) {
             status: 1,
             txHash: 1,
             publishError: 1,
+            randomnessPreimage: 1,
             createdAt: 1,
             updatedAt: 1,
           },

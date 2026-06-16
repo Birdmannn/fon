@@ -32,6 +32,15 @@ import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, fetchParticipants, previewDeterministicWinners, sendBatchDeliver, sendDeposit, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, CampaignCell, ParticipantCell } from "@/lib/transactions";
 import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
+import {
+  buildCampaignRecordIndexes,
+  findCampaignRecord,
+  getCampaignChainCreatedAt,
+  getCampaignCreatedByHash,
+  getCampaignStableId,
+  type CampaignRecordIndexes,
+  normalizeHash,
+} from "@/lib/campaignIdentity";
 
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
 
@@ -95,6 +104,9 @@ type CampaignRecord = {
   _id?: string;
   title?: string;
   description?: string;
+  campaignId?: string | null;
+  createdByHash?: string | null;
+  chainCreatedAt?: string | null;
   campaignType?: number;
   summaryDraft?: string;
   argsDraft?: {
@@ -142,9 +154,11 @@ type SettlementModalData = {
   _record?: CampaignRecord | null;
 };
 
-function normalizeHash(value: string | null | undefined) {
-  return (value ?? "").toLowerCase();
-}
+const EMPTY_CAMPAIGN_RECORD_INDEXES: CampaignRecordIndexes<CampaignRecord> = {
+  byCampaignId: {},
+  byTxHash: {},
+  byLegacyKey: {},
+};
 
 function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
   if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
@@ -221,7 +235,7 @@ function copyText(text: string) {
 }
 
 function getCampaignIdentity(campaign: CampaignCell) {
-  return `${campaign.outPoint.txHash}:${campaign.outPoint.index}`;
+  return getCampaignStableId(campaign);
 }
 
 function formatCompactCampaignCount(count: number) {
@@ -280,7 +294,7 @@ export default function Home() {
   }, []);
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
-  const ticketBoughtCallbackRef = useRef<((campaignTxHash: string, ticketPrice: bigint) => void) | null>(null);
+  const ticketBoughtCallbackRef = useRef<((campaignId: string, ticketPrice: bigint) => void) | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
   const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
@@ -563,7 +577,7 @@ export default function Home() {
     setShowInfoModal(true);
   }, []);
 
-  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => {
+  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
@@ -669,7 +683,7 @@ export default function Home() {
       const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase);
 
       // Optimistically reduce ticket count in the campaign list so user sees it immediately
-      ticketBoughtCallbackRef.current?.(campaignForPurchase.outPoint.txHash, campaignForPurchase.data.auxAmount);
+      ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount);
 
       openTicketBuySuccessInfoModal(txHash);
     } catch (error) {
@@ -915,7 +929,7 @@ export default function Home() {
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
-      <p className="create-info-constraint-item text-gray-500 font-mono break-all"> tx hash: 
+      <p className="create-info-constraint-item text-gray-500 font-mono break-all">txhash: 
         <a
           href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
           target="_blank"
@@ -941,7 +955,7 @@ export default function Home() {
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Buy Successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">
-        <span className="text-gray-400">tx hash: </span>
+        <span className="text-gray-400">txhash: </span>
         <a
           href={`https://pudge.explorer.nervos.org/transaction/${submissionSuccessTxHash}`}
           target="_blank"
@@ -1401,11 +1415,11 @@ function MountablesPanel() {
   );
 }
 
-function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
+function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onErrorChange, onSettlementInfoRequest }: { client: ccc.Client; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void; onErrorChange: (message: string) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
-  const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
+  const [recordIndexes, setRecordIndexes] = useState<CampaignRecordIndexes<CampaignRecord>>(() => ({ ...EMPTY_CAMPAIGN_RECORD_INDEXES }));
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
-  const [pendingRecordsByTxHash, setPendingRecordsByTxHash] = useState<Record<string, CampaignRecord> | null>(null);
+  const [pendingRecordIndexes, setPendingRecordIndexes] = useState<CampaignRecordIndexes<CampaignRecord> | null>(null);
   const [unseenCampaignCount, setUnseenCampaignCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1415,10 +1429,10 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
 
   // Optimistically increment currentDeposits on a campaign cell after a ticket purchase,
   // so the remaining ticket count updates immediately without waiting for a refresh.
-  const handleTicketBought = useCallback((campaignTxHash: string, ticketPrice: bigint) => {
+  const handleTicketBought = useCallback((campaignId: string, ticketPrice: bigint) => {
     setCampaigns((prev) =>
       prev.map((c) =>
-        c.outPoint.txHash === campaignTxHash
+        getCampaignStableId(c) === campaignId
           ? { ...c, data: { ...c.data, currentDeposits: c.data.currentDeposits + ticketPrice } }
           : c
       )
@@ -1429,17 +1443,28 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   const searchInputRef = useRef<HTMLInputElement>(null);
   const campaignsRef = useRef<CampaignCell[]>(campaigns);
 
-  const buildRecordsByTxHash = useCallback((records: CampaignRecord[]) => {
-    const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
+  const buildRecordIndexes = useCallback((records: CampaignRecord[]) => {
+    const nextRecordIndexes = buildCampaignRecordIndexes(records);
 
-    for (const record of records) {
-      const key = normalizeHash(record.txHash);
-      if (key && !nextRecordsByTxHash[key]) {
-        nextRecordsByTxHash[key] = record;
-      }
-    }
+    console.log("[campaign-records] published records from API", records.map((record) => ({
+      id: record._id ?? null,
+      campaignId: record.campaignId ?? null,
+      createdByHash: record.createdByHash ?? null,
+      chainCreatedAt: record.chainCreatedAt ?? null,
+      txHash: record.txHash ?? null,
+      normalizedTxHash: normalizeHash(record.txHash),
+      status: record.status ?? null,
+      hasRandomnessPreimage: typeof record.randomnessPreimage === "string" && record.randomnessPreimage.length > 0,
+      randomnessPreimage: record.randomnessPreimage ?? null,
+    })));
 
-    return nextRecordsByTxHash;
+    console.log("[campaign-records] stable index keys", {
+      campaignIds: Object.keys(nextRecordIndexes.byCampaignId),
+      txHashes: Object.keys(nextRecordIndexes.byTxHash),
+      legacyKeys: Object.keys(nextRecordIndexes.byLegacyKey),
+    });
+
+    return nextRecordIndexes;
   }, []);
 
   useEffect(() => {
@@ -1477,13 +1502,28 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
       }),
     ])
       .then(([chainCampaigns, records]) => {
-        const nextRecordsByTxHash = buildRecordsByTxHash(records);
+        const nextRecordIndexes = buildRecordIndexes(records);
+
+        console.log("[campaign-records] fetched campaigns and records", {
+          chainCampaigns: chainCampaigns.map((campaign) => ({
+            txHash: campaign.outPoint.txHash,
+            normalizedTxHash: normalizeHash(campaign.outPoint.txHash),
+            campaignId: getCampaignStableId(campaign),
+            createdByHash: getCampaignCreatedByHash(campaign),
+            chainCreatedAt: getCampaignChainCreatedAt(campaign),
+            index: campaign.outPoint.index,
+            campaignType: campaign.data.campaignType,
+          })),
+          recordCount: records.length,
+          recordCampaignIds: Object.keys(nextRecordIndexes.byCampaignId),
+          recordTxHashes: Object.keys(nextRecordIndexes.byTxHash),
+        });
 
         if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
           setCampaigns(chainCampaigns);
-          setRecordsByTxHash(nextRecordsByTxHash);
+          setRecordIndexes(nextRecordIndexes);
           setPendingCampaigns(null);
-          setPendingRecordsByTxHash(null);
+          setPendingRecordIndexes(null);
           setUnseenCampaignCount(0);
           return;
         }
@@ -1501,15 +1541,15 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
 
         if (nextUnseenCount > 0) {
           setPendingCampaigns(chainCampaigns);
-          setPendingRecordsByTxHash(nextRecordsByTxHash);
+          setPendingRecordIndexes(nextRecordIndexes);
           setUnseenCampaignCount(nextUnseenCount);
           return;
         }
 
         setCampaigns(chainCampaigns);
-        setRecordsByTxHash(nextRecordsByTxHash);
+        setRecordIndexes(nextRecordIndexes);
         setPendingCampaigns(null);
-        setPendingRecordsByTxHash(null);
+        setPendingRecordIndexes(null);
         setUnseenCampaignCount(0);
       })
       .catch((e) => {
@@ -1521,7 +1561,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
         setLoading(false);
         setIsRefreshing(false);
       });
-  }, [buildRecordsByTxHash, client, onErrorChange]);
+  }, [buildRecordIndexes, client, onErrorChange]);
 
   useEffect(() => {
     const loadTimer = setTimeout(() => {
@@ -1554,25 +1594,44 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   };
 
   const handleShowPendingCampaigns = () => {
-    if (!pendingCampaigns || !pendingRecordsByTxHash) {
+    if (!pendingCampaigns || !pendingRecordIndexes) {
       return;
     }
 
     setCampaigns(pendingCampaigns);
-    setRecordsByTxHash(pendingRecordsByTxHash);
+    setRecordIndexes(pendingRecordIndexes);
     setPendingCampaigns(null);
-    setPendingRecordsByTxHash(null);
+    setPendingRecordIndexes(null);
     setUnseenCampaignCount(0);
     setShouldScrollToNewest(true);
   };
 
   const mergedCampaigns = useMemo<MergedCampaign[]>(() => {
-    return campaigns.map((campaign) => ({
-      campaign,
-      record: recordsByTxHash[normalizeHash(campaign.outPoint.txHash)] ?? null,
-      displayStatus: deriveDisplayStatus(campaign, nowMs),
-    }));
-  }, [campaigns, nowMs, recordsByTxHash]);
+    const merged = campaigns.map((campaign) => {
+      const matchedRecord = findCampaignRecord(recordIndexes, campaign);
+
+      console.log("[campaign-records] merge campaign with record", {
+        campaignTxHash: campaign.outPoint.txHash,
+        normalizedCampaignTxHash: normalizeHash(campaign.outPoint.txHash),
+        campaignId: getCampaignStableId(campaign),
+        createdByHash: getCampaignCreatedByHash(campaign),
+        chainCreatedAt: getCampaignChainCreatedAt(campaign),
+        matchedRecordId: matchedRecord?._id ?? null,
+        matchedRecordCampaignId: matchedRecord?.campaignId ?? null,
+        matchedRecordTxHash: matchedRecord?.txHash ?? null,
+        matchedRecordHasPreimage: typeof matchedRecord?.randomnessPreimage === "string" && matchedRecord.randomnessPreimage.length > 0,
+        matchedRecordStatus: matchedRecord?.status ?? null,
+      });
+
+      return {
+        campaign,
+        record: matchedRecord,
+        displayStatus: deriveDisplayStatus(campaign, nowMs),
+      };
+    });
+
+    return merged;
+  }, [campaigns, nowMs, recordIndexes]);
 
   const normalizedSearchQuery = searchQuery.trim().toLowerCase();
   const filteredCampaigns = useMemo(() => {
@@ -1665,7 +1724,7 @@ function CampaignListHeader({ client, onCommentDiscardRequest, commentDiscardDec
   );
 }
 
-function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onTicketBought, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => void; onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
+function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest, onScrolledToNewest, onCommentDiscardRequest, commentDiscardDecision, onTicketPurchaseRequest, onTicketBought, onSettlementInfoRequest }: { campaigns: MergedCampaign[]; client: ccc.Client; loading: boolean; error: string; shouldScrollToNewest: boolean; onScrolledToNewest: () => void; onCommentDiscardRequest: (cardId: string) => void; commentDiscardDecision: { cardId: string; discard: boolean } | null; onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void; onTicketBought: (campaignId: string, ticketPrice: bigint) => void; onSettlementInfoRequest: (data: SettlementModalData) => void; }) {
   const router = useRouter();
   const signer = ccc.useSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -1744,7 +1803,7 @@ function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest,
   return (
     <div className="flex flex-col gap-3">
       {campaigns.map(({ campaign, record, displayStatus }, index) => (
-        <div key={`${campaign.outPoint.txHash}:${campaign.outPoint.index}`} ref={index === 0 ? newestCampaignRef : null}>
+        <div key={getCampaignStableId(campaign)} ref={index === 0 ? newestCampaignRef : null}>
           <CampaignCard
             campaign={campaign}
             record={record}
@@ -1756,7 +1815,7 @@ function CampaignList({ campaigns, client, loading, error, shouldScrollToNewest,
             isHighlighted={index === 99 && !!signer}
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
-            onOpenDetail={() => router.push(`/campaign/${campaign.outPoint.txHash}-${campaign.outPoint.index}`)}
+            onOpenDetail={() => router.push(`/campaign/${getCampaignStableId(campaign)}`)}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
             onSettlementInfoRequest={onSettlementInfoRequest}
@@ -1794,12 +1853,12 @@ function CampaignCard({
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onOpenDetail: () => void;
-  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void) => void;
-  onTicketBought: (campaignTxHash: string, ticketPrice: bigint) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
+  onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 }) {
   const { data, outPoint } = c;
-  const cardId = `${outPoint.txHash}:${outPoint.index}`;
+  const cardId = getCampaignStableId(c);
   const maxCkb = formatCkbAmount(data.maximumAmount);
   const depositedCkb = formatCkbAmount(data.currentDeposits);
   const isRaffleCampaign = data.campaignType === 4;
@@ -1897,6 +1956,9 @@ function CampaignCard({
     },
     creatorAddress: record?.creatorAddress ?? creatorAddress,
     creatorHandle: record?.creatorHandle ?? creatorHandle,
+    campaignId: record?.campaignId ?? getCampaignStableId(c),
+    createdByHash: record?.createdByHash ?? getCampaignCreatedByHash(c),
+    chainCreatedAt: record?.chainCreatedAt ?? getCampaignChainCreatedAt(c),
     status: record?.status ?? "published",
     txHash: record?.txHash ?? outPoint.txHash,
     publishError: record?.publishError ?? null,
@@ -2113,6 +2175,18 @@ function CampaignCard({
 
     const randomnessHash = bytesToHex(data.randomnessHash);
     const randomnessPreimage = record?.randomnessPreimage ?? null;
+    console.log("[raffle-settlement] settlement click", {
+      campaignTxHash: c.outPoint.txHash,
+      campaignIndex: c.outPoint.index,
+      normalizedCampaignTxHash: normalizeHash(c.outPoint.txHash),
+      campaignType: data.campaignType,
+      record,
+      recordTxHash: record?.txHash ?? null,
+      normalizedRecordTxHash: normalizeHash(record?.txHash),
+      randomnessHash,
+      randomnessPreimage,
+      hasRandomnessPreimage: typeof randomnessPreimage === "string" && randomnessPreimage.length > 0,
+    });
     onSettlementInfoRequest({
       campaignTitle: displayTitle,
       randomnessHash,

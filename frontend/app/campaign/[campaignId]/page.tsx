@@ -12,13 +12,24 @@ import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
+import {
+  buildCampaignRecordIndexes,
+  findCampaignRecord,
+  getCampaignStableId,
+  normalizeHash,
+  type CampaignRecordIndexes,
+} from "@/lib/campaignIdentity";
 
 type CampaignRecord = {
   _id?: string;
   title?: string;
   description?: string;
+  campaignId?: string | null;
+  createdByHash?: string | null;
+  chainCreatedAt?: string | null;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
+  campaignType?: number;
   summaryDraft?: string;
   socialMetadata?: {
     mentions?: string[];
@@ -32,10 +43,6 @@ type CampaignRecord = {
   status?: "draft" | "published" | "publish_failed";
   txHash?: string | null;
 };
-
-function normalizeHash(value: string | null | undefined) {
-  return (value ?? "").toLowerCase();
-}
 
 function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
   if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
@@ -68,6 +75,11 @@ function buildDefaultHandle(addressHex: string) {
 }
 
 function splitCampaignId(campaignId: string) {
+  const normalizedCampaignId = normalizeHash(campaignId);
+  if (normalizedCampaignId.includes(":")) {
+    return { campaignId: normalizedCampaignId };
+  }
+
   const separator = campaignId.lastIndexOf("-");
   if (separator === -1) {
     return null;
@@ -80,7 +92,7 @@ function splitCampaignId(campaignId: string) {
     return null;
   }
 
-  return { txHash, index };
+  return { txHash, index, campaignId: null };
 }
 
 function formatCkbAmount(value: bigint) {
@@ -113,7 +125,11 @@ export default function CampaignDetailPage() {
   const params = useParams<{ campaignId: string }>();
   const campaignRef = splitCampaignId(params.campaignId);
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
-  const [recordsByTxHash, setRecordsByTxHash] = useState<Record<string, CampaignRecord>>({});
+  const [recordIndexes, setRecordIndexes] = useState<CampaignRecordIndexes<CampaignRecord>>(() => ({
+    byCampaignId: {},
+    byTxHash: {},
+    byLegacyKey: {},
+  }));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -283,18 +299,12 @@ export default function CampaignDetailPage() {
           throw new Error(recordsPayload?.error ?? "Failed to fetch campaign records");
         }
 
-        const nextRecordsByTxHash: Record<string, CampaignRecord> = {};
         const records = Array.isArray(recordsPayload?.records) ? (recordsPayload.records as CampaignRecord[]) : [];
-        for (const record of records) {
-          const key = normalizeHash(record.txHash);
-          if (key && !nextRecordsByTxHash[key]) {
-            nextRecordsByTxHash[key] = record;
-          }
-        }
+        const nextRecordIndexes = buildCampaignRecordIndexes(records);
 
         if (!cancelled) {
           setCampaigns(chainCampaigns);
-          setRecordsByTxHash(nextRecordsByTxHash);
+          setRecordIndexes(nextRecordIndexes);
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -317,6 +327,10 @@ export default function CampaignDetailPage() {
       return null;
     }
 
+    if (campaignRef.campaignId) {
+      return campaigns.find((campaign) => getCampaignStableId(campaign) === campaignRef.campaignId) ?? null;
+    }
+
     return campaigns.find((campaign) => (
       normalizeHash(campaign.outPoint.txHash) === normalizeHash(campaignRef.txHash)
       && campaign.outPoint.index === campaignRef.index
@@ -328,8 +342,8 @@ export default function CampaignDetailPage() {
       return null;
     }
 
-    return recordsByTxHash[normalizeHash(selectedCampaign.outPoint.txHash)] ?? null;
-  }, [recordsByTxHash, selectedCampaign]);
+    return findCampaignRecord(recordIndexes, selectedCampaign);
+  }, [recordIndexes, selectedCampaign]);
 
   const comments = useMemo(() => (
     Array.isArray(selectedRecord?.socialMetadata?.comments)

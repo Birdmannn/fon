@@ -16,6 +16,7 @@ import {
   CampaignData,
   ParticipantData,
 } from "./encoding";
+import { buildStableCampaignId } from "./campaignIdentity";
 
 // ─── Cell dep for the freight contract ───────────────────────────────────────
 
@@ -48,7 +49,7 @@ export async function sendCreateCampaign(
     summary: string;
     randomnessHash: Uint8Array;
   }
-): Promise<string> {
+): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
   const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, summary, randomnessHash } = opts;
   const maximumAmount = maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
@@ -108,7 +109,16 @@ export async function sendCreateCampaign(
   // Auto-select inputs + change output to cover outputs + fees.
   await tx.completeFeeBy(signer, 1000n);
 
-  return signer.sendTransaction(tx);
+  const txHash = await signer.sendTransaction(tx);
+  const createdByHash = bytesToHex(createdBy);
+  const chainCreatedAt = tipHeader.timestamp.toString();
+
+  return {
+    txHash,
+    campaignId: buildStableCampaignId(createdByHash, chainCreatedAt, campaignType),
+    createdByHash,
+    chainCreatedAt,
+  };
 }
 
 // ─── deposit ─────────────────────────────────────────────────────────────────

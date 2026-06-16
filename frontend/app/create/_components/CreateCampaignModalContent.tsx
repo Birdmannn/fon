@@ -183,6 +183,9 @@ type DraftRecord = {
   _id?: string;
   title?: string;
   description?: string;
+  campaignId?: string | null;
+  createdByHash?: string | null;
+  chainCreatedAt?: string | null;
   campaignType?: number;
   summaryDraft?: string;
   argsDraft?: {
@@ -201,6 +204,7 @@ type DraftRecord = {
   txHash?: string | null;
   publishError?: string | null;
   randomnessPreimage?: string | null;
+  activatedTxHash?: string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -218,10 +222,19 @@ type DraftSnapshot = {
   mentions: string[];
 };
 
+type CampaignIdentityOverride = {
+  campaignId?: string | null;
+  createdByHash?: string | null;
+  chainCreatedAt?: string | null;
+};
+
 type PendingPublishedRecordSync = {
   draftRecordId: string;
   summaryDraft: string;
   txHash: string;
+  campaignId: string;
+  createdByHash: string;
+  chainCreatedAt: string;
   randomnessPreimage: string | null;
 };
 
@@ -344,6 +357,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [draftSaveError, setDraftSaveError] = useState("");
   const [pendingAdvanceToReview, setPendingAdvanceToReview] = useState(false);
   const [pendingPublishedRecordSync, setPendingPublishedRecordSync] = useState<PendingPublishedRecordSync | null>(null);
+  const activeDraftRecord = useMemo(
+    () => draftRecords.find((record) => record._id === activeDraftRecordId) ?? null,
+    [activeDraftRecordId, draftRecords]
+  );
 
   const isModal = mode === "modal";
   const isReviewStep = isModal && modalStep === "review";
@@ -1208,13 +1225,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       draftStatus: DraftRecordStatus,
       txHashValue: string | null,
       publishError: string | null,
-      randomnessPreimage: string | null = null
+      randomnessPreimage: string | null = null,
+      identityOverride: CampaignIdentityOverride | null = null
     ) => {
       const creatorAddress = await getCreatorAddress();
+      const resolvedIdentity = identityOverride ?? activeDraftRecord;
 
       return {
         title: trimmedModalTitle,
         description: trimmedModalDescription,
+        campaignId: resolvedIdentity?.campaignId ?? null,
+        createdByHash: resolvedIdentity?.createdByHash ?? null,
+        chainCreatedAt: resolvedIdentity?.chainCreatedAt ?? null,
         campaignType,
         summaryDraft,
         argsDraft: {
@@ -1241,6 +1263,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       };
     },
     [
+      activeDraftRecord,
       campaignType,
       getCreatorAddress,
       maxAmountCkb,
@@ -1262,13 +1285,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       txHashValue: string | null = null,
       publishError: string | null = null,
       randomnessPreimage: string | null = null,
-      recordIdOverride: string | null = activeDraftRecordId
+      recordIdOverride: string | null = activeDraftRecordId,
+      identityOverride: CampaignIdentityOverride | null = null
     ) => {
       setDraftSaveStatus("saving");
       setDraftSaveError("");
 
       try {
-        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage);
+        const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage, identityOverride);
         const response = await fetch(recordIdOverride ? `/api/campaign-records/${recordIdOverride}` : "/api/campaign-records", {
           method: recordIdOverride ? "PATCH" : "POST",
           headers: {
@@ -1306,6 +1330,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             _id: persistedId ?? undefined,
             title: trimmedModalTitle,
             description: trimmedModalDescription,
+            campaignId: identityOverride?.campaignId ?? activeDraftRecord?.campaignId ?? null,
+            createdByHash: identityOverride?.createdByHash ?? activeDraftRecord?.createdByHash ?? null,
+            chainCreatedAt: identityOverride?.chainCreatedAt ?? activeDraftRecord?.chainCreatedAt ?? null,
             campaignType,
             summaryDraft,
             argsDraft: {
@@ -1322,6 +1349,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             txHash: txHashValue,
             publishError,
             randomnessPreimage,
+            activatedTxHash: activeDraftRecord?.activatedTxHash ?? null,
             updatedAt: new Date().toISOString(),
           };
 
@@ -1464,7 +1492,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         sync.txHash,
         null,
         sync.randomnessPreimage,
-        sync.draftRecordId
+        sync.draftRecordId,
+        {
+          campaignId: sync.campaignId,
+          createdByHash: sync.createdByHash,
+          chainCreatedAt: sync.chainCreatedAt,
+        }
       );
 
       if (!persistedId) {
@@ -1570,7 +1603,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
 
       attemptedOnchainPublish = true;
-      const hash = await sendCreateCampaign(signer, {
+      const publishResult = await sendCreateCampaign(signer, {
         startDurationSecs: normalizedParams.startDurationSecs,
         taskDurationSecs: normalizedParams.taskDurationSecs,
         campaignType,
@@ -1590,13 +1623,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         pendingSync = {
           draftRecordId,
           summaryDraft: summaryToPublish,
-          txHash: hash,
+          txHash: publishResult.txHash,
+          campaignId: publishResult.campaignId,
+          createdByHash: publishResult.createdByHash,
+          chainCreatedAt: publishResult.chainCreatedAt,
           randomnessPreimage: randomnessPreimageHex,
         };
         await finalizePublishedRecordSync(pendingSync);
       }
 
-      onPublishSuccess?.(hash, randomnessPreimageHex);
+      onPublishSuccess?.(publishResult.txHash, randomnessPreimageHex);
       setStatus("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1614,7 +1650,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const failedRecordId = stagedDraftRecordId ?? activeDraftRecordId;
         if (failedRecordId) {
           try {
-            await persistDraftRecord(summaryToPublish, "publish_failed", null, message, null, failedRecordId);
+            await persistDraftRecord(
+              summaryToPublish,
+              "publish_failed",
+              null,
+              message,
+              null,
+              failedRecordId,
+              null
+            );
           } catch {
             // Preserve the original publish failure message.
           }
