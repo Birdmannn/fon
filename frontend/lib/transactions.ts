@@ -363,7 +363,9 @@ export async function sendBatchDeliver(
     });
   }
 
-  const rewardCount = campaignCell.data.rewardCount === 0n ? BigInt(winners.length) : campaignCell.data.rewardCount;
+  const rewardCount = campaignCell.data.rewardCount === 0n
+    ? BigInt(winners.length)
+    : BigInt(Math.min(Number(campaignCell.data.rewardCount), winners.length));
   const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
   const updatedCampaignData = {
     ...campaignCell.data,
@@ -577,7 +579,7 @@ export function previewDeterministicWinners(
   campaign: CampaignCell
 ): ParticipantCell[] {
   const ordered = [...participants].sort(compareParticipants);
-  const winnerCount = rewardCount === 0n ? ordered.length : Number(rewardCount);
+  const winnerCount = rewardCount === 0n ? ordered.length : Math.min(Number(rewardCount), ordered.length);
   if (winnerCount >= ordered.length) {
     return ordered;
   }

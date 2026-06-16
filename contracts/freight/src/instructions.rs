@@ -390,9 +390,9 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     let winner_count = if campaign.reward_count == 0 {
         participant_count
     } else {
-        campaign.reward_count as usize
+        core::cmp::min(campaign.reward_count as usize, participant_count)
     };
-    if winner_count == 0 || winner_count > participant_count {
+    if winner_count == 0 {
         return Err(Error::InvalidOperation);
     }
 

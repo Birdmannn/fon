@@ -1476,6 +1476,105 @@ fn test_batch_deliver_randomness_success() {
 }
 
 #[test]
+fn test_batch_deliver_reward_count_caps_to_verified_participants() {
+    let mut context = Context::default();
+    let freight_out_point = context.deploy_cell_by_name("freight");
+    let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
+
+    let created_at = 1_700_000_000_000u64; // ms
+    let start_duration = 86_400u64;
+    let task_duration = 604_800u64;
+    let deliver_timestamp = created_at + (start_duration + task_duration + 1_000) * 1_000;
+    let current_deposits = 900_000u64;
+    let configured_reward_count = 5u64;
+    let verified_participants = 3u64;
+    let reward_per_participant = current_deposits / verified_participants;
+    let summary = default_summary();
+
+    let script_args = vec![2u8];
+    let header_hash = insert_header(&mut context, deliver_timestamp);
+
+    let campaign_type_script = context
+        .build_script(&freight_out_point, Bytes::from(script_args))
+        .expect("build type script");
+    let creator_lock = context
+        .build_script(&always_success_out_point, Bytes::from(address_from(CREATOR).to_vec()))
+        .expect("build creator lock");
+
+    let campaign_input_data = build_campaign_bytes(
+        created_at, start_duration, task_duration, &address_from(CREATOR),
+        CampaignType::SimpleTask, current_deposits, current_deposits,
+        CampaignStatus::Active, configured_reward_count, [0u8; 32], &summary, 0,
+    );
+    let campaign_capacity = 200_000u64;
+    let campaign_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&campaign_capacity))
+            .lock(creator_lock.clone())
+            .type_(Some(campaign_type_script.clone()).pack())
+            .build(),
+        campaign_input_data,
+    );
+    let campaign_input = CellInput::new_builder().previous_output(campaign_out_point.clone()).build();
+
+    let campaign_tx_hash: [u8; 32] = campaign_out_point.tx_hash().as_slice().try_into().unwrap();
+    let campaign_index = u32::from_le_bytes(campaign_out_point.index().as_slice().try_into().unwrap());
+
+    let p1_address = address_from(11u8);
+    let p2_address = address_from(22u8);
+    let p3_address = address_from(33u8);
+    let p1_lock = context.build_script(&always_success_out_point, Bytes::from(p1_address.to_vec())).expect("p1 lock");
+    let p2_lock = context.build_script(&always_success_out_point, Bytes::from(p2_address.to_vec())).expect("p2 lock");
+    let p3_lock = context.build_script(&always_success_out_point, Bytes::from(p3_address.to_vec())).expect("p3 lock");
+    let participant_capacity = 100_000u64;
+
+    let p1_out_point = context.create_cell(
+        CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p1_lock.clone()).build(),
+        build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Verified, 0),
+    );
+    let p2_out_point = context.create_cell(
+        CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p2_lock.clone()).build(),
+        build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Verified, 0),
+    );
+    let p3_out_point = context.create_cell(
+        CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p3_lock.clone()).build(),
+        build_participant_bytes(&campaign_tx_hash, campaign_index, &p3_address, created_at, ParticipantStatus::Verified, 0),
+    );
+
+    let campaign_output_data = build_campaign_bytes(
+        created_at, start_duration, task_duration, &address_from(CREATOR),
+        CampaignType::SimpleTask, current_deposits, 0, CampaignStatus::Active, configured_reward_count, [0u8; 32], &summary, 0,
+    );
+    let rewarded_capacity = participant_capacity + reward_per_participant;
+
+    let tx = TransactionBuilder::default()
+        .inputs(vec![
+            campaign_input,
+            CellInput::new_builder().previous_output(p1_out_point).build(),
+            CellInput::new_builder().previous_output(p2_out_point).build(),
+            CellInput::new_builder().previous_output(p3_out_point).build(),
+        ])
+        .header_dep(header_hash)
+        .outputs(vec![
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&campaign_capacity)).lock(creator_lock.clone()).type_(Some(campaign_type_script.clone()).pack()).build(),
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&rewarded_capacity)).lock(p1_lock).build(),
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&rewarded_capacity)).lock(p2_lock).build(),
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&rewarded_capacity)).lock(p3_lock).build(),
+        ])
+        .outputs_data(vec![
+            campaign_output_data,
+            build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&campaign_tx_hash, campaign_index, &p3_address, created_at, ParticipantStatus::Rewarded, 0),
+        ].pack())
+        .build();
+    let tx = context.complete_tx(tx);
+
+    let cycles = context.verify_tx(&tx, 10_000_000).expect("batch_deliver should cap configured winners to verified participants");
+    println!("test_batch_deliver_reward_count_caps_to_verified_participants cycles: {}", cycles);
+}
+
+#[test]
 fn test_batch_deliver_wrong_preimage() {
     let correct_preimage = [7u8; 32];
     let randomness_hash = blake2b_256(&correct_preimage);
