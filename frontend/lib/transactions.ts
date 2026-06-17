@@ -248,16 +248,8 @@ export async function sendVerifyParticipantRaffle(
     }))
   );
 
-  // Output[2]: change cell back to depositor — completeFeeBy will fill the capacity
-  tx.addOutput(
-    {
-      lock: depositorAddressObj.script,
-    },
-    "0x"
-  );
-
   // Let completeFeeBy pull in whatever inputs are needed to cover:
-  // ticket price (transferred to campaign cell) + participant cell + change + fee
+  // ticket price (transferred to campaign cell) + participant cell + any required change + fee
   await tx.completeFeeBy(signer, 1000n);
 
   // Set witness at index 0 (campaign cell position) with selector byte 0x03

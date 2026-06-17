@@ -2140,21 +2140,28 @@ function CampaignCard({
     e.preventDefault();
     if (!signer || !depositAmount || isPurchaseDisabled) return;
 
-    const amount = BigInt(Math.floor(parseFloat(depositAmount) * 100_000_000));
-    if (amount <= 0n) {
+    const parsedDepositAmount = Number.parseFloat(depositAmount);
+    if (!Number.isFinite(parsedDepositAmount) || parsedDepositAmount <= 0) {
       alert("Please enter a valid amount");
       return;
     }
 
+    const amountShannons = BigInt(Math.floor(parsedDepositAmount * 100_000_000));
+    const amountCkb = amountShannons / 100_000_000n;
+    if (amountCkb <= 0n) {
+      alert("Please enter at least 1 CKB");
+      return;
+    }
+
     const maxAmount = data.maximumAmount - data.currentDeposits;
-    if (amount > maxAmount) {
+    if (amountShannons > maxAmount) {
       alert(`Maximum deposit available: ${(Number(maxAmount) / 1e8).toFixed(2)} CKB`);
       return;
     }
 
     setIsDepositing(true);
     try {
-      const txHash = await sendDeposit(signer, c, BigInt(Math.floor(parseFloat(depositAmount))));
+      const txHash = await sendDeposit(signer, c, amountCkb);
       alert(`Deposit sent! Tx: ${txHash}`);
       setShowDepositModal(false);
       setDepositAmount("");
