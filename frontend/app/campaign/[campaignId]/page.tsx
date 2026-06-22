@@ -133,6 +133,7 @@ export default function CampaignDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [isExpandedFromFeed, setIsExpandedFromFeed] = useState(false);
 
   const INFO_MODAL_ANIMATION_MS = 620;
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -229,6 +230,22 @@ export default function CampaignDetailPage() {
 
     return () => {
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (sessionStorage.getItem("freight:detail-expanding") !== "1") {
+      return;
+    }
+
+    setIsExpandedFromFeed(true);
+    sessionStorage.removeItem("freight:detail-expanding");
+    const timer = window.setTimeout(() => {
+      setIsExpandedFromFeed(false);
+    }, 460);
+
+    return () => {
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -434,8 +451,8 @@ export default function CampaignDetailPage() {
 
   return (
     <main className="campaign-detail-page">
-      <div className="campaign-detail-shell">
-        <div className="fixed top-8 left-4 right-4 z-[70] mx-auto w-full max-w-2xl flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className={`campaign-detail-shell campaign-shell-width ${isExpandedFromFeed ? "campaign-shell-width-expanded" : "campaign-shell-width-detail"}`.trim()}>
+        <div className={`campaign-shell-header fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between ${isExpandedFromFeed ? "campaign-shell-width-expanded" : "campaign-shell-width-detail"}`.trim()}>
           <div className="header-info-wrap">
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
