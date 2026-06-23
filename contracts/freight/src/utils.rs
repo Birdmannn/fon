@@ -7,8 +7,8 @@ use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::Script;
 use ckb_std::debug;
 use ckb_std::error::SysError;
-use ckb_hash::blake2b_256;
-use ckb_std::high_level::{load_cell_lock, load_cell_type, load_header, load_input, load_script};
+// use ckb_hash::blake2b_256;
+use ckb_std::high_level::{load_cell_lock, load_cell_type, load_header, load_script};
 use k256::ecdsa::{Signature, VerifyingKey, signature::hazmat::PrehashVerifier};
 
 pub struct Address([u8; 20]);
