@@ -6,6 +6,9 @@ export const dynamic = "force-dynamic";
 type CampaignRecordPayload = {
   title?: unknown;
   description?: unknown;
+  campaignId?: unknown;
+  createdByHash?: unknown;
+  chainCreatedAt?: unknown;
   campaignType?: unknown;
   summaryDraft?: unknown;
   argsDraft?: {
@@ -98,6 +101,9 @@ function normalizePayload(payload: CampaignRecordPayload) {
     throw new Error("status must be one of draft, published, publish_failed");
   }
 
+  const campaignId = ensureOptionalString(payload.campaignId, "campaignId");
+  const createdByHash = ensureOptionalString(payload.createdByHash, "createdByHash");
+  const chainCreatedAt = ensureOptionalString(payload.chainCreatedAt, "chainCreatedAt");
   const txHash = ensureOptionalString(payload.txHash, "txHash");
   const publishError = ensureOptionalString(payload.publishError, "publishError");
   const creatorAddress = ensureOptionalString(payload.creatorAddress, "creatorAddress");
@@ -107,6 +113,9 @@ function normalizePayload(payload: CampaignRecordPayload) {
   return {
     title,
     description,
+    campaignId,
+    createdByHash,
+    chainCreatedAt,
     campaignType,
     summaryDraft,
     argsDraft: {

@@ -349,8 +349,9 @@ fn test_raffle_full_lifecycle_e2e() {
                 .expect("campaign index bytes"),
         );
         let participant_data = build_participant_bytes(
-            &campaign_tx_hash,
-            campaign_index,
+            &creator_address,
+            created_at,
+            CampaignType::Raffle,
             &participant_address,
             joined_at,
             ParticipantStatus::Verified,
@@ -525,8 +526,9 @@ fn test_raffle_full_lifecycle_e2e() {
                 .build(),
         );
         deliver_outputs_data.push(build_participant_bytes(
-            &campaign_tx_hash,
-            campaign_index,
+            &creator_address,
+            created_at,
+            CampaignType::Raffle,
             &winner.address,
             winner.joined_at,
             ParticipantStatus::Rewarded,

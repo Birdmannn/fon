@@ -1,0 +1,90 @@
+"use client";
+
+import { ccc } from "@ckb-ccc/connector-react";
+
+import CampaignFeedHeaderBar from "@/app/_components/CampaignFeedHeaderBar";
+import CampaignList from "@/app/_components/CampaignList";
+import { useCampaignFeed, type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import type { CampaignCell } from "@/lib/transactions";
+
+type SettlementModalData = {
+  campaignTitle: string;
+  randomnessHash: string;
+  randomnessPreimage: string | null;
+  evidenceItems: string[];
+  recipients: string[];
+  distributionTxHash: string | null;
+  errorMessage?: string | null;
+};
+
+type CampaignFeedSectionProps = {
+  client: ccc.Client;
+  onCommentDiscardRequest: (cardId: string) => void;
+  commentDiscardDecision: { cardId: string; discard: boolean } | null;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
+  onErrorChange: (message: string) => void;
+  onSettlementInfoRequest: (data: SettlementModalData) => void;
+};
+
+export default function CampaignFeedSection({
+  client,
+  onCommentDiscardRequest,
+  commentDiscardDecision,
+  onTicketPurchaseRequest,
+  onErrorChange,
+  onSettlementInfoRequest,
+}: CampaignFeedSectionProps) {
+  const {
+    error,
+    filteredCampaigns,
+    handleRefresh,
+    handleSearchClick,
+    handleShowPendingCampaigns,
+    handleTicketBought,
+    isRefreshing,
+    isSearchOpen,
+    loading,
+    searchInputRef,
+    searchQuery,
+    setSearchQuery,
+    shouldScrollToNewest,
+    setShouldScrollToNewest,
+    unseenCampaignBadgeLabel,
+  } = useCampaignFeed({ client, onErrorChange });
+
+  return (
+    <>
+      <CampaignFeedHeaderBar
+        isRefreshing={isRefreshing}
+        isSearchOpen={isSearchOpen}
+        onRefresh={handleRefresh}
+        onSearchClick={handleSearchClick}
+        onSearchQueryChange={setSearchQuery}
+        onShowPendingCampaigns={handleShowPendingCampaigns}
+        pendingBadgeLabel={unseenCampaignBadgeLabel}
+        searchInputRef={searchInputRef}
+        searchQuery={searchQuery}
+      />
+
+      <CampaignList
+        campaigns={filteredCampaigns}
+        client={client}
+        loading={loading}
+        error={error}
+        shouldScrollToNewest={shouldScrollToNewest}
+        onScrolledToNewest={() => setShouldScrollToNewest(false)}
+        onCommentDiscardRequest={onCommentDiscardRequest}
+        commentDiscardDecision={commentDiscardDecision}
+        onStartDetailTransition={(href) => {
+          sessionStorage.setItem("freight:detail-expanding", "1");
+          window.setTimeout(() => {
+            window.location.href = href;
+          }, 420);
+        }}
+        onTicketPurchaseRequest={onTicketPurchaseRequest}
+        onTicketBought={handleTicketBought}
+        onSettlementInfoRequest={onSettlementInfoRequest}
+      />
+    </>
+  );
+}

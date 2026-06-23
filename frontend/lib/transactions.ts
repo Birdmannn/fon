@@ -16,6 +16,7 @@ import {
   CampaignData,
   ParticipantData,
 } from "./encoding";
+import { buildStableCampaignId } from "./campaignIdentity";
 
 // ─── Cell dep for the freight contract ───────────────────────────────────────
 
@@ -48,7 +49,7 @@ export async function sendCreateCampaign(
     summary: string;
     randomnessHash: Uint8Array;
   }
-): Promise<string> {
+): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
   const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, summary, randomnessHash } = opts;
   const maximumAmount = maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
@@ -108,7 +109,16 @@ export async function sendCreateCampaign(
   // Auto-select inputs + change output to cover outputs + fees.
   await tx.completeFeeBy(signer, 1000n);
 
-  return signer.sendTransaction(tx);
+  const txHash = await signer.sendTransaction(tx);
+  const createdByHash = bytesToHex(createdBy);
+  const chainCreatedAt = tipHeader.timestamp.toString();
+
+  return {
+    txHash,
+    campaignId: buildStableCampaignId(createdByHash, chainCreatedAt, campaignType),
+    createdByHash,
+    chainCreatedAt,
+  };
 }
 
 // ─── deposit ─────────────────────────────────────────────────────────────────
@@ -229,8 +239,9 @@ export async function sendVerifyParticipantRaffle(
       lock: depositorAddressObj.script,
     },
     bytesToHex(encodeParticipantData({
-      campaignTxHash: hexToBytes(campaignCell.outPoint.txHash),
-      campaignIndex: campaignCell.outPoint.index,
+      campaignCreatedBy: campaignCell.data.createdBy,
+      campaignCreatedAt: campaignCell.data.createdAt,
+      campaignType: campaignCell.data.campaignType,
       participantAddress: depositorAddressBytes,
       joinedAt,
       status: ParticipantStatus.Verified,
@@ -238,16 +249,8 @@ export async function sendVerifyParticipantRaffle(
     }))
   );
 
-  // Output[2]: change cell back to depositor — completeFeeBy will fill the capacity
-  tx.addOutput(
-    {
-      lock: depositorAddressObj.script,
-    },
-    "0x"
-  );
-
   // Let completeFeeBy pull in whatever inputs are needed to cover:
-  // ticket price (transferred to campaign cell) + participant cell + change + fee
+  // ticket price (transferred to campaign cell) + participant cell + any required change + fee
   await tx.completeFeeBy(signer, 1000n);
 
   // Set witness at index 0 (campaign cell position) with selector byte 0x03
@@ -353,7 +356,12 @@ export async function sendBatchDeliver(
     });
   }
 
-  const rewardCount = campaignCell.data.rewardCount === 0n ? BigInt(winners.length) : campaignCell.data.rewardCount;
+  const rewardCount = campaignCell.data.rewardCount === 0n
+    ? BigInt(winners.length)
+    : BigInt(Math.min(Number(campaignCell.data.rewardCount), winners.length));
+  if (rewardCount <= 0n) {
+    throw new Error("No eligible winners are available for settlement.");
+  }
   const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
   const updatedCampaignData = {
     ...campaignCell.data,
@@ -463,7 +471,9 @@ export async function fetchParticipants(
   limit = 500
 ): Promise<ParticipantCell[]> {
   const results: ParticipantCell[] = [];
-  const campaignTxHashBytes = hexToBytes(campaign.outPoint.txHash);
+  const campaignCreatedByHex = bytesToHex(campaign.data.createdBy);
+  const campaignCreatedAt = campaign.data.createdAt;
+  const campaignType = campaign.data.campaignType;
 
   let count = 0;
   for await (const cell of client.findCells(
@@ -483,9 +493,16 @@ export async function fetchParticipants(
     if (count++ >= limit) break;
     try {
       const rawData = hexToBytes(cell.outputData);
-      if (rawData.length !== 73) continue;
+      if (rawData.length !== 66) continue;
       const data = decodeParticipantData(rawData);
-      if (bytesToHex(data.campaignTxHash) !== bytesToHex(campaignTxHashBytes) || data.campaignIndex !== campaign.outPoint.index) {
+      if (
+        bytesToHex(data.campaignCreatedBy) !== campaignCreatedByHex ||
+        data.campaignCreatedAt !== campaignCreatedAt ||
+        data.campaignType !== campaignType
+      ) {
+        continue;
+      }
+      if (data.status !== ParticipantStatus.Verified) {
         continue;
       }
       results.push({
@@ -564,7 +581,7 @@ export function previewDeterministicWinners(
   campaign: CampaignCell
 ): ParticipantCell[] {
   const ordered = [...participants].sort(compareParticipants);
-  const winnerCount = rewardCount === 0n ? ordered.length : Number(rewardCount);
+  const winnerCount = rewardCount === 0n ? ordered.length : Math.min(Number(rewardCount), ordered.length);
   if (winnerCount >= ordered.length) {
     return ordered;
   }

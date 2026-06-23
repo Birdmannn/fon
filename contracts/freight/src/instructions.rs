@@ -188,7 +188,13 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
         }
 
         // Validate the new participant cell in outputs.
-        validate_participant_added(&participant_address, ticket_price)?;
+        validate_participant_added(
+            &participant_address,
+            &campaign.created_by,
+            campaign.created_at,
+            campaign.campaign_type,
+            ticket_price,
+        )?;
     } else {
         // ── Non-raffle path ──────────────────────────────────────────────────
         if args.len() < 53 {
@@ -229,7 +235,13 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
         verify_ecdsa_signature(signature, &message, &admin_pubkey)?;
 
         // For non-raffle, deposited_amount is 0 (participants don't deposit here).
-        validate_participant_added(&participant_address, 0)?;
+        validate_participant_added(
+            &participant_address,
+            &campaign.created_by,
+            campaign.created_at,
+            campaign.campaign_type,
+            0,
+        )?;
     }
 
     Ok(())
@@ -286,12 +298,11 @@ pub fn refund(_args: &[u8]) -> Result<(), Error> {
         return Err(Error::InvalidOperation);
     }
 
-    // Get the campaign outpoint to verify participant linkage
-    let campaign_input = load_input(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
-    let outpoint = campaign_input.previous_output();
-    let campaign_index = u32::from_le_bytes(outpoint.index().as_slice().try_into().unwrap());
-
-    let total_refunded = validate_refund_outputs(outpoint.tx_hash().as_slice(), campaign_index)?;
+    let total_refunded = validate_refund_outputs(
+        &campaign.created_by,
+        campaign.created_at,
+        campaign.campaign_type,
+    )?;
 
     // Update campaign deposits
     campaign.current_deposits = campaign
@@ -312,8 +323,8 @@ fn compare_participants(left: &ParticipantEntry, right: &ParticipantEntry) -> co
     left.participant.joined_at
         .cmp(&right.participant.joined_at)
         .then_with(|| left.participant.participant_address.cmp(&right.participant.participant_address))
-        .then_with(|| left.participant.campaign_tx_hash.cmp(&right.participant.campaign_tx_hash))
-        .then_with(|| left.participant.campaign_index.cmp(&right.participant.campaign_index))
+        .then_with(|| left.input_tx_hash.cmp(&right.input_tx_hash))
+        .then_with(|| left.input_index.cmp(&right.input_index))
 }
 
 fn derive_shuffle_seed(revealed: &[u8; 32], participants_len: usize, campaign_tx_hash: &[u8; 32], campaign_index: u32) -> [u8; 32] {
@@ -379,7 +390,11 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     campaign_tx_hash.copy_from_slice(outpoint.tx_hash().as_slice());
     let campaign_index = u32::from_le_bytes(outpoint.index().as_slice().try_into().unwrap());
 
-    let mut participants = collect_verified_participants(&campaign_tx_hash, campaign_index)?;
+    let mut participants = collect_verified_participants(
+        &campaign.created_by,
+        campaign.created_at,
+        campaign.campaign_type,
+    )?;
     let participant_count = participants.len();
     if participant_count == 0 {
         return Err(Error::InvalidOperation);
@@ -390,9 +405,9 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     let winner_count = if campaign.reward_count == 0 {
         participant_count
     } else {
-        campaign.reward_count as usize
+        core::cmp::min(campaign.reward_count as usize, participant_count)
     };
-    if winner_count == 0 || winner_count > participant_count {
+    if winner_count == 0 {
         return Err(Error::InvalidOperation);
     }
 

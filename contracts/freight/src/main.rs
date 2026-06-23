@@ -5,7 +5,7 @@ extern crate alloc;
 
 use ckb_std::debug;
 use ckb_std::ckb_constants::Source;
-use ckb_std::ckb_types::prelude::Entity;
+// use ckb_std::ckb_types::prelude::Entity;
 use ckb_std::error::SysError;
 use ckb_std::high_level::{load_input, load_script, load_witness_args};
 use freight::errors::Error;

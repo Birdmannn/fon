@@ -1,6 +1,6 @@
-const FREIGHT_CONTRACT_CODE_HASH = "0x324e222fc1257575f6b31edff7aa28b17929abd4ed90692a0b6005d84a95bdb4";
+const FREIGHT_CONTRACT_CODE_HASH = "0xdfc36e593b6feb4b8373f30ed6bd5f0c33cf982c3140065fa14d5aaf03deae74";
 const FREIGHT_CONTRACT_HASH_TYPE = (process.env.NEXT_PUBLIC_FREIGHT_HASH_TYPE || "type") as "type" | "data" | "data1";
-const FREIGHT_CONTRACT_OUTPOINT_TX_HASH = "0x22b114ce2919255d7c815e82cfd712d7041ab990aa576dd0ab1f95582cca8bb2";
+const FREIGHT_CONTRACT_OUTPOINT_TX_HASH = "0x38efd94491c25489a09b3214e0fe55037c29f874e007914aad640a47d1d0dfc1";
 const FREIGHT_CONTRACT_OUTPOINT_INDEX = Number.parseInt(process.env.NEXT_PUBLIC_FREIGHT_OUTPOINT_INDEX || "0", 10);
 
 // ─── Deployed contract (environment-configurable) ─────────────────────────────

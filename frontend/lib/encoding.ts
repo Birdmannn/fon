@@ -193,11 +193,12 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
   };
 }
 
-// ─── Participant cell data (65 bytes) ─────────────────────────────────────────
+// ─── Participant cell data (66 bytes) ─────────────────────────────────────────
 
 export interface ParticipantData {
-  campaignTxHash: Uint8Array; // 32 bytes
-  campaignIndex: number;
+  campaignCreatedBy: Uint8Array; // 20 bytes
+  campaignCreatedAt: bigint;
+  campaignType: CampaignType;
   participantAddress: Uint8Array; // 20 bytes
   joinedAt: bigint;
   status: ParticipantStatus;
@@ -206,8 +207,9 @@ export interface ParticipantData {
 
 export function encodeParticipantData(p: ParticipantData): Uint8Array {
   return concat(
-    p.campaignTxHash,
-    u32LE(p.campaignIndex),
+    p.campaignCreatedBy,
+    u64LE(p.campaignCreatedAt),
+    new Uint8Array([p.campaignType]),
     p.participantAddress,
     u64LE(p.joinedAt),
     new Uint8Array([p.status]),
@@ -216,14 +218,15 @@ export function encodeParticipantData(p: ParticipantData): Uint8Array {
 }
 
 export function decodeParticipantData(data: Uint8Array): ParticipantData {
-  if (data.length < 73) throw new Error("participant data too short");
+  if (data.length < 66) throw new Error("participant data too short");
   const view = new DataView(data.buffer, data.byteOffset);
   return {
-    campaignTxHash: data.slice(0, 32),
-    campaignIndex: view.getUint32(32, true),
-    participantAddress: data.slice(36, 56),
-    joinedAt: view.getBigUint64(56, true),
-    status: data[64] as ParticipantStatus,
-    depositedAmount: view.getBigUint64(65, true),
+    campaignCreatedBy: data.slice(0, 20),
+    campaignCreatedAt: view.getBigUint64(20, true),
+    campaignType: data[28] as CampaignType,
+    participantAddress: data.slice(29, 49),
+    joinedAt: view.getBigUint64(49, true),
+    status: data[57] as ParticipantStatus,
+    depositedAmount: view.getBigUint64(58, true),
   };
 }
