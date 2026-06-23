@@ -358,6 +358,9 @@ export async function sendBatchDeliver(
   const rewardCount = campaignCell.data.rewardCount === 0n
     ? BigInt(winners.length)
     : BigInt(Math.min(Number(campaignCell.data.rewardCount), winners.length));
+  if (rewardCount <= 0n) {
+    throw new Error("No eligible winners are available for settlement.");
+  }
   const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
   const updatedCampaignData = {
     ...campaignCell.data,

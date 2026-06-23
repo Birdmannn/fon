@@ -437,6 +437,9 @@ export function useCampaignCardState({
         ? previewDeterministicWinners(participants, data.rewardCount, revealedPreimage, c)
         : [];
       const recipientAddresses = winners.map((winner) => bytesToHex(winner.data.participantAddress));
+      const effectiveWinnerCount = data.rewardCount === 0n
+        ? BigInt(participants.length)
+        : BigInt(Math.min(Number(data.rewardCount), participants.length));
       const evidenceItems = [
         `Stored randomness hash: ${randomnessHash}`,
         randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage is not available in the current record store.",
@@ -453,6 +456,8 @@ export function useCampaignCardState({
           errorMessage = "Only the freight creator can distribute raffle rewards.";
         } else if (!revealedPreimage) {
           errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added. The preimage was shown in the creation success modal — check your notes.";
+        } else if (effectiveWinnerCount <= 0n || winners.length === 0) {
+          errorMessage = "No eligible verified winners are available for settlement.";
         } else {
           distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
         }

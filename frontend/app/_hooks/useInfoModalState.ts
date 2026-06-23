@@ -4,11 +4,10 @@ import { useCallback, useRef, useState } from "react";
 
 type UseInfoModalStateArgs = {
   animationMs: number;
-  isPurchasingTickets: boolean;
   onResetState: () => void;
 };
 
-export function useInfoModalState({ animationMs, isPurchasingTickets, onResetState }: UseInfoModalStateArgs) {
+export function useInfoModalState({ animationMs, onResetState }: UseInfoModalStateArgs) {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
@@ -74,7 +73,6 @@ export function useInfoModalState({ animationMs, isPurchasingTickets, onResetSta
     clearSubmissionSuccessTimer();
 
     if (!showInfoModal || isInfoModalClosing) return;
-    if (isPurchasingTickets) return;
 
     setIsInfoModalClosing(true);
     clearInfoHideTimer();
@@ -86,7 +84,7 @@ export function useInfoModalState({ animationMs, isPurchasingTickets, onResetSta
       onResetState();
       infoHideTimerRef.current = null;
     }, animationMs);
-  }, [animationMs, clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, isInfoModalClosing, isPurchasingTickets, onResetState, showInfoModal]);
+  }, [animationMs, clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, isInfoModalClosing, onResetState, showInfoModal]);
 
   const scheduleCloseInfoModal = useCallback((preventAutoClose: boolean, onBeforeHide?: () => void) => {
     if (preventAutoClose) {

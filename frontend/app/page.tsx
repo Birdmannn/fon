@@ -121,21 +121,19 @@ export default function Home() {
     setSubmissionErrorMessage(message);
   }, []);
 
+  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
+  const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
   const {
-    handleTicketPurchaseSubmit,
-    isPurchasingTickets,
-    openTicketPurchaseInfoModal,
-    resetTicketPurchaseState,
-    setIsPurchasingTickets,
-    setTicketPurchaseError,
-    setTicketPurchaseQuantity,
-    ticketPurchaseError,
-    ticketPurchaseQuantity,
-  } = useTicketPurchaseFlow({
-    onSubmissionError: setSubmissionErrorMessage,
-    onTicketBuySuccess: openTicketBuySuccessInfoModal,
-  });
-
+    handleCopyWalletAddress,
+    walletAddress,
+    walletBalance,
+    walletChainLabel,
+    walletCopyFeedback,
+    walletInfoError,
+    walletInfoLoading,
+  } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
   const {
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -154,8 +152,7 @@ export default function Home() {
     keepInfoModalOpen,
   } = useInfoModalState({
     animationMs: INFO_MODAL_ANIMATION_MS,
-    isPurchasingTickets: infoModalMode === "ticket-purchase" && isPurchasingTickets,
-    onResetState: resetTicketPurchaseState,
+    onResetState: () => {},
   });
 
   const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
@@ -173,19 +170,45 @@ export default function Home() {
     }, 3000);
   }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, submissionSuccessTimerRef]);
 
-  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
-  const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
-  const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
   const {
-    handleCopyWalletAddress,
-    walletAddress,
-    walletBalance,
-    walletChainLabel,
-    walletCopyFeedback,
-    walletInfoError,
-    walletInfoLoading,
-  } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
+    handleTicketPurchaseSubmit,
+    isPurchasingTickets,
+    openTicketPurchaseInfoModal,
+    resetTicketPurchaseState,
+    setIsPurchasingTickets,
+    setTicketPurchaseError,
+    setTicketPurchaseQuantity,
+    ticketPurchaseError,
+    ticketPurchaseQuantity,
+  } = useTicketPurchaseFlow({
+    onSubmissionError: setSubmissionErrorMessage,
+    onTicketBuySuccess: openTicketBuySuccessInfoModal,
+  });
+  const isInfoModalCloseLocked = infoModalMode === "ticket-purchase" && isPurchasingTickets;
+
+  const handleInfoMouseEnter = useCallback(() => {
+    openInfoModalFromHover(infoModalMode === "save-draft-confirm");
+  }, [infoModalMode, openInfoModalFromHover]);
+
+  const handleInfoMouseLeave = useCallback(() => {
+    scheduleCloseInfoModal(
+      infoModalMode === "save-draft-confirm" || isInfoModalCloseLocked,
+      () => {
+        setInfoModalMode("about");
+        setSaveDraftPromptError("");
+        setSubmissionSuccessTxHash("");
+        setSubmissionSuccessPreimage(null);
+        setSubmissionErrorMessage("");
+        setSettlementModalData(null);
+        setIsLoadingSettlementModal(false);
+      }
+    );
+  }, [infoModalMode, isInfoModalCloseLocked, scheduleCloseInfoModal]);
+
+  const handleInfoButtonToggle = useCallback(() => {
+    toggleInfoModal(infoModalMode === "save-draft-confirm" || isInfoModalCloseLocked);
+  }, [infoModalMode, isInfoModalCloseLocked, toggleInfoModal]);
+
   const clearCreateHideTimer = useCallback(() => {
     if (createHideTimerRef.current) {
       clearTimeout(createHideTimerRef.current);
@@ -714,15 +737,15 @@ export default function Home() {
           } : undefined}
         >
           <div className="header-info-wrap" onClick={(event) => event.stopPropagation()}>
-            <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
+            <div onMouseEnter={handleInfoMouseEnter} onMouseLeave={handleInfoMouseLeave}>
               <button
                 ref={headerInfoButtonRef}
                 type="button"
                 className="header-info-btn"
                 aria-label="Open Freight information"
-                onClick={toggleInfoModal}
-                onFocus={openInfoModalFromHover}
-                onBlur={scheduleCloseInfoModal}
+                onClick={handleInfoButtonToggle}
+                onFocus={handleInfoMouseEnter}
+                onBlur={handleInfoMouseLeave}
               >
                 <span className="header-info-inner-ring" aria-hidden="true" />
                 <span className="header-info-glyph" aria-hidden="true">i</span>
@@ -833,9 +856,17 @@ export default function Home() {
             actions={infoModalActions}
             backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
             backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
-            onRequestClose={closeInfoModal}
+            onRequestClose={() => closeInfoModal(() => {
+              setInfoModalMode("about");
+              setSaveDraftPromptError("");
+              setSubmissionSuccessTxHash("");
+              setSubmissionSuccessPreimage(null);
+              setSubmissionErrorMessage("");
+              setSettlementModalData(null);
+              setIsLoadingSettlementModal(false);
+            })}
             onKeepOpen={keepInfoModalOpen}
-            onScheduleClose={scheduleCloseInfoModal}
+            onScheduleClose={handleInfoMouseLeave}
           />
         </div>
 
