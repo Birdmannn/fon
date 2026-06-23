@@ -262,6 +262,25 @@ export default function Home() {
 
 
 
+  const handleOpenTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    openTicketPurchaseInfoModal(campaign, record, onTicketBought);
+    setInfoModalMode("ticket-purchase");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    clearSubmissionSuccessTimer,
+    openTicketPurchaseInfoModal,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+  ]);
+
   const openCreateModal = () => {
     clearCreateHideTimer();
     setIsCreateModalClosing(false);
@@ -907,7 +926,7 @@ export default function Home() {
           client={client}
           onCommentDiscardRequest={handleCommentDiscardRequest}
           commentDiscardDecision={commentDiscardDecision}
-          onTicketPurchaseRequest={openTicketPurchaseInfoModal}
+          onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
           onErrorChange={handleFreightsLoadError}
           onSettlementInfoRequest={(data) => {
             setSettlementModalData(data);
