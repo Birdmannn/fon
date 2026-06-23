@@ -7,6 +7,7 @@ use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::Script;
 use ckb_std::debug;
 use ckb_std::error::SysError;
+use ckb_hash::blake2b_256;
 use ckb_std::high_level::{load_cell_lock, load_cell_type, load_header, load_input, load_script};
 use k256::ecdsa::{Signature, VerifyingKey, signature::hazmat::PrehashVerifier};
 
@@ -293,20 +294,23 @@ pub fn parse_participant_data(data: &[u8]) -> Result<ParticipantData, Error> {
     if data.len() < PARTICIPANT_DATA_LEN {
         return Err(Error::InvalidParticipantArgs);
     }
-    let mut campaign_tx_hash = [0u8; 32];
-    campaign_tx_hash.copy_from_slice(&data[0..32]);
+    let mut campaign_created_by = [0u8; 20];
+    campaign_created_by.copy_from_slice(&data[0..20]);
 
-    let campaign_index = u32::from_le_bytes(data[32..36].try_into().unwrap());
+    let campaign_created_at = u64::from_le_bytes(data[20..28].try_into().unwrap());
+    let campaign_type: CampaignType = data[28].try_into().unwrap();
+
     let mut participant_address = [0u8; 20];
-    participant_address.copy_from_slice(&data[36..56]);
+    participant_address.copy_from_slice(&data[29..49]);
 
-    let joined_at = u64::from_le_bytes(data[56..64].try_into().unwrap());
-    let status: ParticipantStatus = data[64].try_into().unwrap();
-    let deposited_amount = u64::from_le_bytes(data[65..73].try_into().unwrap());
+    let joined_at = u64::from_le_bytes(data[49..57].try_into().unwrap());
+    let status: ParticipantStatus = data[57].try_into().unwrap();
+    let deposited_amount = u64::from_le_bytes(data[58..66].try_into().unwrap());
 
     Ok(ParticipantData {
-        campaign_tx_hash,
-        campaign_index,
+        campaign_created_by,
+        campaign_created_at,
+        campaign_type,
         participant_address,
         joined_at,
         status,

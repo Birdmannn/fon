@@ -13,6 +13,8 @@ use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_input};
 pub struct ParticipantEntry {
     pub participant: ParticipantData,
     pub input_capacity: u64,
+    pub input_tx_hash: [u8; 32],
+    pub input_index: u32,
 }
 
 /// Count non-campaign input cells that have PARTICIPANT_DATA_LEN bytes of data.
@@ -35,8 +37,9 @@ pub fn count_participant_inputs() -> Result<usize, Error> {
 }
 
 pub fn collect_verified_participants(
-    campaign_tx_hash: &[u8; 32],
-    campaign_index: u32,
+    campaign_created_by: &[u8; 20],
+    campaign_created_at: u64,
+    campaign_type: crate::types::CampaignType,
 ) -> Result<Vec<ParticipantEntry>, Error> {
     let mut participants = Vec::new();
     let mut i = 1; // skip inputs[0] (the campaign cell)
@@ -48,17 +51,27 @@ pub fn collect_verified_participants(
                     if participant.status != ParticipantStatus::Verified {
                         return Err(Error::InvalidOperation);
                     }
-                    if &participant.campaign_tx_hash != campaign_tx_hash {
+                    if &participant.campaign_created_by != campaign_created_by {
                         return Err(Error::CampaignDataMismatch);
                     }
-                    if participant.campaign_index != campaign_index {
+                    if participant.campaign_created_at != campaign_created_at {
+                        return Err(Error::CampaignDataMismatch);
+                    }
+                    if participant.campaign_type != campaign_type {
                         return Err(Error::CampaignDataMismatch);
                     }
                     let input_capacity = load_cell_capacity(i, Source::Input)
                         .map_err(|_| Error::InvalidCellData)?;
+                    let input = load_input(i, Source::Input).map_err(|_| Error::InvalidCellData)?;
+                    let previous_output = input.previous_output();
+                    let mut input_tx_hash = [0u8; 32];
+                    input_tx_hash.copy_from_slice(previous_output.tx_hash().as_slice());
+                    let input_index = u32::from_le_bytes(previous_output.index().as_slice().try_into().unwrap());
                     participants.push(ParticipantEntry {
                         participant,
                         input_capacity,
+                        input_tx_hash,
+                        input_index,
                     });
                 }
                 i += 1;
@@ -110,18 +123,7 @@ pub fn validate_batch_delivery_for_winners(
     winners: &[ParticipantEntry],
     reward_per_participant: u64,
 ) -> Result<(), Error> {
-    let campaign_input = load_input(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
-    let outpoint = campaign_input.previous_output();
-    let index_value = u32::from_le_bytes(outpoint.index().as_slice().try_into().unwrap());
-
     for winner in winners {
-        if winner.participant.campaign_tx_hash != outpoint.tx_hash().as_slice() {
-            return Err(Error::CampaignDataMismatch);
-        }
-        if winner.participant.campaign_index != index_value {
-            return Err(Error::CampaignDataMismatch);
-        }
-
         validate_rewarded_output(
             &winner.participant.participant_address,
             winner.input_capacity,
@@ -190,10 +192,13 @@ pub fn validate_deposit_transfer(deposit_amount: u64) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn validate_participant_added(participant_address: &[u8; 20], deposited_amount: u64) -> Result<(), Error> {
-    let campaign_input = load_input(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
-    let outpoint = campaign_input.previous_output();
-
+pub fn validate_participant_added(
+    participant_address: &[u8; 20],
+    campaign_created_by: &[u8; 20],
+    campaign_created_at: u64,
+    campaign_type: crate::types::CampaignType,
+    deposited_amount: u64,
+) -> Result<(), Error> {
     let mut i = 0;
     loop {
         match load_cell_data(i, Source::Output) {
@@ -206,13 +211,13 @@ pub fn validate_participant_added(participant_address: &[u8; 20], deposited_amou
                         continue;
                     }
 
-                    if participant.campaign_tx_hash != outpoint.tx_hash().as_slice() {
+                    if &participant.campaign_created_by != campaign_created_by {
                         return Err(Error::CampaignDataMismatch);
                     }
-
-                    let index_value =
-                        u32::from_le_bytes(outpoint.index().as_slice().try_into().unwrap());
-                    if participant.campaign_index != index_value {
+                    if participant.campaign_created_at != campaign_created_at {
+                        return Err(Error::CampaignDataMismatch);
+                    }
+                    if participant.campaign_type != campaign_type {
                         return Err(Error::CampaignDataMismatch);
                     }
 
@@ -240,7 +245,11 @@ pub fn validate_participant_added(participant_address: &[u8; 20], deposited_amou
 /// - a corresponding output participant cell exists with status = Refunded
 /// - output capacity == input capacity + participant.deposited_amount
 /// Returns the total amount refunded so the caller can validate the campaign cell.
-pub fn validate_refund_outputs(campaign_tx_hash_bytes: &[u8], campaign_index: u32) -> Result<u64, Error> {
+pub fn validate_refund_outputs(
+    campaign_created_by: &[u8; 20],
+    campaign_created_at: u64,
+    campaign_type: crate::types::CampaignType,
+) -> Result<u64, Error> {
     let mut total_refunded = 0u64;
     let mut i = 1; // skip inputs[0] (the campaign cell)
     loop {
@@ -249,10 +258,13 @@ pub fn validate_refund_outputs(campaign_tx_hash_bytes: &[u8], campaign_index: u3
                 if data.len() == PARTICIPANT_DATA_LEN {
                     let participant = parse_participant_data(&data)?;
 
-                    if participant.campaign_tx_hash != campaign_tx_hash_bytes {
+                    if &participant.campaign_created_by != campaign_created_by {
                         return Err(Error::CampaignDataMismatch);
                     }
-                    if participant.campaign_index != campaign_index {
+                    if participant.campaign_created_at != campaign_created_at {
+                        return Err(Error::CampaignDataMismatch);
+                    }
+                    if participant.campaign_type != campaign_type {
                         return Err(Error::CampaignDataMismatch);
                     }
                     if participant.status != ParticipantStatus::Verified {

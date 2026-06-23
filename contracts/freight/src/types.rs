@@ -77,18 +77,19 @@ pub struct Campaign {
 }
 
 // Participant data, we use one cell per participant.
-// Layout: [32][4][20][8][1][8] = 73 bytes
+// Layout: [20][8][1][20][8][1][8] = 66 bytes
 #[derive(Debug, Clone)]
 pub struct ParticipantData {
-    pub campaign_tx_hash: [u8; 32],  // which campaign (32 bytes)
-    pub campaign_index: u32,         // which campaign output (4 bytes)
-    pub participant_address: [u8; 20], // participant's address (20 bytes)
-    pub joined_at: u64,              // timestamp in ms (8 bytes)
-    pub status: ParticipantStatus,   // current status (1 byte)
-    pub deposited_amount: u64,       // amount deposited by this participant in shannons (8 bytes)
+    pub campaign_created_by: [u8; 20],   // stable campaign creator identity (20 bytes)
+    pub campaign_created_at: u64,        // stable campaign creation timestamp in ms (8 bytes)
+    pub campaign_type: CampaignType,     // stable campaign type (1 byte)
+    pub participant_address: [u8; 20],   // participant's address (20 bytes)
+    pub joined_at: u64,                  // timestamp in ms (8 bytes)
+    pub status: ParticipantStatus,       // current status (1 byte)
+    pub deposited_amount: u64,           // amount deposited by this participant in shannons (8 bytes)
 }
 
-pub const PARTICIPANT_DATA_LEN: usize = 73;
+pub const PARTICIPANT_DATA_LEN: usize = 66;
 
 #[repr(u8)]
 #[derive(Debug, Clone, PartialEq)]

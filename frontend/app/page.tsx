@@ -737,15 +737,33 @@ export default function Home() {
           } : undefined}
         >
           <div className="header-info-wrap" onClick={(event) => event.stopPropagation()}>
-            <div onMouseEnter={handleInfoMouseEnter} onMouseLeave={handleInfoMouseLeave}>
+            <div onMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")} onMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+                setInfoModalMode("about");
+                setSaveDraftPromptError("");
+                setSubmissionSuccessTxHash("");
+                setSubmissionSuccessPreimage(null);
+                setSubmissionErrorMessage("");
+                setSettlementModalData(null);
+                setIsLoadingSettlementModal(false);
+                resetTicketPurchaseState();
+              })}>
               <button
                 ref={headerInfoButtonRef}
                 type="button"
                 className="header-info-btn"
                 aria-label="Open Freight information"
-                onClick={handleInfoButtonToggle}
-                onFocus={handleInfoMouseEnter}
-                onBlur={handleInfoMouseLeave}
+                onClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets))}
+                onFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
+                onBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+                setInfoModalMode("about");
+                setSaveDraftPromptError("");
+                setSubmissionSuccessTxHash("");
+                setSubmissionSuccessPreimage(null);
+                setSubmissionErrorMessage("");
+                setSettlementModalData(null);
+                setIsLoadingSettlementModal(false);
+                resetTicketPurchaseState();
+              })}
               >
                 <span className="header-info-inner-ring" aria-hidden="true" />
                 <span className="header-info-glyph" aria-hidden="true">i</span>
@@ -866,7 +884,16 @@ export default function Home() {
               setIsLoadingSettlementModal(false);
             })}
             onKeepOpen={keepInfoModalOpen}
-            onScheduleClose={handleInfoMouseLeave}
+            onScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+              setInfoModalMode("about");
+              setSaveDraftPromptError("");
+              setSubmissionSuccessTxHash("");
+              setSubmissionSuccessPreimage(null);
+              setSubmissionErrorMessage("");
+              setSettlementModalData(null);
+              setIsLoadingSettlementModal(false);
+              resetTicketPurchaseState();
+            })}
           />
         </div>
 

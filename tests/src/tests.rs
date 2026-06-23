@@ -57,23 +57,25 @@ fn build_campaign_bytes(
     Bytes::from(data)
 }
 
-/// Build the 73-byte participant cell data blob.
+/// Build the 66-byte participant cell data blob.
 fn build_participant_bytes(
-    campaign_tx_hash: &[u8; 32],
-    campaign_index: u32,
+    campaign_created_by: &[u8; 20],
+    campaign_created_at: u64,
+    campaign_type: CampaignType,
     participant_address: &[u8; 20],
     joined_at: u64,
     status: ParticipantStatus,
     deposited_amount: u64,
 ) -> Bytes {
-    let mut data = Vec::with_capacity(73);
-    data.extend_from_slice(campaign_tx_hash);
-    data.extend_from_slice(&campaign_index.to_le_bytes());
+    let mut data = Vec::with_capacity(66);
+    data.extend_from_slice(campaign_created_by);
+    data.extend_from_slice(&campaign_created_at.to_le_bytes());
+    data.push(campaign_type as u8);
     data.extend_from_slice(participant_address);
     data.extend_from_slice(&joined_at.to_le_bytes());
     data.push(status as u8);
     data.extend_from_slice(&deposited_amount.to_le_bytes());
-    assert_eq!(data.len(), 73, "participant data must be exactly 73 bytes");
+    assert_eq!(data.len(), 66, "participant data must be exactly 66 bytes");
     Bytes::from(data)
 }
 
@@ -1349,11 +1351,11 @@ fn test_batch_deliver_sequential() {
 
     let p1_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p1_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p1_address, created_at, ParticipantStatus::Verified, 0),
     );
     let p2_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p2_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p2_address, created_at, ParticipantStatus::Verified, 0),
     );
 
     let campaign_output_data = build_campaign_bytes(
@@ -1376,8 +1378,8 @@ fn test_batch_deliver_sequential() {
         ])
         .outputs_data(vec![
             campaign_output_data,
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
         ].pack())
         .build();
     let tx = context.complete_tx(tx);
@@ -1438,11 +1440,11 @@ fn test_batch_deliver_randomness_success() {
 
     let p1_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p1_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p1_address, created_at, ParticipantStatus::Verified, 0),
     );
     let p2_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p2_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p2_address, created_at, ParticipantStatus::Verified, 0),
     );
 
     let campaign_output_data = build_campaign_bytes(
@@ -1465,8 +1467,8 @@ fn test_batch_deliver_randomness_success() {
         ])
         .outputs_data(vec![
             campaign_output_data,
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
         ].pack())
         .build();
     let tx = context.complete_tx(tx);
@@ -1530,15 +1532,15 @@ fn test_batch_deliver_reward_count_caps_to_verified_participants() {
 
     let p1_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p1_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p1_address, created_at, ParticipantStatus::Verified, 0),
     );
     let p2_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p2_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p2_address, created_at, ParticipantStatus::Verified, 0),
     );
     let p3_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p3_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p3_address, created_at, ParticipantStatus::Verified, 0),
+        build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p3_address, created_at, ParticipantStatus::Verified, 0),
     );
 
     let campaign_output_data = build_campaign_bytes(
@@ -1563,9 +1565,9 @@ fn test_batch_deliver_reward_count_caps_to_verified_participants() {
         ])
         .outputs_data(vec![
             campaign_output_data,
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p3_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p1_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p2_address, created_at, ParticipantStatus::Rewarded, 0),
+            build_participant_bytes(&address_from(CREATOR), created_at, CampaignType::SimpleTask, &p3_address, created_at, ParticipantStatus::Rewarded, 0),
         ].pack())
         .build();
     let tx = context.complete_tx(tx);
@@ -2173,11 +2175,11 @@ fn test_refund_success() {
 
     let p1_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p1_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Verified, deposit_per_participant),
+        build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p1_address, created_at, ParticipantStatus::Verified, deposit_per_participant),
     );
     let p2_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p2_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Verified, deposit_per_participant),
+        build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p2_address, created_at, ParticipantStatus::Verified, deposit_per_participant),
     );
 
     // Campaign output: current_deposits reduced by total refunded
@@ -2205,8 +2207,8 @@ fn test_refund_success() {
         ])
         .outputs_data(vec![
             campaign_output_data,
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p1_address, created_at, ParticipantStatus::Refunded, deposit_per_participant),
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p2_address, created_at, ParticipantStatus::Refunded, deposit_per_participant),
+            build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p1_address, created_at, ParticipantStatus::Refunded, deposit_per_participant),
+            build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p2_address, created_at, ParticipantStatus::Refunded, deposit_per_participant),
         ].pack())
         .build();
     let tx = context.complete_tx(tx);
@@ -2257,7 +2259,7 @@ fn test_refund_campaign_not_cancelled() {
     let p_lock = context.build_script(&always_success_out_point, Bytes::from(p_address.to_vec())).expect("p lock");
     let p_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY)).lock(p_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p_address, created_at, ParticipantStatus::Verified, deposit_amount),
+        build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p_address, created_at, ParticipantStatus::Verified, deposit_amount),
     );
 
     let campaign_output_data = build_campaign_bytes(
@@ -2276,7 +2278,7 @@ fn test_refund_campaign_not_cancelled() {
         ])
         .outputs_data(vec![
             campaign_output_data,
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p_address, created_at, ParticipantStatus::Refunded, deposit_amount),
+            build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p_address, created_at, ParticipantStatus::Refunded, deposit_amount),
         ].pack())
         .build();
     let tx = context.complete_tx(tx);
@@ -2328,7 +2330,7 @@ fn test_refund_wrong_output_capacity() {
     let participant_capacity = 10_000u64;
     let p_out_point = context.create_cell(
         CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&participant_capacity)).lock(p_lock.clone()).build(),
-        build_participant_bytes(&campaign_tx_hash, campaign_index, &p_address, created_at, ParticipantStatus::Verified, deposit_amount),
+        build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p_address, created_at, ParticipantStatus::Verified, deposit_amount),
     );
 
     let campaign_output_data = build_campaign_bytes(
@@ -2350,7 +2352,7 @@ fn test_refund_wrong_output_capacity() {
         ])
         .outputs_data(vec![
             campaign_output_data,
-            build_participant_bytes(&campaign_tx_hash, campaign_index, &p_address, created_at, ParticipantStatus::Refunded, deposit_amount),
+            build_participant_bytes(&creator_address, created_at, CampaignType::FundedTask, &p_address, created_at, ParticipantStatus::Refunded, deposit_amount),
         ].pack())
         .build();
     let tx = context.complete_tx(tx);
