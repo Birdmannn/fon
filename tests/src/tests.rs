@@ -1159,8 +1159,13 @@ fn test_verify_participant_success() {
     let signature = sig.serialize_compact();
 
     let participant_data = build_participant_bytes(
-        &tx_hash_bytes, campaign_index, &depositor_address,
-        active_timestamp, ParticipantStatus::Verified, 0,
+        &address_from(CREATOR),
+        created_at,
+        CampaignType::SimpleTask,
+        &depositor_address,
+        active_timestamp,
+        ParticipantStatus::Verified,
+        0,
     );
     let participant_lock = context
         .build_script(&always_success_out_point, Bytes::from(vec![99u8; 20]))
@@ -1257,8 +1262,13 @@ fn test_verify_participant_raffle_success() {
 
     // Participant output cell
     let participant_data = build_participant_bytes(
-        &tx_hash_bytes, campaign_index, &depositor_address,
-        ts, ParticipantStatus::Verified, ticket_price,
+        &creator_address,
+        created_at,
+        CampaignType::Raffle,
+        &depositor_address,
+        ts,
+        ParticipantStatus::Verified,
+        ticket_price,
     );
     let participant_lock = context
         .build_script(&always_success_out_point, Bytes::from(vec![77u8; 20]))
@@ -1676,8 +1686,9 @@ fn test_batch_deliver_missing_randomness_args_rejected() {
     );
 
     let winner_participant = build_participant_bytes(
-        &campaign_input.previous_output().tx_hash().as_slice().try_into().unwrap(),
-        0,
+        &creator_address,
+        created_at,
+        CampaignType::Raffle,
         &winner_address,
         created_at + 5_000,
         ParticipantStatus::Verified,
