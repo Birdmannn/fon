@@ -108,23 +108,23 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
   const buildRecordIndexes = useCallback((records: CampaignRecord[]) => {
     const nextRecordIndexes = buildCampaignRecordIndexes(records);
 
-    console.log("[campaign-records] published records from API", records.map((record) => ({
-      id: record._id ?? null,
-      campaignId: record.campaignId ?? null,
-      createdByHash: record.createdByHash ?? null,
-      chainCreatedAt: record.chainCreatedAt ?? null,
-      txHash: record.txHash ?? null,
-      normalizedTxHash: normalizeHash(record.txHash),
-      status: record.status ?? null,
-      hasRandomnessPreimage: typeof record.randomnessPreimage === "string" && record.randomnessPreimage.length > 0,
-      randomnessPreimage: record.randomnessPreimage ?? null,
-    })));
+    // console.log("[campaign-records] published records from API", records.map((record) => ({
+    //   id: record._id ?? null,
+    //   campaignId: record.campaignId ?? null,
+    //   createdByHash: record.createdByHash ?? null,
+    //   chainCreatedAt: record.chainCreatedAt ?? null,
+    //   txHash: record.txHash ?? null,
+    //   normalizedTxHash: normalizeHash(record.txHash),
+    //   status: record.status ?? null,
+    //   hasRandomnessPreimage: typeof record.randomnessPreimage === "string" && record.randomnessPreimage.length > 0,
+    //   randomnessPreimage: record.randomnessPreimage ?? null,
+    // })));
 
-    console.log("[campaign-records] stable index keys", {
-      campaignIds: Object.keys(nextRecordIndexes.byCampaignId),
-      txHashes: Object.keys(nextRecordIndexes.byTxHash),
-      legacyKeys: Object.keys(nextRecordIndexes.byLegacyKey),
-    });
+    // console.log("[campaign-records] stable index keys", {
+    //   campaignIds: Object.keys(nextRecordIndexes.byCampaignId),
+    //   txHashes: Object.keys(nextRecordIndexes.byTxHash),
+    //   legacyKeys: Object.keys(nextRecordIndexes.byLegacyKey),
+    // });
 
     return nextRecordIndexes;
   }, []);
@@ -166,20 +166,20 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
       .then(([chainCampaigns, records]) => {
         const nextRecordIndexes = buildRecordIndexes(records);
 
-        console.log("[campaign-records] fetched campaigns and records", {
-          chainCampaigns: chainCampaigns.map((campaign) => ({
-            txHash: campaign.outPoint.txHash,
-            normalizedTxHash: normalizeHash(campaign.outPoint.txHash),
-            campaignId: getCampaignStableId(campaign),
-            createdByHash: getCampaignCreatedByHash(campaign),
-            chainCreatedAt: getCampaignChainCreatedAt(campaign),
-            index: campaign.outPoint.index,
-            campaignType: campaign.data.campaignType,
-          })),
-          recordCount: records.length,
-          recordCampaignIds: Object.keys(nextRecordIndexes.byCampaignId),
-          recordTxHashes: Object.keys(nextRecordIndexes.byTxHash),
-        });
+        // console.log("[campaign-records] fetched campaigns and records", {
+        //   chainCampaigns: chainCampaigns.map((campaign) => ({
+        //     txHash: campaign.outPoint.txHash,
+        //     normalizedTxHash: normalizeHash(campaign.outPoint.txHash),
+        //     campaignId: getCampaignStableId(campaign),
+        //     createdByHash: getCampaignCreatedByHash(campaign),
+        //     chainCreatedAt: getCampaignChainCreatedAt(campaign),
+        //     index: campaign.outPoint.index,
+        //     campaignType: campaign.data.campaignType,
+        //   })),
+        //   recordCount: records.length,
+        //   recordCampaignIds: Object.keys(nextRecordIndexes.byCampaignId),
+        //   recordTxHashes: Object.keys(nextRecordIndexes.byTxHash),
+        // });
 
         if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
           setCampaigns(chainCampaigns);
@@ -272,18 +272,18 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     return campaigns.map((campaign) => {
       const matchedRecord = findCampaignRecord(recordIndexes, campaign);
 
-      console.log("[campaign-records] merge campaign with record", {
-        campaignTxHash: campaign.outPoint.txHash,
-        normalizedCampaignTxHash: normalizeHash(campaign.outPoint.txHash),
-        campaignId: getCampaignStableId(campaign),
-        createdByHash: getCampaignCreatedByHash(campaign),
-        chainCreatedAt: getCampaignChainCreatedAt(campaign),
-        matchedRecordId: matchedRecord?._id ?? null,
-        matchedRecordCampaignId: matchedRecord?.campaignId ?? null,
-        matchedRecordTxHash: matchedRecord?.txHash ?? null,
-        matchedRecordHasPreimage: typeof matchedRecord?.randomnessPreimage === "string" && matchedRecord.randomnessPreimage.length > 0,
-        matchedRecordStatus: matchedRecord?.status ?? null,
-      });
+      // console.log("[campaign-records] merge campaign with record", {
+      //   campaignTxHash: campaign.outPoint.txHash,
+      //   normalizedCampaignTxHash: normalizeHash(campaign.outPoint.txHash),
+      //   campaignId: getCampaignStableId(campaign),
+      //   createdByHash: getCampaignCreatedByHash(campaign),
+      //   chainCreatedAt: getCampaignChainCreatedAt(campaign),
+      //   matchedRecordId: matchedRecord?._id ?? null,
+      //   matchedRecordCampaignId: matchedRecord?.campaignId ?? null,
+      //   matchedRecordTxHash: matchedRecord?.txHash ?? null,
+      //   matchedRecordHasPreimage: typeof matchedRecord?.randomnessPreimage === "string" && matchedRecord.randomnessPreimage.length > 0,
+      //   matchedRecordStatus: matchedRecord?.status ?? null,
+      // });
 
       return {
         campaign,

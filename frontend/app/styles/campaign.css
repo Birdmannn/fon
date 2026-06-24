@@ -589,6 +589,7 @@
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   min-width: 0;
 }
@@ -798,6 +799,10 @@
 
 .campaign-card-countdown {
   margin-left: auto;
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 3.25rem;
+  text-align: right;
   font-size: 0.75rem;
   line-height: 1;
   font-family: var(--font-mono, monospace);

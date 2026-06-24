@@ -406,18 +406,18 @@ export function useCampaignCardState({
 
     const randomnessHash = bytesToHex(data.randomnessHash);
     const randomnessPreimage = record?.randomnessPreimage ?? null;
-    console.log("[raffle-settlement] settlement click", {
-      campaignTxHash: c.outPoint.txHash,
-      campaignIndex: c.outPoint.index,
-      normalizedCampaignTxHash: normalizeHash(c.outPoint.txHash),
-      campaignType: data.campaignType,
-      record,
-      recordTxHash: record?.txHash ?? null,
-      normalizedRecordTxHash: normalizeHash(record?.txHash),
-      randomnessHash,
-      randomnessPreimage,
-      hasRandomnessPreimage: typeof randomnessPreimage === "string" && randomnessPreimage.length > 0,
-    });
+    // console.log("[raffle-settlement] settlement click", {
+    //   campaignTxHash: c.outPoint.txHash,
+    //   campaignIndex: c.outPoint.index,
+    //   normalizedCampaignTxHash: normalizeHash(c.outPoint.txHash),
+    //   campaignType: data.campaignType,
+    //   record,
+    //   recordTxHash: record?.txHash ?? null,
+    //   normalizedRecordTxHash: normalizeHash(record?.txHash),
+    //   randomnessHash,
+    //   randomnessPreimage,
+    //   hasRandomnessPreimage: typeof randomnessPreimage === "string" && randomnessPreimage.length > 0,
+    // });
     onSettlementInfoRequest({
       campaignTitle: displayTitle,
       randomnessHash,
@@ -432,6 +432,7 @@ export function useCampaignCardState({
 
     try {
       const participants = await fetchParticipants(client, c);
+      console.log("[raffle-settlement] fetched participants", participants);
       const revealedPreimage = randomnessPreimage ? hexToBytes(randomnessPreimage) : null;
       const winners = revealedPreimage
         ? previewDeterministicWinners(participants, data.rewardCount, revealedPreimage, c)
@@ -448,6 +449,9 @@ export function useCampaignCardState({
         "Winner ordering is deterministic by join time, participant address, then outpoint.",
       ];
 
+      console.log("Winners: ", winners);
+      console.log("effectiveWinnerCount: ", effectiveWinnerCount);
+      
       let distributionTxHash: string | null = null;
       let errorMessage: string | null = null;
       if (shouldGlowSettlement) {
