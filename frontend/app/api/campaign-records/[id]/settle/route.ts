@@ -9,6 +9,38 @@ function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function ensureOptionalRecipients(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("settledRecipients must be an array when provided");
+  }
+
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`settledRecipients[${index}] must be an object`);
+    }
+
+    const candidate = entry as {
+      address?: unknown;
+      username?: unknown;
+      handle?: unknown;
+    };
+
+    if (typeof candidate.address !== "string" || typeof candidate.username !== "string" || typeof candidate.handle !== "string") {
+      throw new Error(`settledRecipients[${index}] must include string address, username, and handle`);
+    }
+
+    return {
+      address: candidate.address.trim(),
+      username: candidate.username.trim(),
+      handle: candidate.handle.trim(),
+    };
+  });
+}
+
 export async function POST(request: Request, context: RouteContext<"/api/campaign-records/[id]/settle">) {
   try {
     const { id } = await context.params;
@@ -16,7 +48,13 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       return badRequest("Invalid campaign record id", 404);
     }
 
-    const body = (await request.json()) as { settlementTxHash?: unknown; settledAt?: unknown; soldTicketCount?: unknown };
+    const body = (await request.json()) as {
+      settlementTxHash?: unknown;
+      settledAt?: unknown;
+      soldTicketCount?: unknown;
+      settledParticipantCount?: unknown;
+      settledRecipients?: unknown;
+    };
     const settlementTxHash = body?.settlementTxHash;
     if (typeof settlementTxHash !== "string" || settlementTxHash.trim() === "") {
       return badRequest("settlementTxHash must be a non-empty string");
@@ -28,6 +66,10 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     const soldTicketCount = typeof body?.soldTicketCount === "string" && body.soldTicketCount.trim()
       ? body.soldTicketCount.trim()
       : null;
+    const settledParticipantCount = typeof body?.settledParticipantCount === "string" && body.settledParticipantCount.trim()
+      ? body.settledParticipantCount.trim()
+      : null;
+    const settledRecipients = ensureOptionalRecipients(body?.settledRecipients);
 
     const collection = await getMongoCollection();
     const result = await collection.updateOne(
@@ -37,6 +79,8 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
           settlementTxHash: settlementTxHash.trim(),
           settledAt,
           soldTicketCount,
+          settledParticipantCount,
+          settledRecipients,
           updatedAt: new Date(),
         },
       }

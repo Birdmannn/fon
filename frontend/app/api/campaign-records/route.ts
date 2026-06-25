@@ -34,6 +34,8 @@ type CampaignRecordPayload = {
   settlementTxHash?: unknown;
   settledAt?: unknown;
   soldTicketCount?: unknown;
+  settledParticipantCount?: unknown;
+  settledRecipients?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -79,6 +81,34 @@ function ensureSummaryWithinLimit(text: string) {
   }
 }
 
+function ensureOptionalRecipients(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error("settledRecipients must be an array when provided");
+  }
+
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`settledRecipients[${index}] must be an object`);
+    }
+
+    const candidate = entry as {
+      address?: unknown;
+      username?: unknown;
+      handle?: unknown;
+    };
+
+    return {
+      address: ensureString(candidate.address, `settledRecipients[${index}].address`).trim(),
+      username: ensureString(candidate.username, `settledRecipients[${index}].username`).trim(),
+      handle: ensureString(candidate.handle, `settledRecipients[${index}].handle`).trim(),
+    };
+  });
+}
+
 function normalizePayload(payload: CampaignRecordPayload) {
   const title = ensureString(payload.title, "title").trim();
   const description = ensureString(payload.description, "description").trim();
@@ -115,6 +145,8 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const settlementTxHash = ensureOptionalString(payload.settlementTxHash, "settlementTxHash");
   const settledAt = ensureOptionalString(payload.settledAt, "settledAt");
   const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
+  const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
+  const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
 
   return {
     title,
@@ -149,6 +181,8 @@ function normalizePayload(payload: CampaignRecordPayload) {
     settlementTxHash,
     settledAt,
     soldTicketCount,
+    settledParticipantCount,
+    settledRecipients,
   };
 }
 

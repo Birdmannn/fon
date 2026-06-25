@@ -54,6 +54,12 @@ export type CampaignRecord = {
   settlementTxHash?: string | null;
   settledAt?: string | null;
   soldTicketCount?: string | null;
+  settledParticipantCount?: string | null;
+  settledRecipients?: Array<{
+    address: string;
+    username: string;
+    handle: string;
+  }> | null;
 };
 
 export type MergedCampaign = {

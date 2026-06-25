@@ -214,6 +214,9 @@ export function useCampaignCardState({
     activatedTxHash: record?.activatedTxHash ?? null,
     settlementTxHash: record?.settlementTxHash ?? null,
     settledAt: record?.settledAt ?? null,
+    soldTicketCount: record?.soldTicketCount ?? null,
+    settledParticipantCount: record?.settledParticipantCount ?? null,
+    settledRecipients: record?.settledRecipients ?? null,
   });
 
   useEffect(() => {
@@ -429,6 +432,28 @@ export function useCampaignCardState({
 
     const randomnessHash = bytesToHex(data.randomnessHash);
     const randomnessPreimage = record?.randomnessPreimage ?? null;
+
+    if (record?.settlementTxHash && Array.isArray(record.settledRecipients) && record.settledRecipients.length > 0) {
+      onSettlementInfoRequest({
+        campaignTitle: displayTitle,
+        randomnessHash,
+        randomnessPreimage,
+        evidenceItems: [
+          `Stored randomness hash: ${randomnessHash}`,
+          randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage is not available in the current record store.",
+          `Verified participant count used: ${record.settledParticipantCount ?? "0"}`,
+          `Reward count: ${String(data.rewardCount)}`,
+          "Winner ordering is deterministic by join time, participant address, then outpoint.",
+        ],
+        recipients: record.settledRecipients,
+        distributionTxHash: record.settlementTxHash,
+        errorMessage: null,
+        _campaign: c,
+        _record: record,
+      });
+      return;
+    }
+
     onSettlementInfoRequest({
       campaignTitle: displayTitle,
       randomnessHash,
@@ -523,10 +548,11 @@ export function useCampaignCardState({
       const effectiveWinnerCount = data.rewardCount === 0n
         ? BigInt(participants.length)
         : BigInt(Math.min(Number(data.rewardCount), participants.length));
+      const participantCountText = String(participants.length);
       const evidenceItems = [
         `Stored randomness hash: ${randomnessHash}`,
         randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage is not available in the current record store.",
-        `Verified participant count used: ${String(participants.length)}`,
+        `Verified participant count used: ${participantCountText}`,
         `Reward count: ${String(data.rewardCount)}`,
         "Winner ordering is deterministic by join time, participant address, then outpoint.",
       ];
@@ -563,6 +589,8 @@ export function useCampaignCardState({
                   settlementTxHash: distributionTxHash,
                   settledAt,
                   soldTicketCount: String(soldTickets),
+                  settledParticipantCount: participantCountText,
+                  settledRecipients: recipients,
                 }),
               });
               const settlePayload = await settleResponse.json().catch(() => null);
