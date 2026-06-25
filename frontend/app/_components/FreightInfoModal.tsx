@@ -18,6 +18,8 @@ const X_ICON = (
   </svg>
 );
 
+const MODAL_TITLE = "FreightOnNervos";
+
 type FreightInfoModalProps = {
   open: boolean;
   closing: boolean;
@@ -58,7 +60,18 @@ export default function FreightInfoModal({
       >
         <div className="header-info-modal-header">
           <div className="header-info-modal-title-row">
-            <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold header-info-modal-title-typed" aria-label={MODAL_TITLE}>
+              {Array.from(MODAL_TITLE).map((character, index) => (
+                <span
+                  key={`${character}-${index}`}
+                  className="header-info-modal-title-char"
+                  style={{ animationDelay: `${index * 150}ms` }}
+                  aria-hidden="true"
+                >
+                  {character}
+                </span>
+              ))}
+            </h1>
             <div className="header-info-modal-project-links" aria-label="Project links">
               <a
                 href={PROJECT_GITHUB_URL}

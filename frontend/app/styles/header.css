@@ -103,6 +103,19 @@
   gap: 1rem;
 }
 
+.header-info-modal-title-typed {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.header-info-modal-title-char {
+  opacity: 0;
+  animation: header-info-title-char-reveal 1ms steps(1, end) forwards;
+}
+
 .header-info-modal-project-links {
   display: inline-flex;
   align-items: center;
@@ -167,6 +180,15 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes header-info-title-char-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
