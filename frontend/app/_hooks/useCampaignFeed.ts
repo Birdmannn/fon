@@ -113,7 +113,14 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     );
   }, []);
 
-  const handleSettlementCompleted = useCallback((campaignId: string, settlementTxHash: string, settledAt: string, soldTicketCount: string) => {
+  const handleSettlementCompleted = useCallback((
+    campaignId: string,
+    settlementTxHash: string,
+    settledAt: string,
+    soldTicketCount: string,
+    settledParticipantCount?: string | null,
+    settledRecipients?: CampaignRecord["settledRecipients"]
+  ) => {
     const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
       const matchedRecord = prev.byCampaignId[campaignId]
         ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
@@ -128,6 +135,8 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
         settlementTxHash,
         settledAt,
         soldTicketCount,
+        settledParticipantCount: settledParticipantCount ?? matchedRecord.settledParticipantCount ?? null,
+        settledRecipients: settledRecipients ?? matchedRecord.settledRecipients ?? null,
       };
       const shouldReplace = (record: CampaignRecord) => (
         record === matchedRecord

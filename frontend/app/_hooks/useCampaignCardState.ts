@@ -82,7 +82,14 @@ type UseCampaignCardStateArgs = {
   currentWalletAddress: string | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
-  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string, soldTicketCount: string) => void;
+  onSettlementCompleted: (
+    campaignId: string,
+    settlementTxHash: string,
+    settledAt: string,
+    soldTicketCount: string,
+    settledParticipantCount?: string | null,
+    settledRecipients?: CampaignRecord["settledRecipients"]
+  ) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -606,7 +613,14 @@ export function useCampaignCardState({
             }
           }
 
-          onSettlementCompleted(getCampaignStableId(c), distributionTxHash, settledAt, String(soldTickets));
+          onSettlementCompleted(
+            getCampaignStableId(c),
+            distributionTxHash,
+            settledAt,
+            String(soldTickets),
+            participantCountText,
+            recipients,
+          );
         }
       }
 
