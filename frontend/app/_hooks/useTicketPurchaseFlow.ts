@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from "react";
 import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex } from "@/lib/encoding";
-import { getCampaignStableId } from "@/lib/campaignIdentity";
+import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId } from "@/lib/campaignIdentity";
 import { fetchCampaigns, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
@@ -120,6 +120,22 @@ export function useTicketPurchaseFlow({ onSubmissionError, onTicketBuySuccess }:
       }
 
       const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase);
+      await fetch("/api/campaign-participants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          campaignId: getCampaignStableId(campaignForPurchase),
+          createdByHash: getCampaignCreatedByHash(campaignForPurchase),
+          chainCreatedAt: getCampaignChainCreatedAt(campaignForPurchase),
+          campaignType: campaignForPurchase.data.campaignType,
+          participantAddress: await signer.getRecommendedAddress(),
+          participantTxHash: txHash,
+          joinedAt: String(Date.now()),
+          status: "verified",
+        }),
+      }).catch(() => {
+        // Non-fatal — settlement can still fall back to on-chain discovery
+      });
       ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount);
       onTicketBuySuccess(txHash);
     } catch (error) {

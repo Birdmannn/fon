@@ -431,7 +431,19 @@ export function useCampaignCardState({
     });
 
     try {
-      const participants = await fetchParticipants(client, c);
+      const participantIndexResponse = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(getCampaignStableId(c))}`, {
+        cache: "no-store",
+      });
+      const participantIndexPayload = await participantIndexResponse.json().catch(() => null);
+      if (!participantIndexResponse.ok) {
+        throw new Error(participantIndexPayload?.error ?? "Failed to fetch indexed campaign participants");
+      }
+      const participantAddresses = Array.isArray(participantIndexPayload?.participants)
+        ? participantIndexPayload.participants
+            .map((value: { participantAddress?: unknown }) => typeof value?.participantAddress === "string" ? value.participantAddress : "")
+            .filter(Boolean)
+        : [];
+      const participants = await fetchParticipants(client, c, 500, participantAddresses);
       console.log("[raffle-settlement] fetched participants", participants);
       const revealedPreimage = randomnessPreimage ? hexToBytes(randomnessPreimage) : null;
       const winners = revealedPreimage

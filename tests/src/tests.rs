@@ -1256,7 +1256,7 @@ fn test_verify_participant_raffle_success() {
         created_at, start_duration, task_duration, &creator_address,
         CampaignType::Raffle, max_amount, ticket_price, CampaignStatus::Created, 0, [0u8; 32], &summary, ticket_price,
     );
-
+    
     let tx_hash_bytes: [u8; 32] = campaign_out_point.tx_hash().as_slice().try_into().unwrap();
     let campaign_index = u32::from_le_bytes(campaign_out_point.index().as_slice().try_into().unwrap());
 

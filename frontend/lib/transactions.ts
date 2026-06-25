@@ -468,15 +468,77 @@ export interface ParticipantCell {
 export async function fetchParticipants(
   client: ccc.Client,
   campaign: CampaignCell,
-  limit = 500
+  limit = 500,
+  participantAddresses?: string[]
 ): Promise<ParticipantCell[]> {
   const results: ParticipantCell[] = [];
   const campaignCreatedByHex = bytesToHex(campaign.data.createdBy);
   const campaignCreatedAt = campaign.data.createdAt;
   const campaignType = campaign.data.campaignType;
+  const normalizedAddresses = participantAddresses?.map((value) => value.trim()).filter(Boolean) ?? [];
 
-  let count = 0;
-  for await (const cell of client.findCells(
+  type IndexedCell = {
+    outPoint: { txHash: string; index: string | number | bigint };
+    outputData: string;
+    cellOutput: {
+      capacity: bigint;
+      lock: ccc.ScriptLike;
+      type?: ccc.ScriptLike | null;
+    };
+  };
+
+  const collectFromCells = (cells: AsyncIterable<IndexedCell>) => (async () => {
+    let count = 0;
+    for await (const cell of cells) {
+      if (count++ >= limit) break;
+      try {
+        const rawData = hexToBytes(cell.outputData);
+        if (rawData.length !== 66) continue;
+        const data = decodeParticipantData(rawData);
+        if (
+          bytesToHex(data.campaignCreatedBy) !== campaignCreatedByHex ||
+          data.campaignCreatedAt !== campaignCreatedAt ||
+          data.campaignType !== campaignType
+        ) {
+          continue;
+        }
+        if (data.status !== ParticipantStatus.Verified) {
+          continue;
+        }
+        results.push({
+          outPoint: {
+            txHash: cell.outPoint.txHash,
+            index: Number(cell.outPoint.index),
+          },
+          data,
+          capacityShannons: cell.cellOutput.capacity,
+          lock: cell.cellOutput.lock,
+          type: cell.cellOutput.type ?? null,
+        });
+      } catch {
+        // Skip malformed cells.
+      }
+    }
+  })();
+
+  if (normalizedAddresses.length > 0) {
+    for (const address of normalizedAddresses) {
+      const addressObj = await ccc.Address.fromString(address, client);
+      await collectFromCells(client.findCells(
+        {
+          script: addressObj.script,
+          scriptType: "lock",
+          scriptSearchMode: "exact",
+          withData: true,
+        },
+        "asc",
+        limit
+      ));
+    }
+    return results;
+  }
+
+  await collectFromCells(client.findCells(
     {
       script: {
         codeHash: FREIGHT_CONTRACT.codeHash,
@@ -489,36 +551,7 @@ export async function fetchParticipants(
     },
     "asc",
     limit
-  )) {
-    if (count++ >= limit) break;
-    try {
-      const rawData = hexToBytes(cell.outputData);
-      if (rawData.length !== 66) continue;
-      const data = decodeParticipantData(rawData);
-      if (
-        bytesToHex(data.campaignCreatedBy) !== campaignCreatedByHex ||
-        data.campaignCreatedAt !== campaignCreatedAt ||
-        data.campaignType !== campaignType
-      ) {
-        continue;
-      }
-      if (data.status !== ParticipantStatus.Verified) {
-        continue;
-      }
-      results.push({
-        outPoint: {
-          txHash: cell.outPoint.txHash,
-          index: Number(cell.outPoint.index),
-        },
-        data,
-        capacityShannons: cell.cellOutput.capacity,
-        lock: cell.cellOutput.lock,
-        type: cell.cellOutput.type ?? null,
-      });
-    } catch {
-      // Skip malformed cells.
-    }
-  }
+  ));
 
   return results;
 }
