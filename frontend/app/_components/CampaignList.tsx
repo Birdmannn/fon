@@ -110,7 +110,7 @@ export default function CampaignList({
   }, [onScrolledToNewest, shouldScrollToNewest]);
 
   if (loading) {
-    return <p className="text-sm text-gray-400">Loading freights…</p>;
+    return null;
   }
 
   if (error) {

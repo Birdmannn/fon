@@ -63,6 +63,7 @@ export default function CampaignFeedSection({
   return (
     <>
       <CampaignFeedHeaderBar
+        isLoading={loading}
         isRefreshing={isRefreshing}
         isSearchOpen={isSearchOpen}
         onRefresh={handleRefresh}
