@@ -27,16 +27,23 @@ function ensureOptionalRecipients(value: unknown) {
       address?: unknown;
       username?: unknown;
       handle?: unknown;
+      amountLabel?: unknown;
     };
 
-    if (typeof candidate.address !== "string" || typeof candidate.username !== "string" || typeof candidate.handle !== "string") {
-      throw new Error(`settledRecipients[${index}] must include string address, username, and handle`);
+    if (
+      typeof candidate.address !== "string"
+      || typeof candidate.username !== "string"
+      || typeof candidate.handle !== "string"
+      || typeof candidate.amountLabel !== "string"
+    ) {
+      throw new Error(`settledRecipients[${index}] must include string address, username, handle, and amountLabel`);
     }
 
     return {
       address: candidate.address.trim(),
       username: candidate.username.trim(),
       handle: candidate.handle.trim(),
+      amountLabel: candidate.amountLabel.trim(),
     };
   });
 }

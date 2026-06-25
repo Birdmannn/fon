@@ -82,6 +82,7 @@ type SettlementRecipient = {
   address: string;
   username: string;
   handle: string;
+  amountLabel: string;
 };
 
 type SettlementModalData = {
@@ -622,9 +623,10 @@ export default function Home() {
           <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
           {(settlementModalData?.recipients ?? []).length > 0 ? (
             (settlementModalData?.recipients ?? []).map((recipient, index) => (
-              <p key={`${recipient.address}-${index}`} className="create-info-constraint-item text-gray-500 font-mono break-all create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
-                <span>{recipient.handle}</span>
-              </p>
+              <div key={`${recipient.address}-${index}`} className="create-info-constraint-item create-info-settlement-recipient-row text-gray-500 font-mono create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
+                <span className="create-info-settlement-recipient-handle">{recipient.handle}</span>
+                <span className="create-info-settlement-recipient-amount">{recipient.amountLabel}</span>
+              </div>
             ))
           ) : (
             <p className="create-info-constraint-item text-gray-500">

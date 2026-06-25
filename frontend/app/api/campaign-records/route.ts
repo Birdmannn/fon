@@ -99,12 +99,14 @@ function ensureOptionalRecipients(value: unknown) {
       address?: unknown;
       username?: unknown;
       handle?: unknown;
+      amountLabel?: unknown;
     };
 
     return {
       address: ensureString(candidate.address, `settledRecipients[${index}].address`).trim(),
       username: ensureString(candidate.username, `settledRecipients[${index}].username`).trim(),
       handle: ensureString(candidate.handle, `settledRecipients[${index}].handle`).trim(),
+      amountLabel: ensureString(candidate.amountLabel, `settledRecipients[${index}].amountLabel`).trim(),
     };
   });
 }

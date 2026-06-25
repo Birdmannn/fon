@@ -26,6 +26,7 @@ type SettlementRecipient = {
   address: string;
   username: string;
   handle: string;
+  amountLabel: string;
 };
 
 type SettlementModalData = {
@@ -536,6 +537,11 @@ export function useCampaignCardState({
         }
       }
 
+      const effectiveWinnerCount = data.rewardCount === 0n
+        ? BigInt(participants.length)
+        : BigInt(Math.min(Number(data.rewardCount), participants.length));
+      const rewardPerWinner = effectiveWinnerCount > 0n ? data.currentDeposits / effectiveWinnerCount : 0n;
+      const recipientAmountLabel = `${formatCkbAmount(rewardPerWinner)} CKB`;
       const recipients: SettlementRecipient[] = winnerAddresses.map((address) => {
         const normalizedAddress = address.trim().toLowerCase();
         const profile = profilesByAddress.get(normalizedAddress);
@@ -543,11 +549,9 @@ export function useCampaignCardState({
           address,
           username: profile?.username ?? buildDefaultUsername(address),
           handle: profile?.handle ?? buildDefaultHandle(address),
+          amountLabel: recipientAmountLabel,
         };
       });
-      const effectiveWinnerCount = data.rewardCount === 0n
-        ? BigInt(participants.length)
-        : BigInt(Math.min(Number(data.rewardCount), participants.length));
       const participantCountText = String(participants.length);
       const evidenceItems = [
         `Stored randomness hash: ${randomnessHash}`,

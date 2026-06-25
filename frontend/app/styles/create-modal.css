@@ -490,6 +490,24 @@
   }
 }
 
+.create-info-settlement-recipient-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.create-info-settlement-recipient-handle {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.create-info-settlement-recipient-amount {
+  margin-left: auto;
+  white-space: nowrap;
+  text-align: right;
+}
+
 .create-info-ticket-input {
   margin: 0;
   flex: 1;

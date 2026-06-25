@@ -59,6 +59,7 @@ export type CampaignRecord = {
     address: string;
     username: string;
     handle: string;
+    amountLabel: string;
   }> | null;
 };
 

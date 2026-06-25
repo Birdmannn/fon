@@ -22,6 +22,7 @@ type SettlementRecipient = {
   address: string;
   username: string;
   handle: string;
+  amountLabel: string;
 };
 
 type SettlementModalData = {
