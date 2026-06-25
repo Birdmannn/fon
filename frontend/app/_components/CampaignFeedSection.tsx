@@ -7,12 +7,18 @@ import CampaignList from "@/app/_components/CampaignList";
 import { useCampaignFeed, type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import type { CampaignCell } from "@/lib/transactions";
 
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
 };
@@ -39,6 +45,7 @@ export default function CampaignFeedSection({
     filteredCampaigns,
     handleRefresh,
     handleSearchClick,
+    handleSettlementCompleted,
     handleShowPendingCampaigns,
     handleTicketBought,
     isRefreshing,
@@ -83,6 +90,7 @@ export default function CampaignFeedSection({
         }}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
         onTicketBought={handleTicketBought}
+        onSettlementCompleted={handleSettlementCompleted}
         onSettlementInfoRequest={onSettlementInfoRequest}
       />
     </>

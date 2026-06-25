@@ -16,6 +16,7 @@ import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import MountablesPanel from "@/app/_components/MountablesPanel";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import CreateCampaignModalContent, {
   CreateCampaignModalContentHandle,
@@ -77,12 +78,18 @@ const HOME_INFO_TYPE_ITEMS = [
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
 type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
   _campaign?: CampaignCell;
@@ -122,6 +129,9 @@ export default function Home() {
   }, []);
 
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [isEditingUsername, setIsEditingUsername] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState("");
+  const [usernameSaveError, setUsernameSaveError] = useState("");
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
@@ -134,6 +144,47 @@ export default function Home() {
     walletInfoError,
     walletInfoLoading,
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
+  const {
+    currentUserProfile,
+    isSavingUserProfile,
+    isUserProfileLoading,
+    saveUsername,
+    userProfileError,
+  } = useUserProfile(signer ?? null);
+
+  useEffect(() => {
+    setUsernameDraft(currentUserProfile?.username ?? "");
+    setUsernameSaveError("");
+    setIsEditingUsername(false);
+  }, [currentUserProfile?.username]);
+
+  const handleStartUsernameEdit = useCallback(() => {
+    setUsernameDraft(currentUserProfile?.username ?? "");
+    setUsernameSaveError("");
+    setIsEditingUsername(true);
+  }, [currentUserProfile?.username]);
+
+  const handleCancelUsernameEdit = useCallback(() => {
+    setUsernameDraft(currentUserProfile?.username ?? "");
+    setUsernameSaveError("");
+    setIsEditingUsername(false);
+  }, [currentUserProfile?.username]);
+
+  const handleSaveUsername = useCallback(async () => {
+    try {
+      setUsernameSaveError("");
+      const nextUsername = usernameDraft.trim();
+      if (!nextUsername) {
+        setUsernameSaveError("Username is required");
+        return;
+      }
+
+      await saveUsername(nextUsername);
+      setIsEditingUsername(false);
+    } catch (error) {
+      setUsernameSaveError(error instanceof Error ? error.message : "Failed to save username");
+    }
+  }, [saveUsername, usernameDraft]);
   const {
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -475,6 +526,7 @@ export default function Home() {
   }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const walletUsernameError = usernameSaveError || userProfileError;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
   const infoModalBody = infoModalMode === "submission-success" ? (
@@ -570,8 +622,8 @@ export default function Home() {
           <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
           {(settlementModalData?.recipients ?? []).length > 0 ? (
             (settlementModalData?.recipients ?? []).map((recipient, index) => (
-              <p key={recipient} className="create-info-constraint-item text-gray-500 font-mono break-all create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
-                <span>{recipient}</span>
+              <p key={`${recipient.address}-${index}`} className="create-info-constraint-item text-gray-500 font-mono break-all create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
+                <span>{recipient.handle}</span>
               </p>
             ))
           ) : (
@@ -870,7 +922,59 @@ export default function Home() {
                           <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
                         </div>
                       </div>
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">Username</span>
+                        {isEditingUsername ? (
+                          <div className="wallet-username-edit-row">
+                            <input
+                              type="text"
+                              value={usernameDraft}
+                              onChange={(event) => setUsernameDraft(event.target.value)}
+                              className="wallet-username-input"
+                              placeholder="username"
+                              disabled={isSavingUserProfile}
+                            />
+                            <span className="wallet-username-suffix">.ckb</span>
+                          </div>
+                        ) : (
+                          <span className="wallet-info-value">
+                            {isUserProfileLoading ? "Loading…" : currentUserProfile?.handle ?? "--"}
+                          </span>
+                        )}
+                        <div className="wallet-username-actions">
+                          {isEditingUsername ? (
+                            <>
+                              <button
+                                type="button"
+                                className="wallet-username-btn"
+                                onClick={() => void handleSaveUsername()}
+                                disabled={isSavingUserProfile}
+                              >
+                                {isSavingUserProfile ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                className="wallet-username-btn"
+                                onClick={handleCancelUsernameEdit}
+                                disabled={isSavingUserProfile}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="wallet-username-btn"
+                              onClick={handleStartUsernameEdit}
+                              disabled={isUserProfileLoading}
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      </div>
                       {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
+                      {walletUsernameError ? <p className="wallet-info-error">{walletUsernameError}</p> : null}
                     </div>
                   )}
                 </div>

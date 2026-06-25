@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CampaignComment, CampaignRecord } from "@/app/_hooks/useCampaignFeed";
-import { buildDefaultHandle, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
+import {
+  buildDefaultHandle,
+  buildDefaultUsername,
+  decodeCreatedByAddress,
+  deriveRaffleSettlementUiState,
+  formatCkbAmount,
+} from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
@@ -16,12 +22,18 @@ import {
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
   _campaign?: CampaignCell;
@@ -69,6 +81,7 @@ type UseCampaignCardStateArgs = {
   currentWalletAddress: string | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
+  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -81,6 +94,7 @@ export function useCampaignCardState({
   currentWalletAddress,
   onCommentDiscardRequest,
   commentDiscardDecision,
+  onSettlementCompleted,
   onSettlementInfoRequest,
 }: UseCampaignCardStateArgs) {
   const { data, outPoint } = c;
@@ -104,6 +118,11 @@ export function useCampaignCardState({
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const rewardCountValue = Number(data.rewardCount);
+  const settlementUiState = deriveRaffleSettlementUiState({
+    campaign: c,
+    displayStatus,
+    settlementTxHash: record?.settlementTxHash ?? null,
+  });
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
       ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
@@ -139,8 +158,9 @@ export function useCampaignCardState({
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userCommented = normalizedCurrentWalletAddress.length > 0
     && commentList.some((comment) => normalizeHash(comment.creatorAddress) === normalizedCurrentWalletAddress);
-  const hasSettledRewards = isRaffleCampaign && displayStatus === CampaignStatus.Completed && data.currentDeposits === 0n;
-  const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && !hasSettledRewards;
+  const hasSettledRewards = settlementUiState.hasSettledRewards;
+  const shouldGlowSettlement = settlementUiState.shouldGlowSettlement;
+  const showSettlementAction = settlementUiState.showSettlementAction;
 
   useEffect(() => {
     setLikes(record?.socialMetadata?.likeCount ?? 0);
@@ -191,6 +211,8 @@ export function useCampaignCardState({
     publishError: record?.publishError ?? null,
     randomnessPreimage: record?.randomnessPreimage ?? null,
     activatedTxHash: record?.activatedTxHash ?? null,
+    settlementTxHash: record?.settlementTxHash ?? null,
+    settledAt: record?.settledAt ?? null,
   });
 
   useEffect(() => {
@@ -406,18 +428,6 @@ export function useCampaignCardState({
 
     const randomnessHash = bytesToHex(data.randomnessHash);
     const randomnessPreimage = record?.randomnessPreimage ?? null;
-    // console.log("[raffle-settlement] settlement click", {
-    //   campaignTxHash: c.outPoint.txHash,
-    //   campaignIndex: c.outPoint.index,
-    //   normalizedCampaignTxHash: normalizeHash(c.outPoint.txHash),
-    //   campaignType: data.campaignType,
-    //   record,
-    //   recordTxHash: record?.txHash ?? null,
-    //   normalizedRecordTxHash: normalizeHash(record?.txHash),
-    //   randomnessHash,
-    //   randomnessPreimage,
-    //   hasRandomnessPreimage: typeof randomnessPreimage === "string" && randomnessPreimage.length > 0,
-    // });
     onSettlementInfoRequest({
       campaignTitle: displayTitle,
       randomnessHash,
@@ -443,13 +453,72 @@ export function useCampaignCardState({
             .map((value: { participantAddress?: unknown }) => typeof value?.participantAddress === "string" ? value.participantAddress : "")
             .filter(Boolean)
         : [];
+      const participantAddressByHashEntries = await Promise.all(
+        participantAddresses.map(async (address: string) => {
+          try {
+            const addressObj = await ccc.Address.fromString(address, client);
+            return [bytesToHex(lockScriptToAddressBytes(addressObj.script)), address] as const;
+          } catch {
+            return null;
+          }
+        })
+      );
+      const participantAddressByHash = new Map(
+        participantAddressByHashEntries.filter((entry): entry is readonly [string, string] => entry !== null)
+      );
       const participants = await fetchParticipants(client, c, 500, participantAddresses);
-      console.log("[raffle-settlement] fetched participants", participants);
       const revealedPreimage = randomnessPreimage ? hexToBytes(randomnessPreimage) : null;
       const winners = revealedPreimage
         ? previewDeterministicWinners(participants, data.rewardCount, revealedPreimage, c)
         : [];
-      const recipientAddresses = winners.map((winner) => bytesToHex(winner.data.participantAddress));
+      const winnerAddresses = winners.map((winner) => {
+        const winnerHash = bytesToHex(winner.data.participantAddress);
+        return participantAddressByHash.get(winnerHash) ?? winnerHash;
+      });
+      const uniqueWinnerAddresses = Array.from(new Set(winnerAddresses.map((value) => value.trim().toLowerCase()).filter(Boolean)));
+      const profilesByAddress = new Map<string, { username: string; handle: string }>();
+
+      if (uniqueWinnerAddresses.length > 0) {
+        try {
+          const profileResponse = await fetch(`/api/user-profiles?addresses=${encodeURIComponent(uniqueWinnerAddresses.join(","))}`, {
+            cache: "no-store",
+          });
+          const profilePayload = await profileResponse.json().catch(() => null);
+          if (profileResponse.ok && Array.isArray(profilePayload?.profiles)) {
+            for (const profile of profilePayload.profiles as Array<{ address?: unknown; username?: unknown; handle?: unknown }>) {
+              if (typeof profile.address !== "string") {
+                continue;
+              }
+
+              const normalizedAddress = profile.address.trim().toLowerCase();
+              if (!normalizedAddress) {
+                continue;
+              }
+
+              profilesByAddress.set(normalizedAddress, {
+                username: typeof profile.username === "string" && profile.username.trim().length > 0
+                  ? profile.username.trim()
+                  : buildDefaultUsername(profile.address),
+                handle: typeof profile.handle === "string" && profile.handle.trim().length > 0
+                  ? profile.handle.trim()
+                  : buildDefaultHandle(profile.address),
+              });
+            }
+          }
+        } catch {
+          // Non-fatal — fall back to generated handles below.
+        }
+      }
+
+      const recipients: SettlementRecipient[] = winnerAddresses.map((address) => {
+        const normalizedAddress = address.trim().toLowerCase();
+        const profile = profilesByAddress.get(normalizedAddress);
+        return {
+          address,
+          username: profile?.username ?? buildDefaultUsername(address),
+          handle: profile?.handle ?? buildDefaultHandle(address),
+        };
+      });
       const effectiveWinnerCount = data.rewardCount === 0n
         ? BigInt(participants.length)
         : BigInt(Math.min(Number(data.rewardCount), participants.length));
@@ -461,9 +530,6 @@ export function useCampaignCardState({
         "Winner ordering is deterministic by join time, participant address, then outpoint.",
       ];
 
-      console.log("Winners: ", winners);
-      console.log("effectiveWinnerCount: ", effectiveWinnerCount);
-      
       let distributionTxHash: string | null = null;
       let errorMessage: string | null = null;
       if (shouldGlowSettlement) {
@@ -476,6 +542,30 @@ export function useCampaignCardState({
           errorMessage = "No eligible verified winners are available for settlement.";
         } else {
           distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
+          let settledAt = new Date().toISOString();
+
+          if (record?._id) {
+            try {
+              const settleResponse = await fetch(`/api/campaign-records/${record._id}/settle`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  settlementTxHash: distributionTxHash,
+                  settledAt,
+                }),
+              });
+              const settlePayload = await settleResponse.json().catch(() => null);
+              if (settleResponse.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
+                settledAt = settlePayload.settledAt.trim();
+              }
+            } catch {
+              // Non-fatal — optimistic UI update still uses the local timestamp.
+            }
+          }
+
+          onSettlementCompleted(getCampaignStableId(c), distributionTxHash, settledAt);
         }
       }
 
@@ -484,7 +574,7 @@ export function useCampaignCardState({
         randomnessHash,
         randomnessPreimage,
         evidenceItems,
-        recipients: recipientAddresses,
+        recipients,
         distributionTxHash,
         errorMessage,
         _campaign: c,
@@ -547,6 +637,7 @@ export function useCampaignCardState({
     setShowDepositModal,
     shouldGlowSettlement,
     showDepositModal,
+    showSettlementAction,
     soldTickets,
     ticketPriceShannons,
     totalTickets,

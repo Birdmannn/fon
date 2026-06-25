@@ -9,12 +9,18 @@ import type { CampaignCell } from "@/lib/transactions";
 
 import CampaignCard from "./CampaignCard";
 
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
 };
@@ -28,6 +34,7 @@ type CampaignListProps = {
   onCommentDiscardRequest: (cardId: string) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
+  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string) => void;
   onStartDetailTransition: (href: string) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
@@ -42,6 +49,7 @@ export default function CampaignList({
   loading,
   onCommentDiscardRequest,
   onScrolledToNewest,
+  onSettlementCompleted,
   onSettlementInfoRequest,
   onStartDetailTransition,
   onTicketBought,
@@ -130,6 +138,7 @@ export default function CampaignList({
             onOpenDetail={() => onStartDetailTransition(`/campaign/${getCampaignStableId(campaign)}`)}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
+            onSettlementCompleted={onSettlementCompleted}
             onSettlementInfoRequest={onSettlementInfoRequest}
           />
         </div>

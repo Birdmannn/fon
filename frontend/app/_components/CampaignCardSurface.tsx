@@ -3,8 +3,14 @@
 import { Copy, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import {
+  buildDefaultHandle,
+  decodeCreatedByAddress,
+  deriveRaffleSettlementUiState,
+  formatCkbAmount,
+} from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex, decodeSummary } from "@/lib/encoding";
+import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignRecord = {
@@ -12,6 +18,7 @@ type CampaignRecord = {
   description?: string;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
+  settlementTxHash?: string | null;
   socialMetadata?: {
     mentions?: string[];
   };
@@ -102,19 +109,6 @@ function truncateAddress(address: string) {
   return `${address.slice(0, 8)}…${address.slice(-6)}`;
 }
 
-function buildDefaultHandle(addressHex: string) {
-  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
-  return `freight${normalized.slice(-20)}.ckb`;
-}
-
-function decodeCreatedByAddress(campaign: CampaignCell) {
-  return bytesToHex(campaign.data.createdBy);
-}
-
-function formatCkbAmount(value: bigint) {
-  return (Number(value) / 1e8).toFixed(2);
-}
-
 function getStatusClassName(status: CampaignStatus) {
   switch (status) {
     case CampaignStatus.Active:
@@ -167,7 +161,11 @@ export default function CampaignCardSurface({
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const mentions = record?.socialMetadata?.mentions ?? [];
   const rewardCountValue = Number(data.rewardCount);
-  const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && data.currentDeposits > 0n;
+  const shouldGlowSettlement = deriveRaffleSettlementUiState({
+    campaign,
+    displayStatus,
+    settlementTxHash: record?.settlementTxHash ?? null,
+  }).shouldGlowSettlement;
   const collapsedDescription = useMemo(
     () => truncateCampaignDescription(displayDescription, variant === "detail" ? 1200 : CAMPAIGN_CARD_PREVIEW_MAX_CHARS),
     [displayDescription, variant]

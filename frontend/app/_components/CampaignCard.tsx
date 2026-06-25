@@ -18,12 +18,18 @@ import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
 import { CampaignStatus } from "@/lib/contract";
 import type { CampaignCell } from "@/lib/transactions";
 
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
 };
@@ -42,6 +48,7 @@ type CampaignCardProps = {
   onOpenDetail: () => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
+  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -59,9 +66,51 @@ export default function CampaignCard({
   onOpenDetail,
   onTicketPurchaseRequest,
   onTicketBought,
+  onSettlementCompleted,
   onSettlementInfoRequest,
 }: CampaignCardProps) {
-  const state = useCampaignCardState({
+  const {
+    bookmarks,
+    commentComposerRef,
+    commentDraft,
+    commentError,
+    commentInputRef,
+    comments,
+    depositAmount,
+    depositedCkb,
+    handleBookmark,
+    handleComment,
+    handleDepositClick,
+    handleDepositSubmit,
+    handleLike,
+    handleReshare,
+    handleSettlementClick,
+    handleSubmitComment,
+    hasNotStartedRaffle,
+    hasReachedMaxAmount,
+    isCampaignInactive,
+    isCommentComposerOpen,
+    isConnected,
+    isDepositing,
+    isPurchaseDisabled,
+    isRaffleCampaign,
+    isSavingComment,
+    likes,
+    maxCkb,
+    remainingTickets,
+    reshares,
+    setCommentDraft,
+    setDepositAmount,
+    setShowDepositModal,
+    shouldGlowSettlement,
+    showDepositModal,
+    showSettlementAction,
+    soldTickets,
+    userBookmarked,
+    userCommented,
+    userLiked,
+    userReshared,
+  } = useCampaignCardState({
     campaign,
     record,
     displayStatus,
@@ -70,6 +119,7 @@ export default function CampaignCard({
     currentWalletAddress,
     onCommentDiscardRequest,
     commentDiscardDecision,
+    onSettlementCompleted,
     onSettlementInfoRequest,
   });
 
@@ -87,42 +137,42 @@ export default function CampaignCard({
       <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void state.handleLike()}
-            className={`campaign-action-btn action-like ${state.userLiked ? "campaign-action-active" : ""} ${!state.isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!state.isConnected ? "Connect wallet to like" : "Like"}
+            onClick={() => void handleLike()}
+            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
           >
             <Heart className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-            <span className="campaign-action-count">{state.likes}</span>
+            <span className="campaign-action-count">{likes}</span>
           </button>
 
           <button
-            onClick={state.handleBookmark}
-            className={`campaign-action-btn action-bookmark ${state.userBookmarked ? "campaign-action-active" : ""} ${!state.isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!state.isConnected ? "Connect wallet to bookmark" : "Bookmark"}
+            onClick={handleBookmark}
+            className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
           >
             <Bookmark className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-            <span className="campaign-action-count">{state.bookmarks}</span>
+            <span className="campaign-action-count">{bookmarks}</span>
           </button>
 
           <button
-            onClick={state.handleComment}
-            className={`campaign-action-btn action-comment ${state.userCommented ? "campaign-action-active" : ""} ${!state.isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!state.isConnected ? "Connect wallet to comment" : "Comment"}
+            onClick={handleComment}
+            className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
           >
             <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
-            <span className="campaign-action-count">{state.comments}</span>
+            <span className="campaign-action-count">{comments}</span>
           </button>
 
           <button
-            onClick={state.handleReshare}
-            className={`campaign-action-btn action-reshare ${state.userReshared ? "campaign-action-active" : ""} ${!state.isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!state.isConnected ? "Connect wallet to reshare" : "Reshare"}
+            onClick={handleReshare}
+            className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
           >
             <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
-            <span className="campaign-action-count">{state.reshares}</span>
+            <span className="campaign-action-count">{reshares}</span>
           </button>
 
-          {state.hasNotStartedRaffle && (
+          {hasNotStartedRaffle && (
             <button
               type="button"
               disabled
@@ -130,59 +180,59 @@ export default function CampaignCard({
               data-tooltip="Ticket sales open after start delay"
             >
               <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{state.depositedCkb} CKB</span>
+              <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
             </button>
           )}
 
-          {state.isRaffleCampaign && displayStatus === CampaignStatus.Completed && state.soldTickets > 0n && (
+          {showSettlementAction && (
             <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => void state.handleSettlementClick()}
-                className={`campaign-action-btn action-winners ${state.shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
-                data-tooltip={state.shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
+                onClick={() => void handleSettlementClick()}
+                className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
+                data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
               >
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count">{String(state.soldTickets)}</span>
+                <span className="campaign-action-count">{String(soldTickets)}</span>
               </button>
               <button
                 onClick={() => onTicketPurchaseRequest(campaign, record, onTicketBought)}
-                disabled={state.isPurchaseDisabled}
-                className={`campaign-action-btn ${state.isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                data-tooltip={!state.isConnected ? "Connect wallet to buy tickets" : "Freight unavailable"}
+                disabled={isPurchaseDisabled}
+                className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                data-tooltip={!isConnected ? "Connect wallet to buy tickets" : "Freight unavailable"}
               >
                 <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{String(state.remainingTickets)} left</span>
+                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
               </button>
             </div>
           )}
 
-          {!(state.isRaffleCampaign && displayStatus === CampaignStatus.Completed && state.soldTickets > 0n) && !state.hasNotStartedRaffle && (
+          {!showSettlementAction && !hasNotStartedRaffle && (
             <button
-              onClick={state.isRaffleCampaign ? () => onTicketPurchaseRequest(campaign, record, onTicketBought) : state.handleDepositClick}
-              disabled={state.isPurchaseDisabled}
-              className={`campaign-action-btn ml-auto ${state.isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+              onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(campaign, record, onTicketBought) : handleDepositClick}
+              disabled={isPurchaseDisabled}
+              className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
               data-tooltip={
-                !state.isConnected
-                  ? (state.isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-                  : state.isCampaignInactive
+                !isConnected
+                  ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
+                  : isCampaignInactive
                     ? "Freight unavailable"
-                    : state.hasNoRemainingTickets
+                    : remainingTickets <= 0n
                       ? "No tickets left"
-                      : state.hasReachedMaxAmount
+                      : hasReachedMaxAmount
                         ? "Max amount reached"
-                        : (state.isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
+                        : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
               }
             >
-              {state.isRaffleCampaign ? (
+              {isRaffleCampaign ? (
                 <>
                   <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{String(state.remainingTickets)} left</span>
+                  <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
                 </>
               ) : (
                 <>
                   <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{state.depositedCkb} / {state.maxCkb} CKB</span>
+                  <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
                 </>
               )}
             </button>
@@ -190,17 +240,17 @@ export default function CampaignCard({
         </div>
 
         <div
-          ref={state.commentComposerRef}
-          className={`campaign-comment-composer ${state.isCommentComposerOpen ? "campaign-comment-composer-open" : "campaign-comment-composer-closed"}`}
-          aria-hidden={!state.isCommentComposerOpen}
+          ref={commentComposerRef}
+          className={`campaign-comment-composer ${isCommentComposerOpen ? "campaign-comment-composer-open" : "campaign-comment-composer-closed"}`}
+          aria-hidden={!isCommentComposerOpen}
         >
           <div className="campaign-comment-input-wrap">
             <textarea
-              ref={state.commentInputRef}
-              value={state.commentDraft}
+              ref={commentInputRef}
+              value={commentDraft}
               onChange={(event) => {
                 const nextValue = event.target.value.slice(0, 300);
-                state.setCommentDraft(nextValue);
+                setCommentDraft(nextValue);
                 event.currentTarget.value = nextValue;
                 event.currentTarget.style.height = "auto";
                 const nextHeight = Math.max(32, event.currentTarget.scrollHeight);
@@ -214,30 +264,30 @@ export default function CampaignCard({
               className="campaign-comment-input"
               placeholder="Write a comment..."
               rows={1}
-              disabled={state.isSavingComment || !state.isCommentComposerOpen}
+              disabled={isSavingComment || !isCommentComposerOpen}
             />
             <button
               type="button"
               className="campaign-comment-submit"
-              onClick={() => void state.handleSubmitComment()}
-              disabled={state.isSavingComment || !state.commentDraft.trim() || !state.isCommentComposerOpen}
+              onClick={() => void handleSubmitComment()}
+              disabled={isSavingComment || !commentDraft.trim() || !isCommentComposerOpen}
               aria-label="Submit comment"
             >
               <Check size={24} strokeWidth={3} aria-hidden="true" />
             </button>
           </div>
           <div className="campaign-comment-meta-row">
-            <span className={`campaign-comment-count ${state.commentDraft.length >= 300 ? "campaign-comment-count-limit" : state.commentDraft.length >= 250 ? "campaign-comment-count-warn" : ""}`}>{300 - state.commentDraft.length}</span>
+            <span className={`campaign-comment-count ${commentDraft.length >= 300 ? "campaign-comment-count-limit" : commentDraft.length >= 250 ? "campaign-comment-count-warn" : ""}`}>{300 - commentDraft.length}</span>
           </div>
-          {state.commentError ? <p className="campaign-comment-error">{state.commentError}</p> : null}
+          {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
         </div>
       </div>
 
-      {state.showDepositModal && (
+      {showDepositModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4">
             <h3 className="text-lg font-semibold mb-4">Deposit CKB</h3>
-            <form onSubmit={state.handleDepositSubmit} className="flex flex-col gap-4">
+            <form onSubmit={handleDepositSubmit} className="flex flex-col gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Amount (CKB)</label>
                 <input
@@ -245,11 +295,11 @@ export default function CampaignCard({
                   step="0.01"
                   min="0"
                   max={Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8}
-                  value={state.depositAmount}
-                  onChange={(e) => state.setDepositAmount(e.target.value)}
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="0.00"
-                  disabled={state.isDepositing || state.isPurchaseDisabled}
+                  disabled={isDepositing || isPurchaseDisabled}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Max available: {(Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8).toFixed(2)} CKB
@@ -259,20 +309,20 @@ export default function CampaignCard({
                 <button
                   type="button"
                   onClick={() => {
-                    state.setShowDepositModal(false);
-                    state.setDepositAmount("");
+                    setShowDepositModal(false);
+                    setDepositAmount("");
                   }}
-                  disabled={state.isDepositing}
+                  disabled={isDepositing}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={state.isDepositing || !state.depositAmount || state.isPurchaseDisabled}
+                  disabled={isDepositing || !depositAmount || isPurchaseDisabled}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {state.isDepositing ? "Processing..." : "Deposit"}
+                  {isDepositing ? "Processing..." : "Deposit"}
                 </button>
               </div>
             </form>

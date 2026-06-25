@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
-import { CampaignStatus } from "@/lib/contract";
+import { buildDefaultHandle, deriveChainLabel, deriveDisplayStatus, formatCkbAmount } from "@/lib/campaignDisplay";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 import {
@@ -44,34 +44,8 @@ type CampaignRecord = {
   txHash?: string | null;
 };
 
-function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
-  if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
-    return campaign.data.status;
-  }
-
-  const createdAtSeconds = Number(campaign.data.createdAt) / 1000;
-  const nowSeconds = nowMs / 1000;
-  const startsAtSeconds = createdAtSeconds + Number(campaign.data.startDurationSecs);
-  const endsAtSeconds = startsAtSeconds + Number(campaign.data.taskDurationSecs);
-
-  if (nowSeconds < startsAtSeconds) {
-    return CampaignStatus.Created;
-  }
-
-  if (nowSeconds >= endsAtSeconds) {
-    return CampaignStatus.Completed;
-  }
-
-  return CampaignStatus.Active;
-}
-
 function decodeCreatedByAddress(campaign: CampaignCell) {
   return bytesToHex(campaign.data.createdBy);
-}
-
-function buildDefaultHandle(addressHex: string) {
-  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
-  return `freight${normalized.slice(-20)}.ckb`;
 }
 
 function splitCampaignId(campaignId: string) {
@@ -93,22 +67,6 @@ function splitCampaignId(campaignId: string) {
   }
 
   return { txHash, index, campaignId: null };
-}
-
-function formatCkbAmount(value: bigint) {
-  return (Number(value) / 1e8).toFixed(2);
-}
-
-function deriveChainLabel(client: ccc.Client) {
-  if (client instanceof ccc.ClientPublicMainnet) {
-    return "Mainnet";
-  }
-
-  if (client instanceof ccc.ClientPublicTestnet) {
-    return "Testnet";
-  }
-
-  return "Custom";
 }
 
 function copyText(text: string) {

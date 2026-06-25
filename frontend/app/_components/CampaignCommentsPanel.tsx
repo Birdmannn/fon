@@ -1,5 +1,7 @@
 "use client";
 
+import { buildDefaultHandle } from "@/lib/campaignDisplay";
+
 type CampaignComment = {
   text: string;
   creatorAddress?: string | null;
@@ -13,11 +15,6 @@ type CampaignCommentsPanelProps = {
   fallbackAddress?: string;
   title?: string;
 };
-
-function buildDefaultHandle(addressHex: string) {
-  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
-  return `freight${normalized.slice(-20)}.ckb`;
-}
 
 export default function CampaignCommentsPanel({
   comments,

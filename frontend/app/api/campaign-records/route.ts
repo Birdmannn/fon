@@ -31,6 +31,8 @@ type CampaignRecordPayload = {
   txHash?: unknown;
   publishError?: unknown;
   randomnessPreimage?: unknown;
+  settlementTxHash?: unknown;
+  settledAt?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -109,6 +111,8 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const creatorAddress = ensureOptionalString(payload.creatorAddress, "creatorAddress");
   const creatorHandle = ensureOptionalString(payload.creatorHandle, "creatorHandle");
   const randomnessPreimage = ensureOptionalString(payload.randomnessPreimage, "randomnessPreimage");
+  const settlementTxHash = ensureOptionalString(payload.settlementTxHash, "settlementTxHash");
+  const settledAt = ensureOptionalString(payload.settledAt, "settledAt");
 
   return {
     title,
@@ -140,6 +144,8 @@ function normalizePayload(payload: CampaignRecordPayload) {
     txHash,
     publishError,
     randomnessPreimage,
+    settlementTxHash,
+    settledAt,
   };
 }
 

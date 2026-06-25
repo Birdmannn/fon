@@ -3,15 +3,13 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { deriveDisplayStatus } from "@/lib/campaignDisplay";
+import { buildDefaultHandle, deriveDisplayStatus } from "@/lib/campaignDisplay";
 import {
   buildCampaignRecordIndexes,
   findCampaignRecord,
-  getCampaignChainCreatedAt,
-  getCampaignCreatedByHash,
   getCampaignStableId,
+  getRecordStableId,
   type CampaignRecordIndexes,
-  normalizeHash,
 } from "@/lib/campaignIdentity";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
@@ -53,6 +51,8 @@ export type CampaignRecord = {
   publishError?: string | null;
   randomnessPreimage?: string | null;
   activatedTxHash?: string | null;
+  settlementTxHash?: string | null;
+  settledAt?: string | null;
 };
 
 export type MergedCampaign = {
@@ -103,6 +103,40 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
           : c
       )
     );
+  }, []);
+
+  const handleSettlementCompleted = useCallback((campaignId: string, settlementTxHash: string, settledAt: string) => {
+    const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
+      const matchedRecord = prev.byCampaignId[campaignId]
+        ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
+        ?? Object.values(prev.byLegacyKey).find((record) => getRecordStableId(record) === campaignId);
+
+      if (!matchedRecord) {
+        return prev;
+      }
+
+      const nextRecord: CampaignRecord = {
+        ...matchedRecord,
+        settlementTxHash,
+        settledAt,
+      };
+      const shouldReplace = (record: CampaignRecord) => (
+        record === matchedRecord
+        || (!!record._id && !!matchedRecord._id && record._id === matchedRecord._id)
+      );
+      const replaceBucket = (bucket: Record<string, CampaignRecord>) => Object.fromEntries(
+        Object.entries(bucket).map(([key, value]) => [key, shouldReplace(value) ? nextRecord : value])
+      ) as Record<string, CampaignRecord>;
+
+      return {
+        byCampaignId: replaceBucket(prev.byCampaignId),
+        byTxHash: replaceBucket(prev.byTxHash),
+        byLegacyKey: replaceBucket(prev.byLegacyKey),
+      };
+    };
+
+    setRecordIndexes(updateIndexes);
+    setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
   }, []);
 
   const buildRecordIndexes = useCallback((records: CampaignRecord[]) => {
@@ -301,7 +335,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
 
     return mergedCampaigns.filter(({ campaign, record }) => {
       const creatorAddress = record?.creatorAddress ?? bytesToHex(campaign.data.createdBy);
-      const creatorHandle = record?.creatorHandle ?? `freight${creatorAddress.toLowerCase().replace(/^0x/, "").slice(-20)}.ckb`;
+      const creatorHandle = record?.creatorHandle ?? buildDefaultHandle(creatorAddress);
       const summary = record?.summaryDraft ?? decodeSummary(campaign.data.summary);
       const searchable = [
         record?.title,
@@ -324,6 +358,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     filteredCampaigns,
     handleRefresh,
     handleSearchClick,
+    handleSettlementCompleted,
     handleShowPendingCampaigns,
     handleTicketBought,
     isRefreshing,

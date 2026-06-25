@@ -35,6 +35,7 @@ function getMongoClientPromise() {
 export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "freightonnervos";
 export const CAMPAIGN_RECORDS_COLLECTION = "campaignRecords";
 export const CAMPAIGN_PARTICIPANTS_COLLECTION = "campaignParticipants";
+export const USER_PROFILES_COLLECTION = "userProfiles";
 
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();
@@ -44,4 +45,9 @@ export async function getMongoCollection() {
 export async function getCampaignParticipantsCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(CAMPAIGN_PARTICIPANTS_COLLECTION);
+}
+
+export async function getUserProfilesCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(USER_PROFILES_COLLECTION);
 }
