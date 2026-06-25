@@ -97,6 +97,7 @@ This gives us:
 ### Participant cell
 - type script: `participant`
 - data: participant state linked to a stable campaign identity
+- data should also support ticket quantity so one participant object can represent multiple tickets purchased in one action
 
 ### Stable campaign identity in participant data
 Participant cells should still store a stable campaign identity, most likely built from:
@@ -120,6 +121,11 @@ A participant cell becomes an explicit first-class entity rather than “a cell 
 
 ### 3. Cleaner settlement/refund logic
 Settlement and refund flows can operate over a dedicated participant cell class, reducing ambiguity and reducing reliance on positional assumptions.
+
+That same model also makes it easier to reason about:
+- how many tickets a participant purchased
+- how many winners should be drawn from the total ticket pool
+- how per-wallet purchase limits are enforced
 
 ### 4. Better long-term maintainability
 As raffles become more important, analytics, explorers, admin tooling, and debugging all benefit from explicit participant objects.
@@ -154,20 +160,35 @@ For v4, that tradeoff is worth it.
 2. **Keep stable campaign identity in participant data**
    - Do not return to mutable campaign outpoint linkage.
 
-3. **Update contract flows together**
+3. **Support multi-ticket purchases explicitly**
+   - participant state should track purchased ticket quantity rather than assuming one ticket per participant action
+   - winner selection should operate over the effective ticket pool, not just unique participant objects
+   - settlement and refund flows should preserve correct accounting for quantity-based entries
+
+4. **Let raffle creators define the per-wallet purchase cap at creation time**
+   - add a raffle creation argument for maximum tickets a single wallet can buy
+   - enforce that cap in participant validation / ticket-purchase logic
+   - surface the cap in frontend raffle creation and purchase UX
+
+5. **Update contract flows together**
    - participant creation
    - settlement
    - refund
    - validation helpers
+   - per-wallet ticket-cap checks
 
-4. **Update frontend encoding and queries together**
+6. **Update frontend encoding and queries together**
    - participant encoding/decoding
    - participant fetching/indexing
    - settlement preview
    - refund/eligibility lookup
+   - raffle creation args for per-wallet ticket cap
+   - multi-ticket purchase submission flow
 
-5. **Add dedicated tests for participant lifecycle**
+7. **Add dedicated tests for participant lifecycle**
    - creation
+   - multi-ticket purchase accounting
+   - per-wallet cap enforcement
    - state transition
    - settlement after campaign recreation
    - refund after campaign recreation
