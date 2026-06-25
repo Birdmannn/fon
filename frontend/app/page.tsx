@@ -494,7 +494,7 @@ export default function Home() {
         <>
           <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
           <p className="text-xs text-amber-600 mt-1">
-            Save this — you need it to distribute raffle rewards.
+            You can store it if you wish — it is used to distribute raffle rewards.
           </p>
           <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
             {submissionSuccessPreimage}
