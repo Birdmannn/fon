@@ -53,6 +53,7 @@ export type CampaignRecord = {
   activatedTxHash?: string | null;
   settlementTxHash?: string | null;
   settledAt?: string | null;
+  soldTicketCount?: string | null;
 };
 
 export type MergedCampaign = {
@@ -105,7 +106,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     );
   }, []);
 
-  const handleSettlementCompleted = useCallback((campaignId: string, settlementTxHash: string, settledAt: string) => {
+  const handleSettlementCompleted = useCallback((campaignId: string, settlementTxHash: string, settledAt: string, soldTicketCount: string) => {
     const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
       const matchedRecord = prev.byCampaignId[campaignId]
         ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
@@ -119,6 +120,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
         ...matchedRecord,
         settlementTxHash,
         settledAt,
+        soldTicketCount,
       };
       const shouldReplace = (record: CampaignRecord) => (
         record === matchedRecord

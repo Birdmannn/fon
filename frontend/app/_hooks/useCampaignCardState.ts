@@ -81,7 +81,7 @@ type UseCampaignCardStateArgs = {
   currentWalletAddress: string | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
-  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string) => void;
+  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string, soldTicketCount: string) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -104,8 +104,6 @@ export function useCampaignCardState({
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const totalTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : 0n;
-  const soldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.currentDeposits / ticketPriceShannons : 0n;
-  const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
   const remainingDepositCapacity = data.maximumAmount > data.currentDeposits ? data.maximumAmount - data.currentDeposits : 0n;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
@@ -114,7 +112,6 @@ export function useCampaignCardState({
   const displayDescription = record?.description?.trim() || onchainSummary;
   const mentions = record?.socialMetadata?.mentions ?? [];
   const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
-  const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const rewardCountValue = Number(data.rewardCount);
@@ -122,7 +119,11 @@ export function useCampaignCardState({
     campaign: c,
     displayStatus,
     settlementTxHash: record?.settlementTxHash ?? null,
+    soldTicketCount: record?.soldTicketCount ?? null,
   });
+  const soldTickets = settlementUiState.soldTickets;
+  const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
+  const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
       ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
@@ -541,7 +542,14 @@ export function useCampaignCardState({
         } else if (effectiveWinnerCount <= 0n || winners.length === 0) {
           errorMessage = "No eligible verified winners are available for settlement.";
         } else {
-          distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
+          try {
+            distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
+          } catch (error) {
+            if (error instanceof Error && /Transient CKB cell lookup failed/i.test(error.message)) {
+              throw new Error("Settlement was interrupted while the chain was updating live cells. Please wait a moment and try Share2 again.");
+            }
+            throw error;
+          }
           let settledAt = new Date().toISOString();
 
           if (record?._id) {
@@ -554,6 +562,7 @@ export function useCampaignCardState({
                 body: JSON.stringify({
                   settlementTxHash: distributionTxHash,
                   settledAt,
+                  soldTicketCount: String(soldTickets),
                 }),
               });
               const settlePayload = await settleResponse.json().catch(() => null);
@@ -565,7 +574,7 @@ export function useCampaignCardState({
             }
           }
 
-          onSettlementCompleted(getCampaignStableId(c), distributionTxHash, settledAt);
+          onSettlementCompleted(getCampaignStableId(c), distributionTxHash, settledAt, String(soldTickets));
         }
       }
 

@@ -35,6 +35,38 @@ export function freightScript(argsBytes: Uint8Array): ccc.ScriptLike {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isTransientNullOutputError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /null is not an object.*output|Cannot read properties of null.*output/i.test(message);
+}
+
+export async function withTransientNullOutputRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientNullOutputError(error) || attempt === attempts) {
+        break;
+      }
+
+      await sleep(350 * attempt);
+    }
+  }
+
+  if (isTransientNullOutputError(lastError)) {
+    throw new Error("Transient CKB cell lookup failed while preparing the transaction. Please try again in a moment.");
+  }
+
+  throw lastError;
+}
+
 // ─── create_campaign ─────────────────────────────────────────────────────────
 
 export async function sendCreateCampaign(
@@ -391,13 +423,13 @@ export async function sendBatchDeliver(
     );
   }
 
-  await tx.completeFeeBy(signer, 1000n);
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(encodeBatchDeliverArgs(revealedPreimage)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
-  return signer.sendTransaction(tx);
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
 }
 
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────

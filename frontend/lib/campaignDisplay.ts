@@ -51,12 +51,17 @@ export function deriveRaffleSettlementUiState(args: {
   campaign: CampaignCell;
   displayStatus: CampaignStatus;
   settlementTxHash?: string | null;
+  soldTicketCount?: string | null;
 }) {
-  const { campaign, displayStatus, settlementTxHash } = args;
+  const { campaign, displayStatus, settlementTxHash, soldTicketCount } = args;
   const isRaffleCampaign = campaign.data.campaignType === 4;
   const ticketPriceShannons = campaign.data.auxAmount > 0n ? campaign.data.auxAmount : 0n;
-  const soldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n;
+  const liveSoldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n;
   const hasSettlementRecord = typeof settlementTxHash === "string" && settlementTxHash.trim().length > 0;
+  const snapshotSoldTickets = typeof soldTicketCount === "string" && soldTicketCount.trim().length > 0
+    ? BigInt(soldTicketCount.trim())
+    : null;
+  const soldTickets = hasSettlementRecord && snapshotSoldTickets !== null ? snapshotSoldTickets : liveSoldTickets;
   const hasSettledRewards = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
     && (campaign.data.currentDeposits === 0n || hasSettlementRecord);
@@ -66,7 +71,7 @@ export function deriveRaffleSettlementUiState(args: {
     && !hasSettledRewards;
   const showSettlementAction = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
-    && (soldTickets > 0n || hasSettlementRecord);
+    && soldTickets > 0n;
 
   return {
     hasSettledRewards,

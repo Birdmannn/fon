@@ -16,7 +16,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       return badRequest("Invalid campaign record id", 404);
     }
 
-    const body = (await request.json()) as { settlementTxHash?: unknown; settledAt?: unknown };
+    const body = (await request.json()) as { settlementTxHash?: unknown; settledAt?: unknown; soldTicketCount?: unknown };
     const settlementTxHash = body?.settlementTxHash;
     if (typeof settlementTxHash !== "string" || settlementTxHash.trim() === "") {
       return badRequest("settlementTxHash must be a non-empty string");
@@ -25,6 +25,9 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     const settledAt = typeof body?.settledAt === "string" && body.settledAt.trim()
       ? body.settledAt.trim()
       : new Date().toISOString();
+    const soldTicketCount = typeof body?.soldTicketCount === "string" && body.soldTicketCount.trim()
+      ? body.soldTicketCount.trim()
+      : null;
 
     const collection = await getMongoCollection();
     const result = await collection.updateOne(
@@ -33,6 +36,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
         $set: {
           settlementTxHash: settlementTxHash.trim(),
           settledAt,
+          soldTicketCount,
           updatedAt: new Date(),
         },
       }

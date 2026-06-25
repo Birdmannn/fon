@@ -19,6 +19,7 @@ type CampaignRecord = {
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   settlementTxHash?: string | null;
+  soldTicketCount?: string | null;
   socialMetadata?: {
     mentions?: string[];
   };
@@ -165,6 +166,7 @@ export default function CampaignCardSurface({
     campaign,
     displayStatus,
     settlementTxHash: record?.settlementTxHash ?? null,
+    soldTicketCount: record?.soldTicketCount ?? null,
   }).shouldGlowSettlement;
   const collapsedDescription = useMemo(
     () => truncateCampaignDescription(displayDescription, variant === "detail" ? 1200 : CAMPAIGN_CARD_PREVIEW_MAX_CHARS),

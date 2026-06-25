@@ -48,7 +48,7 @@ type CampaignCardProps = {
   onOpenDetail: () => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
-  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string) => void;
+  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string, soldTicketCount: string) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 

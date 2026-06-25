@@ -35,6 +35,7 @@ type CampaignRecordPayload = {
   activatedTxHash?: unknown;
   settlementTxHash?: unknown;
   settledAt?: unknown;
+  soldTicketCount?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -117,6 +118,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const activatedTxHash = ensureOptionalString(payload.activatedTxHash, "activatedTxHash");
   const settlementTxHash = ensureOptionalString(payload.settlementTxHash, "settlementTxHash");
   const settledAt = ensureOptionalString(payload.settledAt, "settledAt");
+  const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
 
   return {
     title,
@@ -151,6 +153,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
     activatedTxHash,
     settlementTxHash,
     settledAt,
+    soldTicketCount,
   };
 }
 

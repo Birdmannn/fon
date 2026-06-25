@@ -34,7 +34,7 @@ type CampaignListProps = {
   onCommentDiscardRequest: (cardId: string) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
-  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string) => void;
+  onSettlementCompleted: (campaignId: string, settlementTxHash: string, settledAt: string, soldTicketCount: string) => void;
   onStartDetailTransition: (href: string) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
