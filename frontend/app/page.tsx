@@ -16,7 +16,6 @@ import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import MountablesPanel from "@/app/_components/MountablesPanel";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
-import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import CreateCampaignModalContent, {
   CreateCampaignModalContentHandle,
@@ -130,62 +129,67 @@ export default function Home() {
   }, []);
 
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
-  const [isEditingUsername, setIsEditingUsername] = useState(false);
-  const [usernameDraft, setUsernameDraft] = useState("");
-  const [usernameSaveError, setUsernameSaveError] = useState("");
+  const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
+  const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
   const {
     handleCopyWalletAddress,
     walletAddress,
+    walletAddressDisplay,
     walletBalance,
+    walletBalanceIncreasing,
     walletChainLabel,
     walletCopyFeedback,
     walletInfoError,
     walletInfoLoading,
+    walletUsdParts,
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
-  const {
-    currentUserProfile,
-    isSavingUserProfile,
-    isUserProfileLoading,
-    saveUsername,
-    userProfileError,
-  } = useUserProfile(signer ?? null);
 
-  useEffect(() => {
-    setUsernameDraft(currentUserProfile?.username ?? "");
-    setUsernameSaveError("");
-    setIsEditingUsername(false);
-  }, [currentUserProfile?.username]);
-
-  const handleStartUsernameEdit = useCallback(() => {
-    setUsernameDraft(currentUserProfile?.username ?? "");
-    setUsernameSaveError("");
-    setIsEditingUsername(true);
-  }, [currentUserProfile?.username]);
-
-  const handleCancelUsernameEdit = useCallback(() => {
-    setUsernameDraft(currentUserProfile?.username ?? "");
-    setUsernameSaveError("");
-    setIsEditingUsername(false);
-  }, [currentUserProfile?.username]);
-
-  const handleSaveUsername = useCallback(async () => {
-    try {
-      setUsernameSaveError("");
-      const nextUsername = usernameDraft.trim();
-      if (!nextUsername) {
-        setUsernameSaveError("Username is required");
-        return;
-      }
-
-      await saveUsername(nextUsername);
-      setIsEditingUsername(false);
-    } catch (error) {
-      setUsernameSaveError(error instanceof Error ? error.message : "Failed to save username");
+  const clearWalletInfoCloseTimer = useCallback(() => {
+    if (walletInfoCloseTimerRef.current) {
+      clearTimeout(walletInfoCloseTimerRef.current);
+      walletInfoCloseTimerRef.current = null;
     }
-  }, [saveUsername, usernameDraft]);
+  }, []);
+
+  const clearWalletInfoHideTimer = useCallback(() => {
+    if (walletInfoHideTimerRef.current) {
+      clearTimeout(walletInfoHideTimerRef.current);
+      walletInfoHideTimerRef.current = null;
+    }
+  }, []);
+
+  const keepWalletInfoModalOpen = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    clearWalletInfoHideTimer();
+    setIsWalletInfoClosing(false);
+    setShowWalletInfoModal(true);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
+
+  const closeWalletInfoModal = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    if (!showWalletInfoModal || isWalletInfoClosing) {
+      return;
+    }
+
+    setIsWalletInfoClosing(true);
+    clearWalletInfoHideTimer();
+    walletInfoHideTimerRef.current = setTimeout(() => {
+      setShowWalletInfoModal(false);
+      setIsWalletInfoClosing(false);
+      walletInfoHideTimerRef.current = null;
+    }, 220);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, isWalletInfoClosing, showWalletInfoModal]);
+
+  const scheduleWalletInfoModalClose = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    walletInfoCloseTimerRef.current = setTimeout(() => {
+      closeWalletInfoModal();
+    }, 250);
+  }, [clearWalletInfoCloseTimer, closeWalletInfoModal]);
   const {
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -527,7 +531,6 @@ export default function Home() {
   }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
-  const walletUsernameError = usernameSaveError || userProfileError;
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
   const infoModalBody = infoModalMode === "submission-success" ? (
@@ -615,11 +618,22 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {(settlementModalData?.evidenceItems ?? []).map((item, index) => (
-            <p key={item} className="create-info-constraint-item create-info-typed-line" style={{ animationDelay: `${index * 90}ms` }}>
-              <span>{item}</span>
-            </p>
-          ))}
+          {(settlementModalData?.evidenceItems ?? []).map((item, index) => {
+            const separatorIndex = item.indexOf(": ");
+            const key = separatorIndex === -1 ? item : item.slice(0, separatorIndex);
+            const value = separatorIndex === -1 ? "" : item.slice(separatorIndex + 2);
+
+            return (
+              <p
+                key={item}
+                className="create-info-constraint-item create-info-settlement-evidence-row text-gray-500 font-mono create-info-typed-line"
+                style={{ animationDelay: `${index * 90}ms` }}
+              >
+                <span className="create-info-settlement-evidence-key">{value ? `${key}:` : key}</span>
+                {value ? <span className="create-info-settlement-evidence-value">{value}</span> : null}
+              </p>
+            );
+          })}
           <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
           {(settlementModalData?.recipients ?? []).length > 0 ? (
             (settlementModalData?.recipients ?? []).map((recipient, index) => (
@@ -883,8 +897,8 @@ export default function Home() {
               {signer ? (
                 <div
                   className="wallet-info-wrap"
-                  onMouseEnter={() => setShowWalletInfoModal(true)}
-                  onMouseLeave={() => setShowWalletInfoModal(false)}
+                  onMouseEnter={keepWalletInfoModalOpen}
+                  onMouseLeave={scheduleWalletInfoModalClose}
                 >
                   <button
                     onClick={disconnect}
@@ -893,12 +907,17 @@ export default function Home() {
                     Disconnect
                   </button>
                   {showWalletInfoModal && (
-                    <div className="wallet-info-modal" role="dialog" aria-label="Wallet details">
-                      <p className="wallet-info-heading">Wallet details</p>
+                    <div
+                      className={`wallet-info-modal ${isWalletInfoClosing ? "wallet-info-modal-closing" : ""}`}
+                      role="dialog"
+                      aria-label="Wallet details"
+                      onMouseEnter={keepWalletInfoModalOpen}
+                      onMouseLeave={scheduleWalletInfoModalClose}
+                    >
                       <div className="wallet-info-section">
                         <span className="wallet-info-label">Address</span>
                         <div className="wallet-info-address-row">
-                          <span className="wallet-info-address">{walletAddress || "Loading…"}</span>
+                          <span className="wallet-info-address">{walletAddressDisplay || "Loading…"}</span>
                           <button
                             type="button"
                             className="wallet-info-copy-btn"
@@ -915,8 +934,13 @@ export default function Home() {
                       <div className="wallet-info-grid">
                         <div className="wallet-info-section">
                           <span className="wallet-info-label">Balance</span>
+                          <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                            <span className="wallet-info-usd-currency">$</span>
+                            <span>{walletUsdParts?.whole ?? "--"}</span>
+                            <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+                          </span>
                           <span className="wallet-info-value">
-                            {walletInfoLoading ? "Loading…" : walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--"}
+                            {walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
                           </span>
                         </div>
                         <div className="wallet-info-section">
@@ -924,59 +948,7 @@ export default function Home() {
                           <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
                         </div>
                       </div>
-                      <div className="wallet-info-section">
-                        <span className="wallet-info-label">Username</span>
-                        {isEditingUsername ? (
-                          <div className="wallet-username-edit-row">
-                            <input
-                              type="text"
-                              value={usernameDraft}
-                              onChange={(event) => setUsernameDraft(event.target.value)}
-                              className="wallet-username-input"
-                              placeholder="username"
-                              disabled={isSavingUserProfile}
-                            />
-                            <span className="wallet-username-suffix">.ckb</span>
-                          </div>
-                        ) : (
-                          <span className="wallet-info-value">
-                            {isUserProfileLoading ? "Loading…" : currentUserProfile?.handle ?? "--"}
-                          </span>
-                        )}
-                        <div className="wallet-username-actions">
-                          {isEditingUsername ? (
-                            <>
-                              <button
-                                type="button"
-                                className="wallet-username-btn"
-                                onClick={() => void handleSaveUsername()}
-                                disabled={isSavingUserProfile}
-                              >
-                                {isSavingUserProfile ? "Saving…" : "Save"}
-                              </button>
-                              <button
-                                type="button"
-                                className="wallet-username-btn"
-                                onClick={handleCancelUsernameEdit}
-                                disabled={isSavingUserProfile}
-                              >
-                                Cancel
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              type="button"
-                              className="wallet-username-btn"
-                              onClick={handleStartUsernameEdit}
-                              disabled={isUserProfileLoading}
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </div>
-                      </div>
                       {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
-                      {walletUsernameError ? <p className="wallet-info-error">{walletUsernameError}</p> : null}
                     </div>
                   )}
                 </div>

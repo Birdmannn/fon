@@ -55,13 +55,36 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transform-origin: top right;
+  animation: wallet-info-modal-reveal 220ms ease forwards;
 }
 
-.wallet-info-heading {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  font-weight: 700;
+.wallet-info-modal-closing {
+  animation: wallet-info-modal-hide 220ms ease forwards;
+}
+
+@keyframes wallet-info-modal-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes wallet-info-modal-hide {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
 }
 
 .wallet-info-grid {
@@ -146,62 +169,43 @@
   color: #2563eb;
 }
 
-.wallet-username-edit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.wallet-username-input {
-  min-width: 0;
-  flex: 1 1 auto;
-  border: 1px solid #d1d5db;
-  border-radius: 0.5rem;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.82rem;
-  line-height: 1.3;
-  font-family: var(--font-mono, monospace);
-  color: var(--foreground);
-  background: var(--background);
-}
-
-.wallet-username-input:focus {
-  outline: none;
-  border-color: #2563eb;
-}
-
-.wallet-username-suffix {
-  font-size: 0.78rem;
-  color: #6b7280;
-  font-family: var(--font-mono, monospace);
-}
-
-.wallet-username-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  margin-top: 0.35rem;
-}
-
-.wallet-username-btn {
-  border: 1px solid #d1d5db;
-  border-radius: 9999px;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 0.72rem;
+.wallet-info-usd {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.05rem;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 1.28rem;
   line-height: 1;
-  padding: 0.35rem 0.7rem;
-  cursor: pointer;
+  color: var(--foreground);
 }
 
-.wallet-username-btn:hover,
-.wallet-username-btn:focus-visible {
-  border-color: #2563eb;
-  color: #2563eb;
-  outline: none;
+.wallet-info-usd-currency {
+  font-size: 0.92rem;
+  line-height: 1;
 }
 
-.wallet-username-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
+.wallet-info-usd-decimals {
+  font-size: 0.64em;
+  line-height: 1;
 }
+
+.wallet-balance-increasing {
+  color: #16a34a;
+  animation: wallet-balance-rise 900ms ease forwards;
+}
+
+@keyframes wallet-balance-rise {
+  0% {
+    opacity: 0.55;
+    transform: translateY(4px);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+

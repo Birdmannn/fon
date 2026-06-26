@@ -490,6 +490,23 @@
   }
 }
 
+.create-info-settlement-evidence-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.create-info-settlement-evidence-key {
+  white-space: nowrap;
+}
+
+.create-info-settlement-evidence-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .create-info-settlement-recipient-row {
   display: flex;
   align-items: baseline;
