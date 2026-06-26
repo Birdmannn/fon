@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FREIGHT_CONTRACT } from "@/lib/contract";
 
 const PROJECT_GITHUB_URL = "https://github.com/Birdmannn/fon";
@@ -18,7 +18,9 @@ const X_ICON = (
   </svg>
 );
 
-const MODAL_TITLE = "FreightOnNervos";
+const MODAL_TITLES = ["FreightOnNervos", "货运43"];
+const TITLE_PHASE_DELAY_MS = 150;
+const TITLE_HOLD_MS = 8000;
 
 type FreightInfoModalProps = {
   open: boolean;
@@ -45,6 +47,54 @@ export default function FreightInfoModal({
   onKeepOpen,
   onScheduleClose,
 }: FreightInfoModalProps) {
+  const [titleIndex, setTitleIndex] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(0);
+  const [direction, setDirection] = useState<"typing" | "deleting">("typing");
+
+  if (!open && (titleIndex !== 0 || visibleCount !== 0 || direction !== "typing")) {
+    setTitleIndex(0);
+    setVisibleCount(0);
+    setDirection("typing");
+  }
+
+  const activeTitle = MODAL_TITLES[titleIndex] ?? MODAL_TITLES[0];
+  const activeCharacters = useMemo(() => Array.from(activeTitle), [activeTitle]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (direction === "typing" && visibleCount < activeCharacters.length) {
+      const timer = window.setTimeout(() => {
+        setVisibleCount((current) => current + 1);
+      }, TITLE_PHASE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (direction === "typing" && visibleCount >= activeCharacters.length) {
+      const timer = window.setTimeout(() => {
+        setDirection("deleting");
+      }, TITLE_HOLD_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (direction === "deleting" && visibleCount > 0) {
+      const timer = window.setTimeout(() => {
+        setVisibleCount((current) => current - 1);
+      }, TITLE_PHASE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (direction === "deleting" && visibleCount === 0) {
+      const timer = window.setTimeout(() => {
+        setTitleIndex((current) => (current + 1) % MODAL_TITLES.length);
+        setDirection("typing");
+      }, TITLE_PHASE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeCharacters.length, direction, open, visibleCount]);
+
   if (!open) {
     return null;
   }
@@ -60,13 +110,13 @@ export default function FreightInfoModal({
       >
         <div className="header-info-modal-header">
           <div className="header-info-modal-title-row">
-            <h1 className="text-2xl sm:text-3xl font-bold header-info-modal-title-typed" aria-label={MODAL_TITLE}>
-              {Array.from(MODAL_TITLE).map((character, index) => (
+            <h1 className="text-2xl sm:text-3xl font-bold header-info-modal-title-typed" aria-label={activeTitle}>
+              {activeCharacters.map((character, index) => (
                 <span
-                  key={`${character}-${index}`}
+                  key={`${titleIndex}-${character}-${index}`}
                   className="header-info-modal-title-char"
-                  style={{ animationDelay: `${index * 150}ms` }}
                   aria-hidden="true"
+                  style={{ opacity: index < visibleCount ? 1 : 0 }}
                 >
                   {character}
                 </span>
