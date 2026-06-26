@@ -1,0 +1,151 @@
+/* ============================================
+   PROFILE PAGE
+   First-pass introspection profile layout
+   ============================================ */
+
+.profile-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.profile-page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding-top: 4rem;
+}
+
+.profile-summary-card {
+  margin-top: 4.5rem;
+  padding: 1.5rem 1.25rem;
+  border: 2px solid var(--foreground);
+  border-radius: 1.5rem;
+  background: var(--background);
+  color: var(--foreground);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+}
+
+.profile-avatar-placeholder {
+  width: 8rem;
+  height: 8rem;
+  border-radius: 9999px;
+  border: 2px solid var(--foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.82rem;
+  line-height: 1.2;
+  color: #6b7280;
+}
+
+.profile-summary-copy {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+}
+
+.profile-handle {
+  margin: 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: clamp(1.5rem, 4vw, 2.2rem);
+  line-height: 1.05;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.profile-address-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.profile-address-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.profile-address-value {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: #6b7280;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.profile-address-copy-btn {
+  flex-shrink: 0;
+  margin-top: 0.08rem;
+}
+
+.profile-reputation-balance {
+  margin: 0.8rem 0 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: clamp(1.9rem, 5vw, 2.6rem);
+  line-height: 1;
+  font-weight: 800;
+}
+
+.profile-reputation-caption,
+.profile-usd-caption,
+.profile-wallet-balance-note {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.profile-usd-balance {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.05rem;
+  margin-top: 0.45rem;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: clamp(1.45rem, 4vw, 2rem);
+  line-height: 1;
+  color: var(--foreground);
+}
+
+.profile-usd-currency {
+  font-size: 0.92rem;
+  line-height: 1;
+}
+
+.profile-usd-decimals {
+  font-size: 0.64em;
+  line-height: 1;
+}
+
+@media (min-width: 640px) {
+  .profile-page {
+    padding: 2rem;
+  }
+
+  .profile-page-shell {
+    padding-top: 5rem;
+  }
+
+  .profile-summary-card {
+    margin-top: 5rem;
+    padding: 2rem 2.25rem;
+  }
+}

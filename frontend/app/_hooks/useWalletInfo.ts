@@ -44,7 +44,7 @@ async function fetchCkbUsdPrice() {
   return nextPrice;
 }
 
-export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, showWalletInfoModal: boolean) {
+export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, showWalletInfoModal: boolean, shouldFetch: boolean = false) {
   const [walletAddress, setWalletAddress] = useState("");
   const [walletBalance, setWalletBalance] = useState<bigint | null>(null);
   const [walletInfoError, setWalletInfoError] = useState("");
@@ -122,7 +122,7 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
       return;
     }
 
-    if (!showWalletInfoModal) {
+    if (!showWalletInfoModal && !shouldFetch) {
       return;
     }
 
@@ -186,7 +186,7 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [showWalletInfoModal, signer]);
+  }, [showWalletInfoModal, shouldFetch, signer]);
 
   return {
     handleCopyWalletAddress,
