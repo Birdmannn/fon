@@ -490,21 +490,35 @@
   }
 }
 
+.create-info-settlement-evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
 .create-info-settlement-evidence-row {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  align-items: baseline;
-  gap: 1rem;
+  opacity: 0;
+  animation: create-info-typed-reveal 260ms ease forwards;
+}
+
+.create-info-settlement-evidence-key,
+.create-info-settlement-evidence-value {
+  padding: 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .create-info-settlement-evidence-key {
-  white-space: nowrap;
+  width: 34%;
+  padding-right: 1rem;
+  white-space: normal;
+  text-align: left;
 }
 
 .create-info-settlement-evidence-value {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  text-align: right;
+  width: 66%;
+  text-align: justify;
 }
 
 .create-info-settlement-recipient-row {

@@ -614,22 +614,26 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {(settlementModalData?.evidenceItems ?? []).map((item, index) => {
-            const separatorIndex = item.indexOf(": ");
-            const key = separatorIndex === -1 ? item : item.slice(0, separatorIndex);
-            const value = separatorIndex === -1 ? "" : item.slice(separatorIndex + 2);
+          <table className="create-info-settlement-evidence-table text-gray-500">
+            <tbody>
+              {(settlementModalData?.evidenceItems ?? []).map((item, index) => {
+                const separatorIndex = item.indexOf(": ");
+                const key = separatorIndex === -1 ? item : item.slice(0, separatorIndex);
+                const value = separatorIndex === -1 ? "" : item.slice(separatorIndex + 2);
 
-            return (
-              <p
-                key={item}
-                className="create-info-constraint-item create-info-settlement-evidence-row text-gray-500 create-info-typed-line"
-                style={{ animationDelay: `${index * 90}ms` }}
-              >
-                <span className="create-info-settlement-evidence-key">{value ? `${key}:` : key}</span>
-                {value ? <span className="create-info-settlement-evidence-value">{value}</span> : null}
-              </p>
-            );
-          })}
+                return (
+                  <tr
+                    key={item}
+                    className="create-info-settlement-evidence-row create-info-typed-line"
+                    style={{ animationDelay: `${index * 90}ms` }}
+                  >
+                    <td className="create-info-settlement-evidence-key">{value ? `${key}:` : key}</td>
+                    <td className="create-info-settlement-evidence-value">{value}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
           {(settlementModalData?.recipients ?? []).length > 0 ? (
             (settlementModalData?.recipients ?? []).map((recipient, index) => {
