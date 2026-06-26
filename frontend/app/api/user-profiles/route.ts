@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
 
-import {
-  buildDefaultUsername,
-  formatUsernameHandle,
-  normalizeUsername,
-} from "@/lib/campaignDisplay";
 import { getUserProfilesCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +8,20 @@ type UserProfilePayload = {
   address?: unknown;
   username?: unknown;
 };
+
+function buildDefaultUsername(addressHex: string) {
+  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
+  return `freight${normalized.slice(-20)}`;
+}
+
+function formatUsernameHandle(username: string) {
+  const normalized = username.trim().replace(/\.ckb$/i, "");
+  return normalized ? `${normalized}.ckb` : "";
+}
+
+function normalizeUsername(value: string) {
+  return value.trim().replace(/\.ckb$/i, "").toLowerCase();
+}
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });

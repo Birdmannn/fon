@@ -19,7 +19,7 @@ const X_ICON = (
 );
 
 const MODAL_TITLES = ["FreightOnNervos", "货运43"];
-const TITLE_PHASE_DELAY_MS = 150;
+const TITLE_PHASE_DELAY_MS = 100;
 const TITLE_HOLD_MS = 8000;
 
 type FreightInfoModalProps = {
