@@ -672,7 +672,14 @@ export default function Home() {
         <>
           <p className="mt-3 text-gray-900 font-semibold">Distribution tx:</p>
           <p className="create-info-constraint-item text-gray-500 font-mono break-all">
-            <span>{settlementModalData.distributionTxHash}</span>
+            <a
+              href={`https://pudge.explorer.nervos.org/transaction/${settlementModalData.distributionTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              {settlementModalData.distributionTxHash}
+            </a>
           </p>
         </>
       ) : null}
