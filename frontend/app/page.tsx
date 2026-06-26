@@ -6,6 +6,7 @@ import {
   ArrowUp,
   CheckCircle,
   Copy,
+  Fingerprint,
   Plus,
   RotateCcw,
 } from "lucide-react";
@@ -967,6 +968,14 @@ export default function Home() {
                         </div>
                       </div>
                       {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
+                      <a
+                        href="/profile"
+                        className="wallet-info-introspect-btn"
+                        onClick={closeWalletInfoModal}
+                      >
+                        <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />
+                        <span>Introspect</span>
+                      </a>
                     </div>
                   )}
                 </div>
