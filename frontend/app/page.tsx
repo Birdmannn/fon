@@ -605,10 +605,6 @@ export default function Home() {
   ) : infoModalMode === "raffle-settlement" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">{settlementModalData?.campaignTitle ?? "Raffle settlement"}</p>
-      <p className="mt-3 text-gray-900 font-semibold">Random hash:</p>
-      <p className="create-info-constraint-item text-gray-500 font-mono break-all">
-        <span>{settlementModalData?.randomnessHash ?? "Unavailable"}</span>
-      </p>
       <p className="mt-3 text-gray-900 font-semibold">Evidence:</p>
       {isLoadingSettlementModal ? (
         <div className="create-info-skeleton-list" aria-hidden="true">
@@ -626,7 +622,7 @@ export default function Home() {
             return (
               <p
                 key={item}
-                className="create-info-constraint-item create-info-settlement-evidence-row text-gray-500 font-mono create-info-typed-line"
+                className="create-info-constraint-item create-info-settlement-evidence-row text-gray-500 create-info-typed-line"
                 style={{ animationDelay: `${index * 90}ms` }}
               >
                 <span className="create-info-settlement-evidence-key">{value ? `${key}:` : key}</span>
