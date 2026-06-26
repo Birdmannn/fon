@@ -13,12 +13,17 @@
 .profile-page-shell {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1rem;
   padding-top: 4rem;
 }
 
+.profile-avatar-row {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 3.6rem;
+}
+
 .profile-summary-card {
-  margin-top: 4.5rem;
   padding: 1.5rem 1.25rem;
   border: 2px solid var(--foreground);
   border-radius: 1.5rem;
@@ -26,7 +31,6 @@
   color: var(--foreground);
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 1.25rem;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
 }
@@ -144,8 +148,11 @@
     padding-top: 5rem;
   }
 
+  .profile-avatar-row {
+    padding-top: 4rem;
+  }
+
   .profile-summary-card {
-    margin-top: 5rem;
     padding: 2rem 2.25rem;
   }
 }

@@ -179,11 +179,13 @@ export default function ProfilePage() {
           introspectHref="/profile"
         />
 
-        <section className="profile-summary-card">
+        <div className="profile-avatar-row">
           <div className="profile-avatar-placeholder" aria-hidden="true">
             <span>Profile photo</span>
           </div>
+        </div>
 
+        <section className="profile-summary-card">
           <div className="profile-summary-copy">
             <p className="profile-handle">{handleLabel}</p>
 
