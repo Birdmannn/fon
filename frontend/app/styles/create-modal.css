@@ -514,9 +514,17 @@
   gap: 1rem;
 }
 
+.create-info-settlement-recipient-current {
+  color: #961cac;
+}
+
 .create-info-settlement-recipient-handle {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.create-info-settlement-recipient-you {
+  white-space: nowrap;
 }
 
 .create-info-settlement-recipient-amount {

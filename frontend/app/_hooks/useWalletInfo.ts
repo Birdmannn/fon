@@ -87,6 +87,30 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
   useEffect(() => {
     if (!signer) {
       setWalletAddress("");
+      return;
+    }
+
+    let cancelled = false;
+
+    void signer.getRecommendedAddress()
+      .then((nextAddress) => {
+        if (!cancelled) {
+          setWalletAddress(nextAddress ?? "");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWalletAddress("");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [signer]);
+
+  useEffect(() => {
+    if (!signer) {
       setWalletBalance(null);
       setWalletInfoError("");
       setWalletInfoLoading(false);

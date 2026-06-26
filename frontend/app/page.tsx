@@ -632,12 +632,23 @@ export default function Home() {
           })}
           <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
           {(settlementModalData?.recipients ?? []).length > 0 ? (
-            (settlementModalData?.recipients ?? []).map((recipient, index) => (
-              <div key={`${recipient.address}-${index}`} className="create-info-constraint-item create-info-settlement-recipient-row text-gray-500 font-mono create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
-                <span className="create-info-settlement-recipient-handle">{recipient.handle}</span>
-                <span className="create-info-settlement-recipient-amount">{recipient.amountLabel}</span>
-              </div>
-            ))
+            (settlementModalData?.recipients ?? []).map((recipient, index) => {
+              const isConnectedRecipient = walletAddress.trim().toLowerCase() === recipient.address.trim().toLowerCase();
+
+              return (
+                <div
+                  key={`${recipient.address}-${index}`}
+                  className={`create-info-constraint-item create-info-settlement-recipient-row font-mono create-info-typed-line ${isConnectedRecipient ? "create-info-settlement-recipient-current" : "text-gray-500"}`}
+                  style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}
+                >
+                  <span className="create-info-settlement-recipient-handle">
+                    {recipient.handle}
+                    {isConnectedRecipient ? <span className="create-info-settlement-recipient-you"> (You)</span> : null}
+                  </span>
+                  <span className="create-info-settlement-recipient-amount">{recipient.amountLabel}</span>
+                </div>
+              );
+            })
           ) : (
             <p className="create-info-constraint-item text-gray-500">
               <span>No recipients found.</span>
