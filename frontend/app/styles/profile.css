@@ -20,7 +20,7 @@
 .profile-avatar-row {
   display: flex;
   justify-content: flex-start;
-  padding-top: 3.6rem;
+  padding-top: 0;
 }
 
 .profile-summary-card {
@@ -54,9 +54,10 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.35rem;
-  text-align: center;
+  padding-left: min(10rem, 32%);
+  text-align: left;
 }
 
 .profile-handle {
@@ -72,7 +73,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.35rem;
 }
 
@@ -80,7 +81,7 @@
   width: 100%;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.45rem;
 }
 
@@ -92,7 +93,7 @@
   line-height: 1.4;
   color: #6b7280;
   overflow-wrap: anywhere;
-  text-align: center;
+  text-align: left;
 }
 
 .profile-address-copy-btn {
@@ -120,7 +121,7 @@
 .profile-usd-balance {
   display: inline-flex;
   align-items: baseline;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 0.05rem;
   margin-top: 0.45rem;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
@@ -137,6 +138,30 @@
 .profile-usd-decimals {
   font-size: 0.64em;
   line-height: 1;
+}
+
+@media (max-width: 639px) {
+  .profile-summary-copy {
+    padding-left: 0;
+    align-items: center;
+    text-align: center;
+  }
+
+  .profile-address-block {
+    align-items: center;
+  }
+
+  .profile-address-row {
+    justify-content: center;
+  }
+
+  .profile-address-value {
+    text-align: center;
+  }
+
+  .profile-usd-balance {
+    justify-content: center;
+  }
 }
 
 @media (min-width: 640px) {
