@@ -54,6 +54,7 @@ type AppShellHeaderProps = {
   walletActionHref?: string;
   walletActionIcon?: ReactNode;
   walletActionLabel?: string;
+  walletActionOnly?: boolean;
 };
 
 export default function AppShellHeader({
@@ -100,6 +101,7 @@ export default function AppShellHeader({
   walletActionHref,
   walletActionIcon,
   walletActionLabel,
+  walletActionOnly = false,
 }: AppShellHeaderProps) {
   return (
     <div className={className} onClick={onContainerClick}>
@@ -145,38 +147,42 @@ export default function AppShellHeader({
                   onMouseEnter={onWalletMouseEnter}
                   onMouseLeave={onWalletMouseLeave}
                 >
-                  <div className="wallet-info-section">
-                    <span className="wallet-info-label">
-                      Address <span className="wallet-chain-indicator wallet-chain-indicator-inline">({walletChainLabel})</span>
-                    </span>
-                    <div className="wallet-info-address-row">
-                      <span className="wallet-info-address">{walletAddressDisplay || "Loading…"}</span>
-                      <button
-                        type="button"
-                        className="wallet-info-copy-btn"
-                        onClick={() => void onCopyWalletAddress()}
-                        title={walletAddress}
-                        aria-label="Copy wallet address"
-                      >
-                        <Copy size={14} strokeWidth={2} aria-hidden="true" />
-                      </button>
-                    </div>
-                    {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
-                    {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
-                  </div>
-                  <div className="wallet-info-section">
-                    <span className="wallet-info-label">Balance</span>
-                    <div className="wallet-info-balance-row">
-                      <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>{walletBalanceText}</span>
-                      <span className="wallet-info-balance-approx">≈</span>
-                      <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                        <span className="wallet-info-usd-currency">$</span>
-                        <span>{walletUsdParts?.whole ?? "--"}</span>
-                        <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
-                      </span>
-                    </div>
-                  </div>
-                  {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
+                  {!walletActionOnly ? (
+                    <>
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">
+                          Address <span className="wallet-chain-indicator wallet-chain-indicator-inline">({walletChainLabel})</span>
+                        </span>
+                        <div className="wallet-info-address-row">
+                          <span className="wallet-info-address">{walletAddressDisplay || "Loading…"}</span>
+                          <button
+                            type="button"
+                            className="wallet-info-copy-btn"
+                            onClick={() => void onCopyWalletAddress()}
+                            title={walletAddress}
+                            aria-label="Copy wallet address"
+                          >
+                            <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                          </button>
+                        </div>
+                        {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
+                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
+                      </div>
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">Balance</span>
+                        <div className="wallet-info-balance-row">
+                          <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>{walletBalanceText}</span>
+                          <span className="wallet-info-balance-approx">≈</span>
+                          <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                            <span className="wallet-info-usd-currency">$</span>
+                            <span>{walletUsdParts?.whole ?? "--"}</span>
+                            <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+                          </span>
+                        </div>
+                      </div>
+                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
+                    </>
+                  ) : null}
                   {walletActionHref ? (
                     <a
                       href={walletActionHref}

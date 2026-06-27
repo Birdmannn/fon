@@ -632,21 +632,38 @@ export default function ProfilePage() {
           walletActionHref="/"
           walletActionIcon={<House size={14} strokeWidth={2} aria-hidden="true" />}
           walletActionLabel="Home"
+          walletActionOnly={true}
         />
 
-        <div className="profile-avatar-row">
-          <div className="profile-avatar-placeholder" aria-hidden="true">
-            <span>Profile photo</span>
-          </div>
-        </div>
-
-        <section className="profile-summary-card">
-          <div className="profile-summary-copy">
+        <div className="profile-hero-row">
+          <div className="profile-avatar-column">
+            <div className="profile-avatar-placeholder" aria-hidden="true">
+              <span>Profile photo</span>
+            </div>
             {isProfileLoading ? (
               <ThreeDotLoader inline className="profile-inline-loader" label="Loading profile handle" />
             ) : (
-              <p className="profile-handle">{handleLabel}</p>
+              <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
             )}
+          </div>
+
+          <section className="profile-summary-card">
+            <div className="profile-stats-row">
+              <p className="profile-reputation-balance">0 FBARS</p>
+              {isProfileLoading ? (
+                <ThreeDotLoader inline className="profile-inline-loader profile-usd-loader" label="Loading profile USD balance" />
+              ) : (
+                <div className="profile-balance-inline-group">
+                  {walletBalanceText !== "--" ? <span className="profile-wallet-balance-note">{walletBalanceText}</span> : null}
+                  <span className="wallet-info-balance-approx">≈</span>
+                  <div className="profile-usd-balance" aria-live="polite">
+                    <span className="profile-usd-currency">$</span>
+                    <span>{walletUsdParts?.whole ?? "--"}</span>
+                    <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <div className="profile-address-block">
               <div className="profile-address-row">
@@ -671,24 +688,9 @@ export default function ProfilePage() {
               {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
             </div>
 
-            <p className="profile-reputation-balance">0 FBARS</p>
-            <p className="profile-reputation-caption">Reputation balance</p>
-
-            {isProfileLoading ? (
-              <ThreeDotLoader inline className="profile-inline-loader profile-usd-loader" label="Loading profile USD balance" />
-            ) : (
-              <div className="profile-usd-balance" aria-live="polite">
-                <span className="profile-usd-currency">$</span>
-                <span>{walletUsdParts?.whole ?? "--"}</span>
-                <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
-              </div>
-            )}
-            <p className="profile-usd-caption">Wallet USD balance</p>
-
-            {walletBalanceText !== "--" ? <p className="profile-wallet-balance-note">{walletBalanceText}</p> : null}
             {profileInlineErrorMessage ? <p className="profile-inline-error-hint">{profileInlineErrorMessage}</p> : null}
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
 
       {showCreateModal ? (
