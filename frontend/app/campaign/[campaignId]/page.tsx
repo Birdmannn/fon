@@ -546,16 +546,19 @@ export default function CampaignDetailPage() {
                         {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
                         {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                       </div>
-                      <div className="wallet-info-balance-row">
-                        <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                          {walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
-                        </span>
-                        <span className="wallet-info-balance-approx">≈</span>
-                        <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                          <span className="wallet-info-usd-currency">$</span>
-                          <span>--</span>
-                          <span className="wallet-info-usd-decimals">--</span>
-                        </span>
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">Balance</span>
+                        <div className="wallet-info-balance-row">
+                          <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                            {walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
+                          </span>
+                          <span className="wallet-info-balance-approx">≈</span>
+                          <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                            <span className="wallet-info-usd-currency">$</span>
+                            <span>--</span>
+                            <span className="wallet-info-usd-decimals">--</span>
+                          </span>
+                        </div>
                       </div>
                       {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
                     </div>

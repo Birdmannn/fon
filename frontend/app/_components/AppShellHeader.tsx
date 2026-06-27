@@ -164,14 +164,17 @@ export default function AppShellHeader({
                     {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
                     {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                   </div>
-                  <div className="wallet-info-balance-row">
-                    <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>{walletBalanceText}</span>
-                    <span className="wallet-info-balance-approx">≈</span>
-                    <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                      <span className="wallet-info-usd-currency">$</span>
-                      <span>{walletUsdParts?.whole ?? "--"}</span>
-                      <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
-                    </span>
+                  <div className="wallet-info-section">
+                    <span className="wallet-info-label">Balance</span>
+                    <div className="wallet-info-balance-row">
+                      <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>{walletBalanceText}</span>
+                      <span className="wallet-info-balance-approx">≈</span>
+                      <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                        <span className="wallet-info-usd-currency">$</span>
+                        <span>{walletUsdParts?.whole ?? "--"}</span>
+                        <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+                      </span>
+                    </div>
                   </div>
                   {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
                   {walletActionHref ? (
