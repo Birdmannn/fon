@@ -34,7 +34,7 @@ type AppShellHeaderProps = {
   onInfoMouseEnter: () => void;
   onInfoMouseLeave: () => void;
   onInfoWrapClick?: MouseEventHandler<HTMLDivElement>;
-  onIntrospectClick?: () => void;
+  onWalletActionClick?: () => void;
   onRightActionsClick?: MouseEventHandler<HTMLDivElement>;
   onWalletMouseEnter: () => void;
   onWalletMouseLeave: () => void;
@@ -51,7 +51,9 @@ type AppShellHeaderProps = {
   walletModalClosing: boolean;
   walletModalOpen: boolean;
   walletUsdParts: WalletUsdParts | null;
-  introspectHref?: string;
+  walletActionHref?: string;
+  walletActionIcon?: ReactNode;
+  walletActionLabel?: string;
 };
 
 export default function AppShellHeader({
@@ -78,7 +80,7 @@ export default function AppShellHeader({
   onInfoMouseEnter,
   onInfoMouseLeave,
   onInfoWrapClick,
-  onIntrospectClick,
+  onWalletActionClick,
   onRightActionsClick,
   onWalletMouseEnter,
   onWalletMouseLeave,
@@ -95,7 +97,9 @@ export default function AppShellHeader({
   walletModalClosing,
   walletModalOpen,
   walletUsdParts,
-  introspectHref,
+  walletActionHref,
+  walletActionIcon,
+  walletActionLabel,
 }: AppShellHeaderProps) {
   return (
     <div className={className} onClick={onContainerClick}>
@@ -174,14 +178,14 @@ export default function AppShellHeader({
                     </div>
                   </div>
                   {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
-                  {introspectHref ? (
+                  {walletActionHref ? (
                     <a
-                      href={introspectHref}
+                      href={walletActionHref}
                       className="wallet-info-introspect-btn"
-                      onClick={onIntrospectClick}
+                      onClick={onWalletActionClick}
                     >
-                      <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />
-                      <span>Introspect</span>
+                      {walletActionIcon ?? <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />}
+                      <span>{walletActionLabel ?? "Introspect"}</span>
                     </a>
                   ) : null}
                 </div>

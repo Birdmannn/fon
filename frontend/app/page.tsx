@@ -869,7 +869,7 @@ export default function Home() {
             resetTicketPurchaseState();
           })}
           onInfoWrapClick={(event) => event.stopPropagation()}
-          onIntrospectClick={closeWalletInfoModal}
+          onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletMouseEnter={keepWalletInfoModalOpen}
           onWalletMouseLeave={scheduleWalletInfoModalClose}
@@ -918,7 +918,8 @@ export default function Home() {
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          introspectHref="/profile"
+          walletActionHref="/profile"
+          walletActionLabel="Introspect"
         />
 
         {signer && (

@@ -118,6 +118,13 @@
   line-height: 1.35;
 }
 
+.profile-inline-error-hint {
+  margin: 0;
+  color: #d97706;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
 .profile-usd-balance {
   display: inline-flex;
   align-items: baseline;
@@ -140,6 +147,21 @@
   line-height: 1;
 }
 
+.profile-inline-loader {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.profile-address-loader {
+  justify-content: flex-start;
+}
+
+.profile-usd-loader {
+  justify-content: flex-start;
+  margin-top: 0.45rem;
+}
+
 @media (max-width: 639px) {
   .profile-summary-copy {
     padding-left: 0;
@@ -159,7 +181,9 @@
     text-align: center;
   }
 
-  .profile-usd-balance {
+  .profile-usd-balance,
+  .profile-address-loader,
+  .profile-usd-loader {
     justify-content: center;
   }
 }

@@ -1,6 +1,8 @@
 import { RefreshCw, Search } from "lucide-react";
 import type { RefObject } from "react";
 
+import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
+
 type CampaignFeedHeaderBarProps = {
   isLoading?: boolean;
   isRefreshing: boolean;
@@ -42,13 +44,7 @@ export default function CampaignFeedHeaderBar({
             </button>
           )}
         </div>
-        {isLoading && (
-          <div className="campaign-feed-loading campaign-feed-loading-inline" aria-label="Loading freights" role="status">
-            <span className="campaign-feed-loading-dot" />
-            <span className="campaign-feed-loading-dot" />
-            <span className="campaign-feed-loading-dot" />
-          </div>
-        )}
+        {isLoading ? <ThreeDotLoader inline label="Loading freights" /> : null}
       </div>
       <div className="flex items-center gap-2 justify-end">
         <button

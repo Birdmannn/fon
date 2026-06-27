@@ -6,6 +6,7 @@ import {
   ArrowUp,
   CheckCircle,
   Copy,
+  House,
   Plus,
   RotateCcw,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
+import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
@@ -54,16 +56,8 @@ const CREATE_INFO_PREVIEW_ITEMS = [
   "If the first hashtag is #Raffle, a ticket price is also required.",
   "The full title, description, mentions, and review snapshot are saved off-chain.",
 ];
-const PROFILE_INFO_MOUNTABLES_HEADING = "Mountables:";
-const PROFILE_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
-const PROFILE_INFO_TYPES_HEADING = "Freight types:";
-const PROFILE_INFO_TYPE_ITEMS = [
-  "1. Simple Task — a basic freight for posting a task without pooled deposits.",
-  "2. Funded Task — a task funded up front so rewards can be distributed from the pool.",
-  "3. Crowdfunding — an open funding freight where supporters deposit toward a shared pool.",
-  "4. Timed Challenge — a challenge with a defined start and end window.",
-  "5. Raffle — a ticket-based freight where entrants buy tickets for a randomized outcome.",
-];
+const PROFILE_INFO_FBARS_HEADING = "FBARS:";
+const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 
 type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error";
 
@@ -417,6 +411,16 @@ export default function ProfilePage() {
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
+  const profilePageErrorMessages = [userProfileError, walletInfoError].filter((message) => message.trim().length > 0);
+  const isProfileLoading = Boolean(signer) && (isUserProfileLoading || (walletInfoLoading && !walletAddress));
+  const hasProfileErrors = profilePageErrorMessages.length > 0;
+  const handleLabel = !signer
+    ? "Connect wallet to introspect"
+    : currentUserProfile?.handle ?? "";
+  const fullAddressLabel = walletAddress || (signer ? "" : "Connect wallet to view your address");
+  const walletBalanceText = walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--";
+  const profileInlineErrorMessage = hasProfileErrors ? "An error occurred, hover on info for more" : "";
+
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
@@ -509,18 +513,20 @@ export default function ProfilePage() {
     </div>
   ) : (
     <div className="create-info-constraints-copy">
-      <p>{PROFILE_INFO_MOUNTABLES_HEADING}</p>
-      {PROFILE_INFO_MOUNTABLES_ITEMS.map((item) => (
-        <p key={item} className="create-info-constraint-item">
-          <span>{item}</span>
-        </p>
-      ))}
-      <p className="mt-3">{PROFILE_INFO_TYPES_HEADING}</p>
-      {PROFILE_INFO_TYPE_ITEMS.map((item) => (
-        <p key={item} className="create-info-constraint-item">
-          <span>{item}</span>
-        </p>
-      ))}
+      <p>{PROFILE_INFO_FBARS_HEADING}</p>
+      <p className="create-info-constraint-item">
+        <span>{PROFILE_INFO_FBARS_MESSAGE}</span>
+      </p>
+      {profilePageErrorMessages.length > 0 ? (
+        <>
+          <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+          {profilePageErrorMessages.map((message) => (
+            <p key={message} className="create-info-constraint-item text-red-500 break-words">
+              <span>{message}</span>
+            </p>
+          ))}
+        </>
+      ) : null}
     </div>
   );
 
@@ -542,15 +548,6 @@ export default function ProfilePage() {
       </button>
     </div>
   ) : undefined;
-
-  const handleLabel = !signer
-    ? "Connect wallet to introspect"
-    : isUserProfileLoading
-      ? "Loading…"
-      : currentUserProfile?.handle ?? "Loading…";
-  const fullAddressLabel = walletAddress || (signer ? "Loading…" : "Connect wallet to view your address");
-  const walletBalanceText = walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--";
-  const profileErrorMessage = userProfileError || walletInfoError;
 
   return (
     <main className="profile-page">
@@ -583,7 +580,7 @@ export default function ProfilePage() {
           onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
           onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
-          onIntrospectClick={closeWalletInfoModal}
+          onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletMouseEnter={keepWalletInfoModalOpen}
           onWalletMouseLeave={scheduleWalletInfoModalClose}
@@ -632,7 +629,9 @@ export default function ProfilePage() {
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          introspectHref="/profile"
+          walletActionHref="/"
+          walletActionIcon={<House size={14} strokeWidth={2} aria-hidden="true" />}
+          walletActionLabel="Home"
         />
 
         <div className="profile-avatar-row">
@@ -643,11 +642,19 @@ export default function ProfilePage() {
 
         <section className="profile-summary-card">
           <div className="profile-summary-copy">
-            <p className="profile-handle">{handleLabel}</p>
+            {isProfileLoading ? (
+              <ThreeDotLoader inline className="profile-inline-loader" label="Loading profile handle" />
+            ) : (
+              <p className="profile-handle">{handleLabel}</p>
+            )}
 
             <div className="profile-address-block">
               <div className="profile-address-row">
-                <span className="profile-address-value">{fullAddressLabel}</span>
+                {isProfileLoading ? (
+                  <ThreeDotLoader inline className="profile-inline-loader profile-address-loader" label="Loading profile address" />
+                ) : (
+                  <span className="profile-address-value">{fullAddressLabel}</span>
+                )}
                 {signer && walletAddress ? (
                   <button
                     type="button"
@@ -667,15 +674,19 @@ export default function ProfilePage() {
             <p className="profile-reputation-balance">0 FBARS</p>
             <p className="profile-reputation-caption">Reputation balance</p>
 
-            <div className="profile-usd-balance" aria-live="polite">
-              <span className="profile-usd-currency">$</span>
-              <span>{walletUsdParts?.whole ?? "--"}</span>
-              <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
-            </div>
+            {isProfileLoading ? (
+              <ThreeDotLoader inline className="profile-inline-loader profile-usd-loader" label="Loading profile USD balance" />
+            ) : (
+              <div className="profile-usd-balance" aria-live="polite">
+                <span className="profile-usd-currency">$</span>
+                <span>{walletUsdParts?.whole ?? "--"}</span>
+                <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+              </div>
+            )}
             <p className="profile-usd-caption">Wallet USD balance</p>
 
             {walletBalanceText !== "--" ? <p className="profile-wallet-balance-note">{walletBalanceText}</p> : null}
-            {profileErrorMessage ? <p className="wallet-info-error">{profileErrorMessage}</p> : null}
+            {profileInlineErrorMessage ? <p className="profile-inline-error-hint">{profileInlineErrorMessage}</p> : null}
           </div>
         </section>
       </div>
