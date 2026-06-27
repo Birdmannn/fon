@@ -146,7 +146,9 @@ export default function AppShellHeader({
                   onMouseLeave={onWalletMouseLeave}
                 >
                   <div className="wallet-info-section">
-                    <span className="wallet-info-label">Address</span>
+                    <span className="wallet-info-label">
+                      Address <span className="wallet-chain-indicator wallet-chain-indicator-inline">({walletChainLabel})</span>
+                    </span>
                     <div className="wallet-info-address-row">
                       <span className="wallet-info-address">{walletAddressDisplay || "Loading…"}</span>
                       <button
@@ -162,20 +164,14 @@ export default function AppShellHeader({
                     {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
                     {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                   </div>
-                  <div className="wallet-info-grid">
-                    <div className="wallet-info-section">
-                      <span className="wallet-info-label">Balance</span>
-                      <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                        <span className="wallet-info-usd-currency">$</span>
-                        <span>{walletUsdParts?.whole ?? "--"}</span>
-                        <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
-                      </span>
-                      <span className="wallet-info-value">{walletBalanceText}</span>
-                    </div>
-                    <div className="wallet-info-section">
-                      <span className="wallet-info-label">Chain</span>
-                      <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
-                    </div>
+                  <div className="wallet-info-balance-row">
+                    <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>{walletBalanceText}</span>
+                    <span className="wallet-info-balance-approx">≈</span>
+                    <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                      <span className="wallet-info-usd-currency">$</span>
+                      <span>{walletUsdParts?.whole ?? "--"}</span>
+                      <span className="wallet-info-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+                    </span>
                   </div>
                   {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
                   {walletActionHref ? (
