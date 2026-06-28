@@ -7,12 +7,14 @@ import {
   CheckCircle,
   Copy,
   House,
+  Pencil,
   Plus,
   RotateCcw,
   Trophy,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
@@ -61,7 +63,7 @@ const CREATE_INFO_PREVIEW_ITEMS = [
 const PROFILE_INFO_FBARS_HEADING = "FBARS:";
 const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error";
+type InfoModalMode = "about" | "edit-display-name" | "save-draft-confirm" | "submission-success" | "submission-error";
 
 type ProfileScreenProps = {
   targetHandle?: string | null;
@@ -70,6 +72,7 @@ type ProfileScreenProps = {
 export default function ProfileScreen({ targetHandle = null }: ProfileScreenProps) {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
   const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -78,6 +81,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [displayNameModalError, setDisplayNameModalError] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
@@ -104,10 +109,20 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const resetInfoModalState = useCallback(() => {
     setInfoModalMode("about");
     setSaveDraftPromptError("");
+    setDisplayNameDraft("");
+    setDisplayNameModalError("");
     setSubmissionSuccessTxHash("");
     setSubmissionSuccessPreimage(null);
     setSubmissionErrorMessage("");
-  }, []);
+  }, [
+    setDisplayNameDraft,
+    setDisplayNameModalError,
+    setInfoModalMode,
+    setSaveDraftPromptError,
+    setSubmissionErrorMessage,
+    setSubmissionSuccessPreimage,
+    setSubmissionSuccessTxHash,
+  ]);
 
   const {
     clearInfoCloseTimer,
@@ -144,8 +159,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
   const {
     currentUserProfile,
+    isSavingUserProfile,
     isUserProfileLoading,
     leaderboard,
+    saveUsername,
     userProfileError,
   } = useUserProfile(signer ?? null, targetHandle);
 
@@ -448,6 +465,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   }, [closeInfoModal, closeLeaderboardModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal, showLeaderboardModal]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const canEditDisplayName = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
   const currentUserRankLabel = currentUserProfile ? `#${currentUserProfile.rank}` : "#--";
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
@@ -464,6 +482,53 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     ? "Sorry, an error occurred. Hover on info for more."
     : "";
   const homeHref = "/";
+
+  const openDisplayNameModal = useCallback(() => {
+    if (!canEditDisplayName) {
+      return;
+    }
+
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setDisplayNameDraft(currentUserProfile?.username ?? "");
+    setDisplayNameModalError("");
+    setInfoModalMode("edit-display-name");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [
+    canEditDisplayName,
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    currentUserProfile?.username,
+    setDisplayNameDraft,
+    setDisplayNameModalError,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+  ]);
+
+  const handleDisplayNameSave = useCallback(async () => {
+    const nextName = displayNameDraft.trim();
+
+    if (!nextName) {
+      setDisplayNameModalError("Display name is required.");
+      return;
+    }
+
+    try {
+      const savedProfile = await saveUsername(nextName);
+      setDisplayNameModalError("");
+      closeInfoModal();
+
+      const nextHandle = savedProfile?.username ?? nextName;
+      if (targetHandle) {
+        router.replace(`/user/${encodeURIComponent(nextHandle)}`);
+      }
+    } catch (error) {
+      setDisplayNameModalError(error instanceof Error ? error.message : "Failed to update display name");
+    }
+  }, [closeInfoModal, displayNameDraft, router, saveUsername, setDisplayNameModalError, targetHandle]);
 
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
@@ -496,6 +561,15 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       <p className="create-info-constraint-item text-red-500 break-words">
         <span>{submissionErrorMessage}</span>
       </p>
+    </div>
+  ) : infoModalMode === "edit-display-name" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Display name:</p>
+      {displayNameModalError || userProfileError ? (
+        <p className="create-info-constraint-item text-red-500 mt-3">
+          <span>{displayNameModalError || userProfileError}</span>
+        </p>
+      ) : null}
     </div>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
@@ -574,7 +648,31 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   );
 
-  const infoModalActions = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+  const infoModalActions = infoModalMode === "edit-display-name" ? (
+    <div className="profile-display-name-edit-row">
+      <input
+        type="text"
+        value={displayNameDraft}
+        onChange={(event) => {
+          setDisplayNameDraft(event.target.value);
+          if (displayNameModalError) {
+            setDisplayNameModalError("");
+          }
+        }}
+        className="create-info-ticket-input profile-display-name-input"
+        aria-label="Display name"
+        disabled={isSavingUserProfile}
+      />
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary profile-display-name-confirm-btn"
+        onClick={() => void handleDisplayNameSave()}
+        disabled={isSavingUserProfile}
+      >
+        {isSavingUserProfile ? "Saving..." : "Confirm"}
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
         type="button"
@@ -615,14 +713,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm", resetInfoModalState)}
-          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name", resetInfoModalState)}
+          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
@@ -691,11 +789,24 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <div className="profile-avatar-placeholder" aria-hidden="true">
                 <span>Profile photo</span>
               </div>
-              <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+              <div className="profile-handle-edit-row">
+                <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-display-name-edit-trigger"
+                    onClick={openDisplayNameModal}
+                    aria-label="Edit display name"
+                  >
+                    <Pencil size={14} strokeWidth={2} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             <section className="profile-summary-card">
               <div className="profile-stats-column">
+                <p className="profile-display-name">{currentUserProfile?.username ?? ""}</p>
                 <div className="profile-rank-row">
                   <p className="profile-reputation-balance">0 FBARS</p>
                   <button

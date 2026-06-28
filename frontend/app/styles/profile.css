@@ -185,6 +185,50 @@
   margin-top: 0.08rem;
 }
 
+.profile-handle-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.profile-display-name-edit-trigger {
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.profile-display-name-edit-trigger:hover,
+.profile-display-name-edit-trigger:focus-visible {
+  color: #961cac;
+  outline: none;
+}
+
+.profile-display-name {
+  margin: 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.25;
+  color: #6b7280;
+}
+
+.profile-display-name-edit-row {
+  display: flex;
+  width: 100%;
+  gap: 0;
+  margin-top: 0.5rem;
+}
+
+.profile-display-name-input,
+.profile-display-name-confirm-btn {
+  flex: 1;
+}
+
 .profile-reputation-balance {
   margin: 0;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
