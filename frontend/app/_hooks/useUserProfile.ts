@@ -8,6 +8,7 @@ export type LeaderboardEntry = {
   address: string;
   username: string;
   handle: string;
+  displayName: string;
   fbars: number;
   rank: number;
   updatedAt?: string | null;
@@ -88,7 +89,7 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     };
   }, [signer, targetHandle]);
 
-  const saveUsername = useCallback(async (username: string) => {
+  const saveDisplayName = useCallback(async (displayName: string) => {
     if (!signer) {
       throw new Error("Connect a wallet first");
     }
@@ -107,18 +108,18 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ address, username }),
+        body: JSON.stringify({ address, displayName }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to update username");
+        throw new Error(payload?.error ?? "Failed to update display name");
       }
 
       setCurrentUserProfile(payload?.profile ?? null);
       setLeaderboard(Array.isArray(payload?.leaderboard) ? payload.leaderboard as LeaderboardEntry[] : []);
       return payload?.profile as UserProfile | null;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to update username";
+      const message = error instanceof Error ? error.message : "Failed to update display name";
       setUserProfileError(message);
       throw error;
     } finally {
@@ -131,7 +132,7 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     isSavingUserProfile,
     isUserProfileLoading,
     leaderboard,
-    saveUsername,
+    saveDisplayName,
     setCurrentUserProfile,
     userProfileError,
   };

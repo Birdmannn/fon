@@ -162,7 +162,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     isSavingUserProfile,
     isUserProfileLoading,
     leaderboard,
-    saveUsername,
+    saveDisplayName,
     userProfileError,
   } = useUserProfile(signer ?? null, targetHandle);
 
@@ -490,7 +490,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    setDisplayNameDraft(currentUserProfile?.username ?? "");
+    setDisplayNameDraft(currentUserProfile?.displayName ?? "");
     setDisplayNameModalError("");
     setInfoModalMode("edit-display-name");
     setInfoModalInteraction("click");
@@ -500,7 +500,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     canEditDisplayName,
     clearInfoCloseTimer,
     clearInfoHideTimer,
-    currentUserProfile?.username,
+    currentUserProfile?.displayName,
     setDisplayNameDraft,
     setDisplayNameModalError,
     setInfoModalInteraction,
@@ -517,18 +517,18 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     }
 
     try {
-      const savedProfile = await saveUsername(nextName);
+      const savedProfile = await saveDisplayName(nextName);
       setDisplayNameModalError("");
       closeInfoModal();
 
-      const nextHandle = savedProfile?.username ?? nextName;
-      if (targetHandle) {
+      const nextHandle = savedProfile?.username ?? currentUserProfile?.username ?? targetHandle ?? "";
+      if (targetHandle && nextHandle) {
         router.replace(`/user/${encodeURIComponent(nextHandle)}`);
       }
     } catch (error) {
       setDisplayNameModalError(error instanceof Error ? error.message : "Failed to update display name");
     }
-  }, [closeInfoModal, displayNameDraft, router, saveUsername, setDisplayNameModalError, targetHandle]);
+  }, [closeInfoModal, currentUserProfile?.username, displayNameDraft, router, saveDisplayName, setDisplayNameModalError, targetHandle]);
 
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
@@ -653,10 +653,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       <input
         type="text"
         value={displayNameDraft}
+        maxLength={10}
         onChange={(event) => {
           setDisplayNameDraft(event.target.value);
           if (displayNameModalError) {
             setDisplayNameModalError("");
+          }
+        }}
+        onClick={(event) => {
+          if (event.currentTarget.value.length > 0) {
+            event.currentTarget.select();
           }
         }}
         className="create-info-ticket-input profile-display-name-input"
@@ -806,9 +812,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
             <section className="profile-summary-card">
               <div className="profile-stats-column">
-                <p className="profile-display-name">{currentUserProfile?.username ?? ""}</p>
                 <div className="profile-rank-row">
-                  <p className="profile-reputation-balance">0 FBARS</p>
+                  <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
                   <button
                     type="button"
                     className="profile-rank-link"

@@ -7,12 +7,14 @@ export const dynamic = "force-dynamic";
 type UserProfilePayload = {
   address?: unknown;
   username?: unknown;
+  displayName?: unknown;
 };
 
 type LeaderboardEntry = {
   address: string;
   username: string;
   handle: string;
+  displayName: string;
   fbars: number;
   rank: number;
   updatedAt?: string | null;
@@ -22,6 +24,10 @@ type LeaderboardEntry = {
 function buildDefaultUsername(addressHex: string) {
   const normalized = addressHex.toLowerCase().replace(/^0x/, "");
   return `freight${normalized.slice(-20)}`;
+}
+
+function buildDefaultDisplayName(userCount: number) {
+  return `User${userCount + 1}`;
 }
 
 function formatUsernameHandle(username: string) {
@@ -52,15 +58,28 @@ function normalizeAddress(value: string) {
 function sanitizeUsername(value: string) {
   const normalized = value.trim().replace(/\.ckb$/i, "");
   if (!normalized) {
-    throw new Error("username is required");
+    throw new Error("handle is required");
   }
 
   if (!/^[a-z0-9_-]+$/i.test(normalized)) {
-    throw new Error("username may only contain letters, numbers, dashes, and underscores");
+    throw new Error("handle may only contain letters, numbers, dashes, and underscores");
   }
 
   if (normalized.length < 3 || normalized.length > 32) {
-    throw new Error("username must be between 3 and 32 characters");
+    throw new Error("handle must be between 3 and 32 characters");
+  }
+
+  return normalized;
+}
+
+function sanitizeDisplayName(value: string) {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error("display name is required");
+  }
+
+  if (normalized.length > 10) {
+    throw new Error("display name must be 10 characters or fewer");
   }
 
   return normalized;
@@ -84,6 +103,7 @@ function parseFbars(value: unknown) {
 function buildLeaderboardEntry(profile: {
   address?: unknown;
   username?: unknown;
+  displayName?: unknown;
   fbars?: unknown;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
@@ -97,6 +117,9 @@ function buildLeaderboardEntry(profile: {
     address,
     username,
     handle: formatUsernameHandle(username),
+    displayName: typeof profile.displayName === "string" && profile.displayName.trim().length > 0
+      ? profile.displayName.trim()
+      : username,
     fbars: parseFbars(profile.fbars),
     rank: 0,
     updatedAt: profile.updatedAt ?? null,
@@ -107,6 +130,7 @@ function buildLeaderboardEntry(profile: {
 function buildRankedLeaderboard(profiles: Array<{
   address?: unknown;
   username?: unknown;
+  displayName?: unknown;
   fbars?: unknown;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
@@ -153,7 +177,7 @@ export async function GET(request: Request) {
 
     if (handleParam) {
       const profiles = await collection
-        .find({}, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+        .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
         .toArray();
       const leaderboard = buildRankedLeaderboard(profiles);
       const normalizedHandle = normalizeUsername(handleParam);
@@ -182,7 +206,7 @@ export async function GET(request: Request) {
 
     const uniqueAddresses = Array.from(new Set(requestedAddresses));
     const profiles = await collection
-      .find({ address: { $in: uniqueAddresses } }, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .find({ address: { $in: uniqueAddresses } }, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray();
 
     return NextResponse.json({
@@ -201,6 +225,8 @@ export async function POST(request: Request) {
     const collection = await getUserProfilesCollection();
     const now = new Date();
 
+    const existingUserCount = await collection.countDocuments();
+
     await collection.updateOne(
       { address },
       {
@@ -211,6 +237,7 @@ export async function POST(request: Request) {
         },
         $setOnInsert: {
           username: buildDefaultUsername(address),
+          displayName: buildDefaultDisplayName(existingUserCount),
           createdAt: now,
         },
       },
@@ -218,13 +245,14 @@ export async function POST(request: Request) {
     );
 
     const profiles = await collection
-      .find({}, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray();
     const leaderboard = buildRankedLeaderboard(profiles);
     const profile = leaderboard.find((entry) => entry.address === address) ?? {
       address,
       username: buildDefaultUsername(address),
       handle: formatUsernameHandle(buildDefaultUsername(address)),
+      displayName: buildDefaultDisplayName(leaderboard.length),
       fbars: 0,
       rank: leaderboard.length + 1,
       updatedAt: now.toISOString(),
@@ -245,12 +273,7 @@ export async function PATCH(request: Request) {
   try {
     const payload = (await request.json()) as UserProfilePayload;
     const address = normalizeAddress(ensureString(payload.address, "address"));
-    const username = sanitizeUsername(ensureString(payload.username, "username"));
-    const duplicate = await findExistingUsernameOwner(username, address);
-
-    if (duplicate) {
-      return badRequest("That username is already taken", 409);
-    }
+    const displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
 
     const collection = await getUserProfilesCollection();
     const now = new Date();
@@ -259,7 +282,7 @@ export async function PATCH(request: Request) {
       {
         $set: {
           address,
-          username,
+          displayName,
           updatedAt: now,
           lastSeenAt: now,
         },
@@ -275,13 +298,14 @@ export async function PATCH(request: Request) {
     }
 
     const profiles = await collection
-      .find({}, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray();
     const leaderboard = buildRankedLeaderboard(profiles);
     const profile = leaderboard.find((entry) => entry.address === address) ?? {
       address,
-      username,
-      handle: formatUsernameHandle(username),
+      username: typeof payload.username === "string" ? sanitizeUsername(payload.username) : buildDefaultUsername(address),
+      handle: formatUsernameHandle(typeof payload.username === "string" ? sanitizeUsername(payload.username) : buildDefaultUsername(address)),
+      displayName,
       fbars: 0,
       rank: leaderboard.length + 1,
       updatedAt: now.toISOString(),
