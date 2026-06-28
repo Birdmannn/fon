@@ -755,16 +755,10 @@ export default function ProfilePage() {
           >
             <div className="profile-leaderboard-modal">
               <div className="profile-leaderboard-header">
-                <h2 className="profile-leaderboard-title">W Ranking</h2>
-                <button
-                  type="button"
-                  className="create-modal-action-btn"
-                  data-tooltip="Close leaderboard"
-                  onClick={closeLeaderboardModal}
-                  aria-label="Close Bars Listings"
-                >
-                  <Trophy className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                </button>
+                <h2 className="profile-leaderboard-title">
+                  W Ranking
+                </h2>
+                <Trophy className="profile-leaderboard-title-icon" size={24} strokeWidth={2} aria-hidden="true" />
               </div>
               <div className="profile-leaderboard-list" role="list">
                 {leaderboard.map((entry) => {
