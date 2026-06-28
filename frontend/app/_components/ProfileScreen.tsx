@@ -453,14 +453,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
   const profilePageErrorMessages = [userProfileError, walletInfoError].filter((message) => message.trim().length > 0);
-  const isProfileLoading = Boolean(signer) && (isUserProfileLoading || (walletInfoLoading && !walletAddress));
+  const isProfileLoading = isUserProfileLoading || (!targetHandle && Boolean(signer) && walletInfoLoading && !walletAddress);
   const hasProfileErrors = profilePageErrorMessages.length > 0;
-  const handleLabel = !signer
-    ? "Connect wallet to introspect"
-    : currentUserProfile?.handle ?? "";
-  const fullAddressLabel = walletAddress || (signer ? "" : "Connect wallet to view your address");
+  const handleLabel = currentUserProfile?.handle ?? "";
+  const fullAddressLabel = currentUserProfile?.address ?? (walletAddress || "");
   const walletBalanceText = walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--";
-  const profileInlineErrorMessage = hasProfileErrors ? "An error occurred, hover on info for more" : "";
+  const profileLoadErrorMessage = hasProfileErrors || (!isProfileLoading && !currentUserProfile)
+    ? "Sorry, an error occurred. Hover on info for more."
+    : "";
   const homeHref = "/";
 
   const infoModalBody = infoModalMode === "submission-success" ? (
@@ -677,34 +677,34 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           walletActionOnly={true}
         />
 
-        <div className="profile-hero-row">
-          <div className="profile-avatar-column">
-            <div className="profile-avatar-placeholder" aria-hidden="true">
-              <span>Profile photo</span>
-            </div>
-            {isProfileLoading ? (
-              <ThreeDotLoader inline className="profile-inline-loader profile-handle-loader" label="Loading profile handle" />
-            ) : (
-              <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-            )}
+        {isProfileLoading ? (
+          <div className="profile-status-block">
+            <ThreeDotLoader label="Loading profile" />
           </div>
-
-          <section className="profile-summary-card">
-            <div className="profile-stats-column">
-              <div className="profile-rank-row">
-                <p className="profile-reputation-balance">0 FBARS</p>
-                <button
-                  type="button"
-                  className="profile-rank-link"
-                  onClick={openLeaderboardModal}
-                  disabled={!currentUserProfile}
-                >
-                  {currentUserRankLabel}
-                </button>
+        ) : profileLoadErrorMessage ? (
+          <p className="profile-load-error">{profileLoadErrorMessage}</p>
+        ) : (
+          <div className="profile-hero-row">
+            <div className="profile-avatar-column">
+              <div className="profile-avatar-placeholder" aria-hidden="true">
+                <span>Profile photo</span>
               </div>
-              {isProfileLoading ? (
-                <ThreeDotLoader inline className="profile-inline-loader profile-usd-loader" label="Loading profile USD balance" />
-              ) : (
+              <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+            </div>
+
+            <section className="profile-summary-card">
+              <div className="profile-stats-column">
+                <div className="profile-rank-row">
+                  <p className="profile-reputation-balance">0 FBARS</p>
+                  <button
+                    type="button"
+                    className="profile-rank-link"
+                    onClick={openLeaderboardModal}
+                    disabled={!currentUserProfile}
+                  >
+                    {currentUserRankLabel}
+                  </button>
+                </div>
                 <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                   {walletBalanceText !== "--" ? <span className="profile-wallet-balance-note">{walletBalanceText}</span> : null}
                   <span className="wallet-info-balance-approx">≈</span>
@@ -714,35 +714,29 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
                   </div>
                 </div>
-              )}
-            </div>
-
-            <div className="profile-address-block">
-              <div className="profile-address-row">
-                {isProfileLoading ? (
-                  <ThreeDotLoader inline className="profile-inline-loader profile-address-loader" label="Loading profile address" />
-                ) : (
-                  <span className="profile-address-value">{fullAddressLabel}</span>
-                )}
-                {signer && walletAddress ? (
-                  <button
-                    type="button"
-                    className="wallet-info-copy-btn profile-address-copy-btn"
-                    onClick={() => void handleCopyWalletAddress()}
-                    title={walletAddress}
-                    aria-label="Copy full wallet address"
-                  >
-                    <Copy size={14} strokeWidth={2} aria-hidden="true" />
-                  </button>
-                ) : null}
               </div>
-              {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
-              {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
-            </div>
 
-            {profileInlineErrorMessage ? <p className="profile-inline-error-hint">{profileInlineErrorMessage}</p> : null}
-          </section>
-        </div>
+              <div className="profile-address-block">
+                <div className="profile-address-row">
+                  <span className="profile-address-value">{fullAddressLabel}</span>
+                  {signer && walletAddress && currentUserProfile?.address === walletAddress ? (
+                    <button
+                      type="button"
+                      className="wallet-info-copy-btn profile-address-copy-btn"
+                      onClick={() => void handleCopyWalletAddress()}
+                      title={walletAddress}
+                      aria-label="Copy full wallet address"
+                    >
+                      <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+                {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
+                {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
+              </div>
+            </section>
+          </div>
+        )}
       </div>
 
       {showLeaderboardModal ? (

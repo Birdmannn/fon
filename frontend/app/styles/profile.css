@@ -17,6 +17,21 @@
   padding-top: 4rem;
 }
 
+.profile-status-block {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 16rem;
+}
+
+.profile-load-error {
+  margin: 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
 .profile-hero-row {
   display: grid;
   grid-template-columns: 8rem minmax(0, max-content);
@@ -97,7 +112,7 @@
   border: 0;
   background: transparent;
   padding: 0;
-  margin: 0;
+  margin-right: 0.3rem;
   color: #6b7280;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
   font-size: clamp(1.55rem, 4vw, 2rem);
@@ -182,13 +197,6 @@
   color: #6b7280;
   font-size: 0.78rem;
   line-height: 1.3;
-}
-
-.profile-inline-error-hint {
-  margin: 0;
-  color: #d97706;
-  font-size: 0.85rem;
-  line-height: 1.35;
 }
 
 .profile-leaderboard-modal {
