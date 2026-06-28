@@ -19,9 +19,10 @@
 
 .profile-status-block {
   display: flex;
-  justify-content: center;
-  align-items: center;
+  justify-content: flex-start;
+  align-items: flex-start;
   min-height: 16rem;
+  padding-top: 0;
 }
 
 .profile-load-error {

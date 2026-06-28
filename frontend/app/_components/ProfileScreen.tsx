@@ -453,12 +453,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
   const profilePageErrorMessages = [userProfileError, walletInfoError].filter((message) => message.trim().length > 0);
-  const isProfileLoading = isUserProfileLoading || (!targetHandle && Boolean(signer) && walletInfoLoading && !walletAddress);
+  const isAwaitingInitialProfile = (!targetHandle && Boolean(signer) && !currentUserProfile && !userProfileError)
+    || (Boolean(targetHandle) && !currentUserProfile && !userProfileError);
+  const isProfileLoading = isUserProfileLoading || isAwaitingInitialProfile || (!targetHandle && Boolean(signer) && walletInfoLoading && !walletAddress);
   const hasProfileErrors = profilePageErrorMessages.length > 0;
   const handleLabel = currentUserProfile?.handle ?? "";
   const fullAddressLabel = currentUserProfile?.address ?? (walletAddress || "");
   const walletBalanceText = walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--";
-  const profileLoadErrorMessage = hasProfileErrors || (!isProfileLoading && !currentUserProfile)
+  const profileLoadErrorMessage = hasProfileErrors
     ? "Sorry, an error occurred. Hover on info for more."
     : "";
   const homeHref = "/";
