@@ -12,6 +12,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
@@ -772,7 +773,7 @@ export default function ProfilePage() {
                       className={`profile-leaderboard-row ${isCurrentUser ? "profile-leaderboard-row-current" : ""}`}
                     >
                       <span className="profile-leaderboard-rank">#{entry.rank}</span>
-                      <span className="profile-leaderboard-handle">{entry.handle}</span>
+                      <Link href="/profile" className="profile-leaderboard-handle">{entry.handle}</Link>
                       <span className="profile-leaderboard-fbars">{entry.fbars} FBARS</span>
                     </div>
                   );

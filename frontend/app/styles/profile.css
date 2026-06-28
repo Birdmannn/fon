@@ -230,12 +230,12 @@
   padding: 0.85rem 1rem;
   border: 2px solid transparent;
   border-radius: 1rem;
-  background: rgba(0, 0, 0, 0.03);
+  background: transparent;
 }
 
 .profile-leaderboard-row-current {
-  border-color: #961cac;
-  background: rgba(150, 28, 172, 0.08);
+  border-color: transparent;
+  background: transparent;
 }
 
 .profile-leaderboard-rank,
@@ -254,6 +254,20 @@
   line-height: 1.3;
   font-weight: 600;
   color: var(--foreground);
+  text-decoration: none;
+}
+
+.profile-leaderboard-handle:hover,
+.profile-leaderboard-handle:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  outline: none;
+}
+
+.profile-leaderboard-row-current .profile-leaderboard-rank,
+.profile-leaderboard-row-current .profile-leaderboard-handle,
+.profile-leaderboard-row-current .profile-leaderboard-fbars {
+  color: #961cac;
 }
 
 .profile-usd-balance {
