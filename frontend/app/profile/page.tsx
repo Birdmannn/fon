@@ -9,6 +9,7 @@ import {
   House,
   Plus,
   RotateCcw,
+  Trophy,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -74,6 +75,8 @@ export default function ProfilePage() {
   const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
   const [createResetSignal, setCreateResetSignal] = useState(0);
   const [createStepBackSignal, setCreateStepBackSignal] = useState(0);
   const [createModalStep, setCreateModalStep] = useState<CreateModalStep>("compose");
@@ -137,6 +140,7 @@ export default function ProfilePage() {
   const {
     currentUserProfile,
     isUserProfileLoading,
+    leaderboard,
     userProfileError,
   } = useUserProfile(signer ?? null);
 
@@ -188,6 +192,23 @@ export default function ProfilePage() {
       clearTimeout(createHideTimerRef.current);
       createHideTimerRef.current = null;
     }
+  }, []);
+
+  const closeLeaderboardModal = useCallback(() => {
+    if (!showLeaderboardModal || isLeaderboardClosing) {
+      return;
+    }
+
+    setIsLeaderboardClosing(true);
+    window.setTimeout(() => {
+      setShowLeaderboardModal(false);
+      setIsLeaderboardClosing(false);
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [isLeaderboardClosing, showLeaderboardModal]);
+
+  const openLeaderboardModal = useCallback(() => {
+    setIsLeaderboardClosing(false);
+    setShowLeaderboardModal(true);
   }, []);
 
   const openSaveDraftConfirmModal = useCallback(() => {
@@ -339,6 +360,15 @@ export default function ProfilePage() {
   }, [clearCreateHideTimer, clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
 
   useEffect(() => {
+    if (!showLeaderboardModal || !currentUserProfile?.address) {
+      return;
+    }
+
+    const row = document.querySelector<HTMLElement>(`[data-leaderboard-address="${currentUserProfile.address}"]`);
+    row?.scrollIntoView({ block: "center" });
+  }, [currentUserProfile?.address, showLeaderboardModal]);
+
+  useEffect(() => {
     if (!pendingCloseAfterWalletConnect || !signer) {
       return;
     }
@@ -369,7 +399,7 @@ export default function ProfilePage() {
   }, [closeInfoModal, finalizeCloseCreateModal, pendingCloseAfterWalletConnect, signer]);
 
   useEffect(() => {
-    if (!showCreateModal) {
+    if (!showCreateModal && !showLeaderboardModal) {
       return;
     }
 
@@ -379,7 +409,7 @@ export default function ProfilePage() {
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [showCreateModal]);
+  }, [showCreateModal, showLeaderboardModal]);
 
   useEffect(() => {
     const handleEscapeClose = (event: KeyboardEvent) => {
@@ -396,6 +426,11 @@ export default function ProfilePage() {
         return;
       }
 
+      if (showLeaderboardModal) {
+        closeLeaderboardModal();
+        return;
+      }
+
       if (showCreateModal) {
         requestCloseCreateModal();
       }
@@ -405,9 +440,10 @@ export default function ProfilePage() {
     return () => {
       window.removeEventListener("keydown", handleEscapeClose);
     };
-  }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
+  }, [closeInfoModal, closeLeaderboardModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal, showLeaderboardModal]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const currentUserRankLabel = currentUserProfile ? `#${currentUserProfile.rank}` : "#--";
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
@@ -640,20 +676,30 @@ export default function ProfilePage() {
             <div className="profile-avatar-placeholder" aria-hidden="true">
               <span>Profile photo</span>
             </div>
+            {isProfileLoading ? (
+              <ThreeDotLoader inline className="profile-inline-loader profile-handle-loader" label="Loading profile handle" />
+            ) : (
+              <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+            )}
           </div>
 
           <section className="profile-summary-card">
-            {isProfileLoading ? (
-              <ThreeDotLoader inline className="profile-inline-loader" label="Loading profile handle" />
-            ) : (
-              <p className="profile-handle">{handleLabel}</p>
-            )}
-            <div className="profile-stats-row">
-              <p className="profile-reputation-balance">0 FBARS</p>
+            <div className="profile-stats-column">
+              <div className="profile-rank-row">
+                <p className="profile-reputation-balance">0 FBARS</p>
+                <button
+                  type="button"
+                  className="profile-rank-link"
+                  onClick={openLeaderboardModal}
+                  disabled={!currentUserProfile}
+                >
+                  {currentUserRankLabel}
+                </button>
+              </div>
               {isProfileLoading ? (
                 <ThreeDotLoader inline className="profile-inline-loader profile-usd-loader" label="Loading profile USD balance" />
               ) : (
-                <div className="profile-balance-inline-group">
+                <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                   {walletBalanceText !== "--" ? <span className="profile-wallet-balance-note">{walletBalanceText}</span> : null}
                   <span className="wallet-info-balance-approx">≈</span>
                   <div className="profile-usd-balance" aria-live="polite">
@@ -692,6 +738,56 @@ export default function ProfilePage() {
           </section>
         </div>
       </div>
+
+      {showLeaderboardModal ? (
+        <>
+          <button
+            type="button"
+            className={`create-campaign-backdrop ${isLeaderboardClosing ? "create-campaign-backdrop-closing" : ""}`}
+            aria-label="Close Bars Listings modal"
+            onClick={closeLeaderboardModal}
+          />
+          <div
+            className={`create-campaign-modal ${isLeaderboardClosing ? "create-campaign-modal-closing" : ""}`}
+            role="dialog"
+            aria-label="Bars Listings"
+            aria-modal="true"
+          >
+            <div className="profile-leaderboard-modal">
+              <div className="profile-leaderboard-header">
+                <h2 className="profile-leaderboard-title">W Ranking</h2>
+                <button
+                  type="button"
+                  className="create-modal-action-btn"
+                  data-tooltip="Close leaderboard"
+                  onClick={closeLeaderboardModal}
+                  aria-label="Close Bars Listings"
+                >
+                  <Trophy className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                </button>
+              </div>
+              <div className="profile-leaderboard-list" role="list">
+                {leaderboard.map((entry) => {
+                  const isCurrentUser = entry.address === currentUserProfile?.address;
+
+                  return (
+                    <div
+                      key={entry.address}
+                      role="listitem"
+                      data-leaderboard-address={entry.address}
+                      className={`profile-leaderboard-row ${isCurrentUser ? "profile-leaderboard-row-current" : ""}`}
+                    >
+                      <span className="profile-leaderboard-rank">#{entry.rank}</span>
+                      <span className="profile-leaderboard-handle">{entry.handle}</span>
+                      <span className="profile-leaderboard-fbars">{entry.fbars} FBARS</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       {showCreateModal ? (
         <button

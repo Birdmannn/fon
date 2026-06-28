@@ -4,16 +4,21 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ccc } from "@ckb-ccc/connector-react";
 
-export type UserProfile = {
+export type LeaderboardEntry = {
   address: string;
   username: string;
   handle: string;
+  fbars: number;
+  rank: number;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
 };
 
+export type UserProfile = LeaderboardEntry;
+
 export function useUserProfile(signer: ccc.Signer | null) {
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [userProfileError, setUserProfileError] = useState("");
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [isSavingUserProfile, setIsSavingUserProfile] = useState(false);
@@ -21,6 +26,7 @@ export function useUserProfile(signer: ccc.Signer | null) {
   useEffect(() => {
     if (!signer) {
       setCurrentUserProfile(null);
+      setLeaderboard([]);
       setUserProfileError("");
       setIsUserProfileLoading(false);
       setIsSavingUserProfile(false);
@@ -52,11 +58,13 @@ export function useUserProfile(signer: ccc.Signer | null) {
 
         if (!cancelled) {
           setCurrentUserProfile(payload?.profile ?? null);
+          setLeaderboard(Array.isArray(payload?.leaderboard) ? payload.leaderboard as LeaderboardEntry[] : []);
         }
       } catch (error) {
         if (!cancelled) {
           setUserProfileError(error instanceof Error ? error.message : "Failed to load user profile");
           setCurrentUserProfile(null);
+          setLeaderboard([]);
         }
       } finally {
         if (!cancelled) {
@@ -97,6 +105,7 @@ export function useUserProfile(signer: ccc.Signer | null) {
       }
 
       setCurrentUserProfile(payload?.profile ?? null);
+      setLeaderboard(Array.isArray(payload?.leaderboard) ? payload.leaderboard as LeaderboardEntry[] : []);
       return payload?.profile as UserProfile | null;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update username";
@@ -111,6 +120,7 @@ export function useUserProfile(signer: ccc.Signer | null) {
     currentUserProfile,
     isSavingUserProfile,
     isUserProfileLoading,
+    leaderboard,
     saveUsername,
     setCurrentUserProfile,
     userProfileError,

@@ -9,6 +9,16 @@ type UserProfilePayload = {
   username?: unknown;
 };
 
+type LeaderboardEntry = {
+  address: string;
+  username: string;
+  handle: string;
+  fbars: number;
+  rank: number;
+  updatedAt?: string | null;
+  lastSeenAt?: string | null;
+};
+
 function buildDefaultUsername(addressHex: string) {
   const normalized = addressHex.toLowerCase().replace(/^0x/, "");
   return `freight${normalized.slice(-20)}`;
@@ -56,6 +66,71 @@ function sanitizeUsername(value: string) {
   return normalized;
 }
 
+function parseFbars(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function buildLeaderboardEntry(profile: {
+  address?: unknown;
+  username?: unknown;
+  fbars?: unknown;
+  updatedAt?: string | null;
+  lastSeenAt?: string | null;
+}): LeaderboardEntry {
+  const address = typeof profile.address === "string" ? normalizeAddress(profile.address) : "";
+  const username = typeof profile.username === "string" && profile.username.trim().length > 0
+    ? profile.username.trim()
+    : buildDefaultUsername(address);
+
+  return {
+    address,
+    username,
+    handle: formatUsernameHandle(username),
+    fbars: parseFbars(profile.fbars),
+    rank: 0,
+    updatedAt: profile.updatedAt ?? null,
+    lastSeenAt: profile.lastSeenAt ?? null,
+  };
+}
+
+function buildRankedLeaderboard(profiles: Array<{
+  address?: unknown;
+  username?: unknown;
+  fbars?: unknown;
+  updatedAt?: string | null;
+  lastSeenAt?: string | null;
+}>): LeaderboardEntry[] {
+  return profiles
+    .map(buildLeaderboardEntry)
+    .sort((left, right) => {
+      if (right.fbars !== left.fbars) {
+        return right.fbars - left.fbars;
+      }
+
+      const handleCompare = left.handle.localeCompare(right.handle, undefined, { sensitivity: "base" });
+      if (handleCompare !== 0) {
+        return handleCompare;
+      }
+
+      return left.address.localeCompare(right.address, undefined, { sensitivity: "base" });
+    })
+    .map((entry, index) => ({
+      ...entry,
+      rank: index + 1,
+    }));
+}
+
 async function findExistingUsernameOwner(username: string, address: string) {
   const collection = await getUserProfilesCollection();
   const normalizedUsername = normalizeUsername(username);
@@ -87,17 +162,11 @@ export async function GET(request: Request) {
     const uniqueAddresses = Array.from(new Set(requestedAddresses));
     const collection = await getUserProfilesCollection();
     const profiles = await collection
-      .find({ address: { $in: uniqueAddresses } }, { projection: { _id: 0, address: 1, username: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .find({ address: { $in: uniqueAddresses } }, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray();
 
     return NextResponse.json({
-      profiles: profiles.map((profile) => ({
-        address: typeof profile.address === "string" ? normalizeAddress(profile.address) : "",
-        username: typeof profile.username === "string" ? profile.username : "",
-        handle: typeof profile.username === "string" ? formatUsernameHandle(profile.username) : "",
-        updatedAt: profile.updatedAt ?? null,
-        lastSeenAt: profile.lastSeenAt ?? null,
-      })),
+      profiles: buildRankedLeaderboard(profiles),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch user profiles";
@@ -128,19 +197,23 @@ export async function POST(request: Request) {
       { upsert: true }
     );
 
-    const profile = await collection.findOne(
-      { address },
-      { projection: { _id: 0, address: 1, username: 1, updatedAt: 1, lastSeenAt: 1 } }
-    );
+    const profiles = await collection
+      .find({}, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .toArray();
+    const leaderboard = buildRankedLeaderboard(profiles);
+    const profile = leaderboard.find((entry) => entry.address === address) ?? {
+      address,
+      username: buildDefaultUsername(address),
+      handle: formatUsernameHandle(buildDefaultUsername(address)),
+      fbars: 0,
+      rank: leaderboard.length + 1,
+      updatedAt: now.toISOString(),
+      lastSeenAt: now.toISOString(),
+    };
 
     return NextResponse.json({
-      profile: {
-        address,
-        username: typeof profile?.username === "string" ? profile.username : buildDefaultUsername(address),
-        handle: formatUsernameHandle(typeof profile?.username === "string" ? profile.username : buildDefaultUsername(address)),
-        updatedAt: profile?.updatedAt ?? now,
-        lastSeenAt: profile?.lastSeenAt ?? now,
-      },
+      profile,
+      leaderboard,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to ensure user profile";
@@ -181,14 +254,23 @@ export async function PATCH(request: Request) {
       return badRequest("User profile not found", 404);
     }
 
+    const profiles = await collection
+      .find({}, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .toArray();
+    const leaderboard = buildRankedLeaderboard(profiles);
+    const profile = leaderboard.find((entry) => entry.address === address) ?? {
+      address,
+      username,
+      handle: formatUsernameHandle(username),
+      fbars: 0,
+      rank: leaderboard.length + 1,
+      updatedAt: now.toISOString(),
+      lastSeenAt: now.toISOString(),
+    };
+
     return NextResponse.json({
-      profile: {
-        address,
-        username,
-        handle: formatUsernameHandle(username),
-        updatedAt: now,
-        lastSeenAt: now,
-      },
+      profile,
+      leaderboard,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update user profile";
