@@ -16,7 +16,7 @@ export type LeaderboardEntry = {
 
 export type UserProfile = LeaderboardEntry;
 
-export function useUserProfile(signer: ccc.Signer | null) {
+export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string | null) {
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [userProfileError, setUserProfileError] = useState("");
@@ -24,7 +24,7 @@ export function useUserProfile(signer: ccc.Signer | null) {
   const [isSavingUserProfile, setIsSavingUserProfile] = useState(false);
 
   useEffect(() => {
-    if (!signer) {
+    if (!signer && !targetHandle) {
       setCurrentUserProfile(null);
       setLeaderboard([]);
       setUserProfileError("");
@@ -39,18 +39,28 @@ export function useUserProfile(signer: ccc.Signer | null) {
 
     void (async () => {
       try {
-        const address = await signer.getRecommendedAddress();
-        if (!address) {
-          throw new Error("Unable to resolve wallet address");
-        }
+        const response = targetHandle
+          ? await fetch(`/api/user-profiles?handle=${encodeURIComponent(targetHandle)}`, {
+              cache: "no-store",
+            })
+          : await (async () => {
+              if (!signer) {
+                throw new Error("Connect a wallet first");
+              }
 
-        const response = await fetch("/api/user-profiles", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ address }),
-        });
+              const address = await signer.getRecommendedAddress();
+              if (!address) {
+                throw new Error("Unable to resolve wallet address");
+              }
+
+              return fetch("/api/user-profiles", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ address }),
+              });
+            })();
         const payload = await response.json().catch(() => null);
         if (!response.ok) {
           throw new Error(payload?.error ?? "Failed to load user profile");
@@ -76,7 +86,7 @@ export function useUserProfile(signer: ccc.Signer | null) {
     return () => {
       cancelled = true;
     };
-  }, [signer]);
+  }, [signer, targetHandle]);
 
   const saveUsername = useCallback(async (username: string) => {
     if (!signer) {

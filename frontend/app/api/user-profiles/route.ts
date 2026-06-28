@@ -148,6 +148,27 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const addressesParam = url.searchParams.get("addresses")?.trim();
     const addressParam = url.searchParams.get("address")?.trim();
+    const handleParam = url.searchParams.get("handle")?.trim();
+    const collection = await getUserProfilesCollection();
+
+    if (handleParam) {
+      const profiles = await collection
+        .find({}, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+        .toArray();
+      const leaderboard = buildRankedLeaderboard(profiles);
+      const normalizedHandle = normalizeUsername(handleParam);
+      const profile = leaderboard.find((entry) => normalizeUsername(entry.username) === normalizedHandle || normalizeUsername(entry.handle) === normalizedHandle);
+
+      if (!profile) {
+        return badRequest("User profile not found", 404);
+      }
+
+      return NextResponse.json({
+        profile,
+        leaderboard,
+      });
+    }
+
     const requestedAddresses = [
       ...(addressesParam ? addressesParam.split(",") : []),
       ...(addressParam ? [addressParam] : []),
@@ -156,11 +177,10 @@ export async function GET(request: Request) {
       .filter(Boolean);
 
     if (requestedAddresses.length === 0) {
-      return badRequest("address or addresses is required");
+      return badRequest("address, addresses, or handle is required");
     }
 
     const uniqueAddresses = Array.from(new Set(requestedAddresses));
-    const collection = await getUserProfilesCollection();
     const profiles = await collection
       .find({ address: { $in: uniqueAddresses } }, { projection: { _id: 0, address: 1, username: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray();

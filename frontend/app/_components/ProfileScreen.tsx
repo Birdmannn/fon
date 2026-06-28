@@ -63,7 +63,11 @@ const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 
 type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "submission-error";
 
-export default function ProfilePage() {
+type ProfileScreenProps = {
+  targetHandle?: string | null;
+};
+
+export default function ProfileScreen({ targetHandle = null }: ProfileScreenProps) {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
@@ -143,7 +147,7 @@ export default function ProfilePage() {
     isUserProfileLoading,
     leaderboard,
     userProfileError,
-  } = useUserProfile(signer ?? null);
+  } = useUserProfile(signer ?? null, targetHandle);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -457,6 +461,7 @@ export default function ProfilePage() {
   const fullAddressLabel = walletAddress || (signer ? "" : "Connect wallet to view your address");
   const walletBalanceText = walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--";
   const profileInlineErrorMessage = hasProfileErrors ? "An error occurred, hover on info for more" : "";
+  const homeHref = "/";
 
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
@@ -666,7 +671,7 @@ export default function ProfilePage() {
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          walletActionHref="/"
+          walletActionHref={homeHref}
           walletActionIcon={<House size={14} strokeWidth={2} aria-hidden="true" />}
           walletActionLabel="Home"
           walletActionOnly={true}
@@ -773,7 +778,7 @@ export default function ProfilePage() {
                       className={`profile-leaderboard-row ${isCurrentUser ? "profile-leaderboard-row-current" : ""}`}
                     >
                       <span className="profile-leaderboard-rank">#{entry.rank}</span>
-                      <Link href="/profile" className="profile-leaderboard-handle">{entry.handle}</Link>
+                      <Link href={`/user/${encodeURIComponent(entry.username)}`} className="profile-leaderboard-handle">{entry.handle}</Link>
                       <span className="profile-leaderboard-fbars">{entry.fbars} FBARS</span>
                     </div>
                   );

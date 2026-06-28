@@ -16,6 +16,7 @@ import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import MountablesPanel from "@/app/_components/MountablesPanel";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import CreateCampaignModalContent, {
   CreateCampaignModalContentHandle,
@@ -146,6 +147,7 @@ export default function Home() {
     walletInfoLoading,
     walletUsdParts,
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
+  const { currentUserProfile } = useUserProfile(signer ?? null);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -918,7 +920,7 @@ export default function Home() {
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          walletActionHref="/profile"
+          walletActionHref={currentUserProfile ? `/user/${encodeURIComponent(currentUserProfile.username)}` : undefined}
           walletActionLabel="Introspect"
         />
 
