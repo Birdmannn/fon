@@ -640,14 +640,14 @@ export default function ProfilePage() {
             <div className="profile-avatar-placeholder" aria-hidden="true">
               <span>Profile photo</span>
             </div>
-            {isProfileLoading ? (
-              <ThreeDotLoader inline className="profile-inline-loader" label="Loading profile handle" />
-            ) : (
-              <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-            )}
           </div>
 
           <section className="profile-summary-card">
+            {isProfileLoading ? (
+              <ThreeDotLoader inline className="profile-inline-loader" label="Loading profile handle" />
+            ) : (
+              <p className="profile-handle">{handleLabel}</p>
+            )}
             <div className="profile-stats-row">
               <p className="profile-reputation-balance">0 FBARS</p>
               {isProfileLoading ? (
