@@ -564,7 +564,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   ) : infoModalMode === "edit-display-name" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-gray-900">Display name:</p>
+      <p className="mt-3 create-review-section-label text-gray-900">Only display name is editable:</p>
       {displayNameModalError || userProfileError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
           <span>{displayNameModalError || userProfileError}</span>
