@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Check,
   CheckCircle,
   Copy,
   House,
@@ -889,11 +890,15 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                       title={walletAddress}
                       aria-label="Copy full wallet address"
                     >
-                      <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                      {walletCopyFeedback === "copied" ? (
+                        <Check size={14} strokeWidth={2.4} aria-hidden="true" className="profile-address-copy-success" />
+                      ) : (
+                        <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                      )}
                     </button>
                   ) : null}
                 </div>
-                {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
+                <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
                 {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
               </div>
             </section>
