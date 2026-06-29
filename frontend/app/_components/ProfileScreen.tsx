@@ -10,6 +10,7 @@ import {
   Pencil,
   Plus,
   RotateCcw,
+  Search,
   Trophy,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -764,7 +765,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                 )}
               </button>
             </div>
-          ) : undefined}
+          ) : (
+            <button
+              type="button"
+              className="create-modal-action-btn"
+              data-tooltip="Search users"
+              aria-label="Search users coming soon"
+            >
+              <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+            </button>
+          )}
           shouldHideWalletAction={shouldHideWalletAction}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
@@ -861,18 +871,18 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <>
           <button
             type="button"
-            className={`create-campaign-backdrop ${isLeaderboardClosing ? "create-campaign-backdrop-closing" : ""}`}
+            className={`create-campaign-backdrop profile-leaderboard-backdrop ${isLeaderboardClosing ? "create-campaign-backdrop-closing" : ""}`}
             aria-label="Close Bars Listings modal"
             onClick={closeLeaderboardModal}
           />
           <div
-            className={`create-campaign-modal ${isLeaderboardClosing ? "create-campaign-modal-closing" : ""}`}
+            className={`create-campaign-modal profile-leaderboard-dialog ${isLeaderboardClosing ? "create-campaign-modal-closing" : ""}`}
             role="dialog"
             aria-label="Bars Listings"
             aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
+            onClick={closeLeaderboardModal}
           >
-            <div className="profile-leaderboard-modal">
+            <div className="profile-leaderboard-modal" onClick={(event) => event.stopPropagation()}>
               <div className="profile-leaderboard-header">
                 <h2 className="profile-leaderboard-title">
                   W Ranking
