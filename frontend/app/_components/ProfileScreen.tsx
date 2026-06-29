@@ -630,6 +630,25 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         </>
       )}
     </div>
+  ) : showLeaderboardModal ? (
+    <div className="create-info-constraints-copy">
+      <p>Leaderboard:</p>
+      {leaderboard.slice(0, 5).map((entry) => (
+        <p key={entry.address} className="create-info-constraint-item text-gray-500">
+          <span>#{entry.rank} {entry.handle} — {entry.fbars} FBARS</span>
+        </p>
+      ))}
+      {profilePageErrorMessages.length > 0 ? (
+        <>
+          <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+          {profilePageErrorMessages.map((message) => (
+            <p key={message} className="create-info-constraint-item text-red-500 break-words">
+              <span>{message}</span>
+            </p>
+          ))}
+        </>
+      ) : null}
+    </div>
   ) : (
     <div className="create-info-constraints-copy">
       <p>{PROFILE_INFO_FBARS_HEADING}</p>
