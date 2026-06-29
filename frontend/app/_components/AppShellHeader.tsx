@@ -39,6 +39,7 @@ type AppShellHeaderProps = {
   onWalletMouseEnter: () => void;
   onWalletMouseLeave: () => void;
   rightActions?: ReactNode;
+  replaceWalletAction?: ReactNode;
   shouldHideWalletAction?: boolean;
   walletAddress: string;
   walletAddressDisplay: string;
@@ -86,6 +87,7 @@ export default function AppShellHeader({
   onWalletMouseEnter,
   onWalletMouseLeave,
   rightActions,
+  replaceWalletAction,
   shouldHideWalletAction = false,
   walletAddress,
   walletAddressDisplay,
@@ -126,7 +128,7 @@ export default function AppShellHeader({
         {rightActions}
 
         <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
-          {isConnected ? (
+          {replaceWalletAction ? replaceWalletAction : isConnected ? (
             <div
               className="wallet-info-wrap"
               onMouseEnter={onWalletMouseEnter}

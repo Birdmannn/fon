@@ -368,6 +368,17 @@
   margin-top: 0.45rem;
 }
 
+.profile-header-replacement-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  animation: create-campaign-modal-reveal 620ms ease forwards;
+}
+
+.profile-header-replacement-actions-closing {
+  animation: create-campaign-modal-hide 620ms ease forwards;
+}
+
 @media (max-width: 639px) {
   .profile-hero-row {
     grid-template-columns: 1fr;

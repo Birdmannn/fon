@@ -565,7 +565,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   ) : infoModalMode === "edit-display-name" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-gray-900">Only display name is editable:</p>
+      <p className="mt-3 create-review-section-label text-gray-900">Only the display name is editable:</p>
       {displayNameModalError || userProfileError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
           <span>{displayNameModalError || userProfileError}</span>
@@ -733,16 +733,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletMouseEnter={keepWalletInfoModalOpen}
           onWalletMouseLeave={scheduleWalletInfoModalClose}
-          rightActions={showLeaderboardModal ? (
-            <button
-              type="button"
-              className="create-modal-action-btn"
-              data-tooltip="Search users"
-              aria-label="Search users coming soon"
-            >
-              <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
-            </button>
-          ) : showCreateModal ? (
+          rightActions={showCreateModal ? (
             <div
               className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
               role="group"
@@ -775,7 +766,31 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               </button>
             </div>
           ) : undefined}
-          shouldHideWalletAction={shouldHideWalletAction || showLeaderboardModal}
+          replaceWalletAction={showLeaderboardModal ? (
+            <div className={`profile-header-replacement-actions ${isLeaderboardClosing ? "profile-header-replacement-actions-closing" : ""}`}>
+              <button
+                type="button"
+                className="create-modal-action-btn"
+                data-tooltip="Scroll to top"
+                onClick={() => {
+                  const leaderboardList = document.querySelector<HTMLElement>(".profile-leaderboard-list");
+                  leaderboardList?.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                aria-label="Scroll to top of leaderboard"
+              >
+                <ArrowUp className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="create-modal-action-btn"
+                data-tooltip="Search users"
+                aria-label="Search users coming soon"
+              >
+                <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+              </button>
+            </div>
+          ) : undefined}
+          shouldHideWalletAction={shouldHideWalletAction}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
