@@ -733,7 +733,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletMouseEnter={keepWalletInfoModalOpen}
           onWalletMouseLeave={scheduleWalletInfoModalClose}
-          rightActions={showCreateModal ? (
+          rightActions={showLeaderboardModal ? (
+            <button
+              type="button"
+              className="create-modal-action-btn"
+              data-tooltip="Search users"
+              aria-label="Search users coming soon"
+            >
+              <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+            </button>
+          ) : showCreateModal ? (
             <div
               className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
               role="group"
@@ -765,17 +774,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                 )}
               </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              className="create-modal-action-btn"
-              data-tooltip="Search users"
-              aria-label="Search users coming soon"
-            >
-              <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
-            </button>
-          )}
-          shouldHideWalletAction={shouldHideWalletAction}
+          ) : undefined}
+          shouldHideWalletAction={shouldHideWalletAction || showLeaderboardModal}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
