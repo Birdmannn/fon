@@ -130,12 +130,22 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
 
     const syncWalletInfo = async () => {
       setWalletInfoLoading(true);
-      setWalletInfoError("");
+
+      try {
+        const nextAddress = await signer.getRecommendedAddress();
+        if (cancelled) {
+          return;
+        }
+        setWalletAddress(nextAddress ?? "");
+      } catch {
+        if (!cancelled) {
+          setWalletAddress("");
+        }
+      }
 
       try {
         const shouldRefreshUsdPrice = !cachedCkbUsdPrice || (Date.now() - cachedCkbUsdPriceFetchedAt) >= CKB_PRICE_REFRESH_MS;
-        const [nextAddress, nextBalance, nextUsdPrice] = await Promise.all([
-          signer.getRecommendedAddress(),
+        const [nextBalance, nextUsdPrice] = await Promise.all([
           signer.getBalance(),
           shouldRefreshUsdPrice
             ? fetchCkbUsdPrice().catch(() => cachedCkbUsdPrice)
@@ -146,7 +156,6 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
           return;
         }
 
-        setWalletAddress(nextAddress ?? "");
         if (typeof nextUsdPrice === "number" && Number.isFinite(nextUsdPrice) && nextUsdPrice > 0) {
           setWalletUsdPerCkb(nextUsdPrice);
         }
@@ -164,12 +173,11 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
 
           return nextBalance;
         });
-      } catch (error) {
+      } catch {
         if (cancelled) {
           return;
         }
-
-        setWalletInfoError(error instanceof Error ? error.message : "Unable to load wallet details");
+        // Balance refresh failures should stay silent. Keep the last known values and allow later retries.
       } finally {
         if (!cancelled) {
           setWalletInfoLoading(false);

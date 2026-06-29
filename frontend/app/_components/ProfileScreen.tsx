@@ -470,7 +470,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
-  const profilePageErrorMessages = [userProfileError, walletInfoError].filter((message) => message.trim().length > 0);
+  const profilePageErrorMessages = [userProfileError].filter((message) => message.trim().length > 0);
   const isAwaitingInitialProfile = (!targetHandle && Boolean(signer) && !currentUserProfile && !userProfileError)
     || (Boolean(targetHandle) && !currentUserProfile && !userProfileError);
   const isProfileLoading = isUserProfileLoading || isAwaitingInitialProfile || (!targetHandle && Boolean(signer) && walletInfoLoading && !walletAddress);
@@ -870,6 +870,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             role="dialog"
             aria-label="Bars Listings"
             aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
           >
             <div className="profile-leaderboard-modal">
               <div className="profile-leaderboard-header">
