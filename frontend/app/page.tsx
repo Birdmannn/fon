@@ -4,9 +4,11 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Check,
   CheckCircle,
   Plus,
   RotateCcw,
+  ScrollText,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState, useRef, useCallback } from "react";
@@ -76,7 +78,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+type InfoModalMode = "about" | "mountables" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
 type SettlementRecipient = {
   address: string;
   username: string;
@@ -114,6 +116,9 @@ export default function Home() {
     additionalHashtagsPassed: true,
   });
   const [previewError, setPreviewError] = useState("");
+  const [hasMountedHashtag, setHasMountedHashtag] = useState(false);
+  const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
   const [pendingCommentDiscardId, setPendingCommentDiscardId] = useState<string | null>(null);
@@ -252,6 +257,16 @@ export default function Home() {
     clearInfoHideTimer();
     setInfoModalMode("save-draft-confirm");
     setSaveDraftPromptError("");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
+
+  const openMountablesModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("mountables");
+    setMountablesPromptError("");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
@@ -659,6 +674,37 @@ export default function Home() {
         </>
       ) : null}
     </div>
+  ) : showCreateModal && infoModalMode === "mountables" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
+      <button
+        type="button"
+        className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
+        onClick={() => {
+          const nextSelected = !formsMountableSelected;
+          createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
+          setFormsMountableSelected(nextSelected);
+          setMountablesPromptError("");
+        }}
+      >
+        <span className="create-mountable-option-icon-wrap">
+          <span className="create-mountable-option-icon-bg">
+            <ScrollText size={18} strokeWidth={2} aria-hidden="true" />
+          </span>
+          {formsMountableSelected ? (
+            <span className="create-mountable-option-check">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+            </span>
+          ) : null}
+        </span>
+        <span className="create-mountable-option-label">Forms</span>
+      </button>
+      {mountablesPromptError ? (
+        <p className="create-info-constraint-item text-red-500 mt-3">
+          <span>{mountablesPromptError}</span>
+        </p>
+      ) : null}
+    </div>
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
       {createModalStep === "review" ? (
@@ -784,6 +830,27 @@ export default function Home() {
         onClick={() => void handleSaveDraftChoice(true)}
       >
         Yes
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => {
+          if (!formsMountableSelected) {
+            setMountablesPromptError("Select a mountable to continue.");
+            return;
+          }
+
+          closeInfoModal(() => {
+            setInfoModalMode("about");
+            setMountablesPromptError("");
+          });
+          void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+        }}
+      >
+        Continue
       </button>
     </div>
   ) : infoModalMode === "discard-comment-confirm" ? (
@@ -974,6 +1041,14 @@ export default function Home() {
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
             onDraftSelectionRequest={handleDraftSelectionRequest}
+            onMountableSelectionRequired={openMountablesModal}
+            onMountableSelectionStateChange={({ hasMountedHashtag: mounted, formsSelected }) => {
+              setHasMountedHashtag(mounted);
+              setFormsMountableSelected(formsSelected);
+              if (!mounted) {
+                setMountablesPromptError("");
+              }
+            }}
             onPublishSuccess={(txHash, randomnessPreimage) => {
               finalizeCloseCreateModal();
               openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
