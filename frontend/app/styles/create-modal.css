@@ -565,6 +565,7 @@
 
 .create-mountable-option {
   position: relative;
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   padding: 0.6rem 0;
@@ -580,6 +581,30 @@
 .create-mountable-option:focus-visible {
   transform: translateY(-2px);
   outline: none;
+}
+
+.create-mountable-option::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 0.55rem);
+  top: 50%;
+  transform: translateY(-50%) translateX(-4px);
+  background-color: #1f2937;
+  color: #ffffff;
+  padding: 0.25rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease, transform 220ms ease;
+}
+
+.create-mountable-option:hover::after,
+.create-mountable-option:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 
 .create-mountable-option-icon-wrap {

@@ -688,6 +688,8 @@ export default function Home() {
         type="button"
         className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
         aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
+        aria-pressed={formsMountableSelected}
+        data-tooltip="Forms"
         onClick={() => {
           const nextSelected = !formsMountableSelected;
           createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
