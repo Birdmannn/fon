@@ -41,7 +41,13 @@ const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
     key: "firstHashtagPassed",
     text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle.",
   },
-  { key: "additionalHashtagsPassed", text: "4. Additional hashtags may follow after the first compulsory hashtag." },
+];
+
+const CREATE_INFO_NOTE_HEADING = "Note:";
+
+const CREATE_INFO_NOTE_ITEMS = [
+  "1. Additional hashtags may follow after the first compulsory hashtag.",
+  "2. Use #mounted to trigger mountables.",
 ];
 
 const CREATE_INFO_TYPING_HEADING = "Typing:";
@@ -726,7 +732,7 @@ export default function Home() {
         </>
       ) : (
         <>
-          <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
+          <p className="font-semibold">{CREATE_INFO_CONSTRAINT_HEADING}</p>
           {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
             const passed = constraintStatus[item.key];
 
@@ -744,6 +750,12 @@ export default function Home() {
               </p>
             );
           })}
+          <p className="mt-3 font-semibold" style={{ color: "#961cac" }}>{CREATE_INFO_NOTE_HEADING}</p>
+          {CREATE_INFO_NOTE_ITEMS.map((item) => (
+            <p key={item} className="create-info-constraint-item" style={{ color: "#961cac" }}>
+              <span>{item}</span>
+            </p>
+          ))}
           <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
           {CREATE_INFO_TYPING_ITEMS.map((item) => (
             <p key={item} className="create-info-constraint-item">
@@ -756,7 +768,7 @@ export default function Home() {
     </div>
   ) : (
     <div className="create-info-constraints-copy">
-      <p>{HOME_INFO_MOUNTABLES_HEADING}</p>
+      <p className="font-semibold">{HOME_INFO_MOUNTABLES_HEADING}</p>
       {HOME_INFO_MOUNTABLES_ITEMS.map((item) => (
         <p key={item} className="create-info-constraint-item">
           <span>{item}</span>
