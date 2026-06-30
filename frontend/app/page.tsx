@@ -8,6 +8,7 @@ import {
   CheckCircle,
   Plus,
   RotateCcw,
+  Scroll,
   ScrollText,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -686,6 +687,7 @@ export default function Home() {
       <button
         type="button"
         className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
+        aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
         onClick={() => {
           const nextSelected = !formsMountableSelected;
           createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
@@ -695,15 +697,12 @@ export default function Home() {
       >
         <span className="create-mountable-option-icon-wrap">
           <span className="create-mountable-option-icon-bg">
-            <ScrollText size={18} strokeWidth={2} aria-hidden="true" />
+            <Scroll size={18} strokeWidth={2} aria-hidden="true" />
           </span>
-          {formsMountableSelected ? (
-            <span className="create-mountable-option-check">
-              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-            </span>
-          ) : null}
+          <span className="create-mountable-option-check" aria-hidden="true">
+            <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+          </span>
         </span>
-        <span className="create-mountable-option-label">Forms</span>
       </button>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">

@@ -566,15 +566,22 @@
 .create-mountable-option {
   position: relative;
   width: 100%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.85rem;
+  /* justify-content: center; */
   padding: 0.6rem 0;
   border: 0;
   background: transparent;
   color: var(--foreground);
   cursor: pointer;
   text-align: left;
+  transition: transform 220ms ease;
+}
+
+.create-mountable-option:hover,
+.create-mountable-option:focus-visible {
+  transform: translateY(-2px);
+  outline: none;
 }
 
 .create-mountable-option-icon-wrap {
@@ -594,6 +601,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+
+.create-mountable-option:hover .create-mountable-option-icon-bg,
+.create-mountable-option:focus-visible .create-mountable-option-icon-bg,
+.create-mountable-option-selected .create-mountable-option-icon-bg {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.18);
 }
 
 .create-mountable-option-check {
@@ -608,13 +623,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  opacity: 0;
+  transform: scale(0.72) translateY(2px);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
 }
 
-.create-mountable-option-label {
-  font-size: 0.92rem;
-  line-height: 1.2;
-  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
-  font-weight: 600;
+.create-mountable-option:hover .create-mountable-option-check,
+.create-mountable-option:focus-visible .create-mountable-option-check,
+.create-mountable-option-selected .create-mountable-option-check {
+  opacity: 1;
+  transform: scale(1) translateY(0);
 }
 
 .create-info-ticket-input:focus {
