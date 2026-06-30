@@ -34,6 +34,7 @@ export async function GET(request: Request) {
             campaignType: 1,
             summaryDraft: 1,
             argsDraft: 1,
+            mountables: 1,
             socialMetadata: 1,
             creatorAddress: 1,
             creatorHandle: 1,

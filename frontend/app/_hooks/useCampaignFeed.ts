@@ -35,6 +35,18 @@ export type CampaignRecord = {
     taskDurationHours?: string;
     maxAmountCkb?: string;
     auxAmountCkb?: string;
+    rewardCount?: string;
+  };
+  mountables?: {
+    forms?: {
+      enabled?: boolean;
+      formUrl?: string;
+      payoutMode?: "assured" | "random_subset" | "overflow_only";
+      proofMode?: "external_proof";
+      guaranteedSlots?: string;
+      randomWinnerCount?: string;
+      proofInstructions?: string;
+    } | null;
   };
   socialMetadata?: {
     mentions?: string[];

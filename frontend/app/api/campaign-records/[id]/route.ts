@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
+import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,10 @@ type CampaignRecordPayload = {
     taskDurationHours?: unknown;
     maxAmountCkb?: unknown;
     auxAmountCkb?: unknown;
+    rewardCount?: unknown;
+  };
+  mountables?: {
+    forms?: unknown;
   };
   socialMetadata?: {
     mentions?: unknown;
@@ -114,6 +119,36 @@ function ensureOptionalRecipients(value: unknown) {
   });
 }
 
+function ensureOptionalFormsMountable(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (!value || typeof value !== "object") {
+    throw new Error("mountables.forms must be an object when provided");
+  }
+
+  const candidate = value as {
+    enabled?: unknown;
+    formUrl?: unknown;
+    payoutMode?: unknown;
+    proofMode?: unknown;
+    guaranteedSlots?: unknown;
+    randomWinnerCount?: unknown;
+    proofInstructions?: unknown;
+  };
+
+  return normalizeFormsMountableConfig({
+    enabled: Boolean(candidate.enabled),
+    formUrl: typeof candidate.formUrl === "string" ? candidate.formUrl : "",
+    payoutMode: candidate.payoutMode as "assured" | "random_subset" | "overflow_only" | undefined,
+    proofMode: candidate.proofMode as "external_proof" | undefined,
+    guaranteedSlots: typeof candidate.guaranteedSlots === "string" ? candidate.guaranteedSlots : String(candidate.guaranteedSlots ?? "1"),
+    randomWinnerCount: typeof candidate.randomWinnerCount === "string" ? candidate.randomWinnerCount : String(candidate.randomWinnerCount ?? "1"),
+    proofInstructions: typeof candidate.proofInstructions === "string" ? candidate.proofInstructions : "",
+  });
+}
+
 function normalizePayload(payload: CampaignRecordPayload) {
   const title = ensureString(payload.title, "title").trim();
   const description = ensureString(payload.description, "description").trim();
@@ -124,6 +159,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const taskDurationHours = ensureNumberString(payload.argsDraft?.taskDurationHours, "argsDraft.taskDurationHours");
   const maxAmountCkb = ensureNumberString(payload.argsDraft?.maxAmountCkb, "argsDraft.maxAmountCkb");
   const auxAmountCkb = ensureNumberString(payload.argsDraft?.auxAmountCkb, "argsDraft.auxAmountCkb");
+  const rewardCount = ensureNumberString(payload.argsDraft?.rewardCount, "argsDraft.rewardCount");
 
   const mentions = Array.isArray(payload.socialMetadata?.mentions)
     ? payload.socialMetadata?.mentions.map((value) => ensureString(value, "socialMetadata.mentions[]"))
@@ -153,6 +189,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
+  const formsMountable = ensureOptionalFormsMountable(payload.mountables?.forms);
 
   return {
     title,
@@ -167,6 +204,10 @@ function normalizePayload(payload: CampaignRecordPayload) {
       taskDurationHours,
       maxAmountCkb,
       auxAmountCkb,
+      rewardCount,
+    },
+    mountables: {
+      forms: formsMountable,
     },
     socialMetadata: {
       mentions,
