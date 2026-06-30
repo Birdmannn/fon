@@ -565,10 +565,8 @@
 
 .create-mountable-option {
   position: relative;
-  width: 100%;
   display: inline-flex;
   align-items: center;
-  /* justify-content: center; */
   padding: 0.6rem 0;
   border: 0;
   background: transparent;
@@ -629,8 +627,6 @@
   pointer-events: none;
 }
 
-.create-mountable-option:hover .create-mountable-option-check,
-.create-mountable-option:focus-visible .create-mountable-option-check,
 .create-mountable-option-selected .create-mountable-option-check {
   opacity: 1;
   transform: scale(1) translateY(0);

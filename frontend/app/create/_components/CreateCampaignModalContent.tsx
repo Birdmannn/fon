@@ -1435,7 +1435,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
-    if (!skipMountedSelection && hasMountedHashtag && !formsMountable.enabled) {
+    if (!skipMountedSelection && hasMountedHashtag) {
       onMountableSelectionRequired?.();
       return;
     }
