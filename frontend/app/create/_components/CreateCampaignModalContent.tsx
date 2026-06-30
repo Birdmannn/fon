@@ -1466,6 +1466,82 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
   }, [formsMountable.enabled, hasMountedHashtag, hideMenus, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
 
+  const handleSaveDraftFromClose = useCallback(async () => {
+    if (!hasDraftableChanges) {
+      return;
+    }
+
+    setStatus("idle");
+    setErrorMsg("");
+    await persistDraftRecord(currentDraftSummary, "draft");
+  }, [currentDraftSummary, hasDraftableChanges, persistDraftRecord]);
+
+  const handleDiscardDraftSession = useCallback(() => {
+    setActiveDraftRecordId(null);
+    setIsDraftListOpen(false);
+    setDraftListError("");
+    setDraftDeleteId(null);
+    setShowNoDraftsMessage(false);
+    setLastSavedSnapshot(null);
+    setPendingAdvanceToReview(false);
+    setPendingPublishedRecordSync(null);
+    setIsApplyingDraft(false);
+    if (applyDraftAnimationTimerRef.current) {
+      clearTimeout(applyDraftAnimationTimerRef.current);
+      applyDraftAnimationTimerRef.current = null;
+    }
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    setStatus("idle");
+    setErrorMsg("");
+    hideMenus();
+  }, [hideMenus]);
+
+  const handleToggleDraftList = useCallback(async () => {
+    if (isDraftListOpen) {
+      setIsDraftListOpen(false);
+      setDraftListError("");
+      setShowNoDraftsMessage(false);
+      return false;
+    }
+
+    return loadDraftRecords();
+  }, [isDraftListOpen, loadDraftRecords]);
+
+  const handleApplyDraftSelection = useCallback((draftId: string) => {
+    const nextRecord = draftRecords.find((record) => record._id === draftId);
+    if (!nextRecord) {
+      return;
+    }
+
+    applyDraftRecord(nextRecord);
+  }, [applyDraftRecord, draftRecords]);
+
+  const handleSetFormsMountableEnabled = useCallback((enabled: boolean) => {
+    setFormsMountable((current) => normalizeFormsMountableConfig({
+      ...current,
+      enabled,
+    }));
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    hasDraftableChanges: () => hasDraftableChanges,
+    saveDraftFromClose: handleSaveDraftFromClose,
+    discardDraftSession: handleDiscardDraftSession,
+    toggleDraftList: handleToggleDraftList,
+    applyDraftSelection: handleApplyDraftSelection,
+    setFormsMountableEnabled: handleSetFormsMountableEnabled,
+    advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
+  }), [
+    handleAdvanceToReview,
+    handleApplyDraftSelection,
+    handleDiscardDraftSession,
+    handleSaveDraftFromClose,
+    handleSetFormsMountableEnabled,
+    handleToggleDraftList,
+    hasDraftableChanges,
+  ]);
+
   useEffect(() => {
     if (!pendingAdvanceToReview || !signer || !isModal || modalStep !== "compose") {
       return;
