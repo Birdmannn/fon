@@ -597,6 +597,14 @@
   gap: 0;
 }
 
+.create-info-forms-inline-error {
+  margin: 0;
+  text-align: right;
+  color: #dc2626;
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
 .create-info-forms-row {
   display: flex;
   align-items: stretch;
@@ -701,6 +709,14 @@
 
 .create-info-ticket-input:focus {
   border-color: #f59e0b;
+}
+
+.create-info-ticket-input-invalid:focus {
+  border-color: #dc2626;
+}
+
+.create-info-ticket-input-valid:focus {
+  border-color: #16a34a;
 }
 
 .create-info-ticket-input-focused {

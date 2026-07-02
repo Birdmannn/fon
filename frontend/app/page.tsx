@@ -791,7 +791,10 @@ export default function Home() {
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
     <div className="create-info-constraints-copy">
       <div className="create-info-forms-config">
-        <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
+        <div className="create-review-card-heading-row">
+          <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
+          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
+        </div>
         {mountableFormLinks.map((value, index) => (
           <div key={`forms-link-${index}`} className="create-info-forms-row">
             <input
@@ -817,11 +820,6 @@ export default function Home() {
           </div>
         ))}
       </div>
-      {mountablesPromptError ? (
-        <p className="create-info-constraint-item text-red-500 mt-3">
-          <span>{mountablesPromptError}</span>
-        </p>
-      ) : null}
     </div>
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
