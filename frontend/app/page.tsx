@@ -289,7 +289,7 @@ export default function Home() {
       setInfoModalMode(nextMode);
       setIsInfoModalClosing(false);
       setShowInfoModal(true);
-    }, INFO_MODAL_ANIMATION_MS);
+    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
   }, [INFO_MODAL_ANIMATION_MS, clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
 
   const finalizeCloseCreateModal = useCallback(() => {
@@ -729,37 +729,24 @@ export default function Home() {
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
     <div className="create-info-constraints-copy">
       <div className="create-info-forms-config">
-        <p className="create-review-section-label text-gray-900">Forms:</p>
-        {mountableFormLinks.map((value, index) => {
-          const isLast = index === mountableFormLinks.length - 1;
-          return (
-            <div key={`forms-link-${index}`} className="create-info-forms-row">
-              <input
-                type="text"
-                value={value}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
-                  createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
-                  setMountablesPromptError("");
-                }}
-                placeholder="Paste Google Forms responder link"
-                className="create-info-ticket-input"
-                aria-label={`Forms link ${index + 1}`}
-              />
-              {isLast ? (
-                <button
-                  type="button"
-                  className="create-info-confirm-btn create-info-forms-add-btn"
-                  disabled
-                  aria-label="Add another forms link"
-                >
-                  <Plus size={16} strokeWidth={2.4} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
+        <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
+        {mountableFormLinks.map((value, index) => (
+          <div key={`forms-link-${index}`} className="create-info-forms-row">
+            <input
+              type="text"
+              value={value}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+                createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+                setMountablesPromptError("");
+              }}
+              placeholder="Paste Google Forms responder link"
+              className="create-info-ticket-input"
+              aria-label={`Forms link ${index + 1}`}
+            />
+          </div>
+        ))}
       </div>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">

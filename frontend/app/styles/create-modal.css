@@ -582,23 +582,6 @@
   width: 100%;
 }
 
-.create-info-forms-row .create-info-ticket-input {
-  border-right-width: 0;
-}
-
-.create-info-forms-add-btn {
-  flex: 0 0 2.6rem;
-  width: 2.6rem;
-  min-width: 2.6rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.create-info-forms-add-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
 
 .create-mountable-option {
   position: relative;
