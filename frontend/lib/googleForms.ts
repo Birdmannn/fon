@@ -80,8 +80,8 @@ function normalizeInitialGoogleFormUrl(rawUrl: string) {
 function detectVerifiedEmailRequirement(html: string, finalUrl: URL) {
   const lowerHtml = html.toLowerCase();
   const readableText = lowerHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-  console.log("Readable text:", readableText);
-  console.log("Final URL:", finalUrl.toString());
+  // console.log("Readable text:", readableText);
+  // console.log("Final URL:", finalUrl.toString());
   if (finalUrl.hostname === GOOGLE_ACCOUNTS_HOST) {
     return true;
   }
@@ -134,7 +134,7 @@ export async function validateGoogleFormUrl(rawUrl: string): Promise<GoogleFormV
 
   const finalUrl = new URL(response.url);
   const html = await response.text();
-  console.log("Final URL after redirects:", finalUrl.toString());
+  // console.log("Final URL after redirects:", finalUrl.toString());
 
   const formMatch = finalUrl.hostname === GOOGLE_ACCOUNTS_HOST
     ? extractGoogleFormFromContinue(finalUrl.searchParams.get("continue"))
