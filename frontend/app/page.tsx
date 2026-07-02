@@ -281,6 +281,17 @@ export default function Home() {
     setShowInfoModal(true);
   }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
 
+  const transitionMountablesModal = useCallback((nextMode: Extract<InfoModalMode, "mountables" | "mountables-forms">) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setIsInfoModalClosing(true);
+    window.setTimeout(() => {
+      setInfoModalMode(nextMode);
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [INFO_MODAL_ANIMATION_MS, clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
+
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
 
@@ -900,7 +911,7 @@ export default function Home() {
             return;
           }
 
-          setInfoModalMode("mountables-forms");
+          transitionMountablesModal("mountables-forms");
           setMountablesPromptError("");
         }}
       >
