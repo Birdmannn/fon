@@ -29,7 +29,7 @@ export default function CampaignFeedHeaderBar({
   searchQuery,
 }: CampaignFeedHeaderBarProps) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="campaign-header-bar">
       <div className="campaign-heading-block">
         <div className="campaign-heading-row">
           <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>
@@ -46,7 +46,7 @@ export default function CampaignFeedHeaderBar({
         </div>
         {isLoading ? <ThreeDotLoader inline label="Loading freights" /> : null}
       </div>
-      <div className="flex items-center gap-2 justify-end">
+      <div className="campaign-header-actions">
         <button
           onClick={onRefresh}
           disabled={isRefreshing}

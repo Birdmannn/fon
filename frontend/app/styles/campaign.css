@@ -126,6 +126,7 @@
 
 .campaign-feed-loading-inline {
   justify-content: flex-start;
+  align-self: flex-start;
   min-height: 0;
   padding: 0;
   margin-top: 0.75rem;
@@ -254,6 +255,19 @@
 }
 
 /* Campaign heading */
+.campaign-header-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.campaign-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .campaign-heading-block {
   display: flex;
   flex-direction: column;
@@ -265,6 +279,14 @@
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
+}
+
+@media (min-width: 640px) {
+  .campaign-header-bar {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
 }
 
 .campaign-refresh-badge {
