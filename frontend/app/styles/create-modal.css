@@ -613,6 +613,13 @@
 }
 
 
+.create-mountable-options-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-top: 0.4rem;
+}
+
 .create-mountable-option {
   position: relative;
   align-self: flex-start;
@@ -627,18 +634,22 @@
   transition: transform 220ms ease;
 }
 
-.create-mountable-option:hover,
-.create-mountable-option:focus-visible {
+.create-mountable-option:hover:not(:disabled),
+.create-mountable-option:focus-visible:not(:disabled) {
   transform: translateY(-2px);
   outline: none;
+}
+
+.create-mountable-option:disabled {
+  cursor: not-allowed;
 }
 
 .create-mountable-option::after {
   content: attr(data-tooltip);
   position: absolute;
-  left: calc(100% + 0.55rem);
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
+  top: calc(100% + 0.4rem);
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
   background-color: #1f2937;
   color: #ffffff;
   padding: 0.25rem 0.55rem;
@@ -654,7 +665,7 @@
 .create-mountable-option:hover::after,
 .create-mountable-option:focus-visible::after {
   opacity: 1;
-  transform: translateY(-50%) translateX(0);
+  transform: translateX(-50%) translateY(0);
 }
 
 .create-mountable-option-icon-wrap {
@@ -682,6 +693,18 @@
 .create-mountable-option-selected .create-mountable-option-icon-bg {
   transform: translateY(-2px);
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.18);
+}
+
+.create-mountable-option:disabled:hover .create-mountable-option-icon-bg,
+.create-mountable-option:disabled:focus-visible .create-mountable-option-icon-bg {
+  transform: none;
+  box-shadow: none;
+}
+
+.create-mountable-option:disabled:hover::after,
+.create-mountable-option:disabled:focus-visible::after {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
 }
 
 .create-mountable-option-check {

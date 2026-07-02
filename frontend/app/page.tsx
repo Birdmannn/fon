@@ -6,6 +6,8 @@ import {
   ArrowUp,
   Check,
   CheckCircle,
+  DollarSign,
+  LockKeyhole,
   Plus,
   RotateCcw,
   Scroll,
@@ -759,29 +761,57 @@ export default function Home() {
   ) : showCreateModal && infoModalMode === "mountables" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
-      <button
-        type="button"
-        className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
-        aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
-        aria-pressed={formsMountableSelected}
-        data-tooltip="Forms"
-        onClick={() => {
-          const nextSelected = !formsMountableSelected;
-          createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
-          setFormsMountableSelected(nextSelected);
-          setMountableFormLinks((current) => current.length > 0 ? current : [""]);
-          setMountablesPromptError("");
-        }}
-      >
-        <span className="create-mountable-option-icon-wrap">
-          <span className="create-mountable-option-icon-bg">
-            <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+      <div className="create-mountable-options-row">
+        <button
+          type="button"
+          className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
+          aria-pressed={formsMountableSelected}
+          data-tooltip="Forms"
+          onClick={() => {
+            const nextSelected = !formsMountableSelected;
+            createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
+            setFormsMountableSelected(nextSelected);
+            setMountableFormLinks((current) => current.length > 0 ? current : [""]);
+            setMountablesPromptError("");
+          }}
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+            </span>
           </span>
-          <span className="create-mountable-option-check" aria-hidden="true">
-            <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="create-mountable-option"
+          data-tooltip="Payable"
+          disabled
+          aria-label="Payable mountable coming soon"
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <DollarSign size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
           </span>
-        </span>
-      </button>
+        </button>
+        <button
+          type="button"
+          className="create-mountable-option"
+          data-tooltip="Lock"
+          disabled
+          aria-label="Lock mountable coming soon"
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+          </span>
+        </button>
+      </div>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
           <span>{mountablesPromptError}</span>
