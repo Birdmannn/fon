@@ -851,6 +851,13 @@ export default function Home() {
         ))}
       </div>
     </div>
+  ) : showCreateModal && isCreateDraftListOpen ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Drafts:</p>
+      <p className="create-info-constraint-item text-gray-500">
+        <span>Nothing much for now. Each draft can only last a maximum of 20 days.</span>
+      </p>
+    </div>
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
       {createModalStep === "review" ? (
