@@ -29,9 +29,56 @@ export function formatCkbAmount(value: bigint) {
   return (Number(value) / 1e8).toFixed(2);
 }
 
-export function buildDefaultHandle(addressHex: string) {
+export function buildDefaultUsername(addressHex: string) {
   const normalized = addressHex.toLowerCase().replace(/^0x/, "");
-  return `freight${normalized.slice(-20)}.ckb`;
+  return `freight${normalized.slice(-20)}`;
+}
+
+export function formatUsernameHandle(username: string) {
+  const normalized = username.trim().replace(/\.ckb$/i, "");
+  return normalized ? `${normalized}.ckb` : "";
+}
+
+export function buildDefaultHandle(addressHex: string) {
+  return formatUsernameHandle(buildDefaultUsername(addressHex));
+}
+
+export function normalizeUsername(value: string) {
+  return value.trim().replace(/\.ckb$/i, "").toLowerCase();
+}
+
+export function deriveRaffleSettlementUiState(args: {
+  campaign: CampaignCell;
+  displayStatus: CampaignStatus;
+  settlementTxHash?: string | null;
+  soldTicketCount?: string | null;
+}) {
+  const { campaign, displayStatus, settlementTxHash, soldTicketCount } = args;
+  const isRaffleCampaign = campaign.data.campaignType === 4;
+  const ticketPriceShannons = campaign.data.auxAmount > 0n ? campaign.data.auxAmount : 0n;
+  const liveSoldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n;
+  const hasSettlementRecord = typeof settlementTxHash === "string" && settlementTxHash.trim().length > 0;
+  const snapshotSoldTickets = typeof soldTicketCount === "string" && soldTicketCount.trim().length > 0
+    ? BigInt(soldTicketCount.trim())
+    : null;
+  const soldTickets = hasSettlementRecord && snapshotSoldTickets !== null ? snapshotSoldTickets : liveSoldTickets;
+  const hasSettledRewards = isRaffleCampaign
+    && displayStatus === CampaignStatus.Completed
+    && (campaign.data.currentDeposits === 0n || hasSettlementRecord);
+  const shouldGlowSettlement = isRaffleCampaign
+    && displayStatus === CampaignStatus.Completed
+    && campaign.data.rewardCount > 0n
+    && !hasSettledRewards;
+  const showSettlementAction = isRaffleCampaign
+    && displayStatus === CampaignStatus.Completed
+    && soldTickets > 0n;
+
+  return {
+    hasSettledRewards,
+    showSettlementAction,
+    shouldGlowSettlement,
+    soldTickets,
+  };
 }
 
 export function decodeCreatedByAddress(campaign: CampaignCell) {

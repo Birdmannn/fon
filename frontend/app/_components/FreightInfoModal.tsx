@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FREIGHT_CONTRACT } from "@/lib/contract";
 
 const PROJECT_GITHUB_URL = "https://github.com/Birdmannn/fon";
@@ -17,6 +17,10 @@ const X_ICON = (
     <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.847h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932 6.064-6.932Zm-1.291 19.494h2.039L6.486 3.24H4.298L17.61 20.647Z" />
   </svg>
 );
+
+const MODAL_TITLES = ["FreightOnNervos", "货运43"];
+const TITLE_PHASE_DELAY_MS = 100;
+const TITLE_HOLD_MS = 8000;
 
 type FreightInfoModalProps = {
   open: boolean;
@@ -43,6 +47,54 @@ export default function FreightInfoModal({
   onKeepOpen,
   onScheduleClose,
 }: FreightInfoModalProps) {
+  const [titleIndex, setTitleIndex] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(0);
+  const [direction, setDirection] = useState<"typing" | "deleting">("typing");
+
+  if (!open && (titleIndex !== 0 || visibleCount !== 0 || direction !== "typing")) {
+    setTitleIndex(0);
+    setVisibleCount(0);
+    setDirection("typing");
+  }
+
+  const activeTitle = MODAL_TITLES[titleIndex] ?? MODAL_TITLES[0];
+  const activeCharacters = useMemo(() => Array.from(activeTitle), [activeTitle]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (direction === "typing" && visibleCount < activeCharacters.length) {
+      const timer = window.setTimeout(() => {
+        setVisibleCount((current) => current + 1);
+      }, TITLE_PHASE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (direction === "typing" && visibleCount >= activeCharacters.length) {
+      const timer = window.setTimeout(() => {
+        setDirection("deleting");
+      }, TITLE_HOLD_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (direction === "deleting" && visibleCount > 0) {
+      const timer = window.setTimeout(() => {
+        setVisibleCount((current) => current - 1);
+      }, TITLE_PHASE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (direction === "deleting" && visibleCount === 0) {
+      const timer = window.setTimeout(() => {
+        setTitleIndex((current) => (current + 1) % MODAL_TITLES.length);
+        setDirection("typing");
+      }, TITLE_PHASE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeCharacters.length, direction, open, visibleCount]);
+
   if (!open) {
     return null;
   }
@@ -58,7 +110,18 @@ export default function FreightInfoModal({
       >
         <div className="header-info-modal-header">
           <div className="header-info-modal-title-row">
-            <h1 className="text-2xl sm:text-3xl font-bold">FreightOnNervos</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold header-info-modal-title-typed" aria-label={activeTitle}>
+              {activeCharacters.map((character, index) => (
+                <span
+                  key={`${titleIndex}-${character}-${index}`}
+                  className="header-info-modal-title-char"
+                  aria-hidden="true"
+                  style={{ opacity: index < visibleCount ? 1 : 0 }}
+                >
+                  {character}
+                </span>
+              ))}
+            </h1>
             <div className="header-info-modal-project-links" aria-label="Project links">
               <a
                 href={PROJECT_GITHUB_URL}

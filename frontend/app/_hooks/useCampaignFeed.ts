@@ -3,15 +3,13 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { deriveDisplayStatus } from "@/lib/campaignDisplay";
+import { buildDefaultHandle, deriveDisplayStatus } from "@/lib/campaignDisplay";
 import {
   buildCampaignRecordIndexes,
   findCampaignRecord,
-  getCampaignChainCreatedAt,
-  getCampaignCreatedByHash,
   getCampaignStableId,
+  getRecordStableId,
   type CampaignRecordIndexes,
-  normalizeHash,
 } from "@/lib/campaignIdentity";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
@@ -37,6 +35,21 @@ export type CampaignRecord = {
     taskDurationHours?: string;
     maxAmountCkb?: string;
     auxAmountCkb?: string;
+    rewardCount?: string;
+  };
+  mountables?: {
+    forms?: {
+      enabled?: boolean;
+      formUrl?: string;
+      canonicalFormUrl?: string;
+      formId?: string;
+      validatedAt?: string;
+      payoutMode?: "assured" | "random_subset" | "overflow_only";
+      proofMode?: "external_proof";
+      guaranteedSlots?: string;
+      randomWinnerCount?: string;
+      proofInstructions?: string;
+    } | null;
   };
   socialMetadata?: {
     mentions?: string[];
@@ -53,6 +66,16 @@ export type CampaignRecord = {
   publishError?: string | null;
   randomnessPreimage?: string | null;
   activatedTxHash?: string | null;
+  settlementTxHash?: string | null;
+  settledAt?: string | null;
+  soldTicketCount?: string | null;
+  settledParticipantCount?: string | null;
+  settledRecipients?: Array<{
+    address: string;
+    username: string;
+    handle: string;
+    amountLabel: string;
+  }> | null;
 };
 
 export type MergedCampaign = {
@@ -105,26 +128,70 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     );
   }, []);
 
+  const handleSettlementCompleted = useCallback((
+    campaignId: string,
+    settlementTxHash: string,
+    settledAt: string,
+    soldTicketCount: string,
+    settledParticipantCount?: string | null,
+    settledRecipients?: CampaignRecord["settledRecipients"]
+  ) => {
+    const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
+      const matchedRecord = prev.byCampaignId[campaignId]
+        ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
+        ?? Object.values(prev.byLegacyKey).find((record) => getRecordStableId(record) === campaignId);
+
+      if (!matchedRecord) {
+        return prev;
+      }
+
+      const nextRecord: CampaignRecord = {
+        ...matchedRecord,
+        settlementTxHash,
+        settledAt,
+        soldTicketCount,
+        settledParticipantCount: settledParticipantCount ?? matchedRecord.settledParticipantCount ?? null,
+        settledRecipients: settledRecipients ?? matchedRecord.settledRecipients ?? null,
+      };
+      const shouldReplace = (record: CampaignRecord) => (
+        record === matchedRecord
+        || (!!record._id && !!matchedRecord._id && record._id === matchedRecord._id)
+      );
+      const replaceBucket = (bucket: Record<string, CampaignRecord>) => Object.fromEntries(
+        Object.entries(bucket).map(([key, value]) => [key, shouldReplace(value) ? nextRecord : value])
+      ) as Record<string, CampaignRecord>;
+
+      return {
+        byCampaignId: replaceBucket(prev.byCampaignId),
+        byTxHash: replaceBucket(prev.byTxHash),
+        byLegacyKey: replaceBucket(prev.byLegacyKey),
+      };
+    };
+
+    setRecordIndexes(updateIndexes);
+    setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
+  }, []);
+
   const buildRecordIndexes = useCallback((records: CampaignRecord[]) => {
     const nextRecordIndexes = buildCampaignRecordIndexes(records);
 
-    console.log("[campaign-records] published records from API", records.map((record) => ({
-      id: record._id ?? null,
-      campaignId: record.campaignId ?? null,
-      createdByHash: record.createdByHash ?? null,
-      chainCreatedAt: record.chainCreatedAt ?? null,
-      txHash: record.txHash ?? null,
-      normalizedTxHash: normalizeHash(record.txHash),
-      status: record.status ?? null,
-      hasRandomnessPreimage: typeof record.randomnessPreimage === "string" && record.randomnessPreimage.length > 0,
-      randomnessPreimage: record.randomnessPreimage ?? null,
-    })));
+    // console.log("[campaign-records] published records from API", records.map((record) => ({
+    //   id: record._id ?? null,
+    //   campaignId: record.campaignId ?? null,
+    //   createdByHash: record.createdByHash ?? null,
+    //   chainCreatedAt: record.chainCreatedAt ?? null,
+    //   txHash: record.txHash ?? null,
+    //   normalizedTxHash: normalizeHash(record.txHash),
+    //   status: record.status ?? null,
+    //   hasRandomnessPreimage: typeof record.randomnessPreimage === "string" && record.randomnessPreimage.length > 0,
+    //   randomnessPreimage: record.randomnessPreimage ?? null,
+    // })));
 
-    console.log("[campaign-records] stable index keys", {
-      campaignIds: Object.keys(nextRecordIndexes.byCampaignId),
-      txHashes: Object.keys(nextRecordIndexes.byTxHash),
-      legacyKeys: Object.keys(nextRecordIndexes.byLegacyKey),
-    });
+    // console.log("[campaign-records] stable index keys", {
+    //   campaignIds: Object.keys(nextRecordIndexes.byCampaignId),
+    //   txHashes: Object.keys(nextRecordIndexes.byTxHash),
+    //   legacyKeys: Object.keys(nextRecordIndexes.byLegacyKey),
+    // });
 
     return nextRecordIndexes;
   }, []);
@@ -166,20 +233,20 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
       .then(([chainCampaigns, records]) => {
         const nextRecordIndexes = buildRecordIndexes(records);
 
-        console.log("[campaign-records] fetched campaigns and records", {
-          chainCampaigns: chainCampaigns.map((campaign) => ({
-            txHash: campaign.outPoint.txHash,
-            normalizedTxHash: normalizeHash(campaign.outPoint.txHash),
-            campaignId: getCampaignStableId(campaign),
-            createdByHash: getCampaignCreatedByHash(campaign),
-            chainCreatedAt: getCampaignChainCreatedAt(campaign),
-            index: campaign.outPoint.index,
-            campaignType: campaign.data.campaignType,
-          })),
-          recordCount: records.length,
-          recordCampaignIds: Object.keys(nextRecordIndexes.byCampaignId),
-          recordTxHashes: Object.keys(nextRecordIndexes.byTxHash),
-        });
+        // console.log("[campaign-records] fetched campaigns and records", {
+        //   chainCampaigns: chainCampaigns.map((campaign) => ({
+        //     txHash: campaign.outPoint.txHash,
+        //     normalizedTxHash: normalizeHash(campaign.outPoint.txHash),
+        //     campaignId: getCampaignStableId(campaign),
+        //     createdByHash: getCampaignCreatedByHash(campaign),
+        //     chainCreatedAt: getCampaignChainCreatedAt(campaign),
+        //     index: campaign.outPoint.index,
+        //     campaignType: campaign.data.campaignType,
+        //   })),
+        //   recordCount: records.length,
+        //   recordCampaignIds: Object.keys(nextRecordIndexes.byCampaignId),
+        //   recordTxHashes: Object.keys(nextRecordIndexes.byTxHash),
+        // });
 
         if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
           setCampaigns(chainCampaigns);
@@ -272,18 +339,18 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     return campaigns.map((campaign) => {
       const matchedRecord = findCampaignRecord(recordIndexes, campaign);
 
-      console.log("[campaign-records] merge campaign with record", {
-        campaignTxHash: campaign.outPoint.txHash,
-        normalizedCampaignTxHash: normalizeHash(campaign.outPoint.txHash),
-        campaignId: getCampaignStableId(campaign),
-        createdByHash: getCampaignCreatedByHash(campaign),
-        chainCreatedAt: getCampaignChainCreatedAt(campaign),
-        matchedRecordId: matchedRecord?._id ?? null,
-        matchedRecordCampaignId: matchedRecord?.campaignId ?? null,
-        matchedRecordTxHash: matchedRecord?.txHash ?? null,
-        matchedRecordHasPreimage: typeof matchedRecord?.randomnessPreimage === "string" && matchedRecord.randomnessPreimage.length > 0,
-        matchedRecordStatus: matchedRecord?.status ?? null,
-      });
+      // console.log("[campaign-records] merge campaign with record", {
+      //   campaignTxHash: campaign.outPoint.txHash,
+      //   normalizedCampaignTxHash: normalizeHash(campaign.outPoint.txHash),
+      //   campaignId: getCampaignStableId(campaign),
+      //   createdByHash: getCampaignCreatedByHash(campaign),
+      //   chainCreatedAt: getCampaignChainCreatedAt(campaign),
+      //   matchedRecordId: matchedRecord?._id ?? null,
+      //   matchedRecordCampaignId: matchedRecord?.campaignId ?? null,
+      //   matchedRecordTxHash: matchedRecord?.txHash ?? null,
+      //   matchedRecordHasPreimage: typeof matchedRecord?.randomnessPreimage === "string" && matchedRecord.randomnessPreimage.length > 0,
+      //   matchedRecordStatus: matchedRecord?.status ?? null,
+      // });
 
       return {
         campaign,
@@ -301,7 +368,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
 
     return mergedCampaigns.filter(({ campaign, record }) => {
       const creatorAddress = record?.creatorAddress ?? bytesToHex(campaign.data.createdBy);
-      const creatorHandle = record?.creatorHandle ?? `freight${creatorAddress.toLowerCase().replace(/^0x/, "").slice(-20)}.ckb`;
+      const creatorHandle = record?.creatorHandle ?? buildDefaultHandle(creatorAddress);
       const summary = record?.summaryDraft ?? decodeSummary(campaign.data.summary);
       const searchable = [
         record?.title,
@@ -324,6 +391,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     filteredCampaigns,
     handleRefresh,
     handleSearchClick,
+    handleSettlementCompleted,
     handleShowPendingCampaigns,
     handleTicketBought,
     isRefreshing,

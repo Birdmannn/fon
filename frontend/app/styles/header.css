@@ -103,6 +103,18 @@
   gap: 1rem;
 }
 
+.header-info-modal-title-typed {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.header-info-modal-title-char {
+  display: inline-block;
+}
+
 .header-info-modal-project-links {
   display: inline-flex;
   align-items: center;

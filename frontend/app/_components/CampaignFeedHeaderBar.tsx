@@ -1,7 +1,10 @@
 import { RefreshCw, Search } from "lucide-react";
 import type { RefObject } from "react";
 
+import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
+
 type CampaignFeedHeaderBarProps = {
+  isLoading?: boolean;
   isRefreshing: boolean;
   isSearchOpen: boolean;
   onRefresh: () => void;
@@ -14,6 +17,7 @@ type CampaignFeedHeaderBarProps = {
 };
 
 export default function CampaignFeedHeaderBar({
+  isLoading = false,
   isRefreshing,
   isSearchOpen,
   onRefresh,
@@ -26,18 +30,21 @@ export default function CampaignFeedHeaderBar({
 }: CampaignFeedHeaderBarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="campaign-heading-row">
-        <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>
-        {pendingBadgeLabel && (
-          <button
-            type="button"
-            className="campaign-refresh-badge"
-            onClick={onShowPendingCampaigns}
-            aria-label={`Show ${pendingBadgeLabel} new freights`}
-          >
-            {pendingBadgeLabel}
-          </button>
-        )}
+      <div className="campaign-heading-block">
+        <div className="campaign-heading-row">
+          <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>
+          {pendingBadgeLabel && (
+            <button
+              type="button"
+              className="campaign-refresh-badge"
+              onClick={onShowPendingCampaigns}
+              aria-label={`Show ${pendingBadgeLabel} new freights`}
+            >
+              {pendingBadgeLabel}
+            </button>
+          )}
+        </div>
+        {isLoading ? <ThreeDotLoader inline label="Loading freights" /> : null}
       </div>
       <div className="flex items-center gap-2 justify-end">
         <button

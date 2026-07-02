@@ -35,6 +35,38 @@ export function freightScript(argsBytes: Uint8Array): ccc.ScriptLike {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isTransientNullOutputError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /null is not an object.*output|Cannot read properties of null.*output/i.test(message);
+}
+
+export async function withTransientNullOutputRetry<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientNullOutputError(error) || attempt === attempts) {
+        break;
+      }
+
+      await sleep(350 * attempt);
+    }
+  }
+
+  if (isTransientNullOutputError(lastError)) {
+    throw new Error("Transient CKB cell lookup failed while preparing the transaction. Please try again in a moment.");
+  }
+
+  throw lastError;
+}
+
 // ─── create_campaign ─────────────────────────────────────────────────────────
 
 export async function sendCreateCampaign(
@@ -391,13 +423,13 @@ export async function sendBatchDeliver(
     );
   }
 
-  await tx.completeFeeBy(signer, 1000n);
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(encodeBatchDeliverArgs(revealedPreimage)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
-  return signer.sendTransaction(tx);
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
 }
 
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────
@@ -468,15 +500,77 @@ export interface ParticipantCell {
 export async function fetchParticipants(
   client: ccc.Client,
   campaign: CampaignCell,
-  limit = 500
+  limit = 500,
+  participantAddresses?: string[]
 ): Promise<ParticipantCell[]> {
   const results: ParticipantCell[] = [];
   const campaignCreatedByHex = bytesToHex(campaign.data.createdBy);
   const campaignCreatedAt = campaign.data.createdAt;
   const campaignType = campaign.data.campaignType;
+  const normalizedAddresses = participantAddresses?.map((value) => value.trim()).filter(Boolean) ?? [];
 
-  let count = 0;
-  for await (const cell of client.findCells(
+  type IndexedCell = {
+    outPoint: { txHash: string; index: string | number | bigint };
+    outputData: string;
+    cellOutput: {
+      capacity: bigint;
+      lock: ccc.ScriptLike;
+      type?: ccc.ScriptLike | null;
+    };
+  };
+
+  const collectFromCells = (cells: AsyncIterable<IndexedCell>) => (async () => {
+    let count = 0;
+    for await (const cell of cells) {
+      if (count++ >= limit) break;
+      try {
+        const rawData = hexToBytes(cell.outputData);
+        if (rawData.length !== 66) continue;
+        const data = decodeParticipantData(rawData);
+        if (
+          bytesToHex(data.campaignCreatedBy) !== campaignCreatedByHex ||
+          data.campaignCreatedAt !== campaignCreatedAt ||
+          data.campaignType !== campaignType
+        ) {
+          continue;
+        }
+        if (data.status !== ParticipantStatus.Verified) {
+          continue;
+        }
+        results.push({
+          outPoint: {
+            txHash: cell.outPoint.txHash,
+            index: Number(cell.outPoint.index),
+          },
+          data,
+          capacityShannons: cell.cellOutput.capacity,
+          lock: cell.cellOutput.lock,
+          type: cell.cellOutput.type ?? null,
+        });
+      } catch {
+        // Skip malformed cells.
+      }
+    }
+  })();
+
+  if (normalizedAddresses.length > 0) {
+    for (const address of normalizedAddresses) {
+      const addressObj = await ccc.Address.fromString(address, client);
+      await collectFromCells(client.findCells(
+        {
+          script: addressObj.script,
+          scriptType: "lock",
+          scriptSearchMode: "exact",
+          withData: true,
+        },
+        "asc",
+        limit
+      ));
+    }
+    return results;
+  }
+
+  await collectFromCells(client.findCells(
     {
       script: {
         codeHash: FREIGHT_CONTRACT.codeHash,
@@ -489,36 +583,7 @@ export async function fetchParticipants(
     },
     "asc",
     limit
-  )) {
-    if (count++ >= limit) break;
-    try {
-      const rawData = hexToBytes(cell.outputData);
-      if (rawData.length !== 66) continue;
-      const data = decodeParticipantData(rawData);
-      if (
-        bytesToHex(data.campaignCreatedBy) !== campaignCreatedByHex ||
-        data.campaignCreatedAt !== campaignCreatedAt ||
-        data.campaignType !== campaignType
-      ) {
-        continue;
-      }
-      if (data.status !== ParticipantStatus.Verified) {
-        continue;
-      }
-      results.push({
-        outPoint: {
-          txHash: cell.outPoint.txHash,
-          index: Number(cell.outPoint.index),
-        },
-        data,
-        capacityShannons: cell.cellOutput.capacity,
-        lock: cell.cellOutput.lock,
-        type: cell.cellOutput.type ?? null,
-      });
-    } catch {
-      // Skip malformed cells.
-    }
-  }
+  ));
 
   return results;
 }

@@ -4,25 +4,28 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Check,
   CheckCircle,
-  Copy,
   Plus,
   RotateCcw,
+  Scroll,
+  ScrollText,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 
+import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import MountablesPanel from "@/app/_components/MountablesPanel";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import CreateCampaignModalContent, {
   CreateCampaignModalContentHandle,
   CreateConstraintStatus,
   CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
-import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
 import { CampaignCell } from "@/lib/transactions";
@@ -39,7 +42,13 @@ const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
     key: "firstHashtagPassed",
     text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle.",
   },
-  { key: "additionalHashtagsPassed", text: "4. Additional hashtags may follow after the first compulsory hashtag." },
+];
+
+const CREATE_INFO_NOTE_HEADING = "Note:";
+
+const CREATE_INFO_NOTE_ITEMS = [
+  "1. Additional hashtags may follow after the first compulsory hashtag.",
+  "2. Use #mounted to trigger mountables.",
 ];
 
 const CREATE_INFO_TYPING_HEADING = "Typing:";
@@ -76,13 +85,20 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+  amountLabel: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
   _campaign?: CampaignCell;
@@ -107,6 +123,13 @@ export default function Home() {
     additionalHashtagsPassed: true,
   });
   const [previewError, setPreviewError] = useState("");
+  const [hasMountedHashtag, setHasMountedHashtag] = useState(false);
+  const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
+  const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
+  const [isMountableFormFocused, setIsMountableFormFocused] = useState(false);
+  const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
+  const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
   const [pendingCommentDiscardId, setPendingCommentDiscardId] = useState<string | null>(null);
@@ -122,18 +145,68 @@ export default function Home() {
   }, []);
 
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
+  const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
   const {
     handleCopyWalletAddress,
     walletAddress,
+    walletAddressDisplay,
     walletBalance,
+    walletBalanceIncreasing,
     walletChainLabel,
     walletCopyFeedback,
     walletInfoError,
     walletInfoLoading,
+    walletUsdParts,
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
+  const { currentUserProfile } = useUserProfile(signer ?? null);
+
+  const clearWalletInfoCloseTimer = useCallback(() => {
+    if (walletInfoCloseTimerRef.current) {
+      clearTimeout(walletInfoCloseTimerRef.current);
+      walletInfoCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const clearWalletInfoHideTimer = useCallback(() => {
+    if (walletInfoHideTimerRef.current) {
+      clearTimeout(walletInfoHideTimerRef.current);
+      walletInfoHideTimerRef.current = null;
+    }
+  }, []);
+
+  const keepWalletInfoModalOpen = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    clearWalletInfoHideTimer();
+    setIsWalletInfoClosing(false);
+    setShowWalletInfoModal(true);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
+
+  const closeWalletInfoModal = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    if (!showWalletInfoModal || isWalletInfoClosing) {
+      return;
+    }
+
+    setIsWalletInfoClosing(true);
+    clearWalletInfoHideTimer();
+    walletInfoHideTimerRef.current = setTimeout(() => {
+      setShowWalletInfoModal(false);
+      setIsWalletInfoClosing(false);
+      walletInfoHideTimerRef.current = null;
+    }, 220);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, isWalletInfoClosing, showWalletInfoModal]);
+
+  const scheduleWalletInfoModalClose = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    walletInfoCloseTimerRef.current = setTimeout(() => {
+      closeWalletInfoModal();
+    }, 250);
+  }, [clearWalletInfoCloseTimer, closeWalletInfoModal]);
   const {
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -175,7 +248,6 @@ export default function Home() {
     isPurchasingTickets,
     openTicketPurchaseInfoModal,
     resetTicketPurchaseState,
-    setIsPurchasingTickets,
     setTicketPurchaseError,
     setTicketPurchaseQuantity,
     ticketPurchaseError,
@@ -184,31 +256,6 @@ export default function Home() {
     onSubmissionError: setSubmissionErrorMessage,
     onTicketBuySuccess: openTicketBuySuccessInfoModal,
   });
-  const isInfoModalCloseLocked = infoModalMode === "ticket-purchase" && isPurchasingTickets;
-
-  const handleInfoMouseEnter = useCallback(() => {
-    openInfoModalFromHover(infoModalMode === "save-draft-confirm");
-  }, [infoModalMode, openInfoModalFromHover]);
-
-  const handleInfoMouseLeave = useCallback(() => {
-    scheduleCloseInfoModal(
-      infoModalMode === "save-draft-confirm" || isInfoModalCloseLocked,
-      () => {
-        setInfoModalMode("about");
-        setSaveDraftPromptError("");
-        setSubmissionSuccessTxHash("");
-        setSubmissionSuccessPreimage(null);
-        setSubmissionErrorMessage("");
-        setSettlementModalData(null);
-        setIsLoadingSettlementModal(false);
-      }
-    );
-  }, [infoModalMode, isInfoModalCloseLocked, scheduleCloseInfoModal]);
-
-  const handleInfoButtonToggle = useCallback(() => {
-    toggleInfoModal(infoModalMode === "save-draft-confirm" || isInfoModalCloseLocked);
-  }, [infoModalMode, isInfoModalCloseLocked, toggleInfoModal]);
-
   const clearCreateHideTimer = useCallback(() => {
     if (createHideTimerRef.current) {
       clearTimeout(createHideTimerRef.current);
@@ -225,6 +272,87 @@ export default function Home() {
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
   }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
+
+  const openMountablesModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("mountables");
+    setMountableFormLinks([createModalContentRef.current?.getFormsMountableConfig().formUrl ?? ""]);
+    setMountablesPromptError("");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
+
+  const transitionMountablesModal = useCallback((nextMode: Extract<InfoModalMode, "mountables" | "mountables-forms">) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setIsInfoModalClosing(true);
+    window.setTimeout(() => {
+      setInfoModalMode(nextMode);
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
+  }, [INFO_MODAL_ANIMATION_MS, clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
+
+  useEffect(() => {
+    if (infoModalMode !== "mountables-forms") {
+      return;
+    }
+
+    const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+    if (!primaryLink) {
+      setMountableFormValidationState("idle");
+      setMountablesPromptError("");
+      return;
+    }
+
+    let cancelled = false;
+    setMountableFormValidationState("validating");
+    setMountablesPromptError("");
+
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const validationResponse = await fetch("/api/google-forms/validate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ formUrl: primaryLink }),
+          });
+          const validationPayload = await validationResponse.json().catch(() => null);
+          if (cancelled) {
+            return;
+          }
+
+          if (!validationResponse.ok) {
+            setIsMountableFormFocused(false);
+            setMountableFormValidationState("invalid");
+            setMountablesPromptError(validationPayload?.error ?? "Failed to validate Google Form");
+            return;
+          }
+
+          setIsMountableFormFocused(false);
+          setMountableFormValidationState("valid");
+          setMountablesPromptError("");
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          setIsMountableFormFocused(false);
+          setMountableFormValidationState("invalid");
+          setMountablesPromptError(error instanceof Error ? error.message : "Failed to validate Google Form");
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [infoModalMode, mountableFormLinks]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
@@ -261,6 +389,25 @@ export default function Home() {
   }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, submissionSuccessTimerRef]);
 
 
+
+  const handleOpenTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    openTicketPurchaseInfoModal(campaign, record, onTicketBought);
+    setInfoModalMode("ticket-purchase");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    clearSubmissionSuccessTimer,
+    openTicketPurchaseInfoModal,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+  ]);
 
   const openCreateModal = () => {
     clearCreateHideTimer();
@@ -475,7 +622,7 @@ export default function Home() {
         <>
           <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
           <p className="text-xs text-amber-600 mt-1">
-            Save this — you need it to distribute raffle rewards.
+            You can store it if you wish — it is used to distribute raffle rewards.
           </p>
           <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
             {submissionSuccessPreimage}
@@ -530,10 +677,6 @@ export default function Home() {
   ) : infoModalMode === "raffle-settlement" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">{settlementModalData?.campaignTitle ?? "Raffle settlement"}</p>
-      <p className="mt-3 text-gray-900 font-semibold">Random hash:</p>
-      <p className="create-info-constraint-item text-gray-500 font-mono break-all">
-        <span>{settlementModalData?.randomnessHash ?? "Unavailable"}</span>
-      </p>
       <p className="mt-3 text-gray-900 font-semibold">Evidence:</p>
       {isLoadingSettlementModal ? (
         <div className="create-info-skeleton-list" aria-hidden="true">
@@ -543,18 +686,45 @@ export default function Home() {
         </div>
       ) : (
         <>
-          {(settlementModalData?.evidenceItems ?? []).map((item, index) => (
-            <p key={item} className="create-info-constraint-item create-info-typed-line" style={{ animationDelay: `${index * 90}ms` }}>
-              <span>{item}</span>
-            </p>
-          ))}
+          <table className="create-info-settlement-evidence-table text-gray-500">
+            <tbody>
+              {(settlementModalData?.evidenceItems ?? []).map((item, index) => {
+                const separatorIndex = item.indexOf(": ");
+                const key = separatorIndex === -1 ? item : item.slice(0, separatorIndex);
+                const value = separatorIndex === -1 ? "" : item.slice(separatorIndex + 2);
+
+                return (
+                  <tr
+                    key={item}
+                    className="create-info-settlement-evidence-row create-info-typed-line"
+                    style={{ animationDelay: `${index * 90}ms` }}
+                  >
+                    <td className="create-info-settlement-evidence-key">{value ? `${key}:` : key}</td>
+                    <td className="create-info-settlement-evidence-value">{value}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
           <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
           {(settlementModalData?.recipients ?? []).length > 0 ? (
-            (settlementModalData?.recipients ?? []).map((recipient, index) => (
-              <p key={recipient} className="create-info-constraint-item text-gray-500 font-mono break-all create-info-typed-line" style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}>
-                <span>{recipient}</span>
-              </p>
-            ))
+            (settlementModalData?.recipients ?? []).map((recipient, index) => {
+              const isConnectedRecipient = walletAddress.trim().toLowerCase() === recipient.address.trim().toLowerCase();
+
+              return (
+                <div
+                  key={`${recipient.address}-${index}`}
+                  className={`create-info-constraint-item create-info-settlement-recipient-row font-mono create-info-typed-line ${isConnectedRecipient ? "create-info-settlement-recipient-current" : "text-gray-500"}`}
+                  style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}
+                >
+                  <span className="create-info-settlement-recipient-handle">
+                    {recipient.handle}
+                    {isConnectedRecipient ? <span className="create-info-settlement-recipient-you"> (You)</span> : null}
+                  </span>
+                  <span className="create-info-settlement-recipient-amount">{recipient.amountLabel}</span>
+                </div>
+              );
+            })
           ) : (
             <p className="create-info-constraint-item text-gray-500">
               <span>No recipients found.</span>
@@ -574,10 +744,82 @@ export default function Home() {
         <>
           <p className="mt-3 text-gray-900 font-semibold">Distribution tx:</p>
           <p className="create-info-constraint-item text-gray-500 font-mono break-all">
-            <span>{settlementModalData.distributionTxHash}</span>
+            <a
+              href={`https://pudge.explorer.nervos.org/transaction/${settlementModalData.distributionTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              {settlementModalData.distributionTxHash}
+            </a>
           </p>
         </>
       ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
+      <button
+        type="button"
+        className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
+        aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
+        aria-pressed={formsMountableSelected}
+        data-tooltip="Forms"
+        onClick={() => {
+          const nextSelected = !formsMountableSelected;
+          createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
+          setFormsMountableSelected(nextSelected);
+          setMountableFormLinks((current) => current.length > 0 ? current : [""]);
+          setMountablesPromptError("");
+        }}
+      >
+        <span className="create-mountable-option-icon-wrap">
+          <span className="create-mountable-option-icon-bg">
+            <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+          </span>
+          <span className="create-mountable-option-check" aria-hidden="true">
+            <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+          </span>
+        </span>
+      </button>
+      {mountablesPromptError ? (
+        <p className="create-info-constraint-item text-red-500 mt-3">
+          <span>{mountablesPromptError}</span>
+        </p>
+      ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-forms" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config">
+        <div className="create-review-card-heading-row">
+          <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
+          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
+        </div>
+        {mountableFormLinks.map((value, index) => (
+          <div key={`forms-link-${index}`} className="create-info-forms-row">
+            <input
+              type="text"
+              value={value}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+                createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+                setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
+                setMountablesPromptError("");
+              }}
+              onFocus={() => {
+                if (mountableFormValidationState === "idle") {
+                  setIsMountableFormFocused(true);
+                }
+              }}
+              onBlur={() => setIsMountableFormFocused(false)}
+              placeholder="Paste Google Forms responder link"
+              className={`create-info-ticket-input ${mountableFormValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableFormValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableFormFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
+              aria-label={`Forms link ${index + 1}`}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
@@ -600,7 +842,7 @@ export default function Home() {
         </>
       ) : (
         <>
-          <p>{CREATE_INFO_CONSTRAINT_HEADING}</p>
+          <p className="font-semibold">{CREATE_INFO_CONSTRAINT_HEADING}</p>
           {CREATE_INFO_CONSTRAINT_ITEMS.map((item) => {
             const passed = constraintStatus[item.key];
 
@@ -618,6 +860,12 @@ export default function Home() {
               </p>
             );
           })}
+          <p className="mt-3 font-semibold" style={{ color: "#961cac" }}>{CREATE_INFO_NOTE_HEADING}</p>
+          {CREATE_INFO_NOTE_ITEMS.map((item) => (
+            <p key={item} className="create-info-constraint-item" style={{ color: "#961cac" }}>
+              <span>{item}</span>
+            </p>
+          ))}
           <p className="mt-3">{CREATE_INFO_TYPING_HEADING}</p>
           {CREATE_INFO_TYPING_ITEMS.map((item) => (
             <p key={item} className="create-info-constraint-item">
@@ -630,7 +878,7 @@ export default function Home() {
     </div>
   ) : (
     <div className="create-info-constraints-copy">
-      <p>{HOME_INFO_MOUNTABLES_HEADING}</p>
+      <p className="font-semibold">{HOME_INFO_MOUNTABLES_HEADING}</p>
       {HOME_INFO_MOUNTABLES_ITEMS.map((item) => (
         <p key={item} className="create-info-constraint-item">
           <span>{item}</span>
@@ -706,6 +954,83 @@ export default function Home() {
         Yes
       </button>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => {
+          if (!formsMountableSelected) {
+            setMountablesPromptError("Select a mountable to continue.");
+            return;
+          }
+
+          transitionMountablesModal("mountables-forms");
+          setMountablesPromptError("");
+        }}
+      >
+        Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-forms" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || mountableFormValidationState !== "valid"}
+        onClick={() => {
+          void (async () => {
+            try {
+              const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+              if (!primaryLink) {
+                setMountablesPromptError("Paste a Google Forms responder link to continue.");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+
+              const validationResponse = await fetch("/api/google-forms/validate", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ formUrl: primaryLink }),
+              });
+              const validationPayload = await validationResponse.json().catch(() => null);
+              if (!validationResponse.ok) {
+                throw new Error(validationPayload?.error ?? "Failed to validate Google Form");
+              }
+
+              const canonicalFormUrl = typeof validationPayload?.canonicalFormUrl === "string" ? validationPayload.canonicalFormUrl : primaryLink;
+              const formId = typeof validationPayload?.formId === "string" ? validationPayload.formId : "";
+              const validatedAt = typeof validationPayload?.validatedAt === "string" ? validationPayload.validatedAt : "";
+
+              createModalContentRef.current?.updateFormsMountableConfig({
+                formUrl: canonicalFormUrl,
+                canonicalFormUrl,
+                formId,
+                validatedAt,
+              });
+              setMountableFormLinks([canonicalFormUrl]);
+              await createModalContentRef.current?.persistCurrentDraft();
+
+              closeInfoModal(() => {
+                setInfoModalMode("about");
+                setMountablesPromptError("");
+              });
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted Google Form");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+      </button>
+    </div>
   ) : infoModalMode === "discard-comment-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
@@ -728,174 +1053,121 @@ export default function Home() {
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className="campaign-shell-width flex flex-col gap-6 pt-16">
-        <div
+        <AppShellHeader
           className="campaign-shell-header campaign-shell-width fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
-          onClick={showCreateModal ? (event) => {
+          infoButtonAriaLabel="Open Freight information"
+          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
+          infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
+          infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
+          infoModalBody={infoModalBody}
+          infoModalActions={infoModalActions}
+          infoModalClosing={isInfoModalClosing}
+          infoModalOpen={showInfoModal}
+          isConnected={Boolean(signer)}
+          onConnect={open}
+          onContainerClick={showCreateModal ? (event) => {
             if (event.target === event.currentTarget) {
               requestCloseCreateModal();
             }
           } : undefined}
-        >
-          <div className="header-info-wrap" onClick={(event) => event.stopPropagation()}>
-            <div onMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")} onMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
-                setInfoModalMode("about");
-                setSaveDraftPromptError("");
-                setSubmissionSuccessTxHash("");
-                setSubmissionSuccessPreimage(null);
-                setSubmissionErrorMessage("");
-                setSettlementModalData(null);
-                setIsLoadingSettlementModal(false);
-                resetTicketPurchaseState();
-              })}>
+          onCopyWalletAddress={() => void handleCopyWalletAddress()}
+          onDisconnect={disconnect}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+            setInfoModalMode("about");
+            setSaveDraftPromptError("");
+            setSubmissionSuccessTxHash("");
+            setSubmissionSuccessPreimage(null);
+            setSubmissionErrorMessage("");
+            setSettlementModalData(null);
+            setIsLoadingSettlementModal(false);
+            resetTicketPurchaseState();
+          })}
+          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets))}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoModalKeepOpen={keepInfoModalOpen}
+          onInfoModalRequestClose={() => closeInfoModal(() => {
+            setInfoModalMode("about");
+            setSaveDraftPromptError("");
+            setSubmissionSuccessTxHash("");
+            setSubmissionSuccessPreimage(null);
+            setSubmissionErrorMessage("");
+            setSettlementModalData(null);
+            setIsLoadingSettlementModal(false);
+          })}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+            setInfoModalMode("about");
+            setSaveDraftPromptError("");
+            setSubmissionSuccessTxHash("");
+            setSubmissionSuccessPreimage(null);
+            setSubmissionErrorMessage("");
+            setSettlementModalData(null);
+            setIsLoadingSettlementModal(false);
+            resetTicketPurchaseState();
+          })}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+            setInfoModalMode("about");
+            setSaveDraftPromptError("");
+            setSubmissionSuccessTxHash("");
+            setSubmissionSuccessPreimage(null);
+            setSubmissionErrorMessage("");
+            setSettlementModalData(null);
+            setIsLoadingSettlementModal(false);
+            resetTicketPurchaseState();
+          })}
+          onInfoWrapClick={(event) => event.stopPropagation()}
+          onWalletActionClick={closeWalletInfoModal}
+          onRightActionsClick={(event) => event.stopPropagation()}
+          onWalletMouseEnter={keepWalletInfoModalOpen}
+          onWalletMouseLeave={scheduleWalletInfoModalClose}
+          rightActions={showCreateModal ? (
+            <div
+              className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
+              role="group"
+              aria-label="Create modal controls"
+            >
               <button
-                ref={headerInfoButtonRef}
                 type="button"
-                className="header-info-btn"
-                aria-label="Open Freight information"
-                onClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets))}
-                onFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
-                onBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
-                setInfoModalMode("about");
-                setSaveDraftPromptError("");
-                setSubmissionSuccessTxHash("");
-                setSubmissionSuccessPreimage(null);
-                setSubmissionErrorMessage("");
-                setSettlementModalData(null);
-                setIsLoadingSettlementModal(false);
-                resetTicketPurchaseState();
-              })}
+                className="create-modal-action-btn"
+                data-tooltip="Reset form"
+                onClick={resetCreateModal}
+                aria-label="Reset create campaign form"
               >
-                <span className="header-info-inner-ring" aria-hidden="true" />
-                <span className="header-info-glyph" aria-hidden="true">i</span>
+                <RotateCcw className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="create-modal-action-btn"
+                data-tooltip={createTopActionTooltip}
+                onClick={handleCreateTopRightAction}
+                aria-label={createTopActionLabel}
+              >
+                {createModalStep === "review" ? (
+                  <ArrowLeft className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <span className={`create-modal-toggle-icon-wrap ${isCreateDraftListOpen ? "create-modal-toggle-icon-wrap-open" : ""}`}>
+                    <ArrowDown className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-down" size={26} strokeWidth={2} aria-hidden="true" />
+                    <ArrowUp className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-up" size={26} strokeWidth={2} aria-hidden="true" />
+                  </span>
+                )}
               </button>
             </div>
-          </div>
-
-          <div className="header-right-actions" onClick={(event) => event.stopPropagation()}>
-            {showCreateModal && (
-              <div
-                className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
-                role="group"
-                aria-label="Create modal controls"
-              >
-                <button
-                  type="button"
-                  className="create-modal-action-btn"
-                  data-tooltip="Reset form"
-                  onClick={resetCreateModal}
-                  aria-label="Reset create campaign form"
-                >
-                  <RotateCcw className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="create-modal-action-btn"
-                  data-tooltip={createTopActionTooltip}
-                  onClick={handleCreateTopRightAction}
-                  aria-label={createTopActionLabel}
-                >
-                  {createModalStep === "review" ? (
-                    <ArrowLeft className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
-                  ) : (
-                    <span className={`create-modal-toggle-icon-wrap ${isCreateDraftListOpen ? "create-modal-toggle-icon-wrap-open" : ""}`}>
-                      <ArrowDown className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-down" size={26} strokeWidth={2} aria-hidden="true" />
-                      <ArrowUp className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-up" size={26} strokeWidth={2} aria-hidden="true" />
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
-
-            <div className={`wallet-action-slot ${shouldHideWalletAction ? "wallet-action-slot-hidden" : ""}`}>
-              {signer ? (
-                <div
-                  className="wallet-info-wrap"
-                  onMouseEnter={() => setShowWalletInfoModal(true)}
-                  onMouseLeave={() => setShowWalletInfoModal(false)}
-                >
-                  <button
-                    onClick={disconnect}
-                    className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
-                  >
-                    Disconnect
-                  </button>
-                  {showWalletInfoModal && (
-                    <div className="wallet-info-modal" role="dialog" aria-label="Wallet details">
-                      <p className="wallet-info-heading">Wallet details</p>
-                      <div className="wallet-info-section">
-                        <span className="wallet-info-label">Address</span>
-                        <div className="wallet-info-address-row">
-                          <span className="wallet-info-address">{walletAddress || "Loading…"}</span>
-                          <button
-                            type="button"
-                            className="wallet-info-copy-btn"
-                            onClick={() => void handleCopyWalletAddress()}
-                            title={walletAddress}
-                            aria-label="Copy wallet address"
-                          >
-                            <Copy size={14} strokeWidth={2} aria-hidden="true" />
-                          </button>
-                        </div>
-                        {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
-                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
-                      </div>
-                      <div className="wallet-info-grid">
-                        <div className="wallet-info-section">
-                          <span className="wallet-info-label">Balance</span>
-                          <span className="wallet-info-value">
-                            {walletInfoLoading ? "Loading…" : walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--"}
-                          </span>
-                        </div>
-                        <div className="wallet-info-section">
-                          <span className="wallet-info-label">Chain</span>
-                          <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
-                        </div>
-                      </div>
-                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={open}
-                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
-                >
-                  Connect Wallet
-                </button>
-              )}
-            </div>
-          </div>
-
-          <FreightInfoModal
-            open={showInfoModal}
-            closing={isInfoModalClosing}
-            ariaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
-            body={infoModalBody}
-            actions={infoModalActions}
-            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
-            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
-            onRequestClose={() => closeInfoModal(() => {
-              setInfoModalMode("about");
-              setSaveDraftPromptError("");
-              setSubmissionSuccessTxHash("");
-              setSubmissionSuccessPreimage(null);
-              setSubmissionErrorMessage("");
-              setSettlementModalData(null);
-              setIsLoadingSettlementModal(false);
-            })}
-            onKeepOpen={keepInfoModalOpen}
-            onScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
-              setInfoModalMode("about");
-              setSaveDraftPromptError("");
-              setSubmissionSuccessTxHash("");
-              setSubmissionSuccessPreimage(null);
-              setSubmissionErrorMessage("");
-              setSettlementModalData(null);
-              setIsLoadingSettlementModal(false);
-              resetTicketPurchaseState();
-            })}
-          />
-        </div>
+          ) : undefined}
+          shouldHideWalletAction={shouldHideWalletAction}
+          walletAddress={walletAddress}
+          walletAddressDisplay={walletAddressDisplay}
+          walletBalanceIncreasing={walletBalanceIncreasing}
+          walletBalanceText={walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
+          walletChainLabel={walletChainLabel}
+          walletCopyFeedback={walletCopyFeedback}
+          walletInfoButtonRef={headerInfoButtonRef}
+          walletInfoError={walletInfoError}
+          walletModalClosing={isWalletInfoClosing}
+          walletModalOpen={showWalletInfoModal}
+          walletUsdParts={walletUsdParts}
+          walletActionHref={currentUserProfile ? `/user/${encodeURIComponent(currentUserProfile.username)}` : undefined}
+          walletActionLabel="Introspect"
+        />
 
         {signer && (
           <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
@@ -907,7 +1179,7 @@ export default function Home() {
           client={client}
           onCommentDiscardRequest={handleCommentDiscardRequest}
           commentDiscardDecision={commentDiscardDecision}
-          onTicketPurchaseRequest={openTicketPurchaseInfoModal}
+          onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
           onErrorChange={handleFreightsLoadError}
           onSettlementInfoRequest={(data) => {
             setSettlementModalData(data);
@@ -947,6 +1219,14 @@ export default function Home() {
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
             onDraftSelectionRequest={handleDraftSelectionRequest}
+            onMountableSelectionRequired={openMountablesModal}
+            onMountableSelectionStateChange={({ hasMountedHashtag: mounted, formsSelected }) => {
+              setHasMountedHashtag(mounted);
+              setFormsMountableSelected(formsSelected);
+              if (!mounted) {
+                setMountablesPromptError("");
+              }
+            }}
             onPublishSuccess={(txHash, randomnessPreimage) => {
               finalizeCloseCreateModal();
               openSubmissionSuccessInfoModal(txHash, randomnessPreimage);

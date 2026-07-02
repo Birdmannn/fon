@@ -9,12 +9,19 @@ import type { CampaignCell } from "@/lib/transactions";
 
 import CampaignCard from "./CampaignCard";
 
+type SettlementRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+  amountLabel: string;
+};
+
 type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
   randomnessPreimage: string | null;
   evidenceItems: string[];
-  recipients: string[];
+  recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
 };
@@ -28,6 +35,14 @@ type CampaignListProps = {
   onCommentDiscardRequest: (cardId: string) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
+  onSettlementCompleted: (
+    campaignId: string,
+    settlementTxHash: string,
+    settledAt: string,
+    soldTicketCount: string,
+    settledParticipantCount?: string | null,
+    settledRecipients?: CampaignRecord["settledRecipients"]
+  ) => void;
   onStartDetailTransition: (href: string) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
@@ -42,6 +57,7 @@ export default function CampaignList({
   loading,
   onCommentDiscardRequest,
   onScrolledToNewest,
+  onSettlementCompleted,
   onSettlementInfoRequest,
   onStartDetailTransition,
   onTicketBought,
@@ -101,7 +117,7 @@ export default function CampaignList({
   }, [onScrolledToNewest, shouldScrollToNewest]);
 
   if (loading) {
-    return <p className="text-sm text-gray-400">Loading freights…</p>;
+    return null;
   }
 
   if (error) {
@@ -130,6 +146,7 @@ export default function CampaignList({
             onOpenDetail={() => onStartDetailTransition(`/campaign/${getCampaignStableId(campaign)}`)}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
+            onSettlementCompleted={onSettlementCompleted}
             onSettlementInfoRequest={onSettlementInfoRequest}
           />
         </div>

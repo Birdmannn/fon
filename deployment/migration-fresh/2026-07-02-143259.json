@@ -2,11 +2,11 @@
   "cell_recipes": [
     {
       "name": "freight",
-      "tx_hash": "0x38efd94491c25489a09b3214e0fe55037c29f874e007914aad640a47d1d0dfc1",
+      "tx_hash": "0x17420dcef3ae1d307e46cfaedc6634fa04ca7cbffa8ba41e918f1913ff3daa08",
       "index": 0,
       "occupied_capacity": 12147800000000,
       "data_hash": "0x7d47b9932375b5c6fe7aae79152696111e72029d9985d5d9991efaf111909b0c",
-      "type_id": "0xdfc36e593b6feb4b8373f30ed6bd5f0c33cf982c3140065fa14d5aaf03deae74"
+      "type_id": "0xb3e70faf1c866aba4cff70b66e28140e05af70b3d0aa1d343286810ca900b869"
     }
   ],
   "dep_group_recipes": []

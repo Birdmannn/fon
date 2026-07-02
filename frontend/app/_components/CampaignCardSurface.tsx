@@ -1,10 +1,16 @@
 "use client";
 
-import { Copy, Ticket } from "lucide-react";
+import { Copy, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import {
+  buildDefaultHandle,
+  decodeCreatedByAddress,
+  deriveRaffleSettlementUiState,
+  formatCkbAmount,
+} from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex, decodeSummary } from "@/lib/encoding";
+import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignRecord = {
@@ -12,6 +18,17 @@ type CampaignRecord = {
   description?: string;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
+  settlementTxHash?: string | null;
+  soldTicketCount?: string | null;
+  mountables?: {
+    forms?: {
+      enabled?: boolean;
+      formUrl?: string;
+      canonicalFormUrl?: string;
+      formId?: string;
+      validatedAt?: string;
+    } | null;
+  };
   socialMetadata?: {
     mentions?: string[];
   };
@@ -79,6 +96,15 @@ function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
   };
 }
 
+function sanitizeCampaignDescription(text: string) {
+  return text
+    .replace(/(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|mounted)\b/gi, "$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 function truncateCampaignDescription(text: string, maxChars: number) {
   if (text.length <= maxChars) {
     return { text, truncated: false };
@@ -100,19 +126,6 @@ function truncateAddress(address: string) {
   }
 
   return `${address.slice(0, 8)}…${address.slice(-6)}`;
-}
-
-function buildDefaultHandle(addressHex: string) {
-  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
-  return `freight${normalized.slice(-20)}.ckb`;
-}
-
-function decodeCreatedByAddress(campaign: CampaignCell) {
-  return bytesToHex(campaign.data.createdBy);
-}
-
-function formatCkbAmount(value: bigint) {
-  return (Number(value) / 1e8).toFixed(2);
 }
 
 function getStatusClassName(status: CampaignStatus) {
@@ -162,12 +175,17 @@ export default function CampaignCardSurface({
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
-  const displayDescription = record?.description?.trim() || decodeSummary(data.summary);
+  const displayDescription = sanitizeCampaignDescription(record?.description?.trim() || decodeSummary(data.summary));
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const mentions = record?.socialMetadata?.mentions ?? [];
   const rewardCountValue = Number(data.rewardCount);
-  const shouldGlowSettlement = isRaffleCampaign && displayStatus === CampaignStatus.Completed && rewardCountValue > 0 && data.currentDeposits > 0n;
+  const shouldGlowSettlement = deriveRaffleSettlementUiState({
+    campaign,
+    displayStatus,
+    settlementTxHash: record?.settlementTxHash ?? null,
+    soldTicketCount: record?.soldTicketCount ?? null,
+  }).shouldGlowSettlement;
   const collapsedDescription = useMemo(
     () => truncateCampaignDescription(displayDescription, variant === "detail" ? 1200 : CAMPAIGN_CARD_PREVIEW_MAX_CHARS),
     [displayDescription, variant]
@@ -292,6 +310,11 @@ export default function CampaignCardSurface({
 
       <div className="campaign-card-footer">
         <div className="campaign-card-footer-meta">
+          {record?.mountables?.forms?.enabled ? (
+            <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
+              <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+            </span>
+          ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
             <a
               href={`https://pudge.explorer.nervos.org/transaction/${outPoint.txHash}`}

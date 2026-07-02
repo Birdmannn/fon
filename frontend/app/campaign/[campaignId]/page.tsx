@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
-import { CampaignStatus } from "@/lib/contract";
+import { buildDefaultHandle, deriveDisplayStatus, formatCkbAmount } from "@/lib/campaignDisplay";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 import {
@@ -44,34 +44,8 @@ type CampaignRecord = {
   txHash?: string | null;
 };
 
-function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
-  if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
-    return campaign.data.status;
-  }
-
-  const createdAtSeconds = Number(campaign.data.createdAt) / 1000;
-  const nowSeconds = nowMs / 1000;
-  const startsAtSeconds = createdAtSeconds + Number(campaign.data.startDurationSecs);
-  const endsAtSeconds = startsAtSeconds + Number(campaign.data.taskDurationSecs);
-
-  if (nowSeconds < startsAtSeconds) {
-    return CampaignStatus.Created;
-  }
-
-  if (nowSeconds >= endsAtSeconds) {
-    return CampaignStatus.Completed;
-  }
-
-  return CampaignStatus.Active;
-}
-
 function decodeCreatedByAddress(campaign: CampaignCell) {
   return bytesToHex(campaign.data.createdBy);
-}
-
-function buildDefaultHandle(addressHex: string) {
-  const normalized = addressHex.toLowerCase().replace(/^0x/, "");
-  return `freight${normalized.slice(-20)}.ckb`;
 }
 
 function splitCampaignId(campaignId: string) {
@@ -95,28 +69,20 @@ function splitCampaignId(campaignId: string) {
   return { txHash, index, campaignId: null };
 }
 
-function formatCkbAmount(value: bigint) {
-  return (Number(value) / 1e8).toFixed(2);
-}
-
-function deriveChainLabel(client: ccc.Client) {
-  if (client instanceof ccc.ClientPublicMainnet) {
-    return "Mainnet";
-  }
-
-  if (client instanceof ccc.ClientPublicTestnet) {
-    return "Testnet";
-  }
-
-  return "Custom";
-}
-
 function copyText(text: string) {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     return navigator.clipboard.writeText(text);
   }
 
   return Promise.reject(new Error("Clipboard API unavailable"));
+}
+
+function truncateWalletAddress(address: string) {
+  if (address.length <= 22) {
+    return address;
+  }
+
+  return `${address.slice(0, 10)}…${address.slice(-10)}`;
 }
 
 export default function CampaignDetailPage() {
@@ -139,11 +105,14 @@ export default function CampaignDetailPage() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
   const [walletAddress, setWalletAddress] = useState("");
   const [walletBalance, setWalletBalance] = useState<bigint | null>(null);
   const [walletInfoError, setWalletInfoError] = useState("");
   const [walletInfoLoading, setWalletInfoLoading] = useState(false);
   const [walletCopyFeedback, setWalletCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  const [walletBalanceIncreasing, setWalletBalanceIncreasing] = useState(false);
+  const walletBalanceAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -221,7 +190,40 @@ export default function CampaignDetailPage() {
     }
   }, [walletAddress]);
 
-  const walletChainLabel = useMemo(() => deriveChainLabel(client), [client]);
+  const closeWalletInfoModal = useCallback(() => {
+    if (!showWalletInfoModal || isWalletInfoClosing) {
+      return;
+    }
+
+    setIsWalletInfoClosing(true);
+    window.setTimeout(() => {
+      setShowWalletInfoModal(false);
+      setIsWalletInfoClosing(false);
+    }, 220);
+  }, [isWalletInfoClosing, showWalletInfoModal]);
+
+  const keepWalletInfoModalOpen = useCallback(() => {
+    setIsWalletInfoClosing(false);
+    setShowWalletInfoModal(true);
+  }, []);
+
+  const scheduleWalletInfoModalClose = useCallback(() => {
+    window.setTimeout(() => {
+      closeWalletInfoModal();
+    }, 250);
+  }, [closeWalletInfoModal]);
+
+  const walletChainLabel = useMemo(() => {
+    if (client instanceof ccc.ClientPublicMainnet) {
+      return "Mainnet";
+    }
+
+    if (client instanceof ccc.ClientPublicTestnet) {
+      return "Testnet";
+    }
+
+    return "Custom";
+  }, [client]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -250,12 +252,26 @@ export default function CampaignDetailPage() {
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (walletBalanceAnimationTimerRef.current) {
+        clearTimeout(walletBalanceAnimationTimerRef.current);
+        walletBalanceAnimationTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!signer) {
       setShowWalletInfoModal(false);
       setWalletAddress("");
       setWalletBalance(null);
       setWalletInfoError("");
       setWalletInfoLoading(false);
+      setWalletBalanceIncreasing(false);
+      if (walletBalanceAnimationTimerRef.current) {
+        clearTimeout(walletBalanceAnimationTimerRef.current);
+        walletBalanceAnimationTimerRef.current = null;
+      }
       return;
     }
 
@@ -264,10 +280,11 @@ export default function CampaignDetailPage() {
     }
 
     let cancelled = false;
-    setWalletInfoLoading(true);
-    setWalletInfoError("");
 
-    void (async () => {
+    const syncWalletInfo = async () => {
+      setWalletInfoLoading(true);
+      setWalletInfoError("");
+
       try {
         const [nextAddress, nextBalance] = await Promise.all([
           signer.getRecommendedAddress(),
@@ -279,7 +296,20 @@ export default function CampaignDetailPage() {
         }
 
         setWalletAddress(nextAddress ?? "");
-        setWalletBalance(nextBalance);
+        setWalletBalance((previousBalance) => {
+          if (previousBalance !== null && nextBalance > previousBalance) {
+            setWalletBalanceIncreasing(true);
+            if (walletBalanceAnimationTimerRef.current) {
+              clearTimeout(walletBalanceAnimationTimerRef.current);
+            }
+            walletBalanceAnimationTimerRef.current = setTimeout(() => {
+              setWalletBalanceIncreasing(false);
+              walletBalanceAnimationTimerRef.current = null;
+            }, 900);
+          }
+
+          return nextBalance;
+        });
       } catch (walletError) {
         if (cancelled) {
           return;
@@ -291,10 +321,16 @@ export default function CampaignDetailPage() {
           setWalletInfoLoading(false);
         }
       }
-    })();
+    };
+
+    void syncWalletInfo();
+    const intervalId = window.setInterval(() => {
+      void syncWalletInfo();
+    }, 4000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [showWalletInfoModal, signer]);
 
@@ -474,8 +510,8 @@ export default function CampaignDetailPage() {
               {signer ? (
                 <div
                   className="wallet-info-wrap"
-                  onMouseEnter={() => setShowWalletInfoModal(true)}
-                  onMouseLeave={() => setShowWalletInfoModal(false)}
+                  onMouseEnter={keepWalletInfoModalOpen}
+                  onMouseLeave={scheduleWalletInfoModalClose}
                 >
                   <button
                     onClick={disconnect}
@@ -484,12 +520,19 @@ export default function CampaignDetailPage() {
                     Disconnect
                   </button>
                   {showWalletInfoModal && (
-                    <div className="wallet-info-modal" role="dialog" aria-label="Wallet details">
-                      <p className="wallet-info-heading">Wallet details</p>
+                    <div
+                      className={`wallet-info-modal ${isWalletInfoClosing ? "wallet-info-modal-closing" : ""}`}
+                      role="dialog"
+                      aria-label="Wallet details"
+                      onMouseEnter={keepWalletInfoModalOpen}
+                      onMouseLeave={scheduleWalletInfoModalClose}
+                    >
                       <div className="wallet-info-section">
-                        <span className="wallet-info-label">Address</span>
+                        <span className="wallet-info-label">
+                          Address <span className="wallet-chain-indicator wallet-chain-indicator-inline">({walletChainLabel})</span>
+                        </span>
                         <div className="wallet-info-address-row">
-                          <span className="wallet-info-address">{walletAddress || "Loading…"}</span>
+                          <span className="wallet-info-address">{walletAddress ? truncateWalletAddress(walletAddress) : "Loading…"}</span>
                           <button
                             type="button"
                             className="wallet-info-copy-btn"
@@ -503,16 +546,18 @@ export default function CampaignDetailPage() {
                         {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
                         {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                       </div>
-                      <div className="wallet-info-grid">
-                        <div className="wallet-info-section">
-                          <span className="wallet-info-label">Balance</span>
-                          <span className="wallet-info-value">
-                            {walletInfoLoading ? "Loading…" : walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : "--"}
+                      <div className="wallet-info-section">
+                        <span className="wallet-info-label">Balance</span>
+                        <div className="wallet-info-balance-row">
+                          <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                            {walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
                           </span>
-                        </div>
-                        <div className="wallet-info-section">
-                          <span className="wallet-info-label">Chain</span>
-                          <span className="wallet-info-value wallet-chain-indicator">{walletChainLabel}</span>
+                          <span className="wallet-info-balance-approx">≈</span>
+                          <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
+                            <span className="wallet-info-usd-currency">$</span>
+                            <span>--</span>
+                            <span className="wallet-info-usd-decimals">--</span>
+                          </span>
                         </div>
                       </div>
                       {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}

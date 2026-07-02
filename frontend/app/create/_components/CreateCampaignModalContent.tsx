@@ -5,6 +5,8 @@ import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "luc
 
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
+import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { CampaignType } from "@/lib/contract";
 import {
   MIN_TASK_DURATION_MINUTES,
@@ -23,8 +25,10 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
   [CampaignType.Raffle]: "Raffle",
 };
 
+const MOUNTABLE_TRIGGER_HASHTAG = "mounted";
+
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
-const COMPULSORY_HASHTAG_SET = new Set(Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()));
+const COMPULSORY_HASHTAG_SET = new Set([...Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()), "mounted"]);
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
 const CREATE_MODAL_BODY_MAX_CHARS = 455;
@@ -195,6 +199,9 @@ type DraftRecord = {
     auxAmountCkb?: string;
     rewardCount?: string;
   };
+  mountables?: {
+    forms?: FormsMountableConfig | null;
+  };
   socialMetadata?: {
     mentions?: string[];
   };
@@ -220,6 +227,7 @@ type DraftSnapshot = {
   rewardCount: string;
   auxAmountCkb: string;
   mentions: string[];
+  formsMountable?: FormsMountableConfig;
 };
 
 type CampaignIdentityOverride = {
@@ -244,6 +252,11 @@ export type CreateCampaignModalContentHandle = {
   discardDraftSession: () => void;
   toggleDraftList: () => Promise<boolean>;
   applyDraftSelection: (draftId: string) => void;
+  getFormsMountableConfig: () => FormsMountableConfig;
+  setFormsMountableEnabled: (enabled: boolean) => void;
+  updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
+  persistCurrentDraft: () => Promise<void>;
+  advanceToReviewAfterMountableSelection: () => Promise<void>;
 };
 
 export type CreateConstraintStatus = {
@@ -264,6 +277,8 @@ type CreateCampaignModalContentProps = {
   onDraftListOpenChange?: (isOpen: boolean) => void;
   onDraftSelectionRequest?: (draftId: string) => void;
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
+  onMountableSelectionRequired?: () => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean }) => void;
 };
 
 function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
@@ -312,6 +327,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onDraftListOpenChange,
   onDraftSelectionRequest,
   onPublishSuccess,
+  onMountableSelectionRequired,
+  onMountableSelectionStateChange,
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -335,6 +352,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
   const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
+  const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [showHashtagMenu, setShowHashtagMenu] = useState(false);
@@ -389,7 +407,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const normalizedFirstHashtag = firstHashtag?.toLowerCase() ?? "";
   const compulsoryHashtags = hashtags.filter((tag) => COMPULSORY_HASHTAG_SET.has(tag.toLowerCase()));
   const isFirstHashtagCompulsory = normalizedFirstHashtag.length > 0 && COMPULSORY_HASHTAG_SET.has(normalizedFirstHashtag);
-  const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length === 1;
+  const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length >= 1;
   const hasRequiredCompulsoryHashtag = isFirstHashtagCompulsory && hasExactlyOneCompulsoryHashtag;
   const descriptionChars = getCountableChars(descriptionText.trim());
   const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
@@ -422,6 +440,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     updateDurationFromParts(String(durationParts.hours), value);
   }, [durationParts.hours, updateDurationFromParts]);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
+  const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === "mounted");
   const normalizedCreateParams = useMemo(() => {
     try {
       return {
@@ -464,11 +483,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
     mentions,
+    formsMountable,
   }), [
     campaignType,
     currentAuxAmountCkb,
     currentDraftSummary,
     maxAmountCkb,
+    formsMountable,
     mentions,
     rewardCount,
     taskDurationHours,
@@ -633,7 +654,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setTaskStartDelayHours("0");
     setTaskDurationHours("24");
     setMaxAmountCkb("1000");
+    setRewardCount("1");
     setRaffleTicketPriceCkb("1");
+    setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
     setModalStep("compose");
     setReviewSummary("");
     setActiveDraftRecordId(null);
@@ -1093,6 +1116,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRewardCount(nextRewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
     setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
+    setFormsMountable(normalizeFormsMountableConfig(record.mountables?.forms));
     setActiveDraftRecordId(record._id ?? null);
     setModalStep("compose");
     setIsDraftListOpen(false);
@@ -1115,6 +1139,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
       mentions: nextMentions,
+      formsMountable: normalizeFormsMountableConfig(record.mountables?.forms),
     });
     setLastSavedSnapshot(nextSnapshot);
 
@@ -1200,7 +1225,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setTaskStartDelayHours("0");
         setTaskDurationHours("24");
         setMaxAmountCkb("1000");
+        setRewardCount("1");
         setRaffleTicketPriceCkb("1");
+        setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
         setLastSavedSnapshot(null);
         setDraftSaveStatus("idle");
         setDraftSaveError("");
@@ -1246,6 +1273,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
         },
+        mountables: {
+          forms: formsMountable.enabled ? formsMountable : null,
+        },
         socialMetadata: {
           mentions,
           comments: [],
@@ -1265,6 +1295,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [
       activeDraftRecord,
       campaignType,
+      formsMountable,
       getCreatorAddress,
       maxAmountCkb,
       mentions,
@@ -1322,6 +1353,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
           mentions,
+          formsMountable,
         });
         setLastSavedSnapshot(nextSnapshot);
 
@@ -1341,6 +1373,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               maxAmountCkb,
               rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+            },
+            mountables: {
+              forms: formsMountable.enabled ? formsMountable : null,
             },
             socialMetadata: {
               mentions,
@@ -1390,53 +1425,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     ]
   );
 
-  useImperativeHandle(ref, () => ({
-    hasDraftableChanges: () => hasDraftableChanges,
-    saveDraftFromClose: async () => {
-      if (!hasDraftableChanges) {
-        return;
-      }
-      const summaryToSave = currentDraftSnapshot.summaryDraft || buildOnchainSummary({
-        title: trimmedModalTitle,
-        description: trimmedModalDescription,
-      });
-      await persistDraftRecord(summaryToSave, "draft");
-    },
-    discardDraftSession: () => {
-      resetComposer();
-    },
-    toggleDraftList: async () => {
-      if (isDraftListOpen) {
-        draftListRequestIdRef.current += 1;
-        setIsDraftListOpen(false);
-        setIsDraftListLoading(false);
-        setDraftListError("");
-        return false;
-      }
-
-      return loadDraftRecords();
-    },
-    applyDraftSelection: (draftId: string) => {
-      const selectedDraft = draftRecords.find((record) => record._id === draftId);
-      if (!selectedDraft) {
-        return;
-      }
-
-      applyDraftRecord(selectedDraft);
-    },
-  }), [
-    applyDraftRecord,
-    currentDraftSnapshot.summaryDraft,
-    draftRecords,
-    hasDraftableChanges,
-    isDraftListOpen,
-    loadDraftRecords,
-    persistDraftRecord,
-    resetComposer,
-    trimmedModalDescription,
-    trimmedModalTitle,
-  ]);
-
   useEffect(() => {
     return () => {
       if (applyDraftAnimationTimerRef.current) {
@@ -1445,8 +1433,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     };
   }, []);
 
-  const handleAdvanceToReview = useCallback(async () => {
+  const handleAdvanceToReview = useCallback(async (skipMountedSelection = false) => {
     if (!validateComposeConstraints()) {
+      return;
+    }
+
+    if (!skipMountedSelection && hasMountedHashtag) {
+      onMountableSelectionRequired?.();
       return;
     }
 
@@ -1474,7 +1467,100 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch {
       setStatus("error");
     }
-  }, [hideMenus, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
+  }, [formsMountable.enabled, hasMountedHashtag, hideMenus, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
+
+  const handleSaveDraftFromClose = useCallback(async () => {
+    if (!hasDraftableChanges) {
+      return;
+    }
+
+    setStatus("idle");
+    setErrorMsg("");
+    await persistDraftRecord(currentDraftSummary, "draft");
+  }, [currentDraftSummary, hasDraftableChanges, persistDraftRecord]);
+
+  const handleDiscardDraftSession = useCallback(() => {
+    setActiveDraftRecordId(null);
+    setIsDraftListOpen(false);
+    setDraftListError("");
+    setDraftDeleteId(null);
+    setShowNoDraftsMessage(false);
+    setLastSavedSnapshot(null);
+    setPendingAdvanceToReview(false);
+    setPendingPublishedRecordSync(null);
+    setIsApplyingDraft(false);
+    if (applyDraftAnimationTimerRef.current) {
+      clearTimeout(applyDraftAnimationTimerRef.current);
+      applyDraftAnimationTimerRef.current = null;
+    }
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    setStatus("idle");
+    setErrorMsg("");
+    hideMenus();
+  }, [hideMenus]);
+
+  const handleToggleDraftList = useCallback(async () => {
+    if (isDraftListOpen) {
+      setIsDraftListOpen(false);
+      setDraftListError("");
+      setShowNoDraftsMessage(false);
+      return false;
+    }
+
+    return loadDraftRecords();
+  }, [isDraftListOpen, loadDraftRecords]);
+
+  const handleApplyDraftSelection = useCallback((draftId: string) => {
+    const nextRecord = draftRecords.find((record) => record._id === draftId);
+    if (!nextRecord) {
+      return;
+    }
+
+    applyDraftRecord(nextRecord);
+  }, [applyDraftRecord, draftRecords]);
+
+  const handleSetFormsMountableEnabled = useCallback((enabled: boolean) => {
+    setFormsMountable((current) => normalizeFormsMountableConfig({
+      ...current,
+      enabled,
+    }));
+  }, []);
+
+  const handleUpdateFormsMountableConfig = useCallback((updates: Partial<FormsMountableConfig>) => {
+    setFormsMountable((current) => normalizeFormsMountableConfig({
+      ...current,
+      ...updates,
+    }));
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    hasDraftableChanges: () => hasDraftableChanges,
+    saveDraftFromClose: handleSaveDraftFromClose,
+    discardDraftSession: handleDiscardDraftSession,
+    toggleDraftList: handleToggleDraftList,
+    applyDraftSelection: handleApplyDraftSelection,
+    getFormsMountableConfig: () => formsMountable,
+    setFormsMountableEnabled: handleSetFormsMountableEnabled,
+    updateFormsMountableConfig: handleUpdateFormsMountableConfig,
+    persistCurrentDraft: async () => {
+      await persistDraftRecord(currentDraftSummary, "draft");
+    },
+    advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
+  }), [
+    activeDraftRecordId,
+    currentDraftSummary,
+    formsMountable,
+    handleAdvanceToReview,
+    handleApplyDraftSelection,
+    handleDiscardDraftSession,
+    handleSaveDraftFromClose,
+    handleSetFormsMountableEnabled,
+    handleToggleDraftList,
+    handleUpdateFormsMountableConfig,
+    hasDraftableChanges,
+    persistDraftRecord,
+  ]);
 
   useEffect(() => {
     if (!pendingAdvanceToReview || !signer || !isModal || modalStep !== "compose") {
@@ -1483,6 +1569,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
     void handleAdvanceToReview();
   }, [handleAdvanceToReview, isModal, modalStep, pendingAdvanceToReview, signer]);
+
+  useEffect(() => {
+    if (!isModal) {
+      return;
+    }
+
+    onMountableSelectionStateChange?.({
+      hasMountedHashtag,
+      formsSelected: formsMountable.enabled,
+    });
+  }, [formsMountable.enabled, hasMountedHashtag, isModal, onMountableSelectionStateChange]);
 
   const finalizePublishedRecordSync = useCallback(
     async (sync: PendingPublishedRecordSync) => {
@@ -2020,6 +2117,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <div className="create-review-preview-card create-review-preview-card-main">
           <p className="create-review-section-label">Preview</p>
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
+          {formsMountable.enabled && formsMountable.formUrl.trim().length > 0 ? (
+            <p className="create-review-preview-body">Mounted form: {formsMountable.formUrl.trim()}</p>
+          ) : null}
           {createPreviewLines.length > 0 ? (
             <div className="create-review-preview-content">
               {createPreviewLines.map((line, index) => {
