@@ -126,6 +126,7 @@ export default function Home() {
   const [hasMountedHashtag, setHasMountedHashtag] = useState(false);
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
+  const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
   const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
@@ -910,17 +911,58 @@ export default function Home() {
       <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing}
         onClick={() => {
-          const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
-          createModalContentRef.current?.updateFormsMountableConfig({ formUrl: primaryLink });
-          closeInfoModal(() => {
-            setInfoModalMode("about");
-            setMountablesPromptError("");
-          });
-          void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+          void (async () => {
+            try {
+              const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+              if (!primaryLink) {
+                setMountablesPromptError("Paste a Google Forms responder link to continue.");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+
+              const validationResponse = await fetch("/api/google-forms/validate", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ formUrl: primaryLink }),
+              });
+              const validationPayload = await validationResponse.json().catch(() => null);
+              if (!validationResponse.ok) {
+                throw new Error(validationPayload?.error ?? "Failed to validate Google Form");
+              }
+
+              const canonicalFormUrl = typeof validationPayload?.canonicalFormUrl === "string" ? validationPayload.canonicalFormUrl : primaryLink;
+              const formId = typeof validationPayload?.formId === "string" ? validationPayload.formId : "";
+              const validatedAt = typeof validationPayload?.validatedAt === "string" ? validationPayload.validatedAt : "";
+
+              createModalContentRef.current?.updateFormsMountableConfig({
+                formUrl: canonicalFormUrl,
+                canonicalFormUrl,
+                formId,
+                validatedAt,
+              });
+              setMountableFormLinks([canonicalFormUrl]);
+              await createModalContentRef.current?.persistCurrentDraft();
+
+              closeInfoModal(() => {
+                setInfoModalMode("about");
+                setMountablesPromptError("");
+              });
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted Google Form");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
         }}
       >
-        Continue
+        {isMountablesContinuing ? "Hold..." : "Continue"}
       </button>
     </div>
   ) : infoModalMode === "discard-comment-confirm" ? (

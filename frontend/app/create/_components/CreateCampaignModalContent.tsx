@@ -255,6 +255,7 @@ export type CreateCampaignModalContentHandle = {
   getFormsMountableConfig: () => FormsMountableConfig;
   setFormsMountableEnabled: (enabled: boolean) => void;
   updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
+  persistCurrentDraft: () => Promise<void>;
   advanceToReviewAfterMountableSelection: () => Promise<void>;
 };
 
@@ -1542,8 +1543,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     getFormsMountableConfig: () => formsMountable,
     setFormsMountableEnabled: handleSetFormsMountableEnabled,
     updateFormsMountableConfig: handleUpdateFormsMountableConfig,
+    persistCurrentDraft: async () => {
+      await persistDraftRecord(currentDraftSummary, "draft");
+    },
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
   }), [
+    activeDraftRecordId,
+    currentDraftSummary,
     formsMountable,
     handleAdvanceToReview,
     handleApplyDraftSelection,
@@ -1553,6 +1559,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     handleToggleDraftList,
     handleUpdateFormsMountableConfig,
     hasDraftableChanges,
+    persistDraftRecord,
   ]);
 
   useEffect(() => {
