@@ -312,7 +312,7 @@ export default function CampaignCardSurface({
         <div className="campaign-card-footer-meta">
           {record?.mountables?.forms?.enabled ? (
             <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
-              <Scroll size={14} strokeWidth={2} aria-hidden="true" />
+              <Scroll size={22} strokeWidth={2} aria-hidden="true" />
             </span>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
