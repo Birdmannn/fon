@@ -79,6 +79,9 @@ function normalizeInitialGoogleFormUrl(rawUrl: string) {
 
 function detectVerifiedEmailRequirement(html: string, finalUrl: URL) {
   const lowerHtml = html.toLowerCase();
+  const readableText = lowerHtml.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  console.log("Readable text:", readableText);
+  console.log("Final URL:", finalUrl.toString());
   if (finalUrl.hostname === GOOGLE_ACCOUNTS_HOST) {
     return true;
   }
@@ -89,9 +92,18 @@ function detectVerifiedEmailRequirement(html: string, finalUrl: URL) {
     "to continue, sign in",
     "switch accounts",
     "google account",
+    "record your email as the email to be included with my response",
+    "as the email to be included with my response",
+    "record my email address with my response",
   ];
 
-  return markers.some((marker) => lowerHtml.includes(marker));
+  const patterns = [
+    /record\s+[^\s]+@[^\s]+\s+as the email to be included with my response/,
+    /record\s+.+\s+as the email to be included with my response/,
+  ];
+
+  return markers.some((marker) => readableText.includes(marker))
+    || patterns.some((pattern) => pattern.test(readableText));
 }
 
 function extractTitle(html: string) {
@@ -122,6 +134,7 @@ export async function validateGoogleFormUrl(rawUrl: string): Promise<GoogleFormV
 
   const finalUrl = new URL(response.url);
   const html = await response.text();
+  console.log("Final URL after redirects:", finalUrl.toString());
 
   const formMatch = finalUrl.hostname === GOOGLE_ACCOUNTS_HOST
     ? extractGoogleFormFromContinue(finalUrl.searchParams.get("continue"))
@@ -139,7 +152,7 @@ export async function validateGoogleFormUrl(rawUrl: string): Promise<GoogleFormV
 
   const verifiedEmailRequired = detectVerifiedEmailRequirement(html, finalUrl);
   if (!verifiedEmailRequired) {
-    throw new Error("Google Form must require verified email collection");
+    throw new Error("Google Form must require verified email collection" + verifiedEmailRequired);
   }
 
   return {
