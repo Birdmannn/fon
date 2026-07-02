@@ -966,7 +966,7 @@ export default function Home() {
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -976,8 +976,8 @@ export default function Home() {
             setIsLoadingSettlementModal(false);
             resetTicketPurchaseState();
           })}
-          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets))}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
+          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets))}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(() => {
             setInfoModalMode("about");
@@ -988,7 +988,7 @@ export default function Home() {
             setSettlementModalData(null);
             setIsLoadingSettlementModal(false);
           })}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -998,8 +998,8 @@ export default function Home() {
             setIsLoadingSettlementModal(false);
             resetTicketPurchaseState();
           })}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
