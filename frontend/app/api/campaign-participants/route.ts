@@ -11,6 +11,15 @@ type CampaignParticipantPayload = {
   participantTxHash?: unknown;
   joinedAt?: unknown;
   status?: unknown;
+  mountableType?: unknown;
+  verificationProvider?: unknown;
+  googleSub?: unknown;
+  googleEmail?: unknown;
+  googleEmailVerified?: unknown;
+  submittedAt?: unknown;
+  reviewedAt?: unknown;
+  reviewedByAddress?: unknown;
+  reviewNote?: unknown;
 };
 
 function badRequest(message: string, status = 400) {
@@ -37,15 +46,36 @@ function ensureOptionalString(value: unknown, field: string) {
   return value.trim();
 }
 
+function ensureOptionalBoolean(value: unknown, field: string) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "boolean") {
+    throw new Error(`${field} must be a boolean when provided`);
+  }
+
+  return value;
+}
+
 function normalizePayload(payload: CampaignParticipantPayload) {
   const campaignId = ensureString(payload.campaignId, "campaignId").toLowerCase();
   const createdByHash = ensureString(payload.createdByHash, "createdByHash").toLowerCase();
   const chainCreatedAt = ensureString(payload.chainCreatedAt, "chainCreatedAt");
-  const participantAddress = ensureString(payload.participantAddress, "participantAddress");
+  const participantAddress = ensureString(payload.participantAddress, "participantAddress").toLowerCase();
   const participantTxHash = ensureOptionalString(payload.participantTxHash, "participantTxHash")?.toLowerCase() ?? null;
   const joinedAt = ensureString(payload.joinedAt, "joinedAt");
   const status = ensureString(payload.status, "status").toLowerCase();
   const campaignType = typeof payload.campaignType === "number" ? payload.campaignType : Number(payload.campaignType);
+  const mountableType = ensureOptionalString(payload.mountableType, "mountableType")?.toLowerCase() ?? null;
+  const verificationProvider = ensureOptionalString(payload.verificationProvider, "verificationProvider")?.toLowerCase() ?? null;
+  const googleSub = ensureOptionalString(payload.googleSub, "googleSub");
+  const googleEmail = ensureOptionalString(payload.googleEmail, "googleEmail")?.toLowerCase() ?? null;
+  const googleEmailVerified = ensureOptionalBoolean(payload.googleEmailVerified, "googleEmailVerified");
+  const submittedAt = ensureOptionalString(payload.submittedAt, "submittedAt");
+  const reviewedAt = ensureOptionalString(payload.reviewedAt, "reviewedAt");
+  const reviewedByAddress = ensureOptionalString(payload.reviewedByAddress, "reviewedByAddress")?.toLowerCase() ?? null;
+  const reviewNote = ensureOptionalString(payload.reviewNote, "reviewNote");
 
   if (!Number.isInteger(campaignType)) {
     throw new Error("campaignType must be an integer");
@@ -64,6 +94,15 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     participantTxHash,
     joinedAt,
     status,
+    mountableType,
+    verificationProvider,
+    googleSub,
+    googleEmail,
+    googleEmailVerified,
+    submittedAt,
+    reviewedAt,
+    reviewedByAddress,
+    reviewNote,
   };
 }
 
@@ -73,8 +112,12 @@ export async function POST(request: Request) {
     const collection = await getCampaignParticipantsCollection();
     const now = new Date();
 
-    await collection.updateOne(
-      payload.participantTxHash
+    const query = payload.googleSub
+      ? {
+          campaignId: payload.campaignId,
+          googleSub: payload.googleSub,
+        }
+      : payload.participantTxHash
         ? {
             campaignId: payload.campaignId,
             participantTxHash: payload.participantTxHash,
@@ -83,7 +126,10 @@ export async function POST(request: Request) {
             campaignId: payload.campaignId,
             participantAddress: payload.participantAddress,
             joinedAt: payload.joinedAt,
-          },
+          };
+
+    await collection.updateOne(
+      query,
       {
         $set: {
           ...payload,

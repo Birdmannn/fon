@@ -41,6 +41,9 @@ export type CampaignRecord = {
     forms?: {
       enabled?: boolean;
       formUrl?: string;
+      canonicalFormUrl?: string;
+      formId?: string;
+      validatedAt?: string;
       payoutMode?: "assured" | "random_subset" | "overflow_only";
       proofMode?: "external_proof";
       guaranteedSlots?: string;

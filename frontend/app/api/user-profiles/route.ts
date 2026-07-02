@@ -8,6 +8,15 @@ type UserProfilePayload = {
   address?: unknown;
   username?: unknown;
   displayName?: unknown;
+  googleAccount?: {
+    sub?: unknown;
+    email?: unknown;
+    emailVerified?: unknown;
+    picture?: unknown;
+    linkedAt?: unknown;
+    lastRefreshedAt?: unknown;
+  } | null;
+  includePrivate?: unknown;
 };
 
 type LeaderboardEntry = {
@@ -19,6 +28,19 @@ type LeaderboardEntry = {
   rank: number;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
+};
+
+type GoogleAccountProfile = {
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+  picture?: string | null;
+  linkedAt?: string | null;
+  lastRefreshedAt?: string | null;
+};
+
+type UserProfileResponse = LeaderboardEntry & {
+  googleAccount?: GoogleAccountProfile | null;
 };
 
 function buildDefaultUsername(addressHex: string) {
@@ -100,6 +122,45 @@ function parseFbars(value: unknown) {
   return 0;
 }
 
+function sanitizeGoogleAccount(value: unknown): GoogleAccountProfile | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as {
+    sub?: unknown;
+    email?: unknown;
+    emailVerified?: unknown;
+    picture?: unknown;
+    linkedAt?: unknown;
+    lastRefreshedAt?: unknown;
+  };
+
+  if (typeof candidate.sub !== "string" || typeof candidate.email !== "string") {
+    return null;
+  }
+
+  return {
+    sub: candidate.sub.trim(),
+    email: candidate.email.trim().toLowerCase(),
+    emailVerified: candidate.emailVerified === true,
+    picture: typeof candidate.picture === "string" ? candidate.picture : null,
+    linkedAt: typeof candidate.linkedAt === "string" ? candidate.linkedAt : null,
+    lastRefreshedAt: typeof candidate.lastRefreshedAt === "string" ? candidate.lastRefreshedAt : null,
+  };
+}
+
+function attachGoogleAccountToProfile(profile: LeaderboardEntry | null, googleAccount: GoogleAccountProfile | null): UserProfileResponse | null {
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    ...profile,
+    googleAccount,
+  };
+}
+
 function buildLeaderboardEntry(profile: {
   address?: unknown;
   username?: unknown;
@@ -173,22 +234,36 @@ export async function GET(request: Request) {
     const addressesParam = url.searchParams.get("addresses")?.trim();
     const addressParam = url.searchParams.get("address")?.trim();
     const handleParam = url.searchParams.get("handle")?.trim();
+    const includePrivate = url.searchParams.get("includePrivate") === "1";
     const collection = await getUserProfilesCollection();
+    const projection = {
+      _id: 0,
+      address: 1,
+      username: 1,
+      displayName: 1,
+      fbars: 1,
+      updatedAt: 1,
+      lastSeenAt: 1,
+      ...(includePrivate ? { googleAccount: 1 } : {}),
+    };
 
     if (handleParam) {
-      const profiles = await collection
-        .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
-        .toArray();
+      const profiles = await collection.find({}, { projection }).toArray();
       const leaderboard = buildRankedLeaderboard(profiles);
       const normalizedHandle = normalizeUsername(handleParam);
-      const profile = leaderboard.find((entry) => normalizeUsername(entry.username) === normalizedHandle || normalizeUsername(entry.handle) === normalizedHandle);
+      const rawProfile = profiles.find((entry) => {
+        const username = typeof entry.username === "string" ? entry.username : "";
+        const handle = formatUsernameHandle(username);
+        return normalizeUsername(username) === normalizedHandle || normalizeUsername(handle) === normalizedHandle;
+      }) ?? null;
+      const profile = leaderboard.find((entry) => normalizeUsername(entry.username) === normalizedHandle || normalizeUsername(entry.handle) === normalizedHandle) ?? null;
 
       if (!profile) {
         return badRequest("User profile not found", 404);
       }
 
       return NextResponse.json({
-        profile,
+        profile: includePrivate ? attachGoogleAccountToProfile(profile, sanitizeGoogleAccount(rawProfile?.googleAccount)) : profile,
         leaderboard,
       });
     }
@@ -205,12 +280,21 @@ export async function GET(request: Request) {
     }
 
     const uniqueAddresses = Array.from(new Set(requestedAddresses));
-    const profiles = await collection
-      .find({ address: { $in: uniqueAddresses } }, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
-      .toArray();
+    const profiles = await collection.find({ address: { $in: uniqueAddresses } }, { projection }).toArray();
+    const leaderboard = buildRankedLeaderboard(profiles);
+
+    if (!includePrivate) {
+      return NextResponse.json({
+        profiles: leaderboard,
+      });
+    }
+
+    const profilesByAddress = new Map(
+      profiles.map((profile) => [typeof profile.address === "string" ? normalizeAddress(profile.address) : "", profile]),
+    );
 
     return NextResponse.json({
-      profiles: buildRankedLeaderboard(profiles),
+      profiles: leaderboard.map((entry) => attachGoogleAccountToProfile(entry, sanitizeGoogleAccount(profilesByAddress.get(entry.address)?.googleAccount))).filter(Boolean),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch user profiles";
@@ -259,8 +343,13 @@ export async function POST(request: Request) {
       lastSeenAt: now.toISOString(),
     };
 
+    const privateProfile = await collection.findOne(
+      { address },
+      { projection: { _id: 0, googleAccount: 1 } },
+    );
+
     return NextResponse.json({
-      profile,
+      profile: attachGoogleAccountToProfile(profile, sanitizeGoogleAccount(privateProfile?.googleAccount)),
       leaderboard,
     });
   } catch (error) {
@@ -273,19 +362,28 @@ export async function PATCH(request: Request) {
   try {
     const payload = (await request.json()) as UserProfilePayload;
     const address = normalizeAddress(ensureString(payload.address, "address"));
-    const displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
-
     const collection = await getUserProfilesCollection();
     const now = new Date();
+    const googleAccount = sanitizeGoogleAccount(payload.googleAccount);
+
+    const nextSet: Record<string, unknown> = {
+      address,
+      updatedAt: now,
+      lastSeenAt: now,
+    };
+
+    if (typeof payload.displayName === "string") {
+      nextSet.displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
+    }
+
+    if (payload.googleAccount !== undefined) {
+      nextSet.googleAccount = googleAccount;
+    }
+
     const result = await collection.updateOne(
       { address },
       {
-        $set: {
-          address,
-          displayName,
-          updatedAt: now,
-          lastSeenAt: now,
-        },
+        $set: nextSet,
         $setOnInsert: {
           createdAt: now,
         },
@@ -305,7 +403,7 @@ export async function PATCH(request: Request) {
       address,
       username: typeof payload.username === "string" ? sanitizeUsername(payload.username) : buildDefaultUsername(address),
       handle: formatUsernameHandle(typeof payload.username === "string" ? sanitizeUsername(payload.username) : buildDefaultUsername(address)),
-      displayName,
+      displayName: typeof nextSet.displayName === "string" ? nextSet.displayName : buildDefaultDisplayName(leaderboard.length),
       fbars: 0,
       rank: leaderboard.length + 1,
       updatedAt: now.toISOString(),
@@ -313,7 +411,7 @@ export async function PATCH(request: Request) {
     };
 
     return NextResponse.json({
-      profile,
+      profile: payload.googleAccount !== undefined ? attachGoogleAccountToProfile(profile, googleAccount) : profile,
       leaderboard,
     });
   } catch (error) {

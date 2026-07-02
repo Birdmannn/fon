@@ -252,7 +252,9 @@ export type CreateCampaignModalContentHandle = {
   discardDraftSession: () => void;
   toggleDraftList: () => Promise<boolean>;
   applyDraftSelection: (draftId: string) => void;
+  getFormsMountableConfig: () => FormsMountableConfig;
   setFormsMountableEnabled: (enabled: boolean) => void;
+  updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
   advanceToReviewAfterMountableSelection: () => Promise<void>;
 };
 
@@ -1524,21 +1526,32 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }));
   }, []);
 
+  const handleUpdateFormsMountableConfig = useCallback((updates: Partial<FormsMountableConfig>) => {
+    setFormsMountable((current) => normalizeFormsMountableConfig({
+      ...current,
+      ...updates,
+    }));
+  }, []);
+
   useImperativeHandle(ref, () => ({
     hasDraftableChanges: () => hasDraftableChanges,
     saveDraftFromClose: handleSaveDraftFromClose,
     discardDraftSession: handleDiscardDraftSession,
     toggleDraftList: handleToggleDraftList,
     applyDraftSelection: handleApplyDraftSelection,
+    getFormsMountableConfig: () => formsMountable,
     setFormsMountableEnabled: handleSetFormsMountableEnabled,
+    updateFormsMountableConfig: handleUpdateFormsMountableConfig,
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
   }), [
+    formsMountable,
     handleAdvanceToReview,
     handleApplyDraftSelection,
     handleDiscardDraftSession,
     handleSaveDraftFromClose,
     handleSetFormsMountableEnabled,
     handleToggleDraftList,
+    handleUpdateFormsMountableConfig,
     hasDraftableChanges,
   ]);
 

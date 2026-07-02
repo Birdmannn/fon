@@ -3,6 +3,9 @@ import type { FormsMountableConfig, FormsPayoutMode, FormsProofMode } from "@/ap
 export const DEFAULT_FORMS_MOUNTABLE_CONFIG: FormsMountableConfig = {
   enabled: false,
   formUrl: "",
+  canonicalFormUrl: "",
+  formId: "",
+  validatedAt: "",
   payoutMode: "assured",
   proofMode: "external_proof",
   guaranteedSlots: "1",
@@ -24,6 +27,9 @@ export function normalizeFormsMountableConfig(value: Partial<FormsMountableConfi
   return {
     enabled: Boolean(value?.enabled),
     formUrl: typeof value?.formUrl === "string" ? value.formUrl : "",
+    canonicalFormUrl: typeof value?.canonicalFormUrl === "string" ? value.canonicalFormUrl : "",
+    formId: typeof value?.formId === "string" ? value.formId : "",
+    validatedAt: typeof value?.validatedAt === "string" ? value.validatedAt : "",
     payoutMode: normalizeFormsPayoutMode(value?.payoutMode),
     proofMode: normalizeFormsProofMode(value?.proofMode),
     guaranteedSlots: typeof value?.guaranteedSlots === "string" ? value.guaranteedSlots : "1",
@@ -41,13 +47,15 @@ export function formsMountableSummary(config: FormsMountableConfig) {
     return "No forms mountable configured.";
   }
 
+  const sourceLabel = config.formId ? `Google Form ${config.formId}` : "Google Form";
+
   if (config.payoutMode === "assured") {
-    return `Forms • assured pay • ${config.guaranteedSlots} guaranteed slot(s)`;
+    return `${sourceLabel} • assured pay • ${config.guaranteedSlots} guaranteed slot(s)`;
   }
 
   if (config.payoutMode === "random_subset") {
-    return `Forms • randomized pay • ${config.randomWinnerCount} random winner(s)`;
+    return `${sourceLabel} • randomized pay • ${config.randomWinnerCount} random winner(s)`;
   }
 
-  return `Forms • overflow randomization • ${config.guaranteedSlots} guaranteed slot(s), then ${config.randomWinnerCount} randomized winner(s)`;
+  return `${sourceLabel} • overflow randomization • ${config.guaranteedSlots} guaranteed slot(s), then ${config.randomWinnerCount} randomized winner(s)`;
 }

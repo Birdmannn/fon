@@ -85,7 +85,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "mountables" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
 type SettlementRecipient = {
   address: string;
   username: string;
@@ -125,6 +125,7 @@ export default function Home() {
   const [previewError, setPreviewError] = useState("");
   const [hasMountedHashtag, setHasMountedHashtag] = useState(false);
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
   const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
@@ -273,6 +274,7 @@ export default function Home() {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     setInfoModalMode("mountables");
+    setMountableFormLinks([createModalContentRef.current?.getFormsMountableConfig().formUrl ?? ""]);
     setMountablesPromptError("");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
@@ -694,6 +696,7 @@ export default function Home() {
           const nextSelected = !formsMountableSelected;
           createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
           setFormsMountableSelected(nextSelected);
+          setMountableFormLinks((current) => current.length > 0 ? current : [""]);
           setMountablesPromptError("");
         }}
       >
@@ -706,6 +709,47 @@ export default function Home() {
           </span>
         </span>
       </button>
+      {mountablesPromptError ? (
+        <p className="create-info-constraint-item text-red-500 mt-3">
+          <span>{mountablesPromptError}</span>
+        </p>
+      ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-forms" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config">
+        <p className="create-review-section-label text-gray-900">Forms:</p>
+        {mountableFormLinks.map((value, index) => {
+          const isLast = index === mountableFormLinks.length - 1;
+          return (
+            <div key={`forms-link-${index}`} className="create-info-forms-row">
+              <input
+                type="text"
+                value={value}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+                  createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+                  setMountablesPromptError("");
+                }}
+                placeholder="Paste Google Forms responder link"
+                className="create-info-ticket-input"
+                aria-label={`Forms link ${index + 1}`}
+              />
+              {isLast ? (
+                <button
+                  type="button"
+                  className="create-info-confirm-btn create-info-forms-add-btn"
+                  disabled
+                  aria-label="Add another forms link"
+                >
+                  <Plus size={16} strokeWidth={2.4} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
           <span>{mountablesPromptError}</span>
@@ -856,6 +900,21 @@ export default function Home() {
             return;
           }
 
+          setInfoModalMode("mountables-forms");
+          setMountablesPromptError("");
+        }}
+      >
+        Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-forms" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => {
+          const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+          createModalContentRef.current?.updateFormsMountableConfig({ formUrl: primaryLink });
           closeInfoModal(() => {
             setInfoModalMode("about");
             setMountablesPromptError("");

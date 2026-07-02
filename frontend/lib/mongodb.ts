@@ -36,6 +36,7 @@ export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "freightonnervos";
 export const CAMPAIGN_RECORDS_COLLECTION = "campaignRecords";
 export const CAMPAIGN_PARTICIPANTS_COLLECTION = "campaignParticipants";
 export const USER_PROFILES_COLLECTION = "userProfiles";
+export const GOOGLE_LINK_CODES_COLLECTION = "googleLinkCodes";
 
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();

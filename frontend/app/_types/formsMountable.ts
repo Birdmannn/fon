@@ -5,6 +5,9 @@ export type FormsProofMode = "external_proof";
 export type FormsMountableConfig = {
   enabled: boolean;
   formUrl: string;
+  canonicalFormUrl?: string;
+  formId?: string;
+  validatedAt?: string;
   payoutMode: FormsPayoutMode;
   proofMode: FormsProofMode;
   guaranteedSlots: string;

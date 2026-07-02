@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
+import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -116,7 +117,7 @@ function ensureOptionalRecipients(value: unknown) {
   });
 }
 
-function ensureOptionalFormsMountable(value: unknown) {
+async function ensureOptionalFormsMountable(value: unknown) {
   if (value === null || value === undefined) {
     return null;
   }
@@ -128,6 +129,9 @@ function ensureOptionalFormsMountable(value: unknown) {
   const candidate = value as {
     enabled?: unknown;
     formUrl?: unknown;
+    canonicalFormUrl?: unknown;
+    formId?: unknown;
+    validatedAt?: unknown;
     payoutMode?: unknown;
     proofMode?: unknown;
     guaranteedSlots?: unknown;
@@ -135,18 +139,38 @@ function ensureOptionalFormsMountable(value: unknown) {
     proofInstructions?: unknown;
   };
 
-  return normalizeFormsMountableConfig({
+  const normalized = normalizeFormsMountableConfig({
     enabled: Boolean(candidate.enabled),
     formUrl: typeof candidate.formUrl === "string" ? candidate.formUrl : "",
-    payoutMode: candidate.payoutMode,
-    proofMode: candidate.proofMode,
+    canonicalFormUrl: typeof candidate.canonicalFormUrl === "string" ? candidate.canonicalFormUrl : "",
+    formId: typeof candidate.formId === "string" ? candidate.formId : "",
+    validatedAt: typeof candidate.validatedAt === "string" ? candidate.validatedAt : "",
+    payoutMode: candidate.payoutMode as "assured" | "random_subset" | "overflow_only" | undefined,
+    proofMode: candidate.proofMode as "external_proof" | undefined,
     guaranteedSlots: typeof candidate.guaranteedSlots === "string" ? candidate.guaranteedSlots : String(candidate.guaranteedSlots ?? "1"),
     randomWinnerCount: typeof candidate.randomWinnerCount === "string" ? candidate.randomWinnerCount : String(candidate.randomWinnerCount ?? "1"),
     proofInstructions: typeof candidate.proofInstructions === "string" ? candidate.proofInstructions : "",
   });
+
+  if (!normalized.enabled) {
+    return normalized;
+  }
+
+  if (!normalized.formUrl.trim()) {
+    throw new Error("Mounted Google Forms require a responder link");
+  }
+
+  const validation = await validateGoogleFormUrl(normalized.formUrl);
+  return normalizeFormsMountableConfig({
+    ...normalized,
+    formUrl: validation.canonicalFormUrl,
+    canonicalFormUrl: validation.canonicalFormUrl,
+    formId: validation.formId,
+    validatedAt: validation.validatedAt,
+  });
 }
 
-function normalizePayload(payload: CampaignRecordPayload) {
+async function normalizePayload(payload: CampaignRecordPayload) {
   const title = ensureString(payload.title, "title").trim();
   const description = ensureString(payload.description, "description").trim();
   const summaryDraft = ensureString(payload.summaryDraft, "summaryDraft").trim();
@@ -185,7 +209,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
   const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
-  const formsMountable = ensureOptionalFormsMountable(payload.mountables?.forms);
+  const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
 
   return {
     title,
@@ -231,7 +255,7 @@ function normalizePayload(payload: CampaignRecordPayload) {
 
 export async function POST(request: Request) {
   try {
-    const payload = normalizePayload((await request.json()) as CampaignRecordPayload);
+    const payload = await normalizePayload((await request.json()) as CampaignRecordPayload);
     const collection = await getMongoCollection();
     const now = new Date();
     const result = await collection.insertOne({
