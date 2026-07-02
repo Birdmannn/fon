@@ -32,6 +32,8 @@ import CreateCampaignModalContent, {
 import { formatCkbAmount } from "@/lib/campaignDisplay";
 
 const INFO_MODAL_ANIMATION_MS = 620;
+const PROFILE_HERO_REVEAL_STEP_MS = 110;
+const PROFILE_HERO_REVEAL_ITEM_COUNT = 3;
 const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
 const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
   key: keyof CreateConstraintStatus;
@@ -111,6 +113,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
   const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
+  const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalState = useCallback(() => {
     setInfoModalMode("about");
@@ -488,6 +491,34 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     ? "Sorry, an error occurred. Hover on info for more."
     : "";
   const homeHref = "/";
+  const hasCurrentProfile = Boolean(currentUserProfile);
+  const currentProfileAddress = currentUserProfile?.address ?? "";
+  const isProfileAvatarVisible = revealedProfileHeroCount >= 1;
+  const isProfileStatsVisible = revealedProfileHeroCount >= 2;
+  const isProfileAddressVisible = revealedProfileHeroCount >= 3;
+
+  useEffect(() => {
+    if (isProfileLoading || !hasCurrentProfile) {
+      setRevealedProfileHeroCount(0);
+      return;
+    }
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setRevealedProfileHeroCount(PROFILE_HERO_REVEAL_ITEM_COUNT);
+      return;
+    }
+
+    setRevealedProfileHeroCount(0);
+    const timeoutIds = Array.from({ length: PROFILE_HERO_REVEAL_ITEM_COUNT }, (_, index) => window.setTimeout(() => {
+      setRevealedProfileHeroCount(index + 1);
+    }, index * PROFILE_HERO_REVEAL_STEP_MS));
+
+    return () => {
+      timeoutIds.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+    };
+  }, [currentProfileAddress, hasCurrentProfile, isProfileLoading]);
 
   const openDisplayNameModal = useCallback(() => {
     if (!canEditDisplayName) {
@@ -846,7 +877,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           <p className="profile-load-error">{profileLoadErrorMessage}</p>
         ) : (
           <div className="profile-hero-row">
-            <div className="profile-avatar-column">
+            <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
               <div className="profile-avatar-placeholder" aria-hidden="true">
                 <span>Profile photo</span>
               </div>
@@ -866,7 +897,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             </div>
 
             <section className="profile-summary-card">
-              <div className="profile-stats-column">
+              <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
                 <div className="profile-rank-row">
                   <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
                   <button
@@ -889,7 +920,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                 </div>
               </div>
 
-              <div className="profile-address-block">
+              <div className={`profile-address-block profile-hero-item ${isProfileAddressVisible ? "profile-hero-item-visible" : ""}`.trim()}>
                 <div className="profile-address-row">
                   <span className="profile-address-value">{fullAddressLabel}</span>
                   {signer && walletAddress && currentUserProfile?.address === walletAddress ? (
