@@ -1,6 +1,6 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 
-import { ccc } from "@ckb-ccc/connector-react";
+import { ClientPublicTestnet, Signature, Signer, SignerCkbPublicKey, SignerSignType } from "@ckb-ccc/core";
 
 const GOOGLE_OAUTH_SCOPE = ["openid", "email", "profile"].join(" ");
 const GOOGLE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -155,10 +155,10 @@ export async function verifyWalletSignature(params: {
   signature: {
     signature: string;
     identity: string;
-    signType: ccc.SignerSignType;
+    signType: SignerSignType;
   };
 }) {
-  const signer = new ccc.SignerCkbPublicKey(new ccc.ClientPublicTestnet(), params.signature.identity);
+  const signer = new SignerCkbPublicKey(new ClientPublicTestnet(), params.signature.identity);
   const addressObj = await signer.getRecommendedAddressObj();
   const derivedAddress = normalizeAddress(addressObj.toString());
   const expectedAddress = normalizeAddress(params.address);
@@ -166,7 +166,7 @@ export async function verifyWalletSignature(params: {
     throw new Error("Wallet signature identity does not match the provided address");
   }
 
-  const verified = await ccc.Signer.verifyMessage(params.nonce, new ccc.Signature(
+  const verified = await Signer.verifyMessage(params.nonce, new Signature(
     params.signature.signature,
     params.signature.identity,
     params.signature.signType,

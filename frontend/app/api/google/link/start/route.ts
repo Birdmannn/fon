@@ -7,7 +7,7 @@ import {
   getGoogleOAuthCookieName,
   verifyWalletSignature,
 } from "@/lib/googleAuth";
-import { ccc } from "@ckb-ccc/connector-react";
+import { SignerSignType } from "@ckb-ccc/core";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const signature = ensureString(signaturePayload.signature, "signature.signature");
     const identity = ensureString(signaturePayload.identity, "signature.identity");
     const signTypeValue = ensureString(signaturePayload.signType, "signature.signType");
-    if (!Object.values(ccc.SignerSignType).includes(signTypeValue as ccc.SignerSignType)) {
+    if (!Object.values(SignerSignType).includes(signTypeValue as SignerSignType)) {
       throw new Error("Unsupported signer sign type");
     }
 
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       signature: {
         signature,
         identity,
-        signType: signTypeValue as ccc.SignerSignType,
+        signType: signTypeValue as SignerSignType,
       },
     });
 
