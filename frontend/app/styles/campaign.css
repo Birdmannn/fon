@@ -644,6 +644,19 @@
   min-width: 0;
 }
 
+.campaign-card-mounted-icon {
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 9999px;
+  border: 2px solid #000000;
+  background: #000000;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
 .campaign-detail-page {
   min-height: 100vh;
   padding: 5rem 1.25rem 3rem;

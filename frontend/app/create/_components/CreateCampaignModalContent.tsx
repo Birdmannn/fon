@@ -2117,6 +2117,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <div className="create-review-preview-card create-review-preview-card-main">
           <p className="create-review-section-label">Preview</p>
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
+          {formsMountable.enabled && formsMountable.formUrl.trim().length > 0 ? (
+            <p className="create-review-preview-body">Mounted form: {formsMountable.formUrl.trim()}</p>
+          ) : null}
           {createPreviewLines.length > 0 ? (
             <div className="create-review-preview-content">
               {createPreviewLines.map((line, index) => {

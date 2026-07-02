@@ -185,7 +185,7 @@ export default function CampaignCard({
               type="button"
               disabled
               className="campaign-action-btn ml-auto campaign-action-disabled"
-              data-tooltip="Ticket sales open after start delay"
+              data-tooltip="Funding coming soon"
             >
               <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
               <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Ticket } from "lucide-react";
+import { Copy, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -20,6 +20,15 @@ type CampaignRecord = {
   creatorHandle?: string | null;
   settlementTxHash?: string | null;
   soldTicketCount?: string | null;
+  mountables?: {
+    forms?: {
+      enabled?: boolean;
+      formUrl?: string;
+      canonicalFormUrl?: string;
+      formId?: string;
+      validatedAt?: string;
+    } | null;
+  };
   socialMetadata?: {
     mentions?: string[];
   };
@@ -85,6 +94,15 @@ function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
     tone,
     phase,
   };
+}
+
+function sanitizeCampaignDescription(text: string) {
+  return text
+    .replace(/(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|mounted)\b/gi, "$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
 }
 
 function truncateCampaignDescription(text: string, maxChars: number) {
@@ -157,7 +175,7 @@ export default function CampaignCardSurface({
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
-  const displayDescription = record?.description?.trim() || decodeSummary(data.summary);
+  const displayDescription = sanitizeCampaignDescription(record?.description?.trim() || decodeSummary(data.summary));
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const mentions = record?.socialMetadata?.mentions ?? [];
@@ -292,6 +310,11 @@ export default function CampaignCardSurface({
 
       <div className="campaign-card-footer">
         <div className="campaign-card-footer-meta">
+          {record?.mountables?.forms?.enabled ? (
+            <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
+              <Scroll size={14} strokeWidth={2} aria-hidden="true" />
+            </span>
+          ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
             <a
               href={`https://pudge.explorer.nervos.org/transaction/${outPoint.txHash}`}
