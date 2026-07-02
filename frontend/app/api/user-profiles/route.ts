@@ -39,6 +39,16 @@ type GoogleAccountProfile = {
   lastRefreshedAt?: string | null;
 };
 
+type StoredProfileRecord = {
+  address?: unknown;
+  username?: unknown;
+  displayName?: unknown;
+  fbars?: unknown;
+  updatedAt?: string | null;
+  lastSeenAt?: string | null;
+  googleAccount?: unknown;
+};
+
 type UserProfileResponse = LeaderboardEntry & {
   googleAccount?: GoogleAccountProfile | null;
 };
@@ -161,14 +171,7 @@ function attachGoogleAccountToProfile(profile: LeaderboardEntry | null, googleAc
   };
 }
 
-function buildLeaderboardEntry(profile: {
-  address?: unknown;
-  username?: unknown;
-  displayName?: unknown;
-  fbars?: unknown;
-  updatedAt?: string | null;
-  lastSeenAt?: string | null;
-}): LeaderboardEntry {
+function buildLeaderboardEntry(profile: StoredProfileRecord): LeaderboardEntry {
   const address = typeof profile.address === "string" ? normalizeAddress(profile.address) : "";
   const username = typeof profile.username === "string" && profile.username.trim().length > 0
     ? profile.username.trim()
@@ -188,14 +191,7 @@ function buildLeaderboardEntry(profile: {
   };
 }
 
-function buildRankedLeaderboard(profiles: Array<{
-  address?: unknown;
-  username?: unknown;
-  displayName?: unknown;
-  fbars?: unknown;
-  updatedAt?: string | null;
-  lastSeenAt?: string | null;
-}>): LeaderboardEntry[] {
+function buildRankedLeaderboard(profiles: StoredProfileRecord[]): LeaderboardEntry[] {
   return profiles
     .map(buildLeaderboardEntry)
     .sort((left, right) => {
@@ -248,7 +244,7 @@ export async function GET(request: Request) {
     };
 
     if (handleParam) {
-      const profiles = await collection.find({}, { projection }).toArray();
+      const profiles = (await collection.find({}, { projection }).toArray()) as StoredProfileRecord[];
       const leaderboard = buildRankedLeaderboard(profiles);
       const normalizedHandle = normalizeUsername(handleParam);
       const rawProfile = profiles.find((entry) => {
@@ -280,7 +276,7 @@ export async function GET(request: Request) {
     }
 
     const uniqueAddresses = Array.from(new Set(requestedAddresses));
-    const profiles = await collection.find({ address: { $in: uniqueAddresses } }, { projection }).toArray();
+    const profiles = (await collection.find({ address: { $in: uniqueAddresses } }, { projection }).toArray()) as StoredProfileRecord[];
     const leaderboard = buildRankedLeaderboard(profiles);
 
     if (!includePrivate) {
@@ -328,9 +324,9 @@ export async function POST(request: Request) {
       { upsert: true }
     );
 
-    const profiles = await collection
+    const profiles = (await collection
       .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
-      .toArray();
+      .toArray()) as StoredProfileRecord[];
     const leaderboard = buildRankedLeaderboard(profiles);
     const profile = leaderboard.find((entry) => entry.address === address) ?? {
       address,
@@ -395,9 +391,9 @@ export async function PATCH(request: Request) {
       return badRequest("User profile not found", 404);
     }
 
-    const profiles = await collection
+    const profiles = (await collection
       .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
-      .toArray();
+      .toArray()) as StoredProfileRecord[];
     const leaderboard = buildRankedLeaderboard(profiles);
     const profile = leaderboard.find((entry) => entry.address === address) ?? {
       address,
