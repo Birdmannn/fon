@@ -446,8 +446,30 @@
   color: #ffffff;
 }
 
-.create-info-confirm-btn-primary:hover,
-.create-info-confirm-btn-primary:focus-visible {
+.create-info-confirm-btn:disabled,
+.create-info-confirm-btn-primary:disabled,
+.create-info-confirm-btn:disabled:hover,
+.create-info-confirm-btn-primary:disabled:hover,
+.create-info-confirm-btn:disabled:focus-visible,
+.create-info-confirm-btn-primary:disabled:focus-visible {
+  cursor: not-allowed;
+  opacity: 0.55;
+  color: #9ca3af;
+  border-color: #9ca3af;
+  background: var(--background);
+  transform: none;
+}
+
+.create-info-confirm-btn-primary:disabled,
+.create-info-confirm-btn-primary:disabled:hover,
+.create-info-confirm-btn-primary:disabled:focus-visible {
+  background: #9ca3af;
+  color: #ffffff;
+  border-color: #9ca3af;
+}
+
+.create-info-confirm-btn-primary:not(:disabled):hover,
+.create-info-confirm-btn-primary:not(:disabled):focus-visible {
   background: #16a34a;
   color: #ffffff;
   border-color: #16a34a;
@@ -678,6 +700,18 @@
 }
 
 .create-info-ticket-input:focus {
+  border-color: #f59e0b;
+}
+
+.create-info-ticket-input-focused {
+  border-color: #f59e0b;
+}
+
+.create-info-ticket-input-invalid {
+  border-color: #dc2626;
+}
+
+.create-info-ticket-input-valid {
   border-color: #16a34a;
 }
 

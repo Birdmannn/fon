@@ -126,6 +126,8 @@ export default function Home() {
   const [hasMountedHashtag, setHasMountedHashtag] = useState(false);
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
+  const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
+  const [isMountableFormFocused, setIsMountableFormFocused] = useState(false);
   const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
   const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
@@ -292,6 +294,65 @@ export default function Home() {
       setShowInfoModal(true);
     }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
   }, [INFO_MODAL_ANIMATION_MS, clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
+
+  useEffect(() => {
+    if (infoModalMode !== "mountables-forms") {
+      return;
+    }
+
+    const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+    if (!primaryLink) {
+      setMountableFormValidationState("idle");
+      setMountablesPromptError("");
+      return;
+    }
+
+    let cancelled = false;
+    setMountableFormValidationState("validating");
+    setMountablesPromptError("");
+
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const validationResponse = await fetch("/api/google-forms/validate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ formUrl: primaryLink }),
+          });
+          const validationPayload = await validationResponse.json().catch(() => null);
+          if (cancelled) {
+            return;
+          }
+
+          if (!validationResponse.ok) {
+            setIsMountableFormFocused(false);
+            setMountableFormValidationState("invalid");
+            setMountablesPromptError(validationPayload?.error ?? "Failed to validate Google Form");
+            return;
+          }
+
+          setIsMountableFormFocused(false);
+          setMountableFormValidationState("valid");
+          setMountablesPromptError("");
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          setIsMountableFormFocused(false);
+          setMountableFormValidationState("invalid");
+          setMountablesPromptError(error instanceof Error ? error.message : "Failed to validate Google Form");
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [infoModalMode, mountableFormLinks]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) return;
@@ -740,10 +801,17 @@ export default function Home() {
                 const nextValue = event.target.value;
                 setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
                 createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+                setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
                 setMountablesPromptError("");
               }}
+              onFocus={() => {
+                if (mountableFormValidationState === "idle") {
+                  setIsMountableFormFocused(true);
+                }
+              }}
+              onBlur={() => setIsMountableFormFocused(false)}
               placeholder="Paste Google Forms responder link"
-              className="create-info-ticket-input"
+              className={`create-info-ticket-input ${mountableFormValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableFormValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableFormFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
               aria-label={`Forms link ${index + 1}`}
             />
           </div>
@@ -911,7 +979,7 @@ export default function Home() {
       <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
-        disabled={isMountablesContinuing}
+        disabled={isMountablesContinuing || mountableFormValidationState !== "valid"}
         onClick={() => {
           void (async () => {
             try {
@@ -962,7 +1030,7 @@ export default function Home() {
           })();
         }}
       >
-        {isMountablesContinuing ? "Hold..." : "Continue"}
+        {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
       </button>
     </div>
   ) : infoModalMode === "discard-comment-confirm" ? (
