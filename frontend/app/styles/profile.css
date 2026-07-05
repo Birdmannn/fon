@@ -235,6 +235,10 @@
   flex: 1;
 }
 
+.profile-display-name-input:focus {
+  border-color: #16a34a;
+}
+
 .profile-reputation-balance {
   margin: 0;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
