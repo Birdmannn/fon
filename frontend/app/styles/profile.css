@@ -42,6 +42,20 @@
   row-gap: 0.5rem;
 }
 
+.profile-hero-item {
+  opacity: 0;
+  transform: translateY(0.7rem);
+  transition:
+    opacity 360ms ease,
+    transform 360ms ease;
+  will-change: opacity, transform;
+}
+
+.profile-hero-item-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .profile-avatar-column {
   display: flex;
   flex-direction: column;
@@ -377,6 +391,14 @@
 
 .profile-header-replacement-actions-closing {
   animation: create-campaign-modal-hide 620ms ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-hero-item {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 @media (max-width: 639px) {
