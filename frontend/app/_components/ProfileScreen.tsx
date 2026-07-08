@@ -7,10 +7,13 @@ import {
   Check,
   CheckCircle,
   Copy,
+  DollarSign,
   House,
+  LockKeyhole,
   Pencil,
   Plus,
   RotateCcw,
+  Scroll,
   Search,
   Trophy,
 } from "lucide-react";
@@ -71,7 +74,7 @@ const CREATE_INFO_PREVIEW_ITEMS = [
 const PROFILE_INFO_FBARS_HEADING = "FBARS:";
 const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 
-type InfoModalMode = "about" | "edit-display-name" | "save-draft-confirm" | "submission-success" | "submission-error";
+type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
 
 type ProfileScreenProps = {
   targetHandle?: string | null;
@@ -105,6 +108,12 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     additionalHashtagsPassed: true,
   });
   const [previewError, setPreviewError] = useState("");
+  const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
+  const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
+  const [isMountableFormFocused, setIsMountableFormFocused] = useState(false);
+  const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
+  const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
   const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
@@ -251,6 +260,28 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
   }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
+
+  const openMountablesModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("mountables");
+    setMountableFormLinks([createModalContentRef.current?.getFormsMountableConfig().formUrl ?? ""]);
+    setMountablesPromptError("");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
+
+  const transitionMountablesModal = useCallback((nextMode: Extract<InfoModalMode, "mountables" | "mountables-forms">) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setIsInfoModalClosing(true);
+    window.setTimeout(() => {
+      setInfoModalMode(nextMode);
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
+  }, [clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) {
@@ -567,6 +598,65 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     }
   }, [closeInfoModal, currentUserProfile?.username, displayNameDraft, router, saveDisplayName, setDisplayNameModalError, targetHandle]);
 
+  useEffect(() => {
+    if (infoModalMode !== "mountables-forms") {
+      return;
+    }
+
+    const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+    if (!primaryLink) {
+      setMountableFormValidationState("idle");
+      setMountablesPromptError("");
+      return;
+    }
+
+    let cancelled = false;
+    setMountableFormValidationState("validating");
+    setMountablesPromptError("");
+
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const validationResponse = await fetch("/api/google-forms/validate", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ formUrl: primaryLink }),
+          });
+          const validationPayload = await validationResponse.json().catch(() => null);
+          if (cancelled) {
+            return;
+          }
+
+          if (!validationResponse.ok) {
+            setIsMountableFormFocused(false);
+            setMountableFormValidationState("invalid");
+            setMountablesPromptError(validationPayload?.error ?? "Failed to validate Google Form");
+            return;
+          }
+
+          setIsMountableFormFocused(false);
+          setMountableFormValidationState("valid");
+          setMountablesPromptError("");
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
+
+          setIsMountableFormFocused(false);
+          setMountableFormValidationState("invalid");
+          setMountablesPromptError(error instanceof Error ? error.message : "Failed to validate Google Form");
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [infoModalMode, mountableFormLinks]);
+
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
@@ -616,6 +706,99 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           <span>{saveDraftPromptError}</span>
         </p>
       ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
+      <div className="create-mountable-options-row">
+        <button
+          type="button"
+          className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
+          aria-pressed={formsMountableSelected}
+          data-tooltip="Forms"
+          onClick={() => {
+            const nextSelected = !formsMountableSelected;
+            createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
+            setFormsMountableSelected(nextSelected);
+            setMountableFormLinks((current) => current.length > 0 ? current : [""]);
+            setMountablesPromptError("");
+          }}
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="create-mountable-option"
+          data-tooltip="Payable"
+          disabled
+          aria-label="Payable mountable coming soon"
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <DollarSign size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          className="create-mountable-option"
+          data-tooltip="Lock"
+          disabled
+          aria-label="Lock mountable coming soon"
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+          </span>
+        </button>
+      </div>
+      {mountablesPromptError ? (
+        <p className="create-info-constraint-item text-red-500 mt-3">
+          <span>{mountablesPromptError}</span>
+        </p>
+      ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-forms" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config">
+        <div className="create-review-card-heading-row">
+          <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
+          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
+        </div>
+        {mountableFormLinks.map((value, index) => (
+          <div key={`forms-link-${index}`} className="create-info-forms-row">
+            <input
+              type="text"
+              value={value}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+                createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+                setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
+                setMountablesPromptError("");
+              }}
+              onFocus={() => {
+                if (mountableFormValidationState === "idle") {
+                  setIsMountableFormFocused(true);
+                }
+              }}
+              onBlur={() => setIsMountableFormFocused(false)}
+              placeholder="Paste Google Forms responder link"
+              className={`create-info-ticket-input ${mountableFormValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableFormValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableFormFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
+              aria-label={`Forms link ${index + 1}`}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
@@ -757,6 +940,83 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         Yes
       </button>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        onClick={() => {
+          if (!formsMountableSelected) {
+            setMountablesPromptError("Select a mountable to continue.");
+            return;
+          }
+
+          transitionMountablesModal("mountables-forms");
+          setMountablesPromptError("");
+        }}
+      >
+        Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-forms" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || mountableFormValidationState !== "valid"}
+        onClick={() => {
+          void (async () => {
+            try {
+              const primaryLink = mountableFormLinks[mountableFormLinks.length - 1]?.trim() ?? "";
+              if (!primaryLink) {
+                setMountablesPromptError("Paste a Google Forms responder link to continue.");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+
+              const validationResponse = await fetch("/api/google-forms/validate", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ formUrl: primaryLink }),
+              });
+              const validationPayload = await validationResponse.json().catch(() => null);
+              if (!validationResponse.ok) {
+                throw new Error(validationPayload?.error ?? "Failed to validate Google Form");
+              }
+
+              const canonicalFormUrl = typeof validationPayload?.canonicalFormUrl === "string" ? validationPayload.canonicalFormUrl : primaryLink;
+              const formId = typeof validationPayload?.formId === "string" ? validationPayload.formId : "";
+              const validatedAt = typeof validationPayload?.validatedAt === "string" ? validationPayload.validatedAt : "";
+
+              createModalContentRef.current?.updateFormsMountableConfig({
+                formUrl: canonicalFormUrl,
+                canonicalFormUrl,
+                formId,
+                validatedAt,
+              });
+              setMountableFormLinks([canonicalFormUrl]);
+              await createModalContentRef.current?.persistCurrentDraft();
+
+              closeInfoModal(() => {
+                setInfoModalMode("about");
+                setMountablesPromptError("");
+              });
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted Google Form");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+      </button>
+    </div>
   ) : undefined;
 
   return (
@@ -781,14 +1041,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name", resetInfoModalState)}
-          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name")}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
@@ -1019,6 +1279,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             onPreviewErrorChange={setPreviewError}
             onDraftListOpenChange={setIsCreateDraftListOpen}
             onDraftSelectionRequest={handleDraftSelectionRequest}
+            onMountableSelectionRequired={openMountablesModal}
+            onMountableSelectionStateChange={({ formsSelected }) => {
+              setFormsMountableSelected(formsSelected);
+            }}
             onPublishSuccess={(txHash, randomnessPreimage) => {
               finalizeCloseCreateModal();
               openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
