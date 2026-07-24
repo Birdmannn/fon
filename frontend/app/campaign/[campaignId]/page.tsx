@@ -3,7 +3,7 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { Copy } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
@@ -88,6 +88,7 @@ function truncateWalletAddress(address: string) {
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const router = useRouter();
   const params = useParams<{ campaignId: string }>();
   const campaignRef = splitCampaignId(params.campaignId);
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
@@ -164,15 +165,6 @@ export default function CampaignDetailPage() {
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal();
     }, 120);
-  };
-
-  const toggleInfoModal = () => {
-    if (showInfoModal && !isInfoModalClosing) {
-      closeInfoModal();
-      return;
-    }
-
-    openInfoModalFromHover();
   };
 
   const handleCopyWalletAddress = useCallback(async () => {
@@ -495,7 +487,7 @@ export default function CampaignDetailPage() {
                 type="button"
                 className="header-info-btn"
                 aria-label="Open Freight information"
-                onClick={toggleInfoModal}
+                onClick={() => router.push("/")}
                 onFocus={openInfoModalFromHover}
                 onBlur={scheduleCloseInfoModal}
               >

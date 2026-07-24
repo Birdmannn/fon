@@ -115,6 +115,20 @@
   font-family: var(--font-mono, monospace);
 }
 
+.campaign-card-handle-link {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-decoration: none;
+  transition: color 180ms ease, text-decoration-color 180ms ease;
+}
+
+.campaign-card-handle-link:hover,
+.campaign-card-handle-link:focus-visible {
+  color: #000000;
+  text-decoration: underline;
+  outline: none;
+}
+
 .campaign-feed-loading {
   display: flex;
   align-items: center;

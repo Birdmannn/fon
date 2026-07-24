@@ -14,6 +14,7 @@ import {
   ScrollText,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef, useCallback } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
@@ -110,6 +111,7 @@ type SettlementModalData = {
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const router = useRouter();
   const INFO_MODAL_ANIMATION_MS = 620;
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
@@ -223,7 +225,6 @@ export default function Home() {
     setShowInfoModal,
     showInfoModal,
     submissionSuccessTimerRef,
-    toggleInfoModal,
     keepInfoModalOpen,
   } = useInfoModalState({
     animationMs: INFO_MODAL_ANIMATION_MS,
@@ -1119,7 +1120,7 @@ export default function Home() {
             setIsLoadingSettlementModal(false);
             resetTicketPurchaseState();
           })}
-          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets))}
+          onInfoButtonClick={() => router.push("/")}
           onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(() => {

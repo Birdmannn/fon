@@ -156,7 +156,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setShowInfoModal,
     showInfoModal,
     submissionSuccessTimerRef,
-    toggleInfoModal,
     keepInfoModalOpen,
   } = useInfoModalState({
     animationMs: INFO_MODAL_ANIMATION_MS,
@@ -1042,7 +1041,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
-          onInfoButtonClick={() => toggleInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoButtonClick={() => router.push("/")}
           onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}

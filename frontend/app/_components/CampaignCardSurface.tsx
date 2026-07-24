@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Copy, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -232,7 +233,15 @@ export default function CampaignCardSurface({
             <Copy size={14} strokeWidth={2} aria-hidden="true" />
             <span>{truncateAddress(creatorAddress)}</span>
           </button>
-          <span className="text-xs text-gray-400">{creatorHandle}</span>
+          <Link
+            href={`/user/${encodeURIComponent(creatorHandle)}`}
+            className="campaign-card-handle-link"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            {creatorHandle}
+          </Link>
           {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
           {copyFeedback === "error" && <span className="text-[11px] text-red-500">Copy failed</span>}
         </div>
