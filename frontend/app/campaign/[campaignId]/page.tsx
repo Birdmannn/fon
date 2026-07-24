@@ -89,6 +89,7 @@ function truncateWalletAddress(address: string) {
 const DETAIL_EXPANDING_FLAG = "freight:detail-expanding";
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 const SHELL_TRANSITION_MS = 420;
+const DETAIL_CAMPAIGN_FETCH_LIMIT = 200;
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -365,7 +366,7 @@ export default function CampaignDetailPage() {
         setError("");
 
         const [chainCampaigns, recordsResponse] = await Promise.all([
-          fetchCampaigns(client),
+          fetchCampaigns(client, DETAIL_CAMPAIGN_FETCH_LIMIT),
           fetch("/api/campaign-records", { cache: "no-store" }),
         ]);
 
@@ -454,7 +455,9 @@ export default function CampaignDetailPage() {
     if (!selectedCampaign) {
       return (
         <div className="campaign-detail-status">
-          <p className="text-sm text-gray-400">Campaign not found.</p>
+          <p className="text-sm text-gray-400">
+            {campaigns.length === 0 ? "Failed to load freight details from chain." : "Campaign not found."}
+          </p>
         </div>
       );
     }
@@ -477,7 +480,7 @@ export default function CampaignDetailPage() {
         </div>
 
         <div className="campaign-detail-content">
-          <section className="campaign-detail-post-column">
+          <section className="campaign-detail-post-column campaign-detail-card-shell">
             <CampaignCardSurface
               campaign={selectedCampaign}
               record={selectedRecord}

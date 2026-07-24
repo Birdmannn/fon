@@ -23,7 +23,7 @@ export default function CampaignCommentsPanel({
   title = "Comments",
 }: CampaignCommentsPanelProps) {
   return (
-    <div className="campaign-detail-comments-card">
+    <div className="campaign-detail-card-shell campaign-detail-comments-card">
       <div className="campaign-detail-comments-header">
         <h2 className="campaign-detail-comments-title">{title}</h2>
         <span className="campaign-detail-comments-count">{comments.length}</span>

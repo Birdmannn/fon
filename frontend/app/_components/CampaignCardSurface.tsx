@@ -213,8 +213,10 @@ export default function CampaignCardSurface({
   };
 
   const rootClassName = [
-    "campaign-card-surface border border-gray-200 rounded-lg p-4 flex flex-col gap-4",
-    variant === "feed" ? "campaign-card-surface-sized" : "campaign-card-surface-detail",
+    "campaign-card-surface flex flex-col gap-4",
+    variant === "feed"
+      ? "campaign-card-surface-feed border border-gray-200 rounded-lg p-4 campaign-card-surface-sized"
+      : "campaign-card-surface-detail p-4",
     onOpenDetail ? "campaign-card-surface-interactive" : "",
     isHighlighted ? "campaign-card-highlighted" : "",
   ].filter(Boolean).join(" ");

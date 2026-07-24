@@ -448,7 +448,7 @@
   transition: border-width 220ms ease, transform 220ms ease, box-shadow 220ms ease;
 }
 
-.campaign-card-surface:hover {
+.campaign-card-surface-interactive:hover {
   border-width: 2px;
   transform: scale(1.008);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
@@ -477,15 +477,15 @@
   transition: var(--campaign-shell-transition);
 }
 
-.campaign-card-surface:hover .campaign-card-title,
-.campaign-card-surface:hover .campaign-card-description,
-.campaign-card-surface:hover .campaign-card-ticket-price,
-.campaign-card-surface:hover .campaign-card-created-date,
-.campaign-card-surface:hover .campaign-card-reward-count,
-.campaign-card-surface:hover .campaign-card-countdown,
-.campaign-card-surface:hover .campaign-card-footer-meta,
-.campaign-card-surface:hover .campaign-card-countdown-wrap,
-.campaign-card-surface:hover .campaign-action-icon {
+.campaign-card-surface-interactive:hover .campaign-card-title,
+.campaign-card-surface-interactive:hover .campaign-card-description,
+.campaign-card-surface-interactive:hover .campaign-card-ticket-price,
+.campaign-card-surface-interactive:hover .campaign-card-created-date,
+.campaign-card-surface-interactive:hover .campaign-card-reward-count,
+.campaign-card-surface-interactive:hover .campaign-card-countdown,
+.campaign-card-surface-interactive:hover .campaign-card-footer-meta,
+.campaign-card-surface-interactive:hover .campaign-card-countdown-wrap,
+.campaign-card-surface-interactive:hover .campaign-action-icon {
   transform: scale(1.008);
 }
 
@@ -793,8 +793,8 @@
 
 .campaign-detail-content {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(18rem, 1fr);
-  gap: 1.25rem;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  gap: 1rem;
   align-items: start;
 }
 
@@ -803,10 +803,13 @@
   min-width: 0;
 }
 
-.campaign-detail-comments-card {
+.campaign-detail-card-shell {
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
   background: #ffffff;
+}
+
+.campaign-detail-comments-card {
   padding: 1rem;
   display: flex;
   flex-direction: column;
