@@ -10,7 +10,7 @@
   --campaign-highlight-color-4: #16a34a;
   --campaign-highlight-color-5: #3b82f6;
   --campaign-default-width: 42rem;
-  --campaign-width-md: calc(var(--campaign-default-width) * 1.2);
+  --campaign-shell-width-md: calc(var(--campaign-default-width) * 1.2);
   --campaign-expanded-width: 50.4rem;
   --campaign-detail-width: 61.2rem;
   --campaign-shell-transition: max-width 420ms ease, width 420ms ease;
@@ -446,7 +446,7 @@
 }
 
 .campaign-shell-width-md {
-  max-width: var(--campaign-width-md);
+  max-width: var(--campaign-shell-width-md);
 }
 
 .campaign-shell-width-detail {
@@ -729,11 +729,10 @@
   gap: 1.5rem;
 }
 
-.campaign-detail-loading {
-  min-height: 22rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.campaign-detail-status-loader {
+  min-height: 0;
+  padding: 0;
+  justify-content: flex-start;
 }
 
 .campaign-detail-header {

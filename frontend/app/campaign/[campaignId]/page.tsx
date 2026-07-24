@@ -394,11 +394,7 @@ export default function CampaignDetailPage() {
 
   const detailContent = (() => {
     if (loading) {
-      return (
-        <div className="campaign-detail-loading">
-          <ThreeDotLoader label="Loading freight details" />
-        </div>
-      );
+      return <ThreeDotLoader className="campaign-detail-status-loader" label="Loading freight details" />;
     }
 
     if (error) {
