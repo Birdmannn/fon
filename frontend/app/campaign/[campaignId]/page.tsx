@@ -3,8 +3,8 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { Copy } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
@@ -86,10 +86,13 @@ function truncateWalletAddress(address: string) {
   return `${address.slice(0, 10)}…${address.slice(-10)}`;
 }
 
+const DETAIL_EXPANDING_FLAG = "freight:detail-expanding";
+const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
+const SHELL_TRANSITION_MS = 420;
+
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
-  const router = useRouter();
   const params = useParams<{ campaignId: string }>();
   const campaignRef = splitCampaignId(params.campaignId);
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
@@ -101,8 +104,10 @@ export default function CampaignDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [shellWidthClass, setShellWidthClass] = useState("campaign-shell-width");
 
   const INFO_MODAL_ANIMATION_MS = 620;
+  const returnToFeedTimerRef = useRef<number | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
@@ -216,6 +221,47 @@ export default function CampaignDetailPage() {
 
     return "Custom";
   }, [client]);
+
+  useLayoutEffect(() => {
+    const isExpandingFromFeed = sessionStorage.getItem(DETAIL_EXPANDING_FLAG) === "1";
+    sessionStorage.removeItem(DETAIL_EXPANDING_FLAG);
+
+    if (!isExpandingFromFeed) {
+      setShellWidthClass("campaign-shell-width-md");
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setShellWidthClass("campaign-shell-width-md");
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, []);
+
+  const handleReturnToFeed = useCallback((event?: { preventDefault: () => void }) => {
+    event?.preventDefault();
+    if (returnToFeedTimerRef.current !== null) {
+      return;
+    }
+
+    sessionStorage.removeItem(DETAIL_EXPANDING_FLAG);
+    sessionStorage.setItem(DETAIL_CONTRACTING_FLAG, "1");
+    setShellWidthClass("campaign-shell-width");
+    returnToFeedTimerRef.current = window.setTimeout(() => {
+      window.location.href = "/";
+    }, SHELL_TRANSITION_MS);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (returnToFeedTimerRef.current !== null) {
+        window.clearTimeout(returnToFeedTimerRef.current);
+        returnToFeedTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -394,15 +440,23 @@ export default function CampaignDetailPage() {
 
   const detailContent = (() => {
     if (loading) {
-      return <ThreeDotLoader className="campaign-detail-status-loader" label="Loading freight details" />;
+      return <ThreeDotLoader className="campaign-detail-status" label="Loading freight details" />;
     }
 
     if (error) {
-      return <p className="text-sm text-gray-400">{error}</p>;
+      return (
+        <div className="campaign-detail-status">
+          <p className="text-sm text-gray-400">{error}</p>
+        </div>
+      );
     }
 
     if (!selectedCampaign) {
-      return <p className="text-sm text-gray-400">Campaign not found.</p>;
+      return (
+        <div className="campaign-detail-status">
+          <p className="text-sm text-gray-400">Campaign not found.</p>
+        </div>
+      );
     }
 
     const displayStatus = deriveDisplayStatus(selectedCampaign, nowMs);
@@ -414,7 +468,7 @@ export default function CampaignDetailPage() {
     return (
       <>
         <div className="campaign-detail-header">
-          <Link href="/" className="campaign-detail-back-link">← Back to freights</Link>
+          <Link href="/" className="campaign-detail-back-link" onClick={handleReturnToFeed}>← Back to freights</Link>
           <div className="campaign-detail-header-copy">
             <p className="campaign-detail-eyebrow">Campaign detail</p>
             <h1 className="campaign-detail-heading">{title}</h1>
@@ -443,15 +497,15 @@ export default function CampaignDetailPage() {
 
   return (
     <main className="campaign-detail-page">
-      <div className="campaign-detail-shell campaign-shell-width-md">
-        <div className="campaign-shell-header campaign-shell-width-md fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className={`campaign-detail-shell ${shellWidthClass}`.trim()}>
+        <div className={`campaign-shell-header ${shellWidthClass} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}>
           <div className="header-info-wrap">
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
                 type="button"
                 className="header-info-btn"
                 aria-label="Open Freight information"
-                onClick={() => router.push("/")}
+                onClick={() => handleReturnToFeed()}
                 onFocus={openInfoModalFromHover}
                 onBlur={scheduleCloseInfoModal}
               >

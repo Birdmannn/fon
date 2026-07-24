@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
@@ -108,6 +108,8 @@ type SettlementModalData = {
   _record?: CampaignRecord | null;
 };
 
+const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
+
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -143,9 +145,26 @@ export default function Home() {
   const [submissionSuccessPreimage, setSubmissionSuccessPreimage] = useState<string | null>(null);
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
+  const [shellWidthClass, setShellWidthClass] = useState("campaign-shell-width");
   const [isLoadingSettlementModal, setIsLoadingSettlementModal] = useState(false);
   const handleFreightsLoadError = useCallback((message: string) => {
     setSubmissionErrorMessage(message);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (sessionStorage.getItem(DETAIL_CONTRACTING_FLAG) !== "1") {
+      return;
+    }
+
+    sessionStorage.removeItem(DETAIL_CONTRACTING_FLAG);
+    setShellWidthClass("campaign-shell-width-md");
+    const frameId = window.requestAnimationFrame(() => {
+      setShellWidthClass("campaign-shell-width");
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
   }, []);
 
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
@@ -1090,9 +1109,9 @@ export default function Home() {
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
-      <div className="campaign-shell-width flex flex-col gap-6 pt-16">
+      <div className={`${shellWidthClass} flex flex-col gap-6 pt-16`.trim()}>
         <AppShellHeader
-          className="campaign-shell-header campaign-shell-width fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          className={`campaign-shell-header ${shellWidthClass} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
