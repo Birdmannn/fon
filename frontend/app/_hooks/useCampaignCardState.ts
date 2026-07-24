@@ -12,6 +12,7 @@ import {
 } from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
+import { copyText } from "@/lib/clipboard";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
 import {
   fetchParticipants,
@@ -149,17 +150,38 @@ export function useCampaignCardState({
   const [commentList, setCommentList] = useState<CampaignComment[]>(initialComments);
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
   const [userBookmarked, setUserBookmarked] = useState(false);
-  const [userReshared, setUserReshared] = useState(false);
   const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [isSavingLike, setIsSavingLike] = useState(false);
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [commentError, setCommentError] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<{
+    source: "like" | "reshare";
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
   const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const actionFeedbackTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositing, setIsDepositing] = useState(false);
+
+  const showActionFeedback = (
+    source: "like" | "reshare",
+    tone: "success" | "error",
+    message: string
+  ) => {
+    if (actionFeedbackTimerRef.current) {
+      clearTimeout(actionFeedbackTimerRef.current);
+    }
+
+    setActionFeedback({ source, tone, message });
+    actionFeedbackTimerRef.current = window.setTimeout(() => {
+      setActionFeedback(null);
+      actionFeedbackTimerRef.current = null;
+    }, 1600);
+  };
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
@@ -185,6 +207,15 @@ export function useCampaignCardState({
     record?.socialMetadata?.reshareCount,
   ]);
 
+  useEffect(() => {
+    return () => {
+      if (actionFeedbackTimerRef.current) {
+        clearTimeout(actionFeedbackTimerRef.current);
+        actionFeedbackTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const buildCampaignRecordPayload = (nextSocialMetadata: {
     comments: CampaignComment[];
     likeCount: number;
@@ -201,6 +232,7 @@ export function useCampaignCardState({
       taskDurationHours: record?.argsDraft?.taskDurationHours ?? String(Number(data.taskDurationSecs) / 3600),
       maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
       auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
+      rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
     },
     socialMetadata: {
       mentions,
@@ -225,6 +257,7 @@ export function useCampaignCardState({
     soldTicketCount: record?.soldTicketCount ?? null,
     settledParticipantCount: record?.settledParticipantCount ?? null,
     settledRecipients: record?.settledRecipients ?? null,
+    mountables: record?.mountables,
   });
 
   useEffect(() => {
@@ -242,7 +275,17 @@ export function useCampaignCardState({
   }, [cardId, commentDiscardDecision]);
 
   const handleLike = async () => {
-    if (!isConnected || !record?._id || !normalizedCurrentWalletAddress || isSavingLike) {
+    if (!isConnected || isSavingLike) {
+      return;
+    }
+
+    if (!normalizedCurrentWalletAddress) {
+      showActionFeedback("like", "error", "Unable to resolve wallet for like");
+      return;
+    }
+
+    if (!record?._id) {
+      showActionFeedback("like", "error", "Likes are not available for this freight yet");
       return;
     }
 
@@ -256,6 +299,7 @@ export function useCampaignCardState({
     setLikedByAddresses(nextLikedByAddresses);
     setLikes(nextLikeCount);
     setIsSavingLike(true);
+    setActionFeedback(null);
 
     try {
       const response = await fetch(`/api/campaign-records/${record._id}`, {
@@ -275,9 +319,10 @@ export function useCampaignCardState({
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to save like");
       }
-    } catch {
+    } catch (error) {
       setLikedByAddresses(previousLikedByAddresses);
       setLikes(previousLikeCount);
+      showActionFeedback("like", "error", error instanceof Error ? error.message : "Failed to save like");
     } finally {
       setIsSavingLike(false);
     }
@@ -386,10 +431,14 @@ export function useCampaignCardState({
     }
   };
 
-  const handleReshare = () => {
-    if (!isConnected) return;
-    setUserReshared(!userReshared);
-    setReshares((prev) => (userReshared ? prev - 1 : prev + 1));
+  const handleReshare = async () => {
+    try {
+      const freightUrl = `${window.location.origin}/campaign/${getCampaignStableId(c)}`;
+      await copyText(freightUrl);
+      showActionFeedback("reshare", "success", "Freight link copied");
+    } catch (error) {
+      // showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to copy freight link");
+    }
   };
 
   const handleDepositClick = () => {
@@ -683,6 +732,7 @@ export function useCampaignCardState({
     isRaffleCampaign,
     isSavingComment,
     likes,
+    actionFeedback,
     maxCkb,
     remainingTickets,
     rewardCountValue,
@@ -699,6 +749,5 @@ export function useCampaignCardState({
     userBookmarked,
     userCommented,
     userLiked,
-    userReshared,
   };
 }

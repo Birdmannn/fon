@@ -585,11 +585,20 @@
   border-bottom-color: #6b7280;
 }
 
+.campaign-action-feedback,
 .campaign-comment-error {
   margin: 0.2rem 0 0;
-  color: #dc2626;
   font-size: 0.76rem;
   line-height: 1.3;
+}
+
+.campaign-action-feedback-success {
+  color: #16a34a;
+}
+
+.campaign-action-feedback-error,
+.campaign-comment-error {
+  color: #dc2626;
 }
 
 .campaign-comment-meta-row {
