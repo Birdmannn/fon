@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
+import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import { buildDefaultHandle, deriveDisplayStatus, formatCkbAmount } from "@/lib/campaignDisplay";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
@@ -100,7 +101,6 @@ export default function CampaignDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [isExpandedFromFeed, setIsExpandedFromFeed] = useState(false);
 
   const INFO_MODAL_ANIMATION_MS = 620;
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -224,22 +224,6 @@ export default function CampaignDetailPage() {
 
     return () => {
       window.clearInterval(intervalId);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (sessionStorage.getItem("freight:detail-expanding") !== "1") {
-      return;
-    }
-
-    setIsExpandedFromFeed(true);
-    sessionStorage.removeItem("freight:detail-expanding");
-    const timer = window.setTimeout(() => {
-      setIsExpandedFromFeed(false);
-    }, 460);
-
-    return () => {
-      window.clearTimeout(timer);
     };
   }, []);
 
@@ -411,24 +395,8 @@ export default function CampaignDetailPage() {
   const detailContent = (() => {
     if (loading) {
       return (
-        <div className="campaign-detail-content">
-          <section className="campaign-detail-post-column">
-            <div className="campaign-detail-skeleton-card animate-pulse">
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-short" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-medium" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-full" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-full" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-medium" />
-            </div>
-          </section>
-          <section className="campaign-detail-comments-column">
-            <div className="campaign-detail-comments-card animate-pulse">
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-short" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-full" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-medium" />
-              <span className="campaign-detail-skeleton-line campaign-detail-skeleton-line-full" />
-            </div>
-          </section>
+        <div className="campaign-detail-loading">
+          <ThreeDotLoader label="Loading freight details" />
         </div>
       );
     }
@@ -479,8 +447,8 @@ export default function CampaignDetailPage() {
 
   return (
     <main className="campaign-detail-page">
-      <div className={`campaign-detail-shell campaign-shell-width ${isExpandedFromFeed ? "campaign-shell-width-expanded" : "campaign-shell-width-detail"}`.trim()}>
-        <div className={`campaign-shell-header fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between ${isExpandedFromFeed ? "campaign-shell-width-expanded" : "campaign-shell-width-detail"}`.trim()}>
+      <div className="campaign-detail-shell campaign-shell-width-md">
+        <div className="campaign-shell-header campaign-shell-width-md fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="header-info-wrap">
             <div onMouseEnter={openInfoModalFromHover} onMouseLeave={scheduleCloseInfoModal}>
               <button
