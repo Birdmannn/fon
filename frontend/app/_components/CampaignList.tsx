@@ -1,7 +1,7 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import type { CampaignRecord, MergedCampaign } from "@/app/_hooks/useCampaignFeed";
 import { getCampaignStableId } from "@/lib/campaignIdentity";
@@ -131,7 +131,12 @@ export default function CampaignList({
   return (
     <div className="flex flex-col gap-3">
       {campaigns.map(({ campaign, record, displayStatus }, index) => (
-        <div key={getCampaignStableId(campaign)} ref={index === 0 ? newestCampaignRef : null}>
+        <div
+          key={getCampaignStableId(campaign)}
+          ref={index === 0 ? newestCampaignRef : null}
+          className="campaign-card-entry"
+          style={{ "--campaign-card-enter-delay": `${Math.min(index, 8) * 45}ms` } as CSSProperties}
+        >
           <CampaignCard
             campaign={campaign}
             record={record}
