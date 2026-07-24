@@ -33,6 +33,7 @@ export type CampaignRecord = {
     likedByAddresses?: string[];
     bookmarkCount?: number;
     reshareCount?: number;
+    resharedByAddresses?: string[];
   };
   creatorAddress?: string | null;
   creatorHandle?: string | null;

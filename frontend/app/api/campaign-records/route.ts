@@ -30,6 +30,7 @@ type CampaignRecordPayload = {
     likedByAddresses?: unknown;
     bookmarkCount?: unknown;
     reshareCount?: unknown;
+    resharedByAddresses?: unknown;
   };
   creatorAddress?: unknown;
   creatorHandle?: unknown;
@@ -238,6 +239,9 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         : [],
       bookmarkCount: typeof payload.socialMetadata?.bookmarkCount === "number" ? payload.socialMetadata.bookmarkCount : 0,
       reshareCount: typeof payload.socialMetadata?.reshareCount === "number" ? payload.socialMetadata.reshareCount : 0,
+      resharedByAddresses: Array.isArray(payload.socialMetadata?.resharedByAddresses)
+        ? payload.socialMetadata.resharedByAddresses.map((value) => ensureString(value, "socialMetadata.resharedByAddresses[]").toLowerCase())
+        : [],
     },
     creatorAddress,
     creatorHandle,

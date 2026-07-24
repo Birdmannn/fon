@@ -118,6 +118,7 @@ export default function CampaignCard({
     userBookmarked,
     userCommented,
     userLiked,
+    userReshared,
   } = useCampaignCardState({
     campaign,
     record,
@@ -173,7 +174,7 @@ export default function CampaignCard({
 
           <button
             onClick={() => void handleReshare()}
-            className={`campaign-action-btn action-reshare ${actionFeedback?.source === "reshare" && actionFeedback.tone === "success" ? "campaign-action-active" : ""}`.trim()}
+            className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""}`.trim()}
             data-tooltip="Share"
           >
             <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
