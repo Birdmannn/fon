@@ -3,7 +3,7 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { Copy } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
@@ -502,7 +502,7 @@ export default function CampaignDetailPage() {
         selectedRecord,
         selectedCampaign,
       });
-      return <ThreeDotLoader className="campaign-detail-status" label="Loading freight details" />;
+      return <ThreeDotLoader className="campaign-detail-status campaign-card-entry" label="Loading freight details" />;
     }
 
     if (error) {
@@ -513,7 +513,7 @@ export default function CampaignDetailPage() {
         selectedCampaign,
       });
       return (
-        <div className="campaign-detail-status">
+        <div className="campaign-detail-status campaign-card-entry">
           <p className="text-sm text-gray-400">{error}</p>
         </div>
       );
@@ -528,7 +528,7 @@ export default function CampaignDetailPage() {
         selectedRecord,
       });
       return (
-        <div className="campaign-detail-status">
+        <div className="campaign-detail-status campaign-card-entry">
           <p className="text-sm text-gray-400">Campaign not found.</p>
         </div>
       );
@@ -540,7 +540,10 @@ export default function CampaignDetailPage() {
 
     return (
       <div className="campaign-detail-content">
-        <section className="campaign-detail-post-column campaign-detail-card-shell">
+        <section
+          className="campaign-detail-post-column campaign-detail-card-shell campaign-card-entry"
+          style={{ "--campaign-card-enter-delay": "0ms" } as CSSProperties}
+        >
           <CampaignDetailSurface
             campaign={selectedCampaign}
             chainSyncError={chainSyncError}
@@ -550,7 +553,10 @@ export default function CampaignDetailPage() {
           />
         </section>
 
-        <section className="campaign-detail-comments-column">
+        <section
+          className="campaign-detail-comments-column campaign-card-entry"
+          style={{ "--campaign-card-enter-delay": "110ms" } as CSSProperties}
+        >
           <CampaignCommentsPanel comments={comments} fallbackAddress={creatorAddress} />
         </section>
       </div>
