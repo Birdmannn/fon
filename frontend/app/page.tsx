@@ -1,17 +1,11 @@
 "use client";
 
 import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
   Check,
   CheckCircle,
   DollarSign,
   LockKeyhole,
-  Plus,
-  RotateCcw,
   Scroll,
-  ScrollText,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useRouter } from "next/navigation";
@@ -19,61 +13,27 @@ import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
+import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
+import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import MountablesPanel from "@/app/_components/MountablesPanel";
+import {
+  CREATE_INFO_CONSTRAINT_HEADING,
+  CREATE_INFO_CONSTRAINT_ITEMS,
+  CREATE_INFO_NOTE_HEADING,
+  CREATE_INFO_NOTE_ITEMS,
+  CREATE_INFO_PREVIEW_HEADING,
+  CREATE_INFO_PREVIEW_ITEMS,
+  CREATE_INFO_TYPING_HEADING,
+  CREATE_INFO_TYPING_ITEMS,
+} from "@/app/_lib/createCampaignInfo";
+import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
-import CreateCampaignModalContent, {
-  CreateCampaignModalContentHandle,
-  CreateConstraintStatus,
-  CreateModalStep,
-} from "@/app/create/_components/CreateCampaignModalContent";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
 import { CampaignCell } from "@/lib/transactions";
-
-const CREATE_INFO_CONSTRAINT_HEADING = "Creation constraints:";
-
-const CREATE_INFO_CONSTRAINT_ITEMS: Array<{
-  key: keyof CreateConstraintStatus;
-  text: string;
-}> = [
-  { key: "titlePassed", text: "1. Title is required." },
-  { key: "bodyPassed", text: "2. Body must be at least 120 characters (Well, ofcourse, we can keep it 15 if it's a Raffle)" },
-  {
-    key: "firstHashtagPassed",
-    text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle.",
-  },
-];
-
-const CREATE_INFO_NOTE_HEADING = "Note:";
-
-const CREATE_INFO_NOTE_ITEMS = [
-  "1. Additional hashtags may follow after the first compulsory hashtag.",
-  "2. Use #mounted to trigger mountables.",
-];
-
-const CREATE_INFO_TYPING_HEADING = "Typing:";
-
-const CREATE_INFO_TYPING_ITEMS = [
-  "Start with 1. then press Enter to continue numbered lists.",
-  "Start with -, *, or • then press Enter to continue bullet lists.",
-  "Start with [ ] or [x] to continue checkbox items.",
-  "Type ## at the start of a line for a larger heading line.",
-  "Use # for hashtags and @ for mentions.",
-];
-
-const CREATE_INFO_PREVIEW_HEADING = "Preview:";
-
-const CREATE_INFO_PREVIEW_ITEMS = [
-  "The generated summary is the short on-chain version of the post.",
-  "It is required because on-chain summary storage is limited to 64 UTF-8 bytes.",
-  "You can edit the summary before publishing if you want a clearer on-chain description.",
-  "Review and set the campaign args here, especially duration and max deposit.",
-  "If the first hashtag is #Raffle, a ticket price is also required.",
-  "The full title, description, mentions, and review snapshot are saved off-chain.",
-];
 
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
 const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
@@ -116,33 +76,8 @@ export default function Home() {
   const router = useRouter();
   const INFO_MODAL_ANIMATION_MS = 620;
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
-  const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [isCreateModalClosing, setIsCreateModalClosing] = useState(false);
-  const [createResetSignal, setCreateResetSignal] = useState(0);
-  const [createStepBackSignal, setCreateStepBackSignal] = useState(0);
-  const [createModalStep, setCreateModalStep] = useState<CreateModalStep>("compose");
-  const [constraintStatus, setConstraintStatus] = useState<CreateConstraintStatus>({
-    titlePassed: false,
-    bodyPassed: false,
-    firstHashtagPassed: false,
-    additionalHashtagsPassed: true,
-  });
-  const [previewError, setPreviewError] = useState("");
-  const [hasMountedHashtag, setHasMountedHashtag] = useState(false);
-  const [formsMountableSelected, setFormsMountableSelected] = useState(false);
-  const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
-  const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
-  const [isMountableFormFocused, setIsMountableFormFocused] = useState(false);
-  const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
-  const [mountablesPromptError, setMountablesPromptError] = useState("");
-  const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
-  const [pendingDraftSelectionId, setPendingDraftSelectionId] = useState<string | null>(null);
   const [pendingCommentDiscardId, setPendingCommentDiscardId] = useState<string | null>(null);
   const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
-  const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
-  const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
-  const [submissionSuccessPreimage, setSubmissionSuccessPreimage] = useState<string | null>(null);
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
   const [shellWidthClass, setShellWidthClass] = useState("campaign-shell-width");
@@ -152,28 +87,26 @@ export default function Home() {
   }, []);
 
   useLayoutEffect(() => {
-    if (sessionStorage.getItem(DETAIL_CONTRACTING_FLAG) !== "1") {
-      return;
+    const shouldContractFromDetail = sessionStorage.getItem(DETAIL_CONTRACTING_FLAG) === "1";
+
+    if (shouldContractFromDetail) {
+      sessionStorage.removeItem(DETAIL_CONTRACTING_FLAG);
+      setShellWidthClass("campaign-shell-width-md");
+      const frameId = window.requestAnimationFrame(() => {
+        setShellWidthClass("campaign-shell-width");
+      });
+
+      return () => {
+        window.cancelAnimationFrame(frameId);
+      };
     }
-
-    sessionStorage.removeItem(DETAIL_CONTRACTING_FLAG);
-    setShellWidthClass("campaign-shell-width-md");
-    const frameId = window.requestAnimationFrame(() => {
-      setShellWidthClass("campaign-shell-width");
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
   }, []);
 
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
   const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
   const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
-  const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
   const {
     handleCopyWalletAddress,
     walletAddress,
@@ -250,6 +183,63 @@ export default function Home() {
     onResetState: () => {},
   });
 
+  const {
+    constraintStatus,
+    createModalContentRef,
+    createModalStep,
+    createResetSignal,
+    createStepBackSignal,
+    finalizeCloseCreateModal,
+    formsMountableSelected,
+    handleCreateTopRightAction,
+    handleDraftSelectionRequest,
+    handleSaveDraftChoice,
+    isCreateDraftListOpen,
+    isCreateModalClosing,
+    isMountableFormFocused,
+    isMountablesContinuing,
+    mountableFormLinks,
+    mountableFormValidationState,
+    mountablesPromptError,
+    openCreateModal,
+    openMountablesModal,
+    openSubmissionSuccessInfoModal,
+    previewError,
+    requestCloseCreateModal,
+    resetCreateModal,
+    saveDraftPromptError,
+    setConstraintStatus,
+    setCreateModalStep,
+    setFormsMountableSelected,
+    setIsCreateDraftListOpen,
+    setIsMountableFormFocused,
+    setIsMountablesContinuing,
+    setMountableFormLinks,
+    setMountableFormValidationState,
+    setMountablesPromptError,
+    setPreviewError,
+    setSaveDraftPromptError,
+    setSubmissionSuccessPreimage,
+    setSubmissionSuccessTxHash,
+    showCreateModal,
+    submissionSuccessPreimage,
+    submissionSuccessTxHash,
+    transitionMountablesModal,
+  } = useCreateCampaignFlow<InfoModalMode>({
+    animationMs: INFO_MODAL_ANIMATION_MS,
+    initialInfoModalMode: "about",
+    openWallet: open,
+    signer,
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    clearSubmissionSuccessTimer,
+    closeInfoModal,
+    setInfoModalMode,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+  });
+
   const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
@@ -263,7 +253,7 @@ export default function Home() {
     submissionSuccessTimerRef.current = setTimeout(() => {
       closeInfoModal();
     }, 3000);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, submissionSuccessTimerRef]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, setSubmissionSuccessTxHash, submissionSuccessTimerRef]);
 
   const {
     handleTicketPurchaseSubmit,
@@ -278,44 +268,6 @@ export default function Home() {
     onSubmissionError: setSubmissionErrorMessage,
     onTicketBuySuccess: openTicketBuySuccessInfoModal,
   });
-  const clearCreateHideTimer = useCallback(() => {
-    if (createHideTimerRef.current) {
-      clearTimeout(createHideTimerRef.current);
-      createHideTimerRef.current = null;
-    }
-  }, []);
-
-  const openSaveDraftConfirmModal = useCallback(() => {
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    setInfoModalMode("save-draft-confirm");
-    setSaveDraftPromptError("");
-    setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
-
-  const openMountablesModal = useCallback(() => {
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    setInfoModalMode("mountables");
-    setMountableFormLinks([createModalContentRef.current?.getFormsMountableConfig().formUrl ?? ""]);
-    setMountablesPromptError("");
-    setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
-
-  const transitionMountablesModal = useCallback((nextMode: Extract<InfoModalMode, "mountables" | "mountables-forms">) => {
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    setIsInfoModalClosing(true);
-    window.setTimeout(() => {
-      setInfoModalMode(nextMode);
-      setIsInfoModalClosing(false);
-      setShowInfoModal(true);
-    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
-  }, [INFO_MODAL_ANIMATION_MS, clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
 
   useEffect(() => {
     if (infoModalMode !== "mountables-forms") {
@@ -374,43 +326,7 @@ export default function Home() {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [infoModalMode, mountableFormLinks]);
-
-  const finalizeCloseCreateModal = useCallback(() => {
-    if (!showCreateModal || isCreateModalClosing) return;
-
-    setIsCreateModalClosing(true);
-    clearCreateHideTimer();
-    createHideTimerRef.current = setTimeout(() => {
-      setShowCreateModal(false);
-      setIsCreateModalClosing(false);
-      setCreateModalStep("compose");
-      setPreviewError("");
-      setSaveDraftPromptError("");
-      setIsCreateDraftListOpen(false);
-      createHideTimerRef.current = null;
-    }, INFO_MODAL_ANIMATION_MS);
-  }, [clearCreateHideTimer, showCreateModal, isCreateModalClosing]);
-
-  const openSubmissionSuccessInfoModal = useCallback((txHash: string, preimage: string | null = null) => {
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    clearSubmissionSuccessTimer();
-    setSubmissionErrorMessage("");
-    setSubmissionSuccessTxHash(txHash);
-    setSubmissionSuccessPreimage(preimage);
-    setInfoModalMode("submission-success");
-    setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-    // Give extra time when showing a preimage — user needs to copy it
-    const autoCloseMs = preimage ? 12000 : 2500;
-    submissionSuccessTimerRef.current = setTimeout(() => {
-      closeInfoModal();
-    }, autoCloseMs);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, submissionSuccessTimerRef]);
-
-
+  }, [infoModalMode, mountableFormLinks, setIsMountableFormFocused, setMountableFormValidationState, setMountablesPromptError]);
 
   const handleOpenTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
     clearInfoCloseTimer();
@@ -430,38 +346,6 @@ export default function Home() {
     setIsInfoModalClosing,
     setShowInfoModal,
   ]);
-
-  const openCreateModal = () => {
-    clearCreateHideTimer();
-    setIsCreateModalClosing(false);
-    setCreateModalStep("compose");
-    setPreviewError("");
-    setSaveDraftPromptError("");
-    setIsCreateDraftListOpen(false);
-    setShowCreateModal(true);
-  };
-
-  const requestCloseCreateModal = useCallback(() => {
-    setPendingDraftSelectionId(null);
-    setPendingCloseAfterWalletConnect(false);
-    if (createModalContentRef.current?.hasDraftableChanges()) {
-      openSaveDraftConfirmModal();
-      return;
-    }
-
-    finalizeCloseCreateModal();
-  }, [finalizeCloseCreateModal, openSaveDraftConfirmModal]);
-
-  const handleDraftSelectionRequest = useCallback((draftId: string) => {
-    setPendingCloseAfterWalletConnect(false);
-    setPendingDraftSelectionId(draftId);
-    if (createModalContentRef.current?.hasDraftableChanges()) {
-      openSaveDraftConfirmModal();
-      return;
-    }
-
-    createModalContentRef.current?.applyDraftSelection(draftId);
-  }, [openSaveDraftConfirmModal]);
 
   const handleCommentDiscardRequest = useCallback((cardId: string) => {
     setPendingCommentDiscardId(cardId);
@@ -485,105 +369,14 @@ export default function Home() {
     closeInfoModal();
   }, [closeInfoModal, pendingCommentDiscardId]);
 
-  const handleSaveDraftChoice = useCallback(async (shouldSave: boolean) => {
-    try {
-      if (!shouldSave) {
-        if (pendingDraftSelectionId) {
-          createModalContentRef.current?.applyDraftSelection(pendingDraftSelectionId);
-          setPendingDraftSelectionId(null);
-          closeInfoModal();
-          return;
-        }
-
-        setPendingDraftSelectionId(null);
-        setPendingCloseAfterWalletConnect(false);
-        closeInfoModal();
-        finalizeCloseCreateModal();
-        return;
-      }
-
-      try {
-        await createModalContentRef.current?.saveDraftFromClose();
-      } catch (error) {
-        if (error instanceof Error && error.message === "Connect wallet to manage drafts") {
-          setPendingCloseAfterWalletConnect(!pendingDraftSelectionId);
-          open();
-          return;
-        }
-        throw error;
-      }
-
-      if (pendingDraftSelectionId) {
-        createModalContentRef.current?.applyDraftSelection(pendingDraftSelectionId);
-        setPendingDraftSelectionId(null);
-        closeInfoModal();
-        return;
-      }
-
-      createModalContentRef.current?.discardDraftSession();
-      setPendingCloseAfterWalletConnect(false);
-      closeInfoModal();
-      finalizeCloseCreateModal();
-    } catch (error) {
-      setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
-    }
-  }, [closeInfoModal, finalizeCloseCreateModal, open, pendingDraftSelectionId]);
-
-  const resetCreateModal = useCallback(() => {
-    setCreateModalStep("compose");
-    setPreviewError("");
-    setCreateResetSignal((current) => current + 1);
-  }, []);
-
-  const handleCreateTopRightAction = () => {
-    if (createModalStep === "review") {
-      setCreateStepBackSignal((current) => current + 1);
-      setCreateModalStep("compose");
-      setPreviewError("");
-      return;
-    }
-
-    void createModalContentRef.current?.toggleDraftList().catch(() => undefined);
-  };
-
   useEffect(() => {
     return () => {
       clearInfoCloseTimer();
       clearInfoHideTimer();
-      clearCreateHideTimer();
       clearSubmissionSuccessTimer();
     };
-  }, [clearCreateHideTimer, clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer]);
 
-  useEffect(() => {
-    if (!pendingCloseAfterWalletConnect || !signer) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        await createModalContentRef.current?.saveDraftFromClose();
-        if (cancelled) {
-          return;
-        }
-        createModalContentRef.current?.discardDraftSession();
-        setPendingCloseAfterWalletConnect(false);
-        closeInfoModal();
-        finalizeCloseCreateModal();
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        setSaveDraftPromptError(error instanceof Error ? error.message : "Failed to save draft");
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [closeInfoModal, finalizeCloseCreateModal, pendingCloseAfterWalletConnect, signer]);
 
   useEffect(() => {
     if (!showCreateModal) {
@@ -625,8 +418,6 @@ export default function Home() {
   }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
-  const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
-  const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
@@ -1178,37 +969,13 @@ export default function Home() {
           onWalletMouseEnter={keepWalletInfoModalOpen}
           onWalletMouseLeave={scheduleWalletInfoModalClose}
           rightActions={showCreateModal ? (
-            <div
-              className={`create-modal-top-actions ${isCreateModalClosing ? "create-modal-top-actions-closing" : ""}`}
-              role="group"
-              aria-label="Create modal controls"
-            >
-              <button
-                type="button"
-                className="create-modal-action-btn"
-                data-tooltip="Reset form"
-                onClick={resetCreateModal}
-                aria-label="Reset create campaign form"
-              >
-                <RotateCcw className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="create-modal-action-btn"
-                data-tooltip={createTopActionTooltip}
-                onClick={handleCreateTopRightAction}
-                aria-label={createTopActionLabel}
-              >
-                {createModalStep === "review" ? (
-                  <ArrowLeft className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
-                ) : (
-                  <span className={`create-modal-toggle-icon-wrap ${isCreateDraftListOpen ? "create-modal-toggle-icon-wrap-open" : ""}`}>
-                    <ArrowDown className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-down" size={26} strokeWidth={2} aria-hidden="true" />
-                    <ArrowUp className="campaign-action-icon create-modal-toggle-icon create-modal-toggle-icon-up" size={26} strokeWidth={2} aria-hidden="true" />
-                  </span>
-                )}
-              </button>
-            </div>
+            <CreateCampaignHeaderActions
+              createModalStep={createModalStep}
+              isCreateDraftListOpen={isCreateDraftListOpen}
+              isCreateModalClosing={isCreateModalClosing}
+              onReset={resetCreateModal}
+              onSecondaryAction={handleCreateTopRightAction}
+            />
           ) : undefined}
           shouldHideWalletAction={shouldHideWalletAction}
           walletAddress={walletAddress}
@@ -1249,57 +1016,31 @@ export default function Home() {
         />
       </div>
 
-      {showCreateModal && (
-        <button
-          type="button"
-          className={`create-campaign-backdrop ${isCreateModalClosing ? "create-campaign-backdrop-closing" : ""}`}
-          aria-label="Close create freight modal"
-          onClick={requestCloseCreateModal}
-        />
-      )}
-
-      {showCreateModal && (
-        <div
-          className={`create-campaign-modal ${isCreateModalClosing ? "create-campaign-modal-closing" : ""}`}
-          role="dialog"
-          aria-label="Create freight modal"
-          aria-modal="true"
-        >
-          <CreateCampaignModalContent
-            ref={createModalContentRef}
-            mode="modal"
-            onRequestClose={requestCloseCreateModal}
-            resetSignal={createResetSignal}
-            stepBackSignal={createStepBackSignal}
-            onStepChange={setCreateModalStep}
-            onConstraintStatusChange={setConstraintStatus}
-            onPreviewErrorChange={setPreviewError}
-            onDraftListOpenChange={setIsCreateDraftListOpen}
-            onDraftSelectionRequest={handleDraftSelectionRequest}
-            onMountableSelectionRequired={openMountablesModal}
-            onMountableSelectionStateChange={({ hasMountedHashtag: mounted, formsSelected }) => {
-              setHasMountedHashtag(mounted);
-              setFormsMountableSelected(formsSelected);
-              if (!mounted) {
-                setMountablesPromptError("");
-              }
-            }}
-            onPublishSuccess={(txHash, randomnessPreimage) => {
-              finalizeCloseCreateModal();
-              openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
-            }}
-          />
-        </div>
-      )}
-
-      <button
-        type="button"
-        aria-label="Open create freight modal"
-        className="fixed left-8 create-campaign-fab"
-        onClick={openCreateModal}
-      >
-        <Plus size={48} strokeWidth={2} aria-hidden="true" />
-      </button>
+      <CreateCampaignLauncher
+        createModalContentRef={createModalContentRef}
+        createResetSignal={createResetSignal}
+        createStepBackSignal={createStepBackSignal}
+        onConstraintStatusChange={setConstraintStatus}
+        onDraftListOpenChange={setIsCreateDraftListOpen}
+        onDraftSelectionRequest={handleDraftSelectionRequest}
+        onMountableSelectionRequired={openMountablesModal}
+        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected }) => {
+          setFormsMountableSelected(formsSelected);
+          if (!hasMountedHashtag) {
+            setMountablesPromptError("");
+          }
+        }}
+        onOpenCreateModal={openCreateModal}
+        onPreviewErrorChange={setPreviewError}
+        onPublishSuccess={(txHash, randomnessPreimage) => {
+          finalizeCloseCreateModal();
+          openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
+        }}
+        onRequestCloseCreateModal={requestCloseCreateModal}
+        onStepChange={setCreateModalStep}
+        showCreateModal={showCreateModal}
+        isCreateModalClosing={isCreateModalClosing}
+      />
     </main>
   );
 }
