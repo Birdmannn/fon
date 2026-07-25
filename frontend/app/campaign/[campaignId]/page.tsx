@@ -6,53 +6,20 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
+import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
-import { buildDefaultHandle, deriveDisplayStatus, formatCkbAmount } from "@/lib/campaignDisplay";
-import { bytesToHex, decodeSummary } from "@/lib/encoding";
+import type { CampaignRecord } from "@/app/_types/campaignRecords";
+import { buildDefaultHandle, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
+import { decodeSummary } from "@/lib/encoding";
+import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
-import {
-  buildCampaignRecordIndexes,
-  findCampaignRecord,
-  getCampaignStableId,
-  normalizeHash,
-  type CampaignRecordIndexes,
-} from "@/lib/campaignIdentity";
-
-type CampaignRecord = {
-  _id?: string;
-  title?: string;
-  description?: string;
-  campaignId?: string | null;
-  createdByHash?: string | null;
-  chainCreatedAt?: string | null;
-  creatorAddress?: string | null;
-  creatorHandle?: string | null;
-  campaignType?: number;
-  summaryDraft?: string;
-  socialMetadata?: {
-    mentions?: string[];
-    comments?: Array<{
-      text: string;
-      creatorAddress?: string | null;
-      creatorHandle?: string | null;
-      createdAt?: string;
-    }>;
-  };
-  status?: "draft" | "published" | "publish_failed";
-  txHash?: string | null;
-};
-
-function decodeCreatedByAddress(campaign: CampaignCell) {
-  return bytesToHex(campaign.data.createdBy);
-}
 
 function splitCampaignId(campaignId: string) {
   const normalizedCampaignId = normalizeHash(campaignId);
   if (normalizedCampaignId.includes(":")) {
-    return { campaignId: normalizedCampaignId };
+    return { campaignId: normalizedCampaignId, txHash: null, index: null };
   }
 
   const separator = campaignId.lastIndexOf("-");
@@ -67,7 +34,7 @@ function splitCampaignId(campaignId: string) {
     return null;
   }
 
-  return { txHash, index, campaignId: null };
+  return { campaignId: null, txHash, index };
 }
 
 function copyText(text: string) {
@@ -90,20 +57,27 @@ const DETAIL_EXPANDING_FLAG = "freight:detail-expanding";
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 const SHELL_TRANSITION_MS = 420;
 const DETAIL_CAMPAIGN_FETCH_LIMIT = 200;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
   const signer = ccc.useSigner();
   const params = useParams<{ campaignId: string }>();
-  const campaignRef = splitCampaignId(params.campaignId);
-  const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
-  const [recordIndexes, setRecordIndexes] = useState<CampaignRecordIndexes<CampaignRecord>>(() => ({
-    byCampaignId: {},
-    byTxHash: {},
-    byLegacyKey: {},
-  }));
+  const encodedCampaignIdParam = Array.isArray(params.campaignId) ? (params.campaignId[0] ?? "") : (params.campaignId ?? "");
+  const rawCampaignIdParam = useMemo(() => {
+    try {
+      return decodeURIComponent(encodedCampaignIdParam);
+    } catch {
+      return encodedCampaignIdParam;
+    }
+  }, [encodedCampaignIdParam]);
+  const campaignRef = useMemo(() => splitCampaignId(rawCampaignIdParam), [rawCampaignIdParam]);
+  const [selectedRecord, setSelectedRecord] = useState<CampaignRecord | null>(null);
+  const [selectedCampaign, setSelectedCampaign] = useState<CampaignCell | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [chainSyncError, setChainSyncError] = useState("");
+  const [isChainSyncing, setIsChainSyncing] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [shellWidthClass, setShellWidthClass] = useState("campaign-shell-width");
 
@@ -122,6 +96,25 @@ export default function CampaignDetailPage() {
   const walletBalanceAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const recordLookupQuery = useMemo(() => {
+    const nextLookupQuery = !campaignRef
+      ? `campaignId=${encodeURIComponent(rawCampaignIdParam)}`
+      : campaignRef.campaignId
+        ? `campaignId=${encodeURIComponent(campaignRef.campaignId)}`
+        : campaignRef.txHash
+          ? `txHash=${encodeURIComponent(campaignRef.txHash)}`
+          : `campaignId=${encodeURIComponent(rawCampaignIdParam)}`;
+
+    console.log("[campaign detail] lookup params", {
+      encodedCampaignIdParam,
+      rawCampaignIdParam,
+      campaignRef,
+      recordLookupQuery: nextLookupQuery,
+    });
+
+    return nextLookupQuery;
+  }, [campaignRef, encodedCampaignIdParam, rawCampaignIdParam]);
 
   const clearInfoCloseTimer = () => {
     if (infoCloseTimerRef.current) {
@@ -360,29 +353,61 @@ export default function CampaignDetailPage() {
   useEffect(() => {
     let cancelled = false;
 
+    if (!recordLookupQuery) {
+      console.log("[campaign detail] skipping backend record lookup because query is empty", {
+        encodedCampaignIdParam,
+        rawCampaignIdParam,
+        campaignRef,
+      });
+      setSelectedRecord(null);
+      setSelectedCampaign(null);
+      setChainSyncError("");
+      setIsChainSyncing(false);
+      setError("");
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    console.log("[campaign detail] starting backend record lookup", {
+      encodedCampaignIdParam,
+      rawCampaignIdParam,
+      campaignRef,
+      recordLookupQuery,
+      requestUrl: `/api/campaign-records?${recordLookupQuery}`,
+    });
+
     void (async () => {
       try {
         setLoading(true);
         setError("");
+        setSelectedRecord(null);
+        setSelectedCampaign(null);
+        setChainSyncError("");
+        setIsChainSyncing(false);
 
-        const [chainCampaigns, recordsResponse] = await Promise.all([
-          fetchCampaigns(client, DETAIL_CAMPAIGN_FETCH_LIMIT),
-          fetch("/api/campaign-records", { cache: "no-store" }),
-        ]);
+        const response = await fetch(`/api/campaign-records?${recordLookupQuery}`, { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
 
-        const recordsPayload = await recordsResponse.json().catch(() => null);
-        if (!recordsResponse.ok) {
-          throw new Error(recordsPayload?.error ?? "Failed to fetch campaign records");
+        console.log("[campaign detail] backend record lookup response", {
+          ok: response.ok,
+          status: response.status,
+          recordLookupQuery,
+          payload,
+        });
+
+        if (!response.ok) {
+          throw new Error(payload?.error ?? "Failed to fetch campaign record");
         }
-
-        const records = Array.isArray(recordsPayload?.records) ? (recordsPayload.records as CampaignRecord[]) : [];
-        const nextRecordIndexes = buildCampaignRecordIndexes(records);
 
         if (!cancelled) {
-          setCampaigns(chainCampaigns);
-          setRecordIndexes(nextRecordIndexes);
+          const nextRecord = payload?.record && typeof payload.record === "object" ? payload.record as CampaignRecord : null;
+          console.log("[campaign detail] selected backend record", nextRecord);
+          setSelectedRecord(nextRecord);
         }
       } catch (loadError) {
+        console.log("[campaign detail] backend record lookup failed", loadError);
         if (!cancelled) {
           setError(loadError instanceof Error ? loadError.message : "Failed to load campaign detail");
         }
@@ -396,34 +421,67 @@ export default function CampaignDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [campaignRef, encodedCampaignIdParam, rawCampaignIdParam, recordLookupQuery]);
 
-  const selectedCampaign = useMemo(() => {
-    if (!campaignRef) {
-      return null;
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!selectedRecord) {
+      console.log("[campaign detail] skipping chain hydration because no backend record is selected yet");
+      setSelectedCampaign(null);
+      setChainSyncError("");
+      setIsChainSyncing(false);
+      return () => {
+        cancelled = true;
+      };
     }
 
-    if (campaignRef.campaignId) {
-      return campaigns.find((campaign) => getCampaignStableId(campaign) === campaignRef.campaignId) ?? null;
-    }
+    console.log("[campaign detail] starting chain hydration", {
+      selectedRecord,
+      fetchLimit: DETAIL_CAMPAIGN_FETCH_LIMIT,
+    });
 
-    return campaigns.find((campaign) => (
-      normalizeHash(campaign.outPoint.txHash) === normalizeHash(campaignRef.txHash)
-      && campaign.outPoint.index === campaignRef.index
-    )) ?? null;
-  }, [campaignRef, campaigns]);
+    void (async () => {
+      try {
+        setIsChainSyncing(true);
+        setChainSyncError("");
+        setSelectedCampaign(null);
 
-  const selectedRecord = useMemo(() => {
-    if (!selectedCampaign) {
-      return null;
-    }
+        const chainCampaigns = await fetchCampaigns(client, DETAIL_CAMPAIGN_FETCH_LIMIT);
+        if (cancelled) {
+          return;
+        }
 
-    return findCampaignRecord(recordIndexes, selectedCampaign);
-  }, [recordIndexes, selectedCampaign]);
+        const matchedCampaign = findCampaignByRecord(chainCampaigns, selectedRecord);
+        console.log("[campaign detail] chain hydration result", {
+          hydratedCampaignCount: chainCampaigns.length,
+          matchedCampaign,
+          selectedRecord,
+        });
+
+        setSelectedCampaign(matchedCampaign);
+      } catch (loadError) {
+        console.log("[campaign detail] chain hydration failed", loadError);
+        if (!cancelled) {
+          setChainSyncError(loadError instanceof Error ? loadError.message : "Failed to sync live chain data");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsChainSyncing(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, selectedRecord]);
 
   const comments = useMemo(() => (
     Array.isArray(selectedRecord?.socialMetadata?.comments)
-      ? selectedRecord.socialMetadata.comments.filter((value) => !!value && typeof value.text === "string")
+      ? selectedRecord.socialMetadata.comments.filter((value): value is { text: string; creatorAddress?: string | null; creatorHandle?: string | null; createdAt?: string } => (
+        !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string"
+      ))
       : []
   ), [selectedRecord?.socialMetadata?.comments]);
 
@@ -441,10 +499,21 @@ export default function CampaignDetailPage() {
 
   const detailContent = (() => {
     if (loading) {
+      console.log("[campaign detail] rendering loading state", {
+        recordLookupQuery,
+        selectedRecord,
+        selectedCampaign,
+      });
       return <ThreeDotLoader className="campaign-detail-status" label="Loading freight details" />;
     }
 
     if (error) {
+      console.log("[campaign detail] rendering error state", {
+        error,
+        recordLookupQuery,
+        selectedRecord,
+        selectedCampaign,
+      });
       return (
         <div className="campaign-detail-status">
           <p className="text-sm text-gray-400">{error}</p>
@@ -452,21 +521,27 @@ export default function CampaignDetailPage() {
       );
     }
 
-    if (!selectedCampaign) {
+    if (!selectedRecord) {
+      console.log("[campaign detail] rendering not-found state", {
+        encodedCampaignIdParam,
+        rawCampaignIdParam,
+        campaignRef,
+        recordLookupQuery,
+        selectedRecord,
+      });
       return (
         <div className="campaign-detail-status">
-          <p className="text-sm text-gray-400">
-            {campaigns.length === 0 ? "Failed to load freight details from chain." : "Campaign not found."}
-          </p>
+          <p className="text-sm text-gray-400">Campaign not found.</p>
         </div>
       );
     }
 
-    const displayStatus = deriveDisplayStatus(selectedCampaign, nowMs);
-    const creatorAddress = selectedRecord?.creatorAddress ?? decodeCreatedByAddress(selectedCampaign);
-    const creatorHandle = selectedRecord?.creatorHandle ?? buildDefaultHandle(creatorAddress);
-    const summary = selectedRecord?.summaryDraft ?? decodeSummary(selectedCampaign.data.summary);
-    const title = selectedRecord?.title?.trim() || summary;
+    const creatorAddress = selectedRecord.creatorAddress?.trim()
+      || selectedRecord.createdByHash?.trim()
+      || (selectedCampaign ? decodeCreatedByAddress(selectedCampaign) : ZERO_ADDRESS);
+    const creatorHandle = selectedRecord.creatorHandle?.trim() || buildDefaultHandle(creatorAddress);
+    const summary = selectedRecord.summaryDraft?.trim() || (selectedCampaign ? decodeSummary(selectedCampaign.data.summary) : "Untitled freight");
+    const title = selectedRecord.title?.trim() || summary;
 
     return (
       <>
@@ -481,12 +556,12 @@ export default function CampaignDetailPage() {
 
         <div className="campaign-detail-content">
           <section className="campaign-detail-post-column campaign-detail-card-shell">
-            <CampaignCardSurface
+            <CampaignDetailSurface
               campaign={selectedCampaign}
-              record={selectedRecord}
-              displayStatus={displayStatus}
+              chainSyncError={chainSyncError}
+              isChainSyncing={isChainSyncing}
               nowMs={nowMs}
-              variant="detail"
+              record={selectedRecord}
             />
           </section>
 
