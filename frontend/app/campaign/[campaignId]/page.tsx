@@ -2,7 +2,6 @@
 
 import { ccc } from "@ckb-ccc/connector-react";
 import { Copy } from "lucide-react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -11,8 +10,7 @@ import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
-import { buildDefaultHandle, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
-import { decodeSummary } from "@/lib/encoding";
+import { decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -539,37 +537,23 @@ export default function CampaignDetailPage() {
     const creatorAddress = selectedRecord.creatorAddress?.trim()
       || selectedRecord.createdByHash?.trim()
       || (selectedCampaign ? decodeCreatedByAddress(selectedCampaign) : ZERO_ADDRESS);
-    const creatorHandle = selectedRecord.creatorHandle?.trim() || buildDefaultHandle(creatorAddress);
-    const summary = selectedRecord.summaryDraft?.trim() || (selectedCampaign ? decodeSummary(selectedCampaign.data.summary) : "Untitled freight");
-    const title = selectedRecord.title?.trim() || summary;
 
     return (
-      <>
-        <div className="campaign-detail-header">
-          <Link href="/" className="campaign-detail-back-link" onClick={handleReturnToFeed}>← Back to freights</Link>
-          <div className="campaign-detail-header-copy">
-            <p className="campaign-detail-eyebrow">Campaign detail</p>
-            <h1 className="campaign-detail-heading">{title}</h1>
-            <p className="campaign-detail-subtitle">{creatorHandle}</p>
-          </div>
-        </div>
+      <div className="campaign-detail-content">
+        <section className="campaign-detail-post-column campaign-detail-card-shell">
+          <CampaignDetailSurface
+            campaign={selectedCampaign}
+            chainSyncError={chainSyncError}
+            isChainSyncing={isChainSyncing}
+            nowMs={nowMs}
+            record={selectedRecord}
+          />
+        </section>
 
-        <div className="campaign-detail-content">
-          <section className="campaign-detail-post-column campaign-detail-card-shell">
-            <CampaignDetailSurface
-              campaign={selectedCampaign}
-              chainSyncError={chainSyncError}
-              isChainSyncing={isChainSyncing}
-              nowMs={nowMs}
-              record={selectedRecord}
-            />
-          </section>
-
-          <section className="campaign-detail-comments-column">
-            <CampaignCommentsPanel comments={comments} fallbackAddress={creatorAddress} />
-          </section>
-        </div>
-      </>
+        <section className="campaign-detail-comments-column">
+          <CampaignCommentsPanel comments={comments} fallbackAddress={creatorAddress} />
+        </section>
+      </div>
     );
   })();
 
