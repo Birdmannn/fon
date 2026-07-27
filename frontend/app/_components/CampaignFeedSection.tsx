@@ -86,9 +86,7 @@ export default function CampaignFeedSection({
         commentDiscardDecision={commentDiscardDecision}
         onStartDetailTransition={(href) => {
           sessionStorage.setItem("freight:detail-expanding", "1");
-          window.setTimeout(() => {
-            window.location.href = href;
-          }, 420);
+          window.location.href = href;
         }}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
         onTicketBought={handleTicketBought}

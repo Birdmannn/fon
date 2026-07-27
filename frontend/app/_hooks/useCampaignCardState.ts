@@ -12,6 +12,7 @@ import {
 } from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
+import { copyText } from "@/lib/clipboard";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
 import {
   fetchParticipants,
@@ -142,29 +143,58 @@ export function useCampaignCardState({
       ? record.socialMetadata.likedByAddresses.map((value) => normalizeHash(value)).filter(Boolean)
       : []
   ), [record?.socialMetadata?.likedByAddresses]);
+  const initialResharedByAddresses = useMemo(() => (
+    Array.isArray(record?.socialMetadata?.resharedByAddresses)
+      ? record.socialMetadata.resharedByAddresses.map((value) => normalizeHash(value)).filter(Boolean)
+      : []
+  ), [record?.socialMetadata?.resharedByAddresses]);
   const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [likedByAddresses, setLikedByAddresses] = useState<string[]>(initialLikedByAddresses);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
   const [commentList, setCommentList] = useState<CampaignComment[]>(initialComments);
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
+  const [resharedByAddresses, setResharedByAddresses] = useState<string[]>(initialResharedByAddresses);
   const [userBookmarked, setUserBookmarked] = useState(false);
-  const [userReshared, setUserReshared] = useState(false);
   const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [isSavingLike, setIsSavingLike] = useState(false);
   const [isSavingComment, setIsSavingComment] = useState(false);
+  const [isSavingReshare, setIsSavingReshare] = useState(false);
   const [commentError, setCommentError] = useState("");
+  const [actionFeedback, setActionFeedback] = useState<{
+    source: "like" | "reshare";
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
   const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const actionFeedbackTimerRef = useRef<number | null>(null);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositing, setIsDepositing] = useState(false);
+
+  const showActionFeedback = (
+    source: "like" | "reshare",
+    tone: "success" | "error",
+    message: string
+  ) => {
+    if (actionFeedbackTimerRef.current !== null) {
+      window.clearTimeout(actionFeedbackTimerRef.current);
+    }
+
+    setActionFeedback({ source, tone, message });
+    actionFeedbackTimerRef.current = window.setTimeout(() => {
+      setActionFeedback(null);
+      actionFeedbackTimerRef.current = null;
+    }, 1600);
+  };
 
   const isConnected = !!signer;
   const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
+  const userReshared = normalizedCurrentWalletAddress.length > 0 && resharedByAddresses.includes(normalizedCurrentWalletAddress);
   const userCommented = normalizedCurrentWalletAddress.length > 0
     && commentList.some((comment) => normalizeHash(comment.creatorAddress) === normalizedCurrentWalletAddress);
   const hasSettledRewards = settlementUiState.hasSettledRewards;
@@ -177,13 +207,24 @@ export function useCampaignCardState({
     setBookmarks(record?.socialMetadata?.bookmarkCount ?? 0);
     setCommentList(initialComments);
     setReshares(record?.socialMetadata?.reshareCount ?? 0);
+    setResharedByAddresses(initialResharedByAddresses);
   }, [
     initialComments,
     initialLikedByAddresses,
+    initialResharedByAddresses,
     record?.socialMetadata?.bookmarkCount,
     record?.socialMetadata?.likeCount,
     record?.socialMetadata?.reshareCount,
   ]);
+
+  useEffect(() => {
+    return () => {
+      if (actionFeedbackTimerRef.current !== null) {
+        window.clearTimeout(actionFeedbackTimerRef.current);
+        actionFeedbackTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const buildCampaignRecordPayload = (nextSocialMetadata: {
     comments: CampaignComment[];
@@ -191,6 +232,7 @@ export function useCampaignCardState({
     likedByAddresses: string[];
     bookmarkCount: number;
     reshareCount: number;
+    resharedByAddresses: string[];
   }) => ({
     title: record?.title ?? displayTitle,
     description: record?.description ?? displayDescription,
@@ -201,6 +243,7 @@ export function useCampaignCardState({
       taskDurationHours: record?.argsDraft?.taskDurationHours ?? String(Number(data.taskDurationSecs) / 3600),
       maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
       auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
+      rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
     },
     socialMetadata: {
       mentions,
@@ -209,6 +252,7 @@ export function useCampaignCardState({
       likedByAddresses: nextSocialMetadata.likedByAddresses,
       bookmarkCount: nextSocialMetadata.bookmarkCount,
       reshareCount: nextSocialMetadata.reshareCount,
+      resharedByAddresses: nextSocialMetadata.resharedByAddresses,
     },
     creatorAddress: record?.creatorAddress ?? creatorAddress,
     creatorHandle: record?.creatorHandle ?? creatorHandle,
@@ -225,6 +269,7 @@ export function useCampaignCardState({
     soldTicketCount: record?.soldTicketCount ?? null,
     settledParticipantCount: record?.settledParticipantCount ?? null,
     settledRecipients: record?.settledRecipients ?? null,
+    mountables: record?.mountables,
   });
 
   useEffect(() => {
@@ -242,7 +287,17 @@ export function useCampaignCardState({
   }, [cardId, commentDiscardDecision]);
 
   const handleLike = async () => {
-    if (!isConnected || !record?._id || !normalizedCurrentWalletAddress || isSavingLike) {
+    if (!isConnected || isSavingLike) {
+      return;
+    }
+
+    if (!normalizedCurrentWalletAddress) {
+      showActionFeedback("like", "error", "Unable to resolve wallet for like");
+      return;
+    }
+
+    if (!record?._id) {
+      showActionFeedback("like", "error", "Likes are not available for this freight yet");
       return;
     }
 
@@ -256,6 +311,7 @@ export function useCampaignCardState({
     setLikedByAddresses(nextLikedByAddresses);
     setLikes(nextLikeCount);
     setIsSavingLike(true);
+    setActionFeedback(null);
 
     try {
       const response = await fetch(`/api/campaign-records/${record._id}`, {
@@ -269,15 +325,17 @@ export function useCampaignCardState({
           likedByAddresses: nextLikedByAddresses,
           bookmarkCount: bookmarks,
           reshareCount: reshares,
+          resharedByAddresses,
         })),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to save like");
       }
-    } catch {
+    } catch (error) {
       setLikedByAddresses(previousLikedByAddresses);
       setLikes(previousLikeCount);
+      showActionFeedback("like", "error", error instanceof Error ? error.message : "Failed to save like");
     } finally {
       setIsSavingLike(false);
     }
@@ -366,6 +424,7 @@ export function useCampaignCardState({
           likedByAddresses,
           bookmarkCount: bookmarks,
           reshareCount: reshares,
+          resharedByAddresses,
         })),
       });
       const payload = await response.json().catch(() => null);
@@ -386,10 +445,64 @@ export function useCampaignCardState({
     }
   };
 
-  const handleReshare = () => {
-    if (!isConnected) return;
-    setUserReshared(!userReshared);
-    setReshares((prev) => (userReshared ? prev - 1 : prev + 1));
+  const handleReshare = async () => {
+    const freightUrl = `${window.location.origin}/campaign/${getCampaignStableId(c)}`;
+
+    try {
+      await copyText(freightUrl);
+    } catch (error) {
+      showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to copy freight link");
+      return;
+    }
+
+    if (userReshared || isSavingReshare) {
+      showActionFeedback("reshare", "success", "Freight link copied");
+      return;
+    }
+
+    if (!normalizedCurrentWalletAddress || !record?._id) {
+      showActionFeedback("reshare", "success", "Freight link copied");
+      return;
+    }
+
+    const previousResharedByAddresses = resharedByAddresses;
+    const previousReshareCount = reshares;
+    const nextResharedByAddresses = [...resharedByAddresses, normalizedCurrentWalletAddress];
+    const nextReshareCount = nextResharedByAddresses.length;
+
+    setResharedByAddresses(nextResharedByAddresses);
+    setReshares(nextReshareCount);
+    setIsSavingReshare(true);
+    setActionFeedback(null);
+
+    try {
+      const response = await fetch(`/api/campaign-records/${record._id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(buildCampaignRecordPayload({
+          comments: commentList,
+          likeCount: likes,
+          likedByAddresses,
+          bookmarkCount: bookmarks,
+          reshareCount: nextReshareCount,
+          resharedByAddresses: nextResharedByAddresses,
+        })),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save reshare");
+      }
+
+      showActionFeedback("reshare", "success", "Freight link copied");
+    } catch (error) {
+      setResharedByAddresses(previousResharedByAddresses);
+      setReshares(previousReshareCount);
+      showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to save reshare");
+    } finally {
+      setIsSavingReshare(false);
+    }
   };
 
   const handleDepositClick = () => {
@@ -683,6 +796,7 @@ export function useCampaignCardState({
     isRaffleCampaign,
     isSavingComment,
     likes,
+    actionFeedback,
     maxCkb,
     remainingTickets,
     rewardCountValue,

@@ -30,6 +30,7 @@ type CampaignRecordPayload = {
     likedByAddresses?: unknown;
     bookmarkCount?: unknown;
     reshareCount?: unknown;
+    resharedByAddresses?: unknown;
   };
   creatorAddress?: unknown;
   creatorHandle?: unknown;
@@ -46,6 +47,26 @@ type CampaignRecordPayload = {
 
 const SUMMARY_MAX_BYTES = 64;
 const summaryEncoder = new TextEncoder();
+
+function normalizeHash(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
+function parseStableCampaignId(value: string | null | undefined) {
+  const normalizedValue = normalizeHash(value);
+  const [createdByHash, chainCreatedAt, campaignTypeText, ...rest] = normalizedValue.split(":");
+  const campaignType = Number.parseInt(campaignTypeText ?? "", 10);
+
+  if (rest.length > 0 || !createdByHash || !chainCreatedAt || !Number.isInteger(campaignType)) {
+    return null;
+  }
+
+  return {
+    createdByHash,
+    chainCreatedAt,
+    campaignType,
+  };
+}
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -238,6 +259,9 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         : [],
       bookmarkCount: typeof payload.socialMetadata?.bookmarkCount === "number" ? payload.socialMetadata.bookmarkCount : 0,
       reshareCount: typeof payload.socialMetadata?.reshareCount === "number" ? payload.socialMetadata.reshareCount : 0,
+      resharedByAddresses: Array.isArray(payload.socialMetadata?.resharedByAddresses)
+        ? payload.socialMetadata.resharedByAddresses.map((value) => ensureString(value, "socialMetadata.resharedByAddresses[]").toLowerCase())
+        : [],
     },
     creatorAddress,
     creatorHandle,
@@ -271,9 +295,61 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const collection = await getMongoCollection();
+    const { searchParams } = new URL(request.url);
+    const campaignId = searchParams.get("campaignId")?.trim();
+    const txHash = searchParams.get("txHash")?.trim();
+
+    console.log("[campaign-records] GET request", {
+      url: request.url,
+      campaignId,
+      txHash,
+    });
+
+    if (campaignId || txHash) {
+      const normalizedCampaignId = normalizeHash(campaignId);
+      const stableCampaignIdentity = parseStableCampaignId(campaignId);
+      const normalizedTxHash = normalizeHash(txHash);
+      const query = campaignId
+        ? {
+          status: "published",
+          $or: [
+            { campaignId: { $in: [campaignId ?? "", normalizedCampaignId] } },
+            ...(stableCampaignIdentity
+              ? [{
+                createdByHash: stableCampaignIdentity.createdByHash,
+                chainCreatedAt: stableCampaignIdentity.chainCreatedAt,
+                campaignType: stableCampaignIdentity.campaignType,
+              }]
+              : []),
+          ],
+        }
+        : {
+          status: "published",
+          txHash: { $in: [txHash ?? "", normalizedTxHash] },
+        };
+
+      console.log("[campaign-records] targeted lookup", {
+        campaignId,
+        normalizedCampaignId,
+        stableCampaignIdentity,
+        txHash,
+        normalizedTxHash,
+        query,
+      });
+
+      const record = await collection.findOne(query, { sort: { updatedAt: -1 } });
+
+      console.log("[campaign-records] targeted lookup result", {
+        found: !!record,
+        record,
+      });
+
+      return NextResponse.json({ record });
+    }
+
     const records = await collection
       .find(
         {
@@ -284,6 +360,11 @@ export async function GET() {
       )
       .limit(50)
       .toArray();
+
+    console.log("[campaign-records] list lookup result", {
+      count: records.length,
+    });
+
     return NextResponse.json({ records });
   } catch (error) {
     console.error("GET /api/campaign-records error:", error);

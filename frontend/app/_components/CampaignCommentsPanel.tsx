@@ -14,6 +14,7 @@ type CampaignCommentsPanelProps = {
   emptyMessage?: string;
   fallbackAddress?: string;
   title?: string;
+  variant?: "card" | "inline";
 };
 
 export default function CampaignCommentsPanel({
@@ -21,9 +22,10 @@ export default function CampaignCommentsPanel({
   emptyMessage = "No comments yet.",
   fallbackAddress = "0x0000000000000000000000000000000000000000",
   title = "Comments",
+  variant = "card",
 }: CampaignCommentsPanelProps) {
   return (
-    <div className="campaign-detail-comments-card">
+    <div className={variant === "inline" ? "campaign-detail-comments-panel campaign-detail-comments-panel-inline" : "campaign-detail-comments-panel campaign-detail-card-shell campaign-detail-comments-card"}>
       <div className="campaign-detail-comments-header">
         <h2 className="campaign-detail-comments-title">{title}</h2>
         <span className="campaign-detail-comments-count">{comments.length}</span>

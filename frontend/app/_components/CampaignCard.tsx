@@ -104,6 +104,7 @@ export default function CampaignCard({
     isRaffleCampaign,
     isSavingComment,
     likes,
+    actionFeedback,
     maxCkb,
     remainingTickets,
     reshares,
@@ -172,9 +173,9 @@ export default function CampaignCard({
           </button>
 
           <button
-            onClick={handleReshare}
-            className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to reshare" : "Reshare"}
+            onClick={() => void handleReshare()}
+            className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""}`.trim()}
+            data-tooltip="Share"
           >
             <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
             <span className="campaign-action-count">{reshares}</span>
@@ -246,6 +247,12 @@ export default function CampaignCard({
             </button>
           )}
         </div>
+
+        {actionFeedback ? (
+          <p className={`campaign-action-feedback ${actionFeedback.tone === "error" ? "campaign-action-feedback-error" : "campaign-action-feedback-success"}`.trim()}>
+            {actionFeedback.message}
+          </p>
+        ) : null}
 
         <div
           ref={commentComposerRef}

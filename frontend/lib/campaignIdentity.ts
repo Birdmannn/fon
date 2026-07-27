@@ -144,3 +144,31 @@ export function findCampaignRecord<T extends CampaignRecordIdentityLike>(
 
   return null;
 }
+
+export function findCampaignByRecord<T extends CampaignIdentityLike>(
+  campaigns: T[],
+  record: CampaignRecordIdentityLike
+): T | null {
+  const campaignId = getRecordStableId(record);
+  if (campaignId) {
+    const matchedCampaign = campaigns.find((campaign) => getCampaignStableId(campaign) === campaignId);
+    if (matchedCampaign) {
+      return matchedCampaign;
+    }
+  }
+
+  const txHash = normalizeHash(record.txHash);
+  if (txHash) {
+    const matchedCampaign = campaigns.find((campaign) => normalizeHash(campaign.outPoint.txHash) === txHash);
+    if (matchedCampaign) {
+      return matchedCampaign;
+    }
+  }
+
+  const legacyKey = getRecordLegacyRecordKey(record);
+  if (legacyKey) {
+    return campaigns.find((campaign) => getCampaignLegacyRecordKey(campaign) === legacyKey) ?? null;
+  }
+
+  return null;
+}
