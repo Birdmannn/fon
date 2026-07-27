@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
@@ -32,7 +32,7 @@ import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
-import { formatCkbAmount } from "@/lib/campaignDisplay";
+import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
 import { CampaignCell } from "@/lib/transactions";
 
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
@@ -118,8 +118,12 @@ export default function Home() {
     walletInfoError,
     walletInfoLoading,
     walletUsdParts,
-  } = useWalletInfo(client, signer ?? null, showWalletInfoModal);
+  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
   const { currentUserProfile } = useUserProfile(signer ?? null);
+  const walletActionHref = useMemo(() => {
+    const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
+    return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
+  }, [currentUserProfile?.username, walletAddress]);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -989,7 +993,7 @@ export default function Home() {
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          walletActionHref={currentUserProfile ? `/user/${encodeURIComponent(currentUserProfile.username)}` : undefined}
+          walletActionHref={walletActionHref}
           walletActionLabel="Introspect"
         />
 

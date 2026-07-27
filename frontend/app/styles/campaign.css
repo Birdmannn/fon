@@ -728,7 +728,7 @@
 }
 
 .campaign-detail-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 5rem 1.25rem 3rem;
   display: flex;
   justify-content: center;
@@ -739,13 +739,16 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  min-height: 0;
 }
 
 .campaign-detail-content-shell {
   padding-top: 4.5rem;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 1.5rem;
+  min-height: 0;
 }
 
 .campaign-detail-status {
@@ -795,12 +798,21 @@
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
   gap: 1rem;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
 }
 
 .campaign-detail-post-column,
 .campaign-detail-comments-column {
   min-width: 0;
+  min-height: 0;
+}
+
+.campaign-detail-column-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
 }
 
 .campaign-detail-card-shell {
@@ -809,11 +821,112 @@
   background: #ffffff;
 }
 
-.campaign-detail-comments-card {
+.campaign-detail-comments-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.campaign-detail-comments-card,
+.campaign-detail-mountables-card {
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.campaign-detail-comments-panel-inline {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.campaign-detail-mountables-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.campaign-detail-mountable-item {
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.campaign-detail-mountable-item:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.campaign-detail-mountable-heading-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.campaign-detail-mountable-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.campaign-detail-mountable-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.campaign-detail-mountable-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.campaign-detail-mountable-link {
+  font-size: 0.75rem;
+  line-height: 1;
+  font-family: var(--font-mono, monospace);
+  color: #6b7280;
+  text-decoration: underline;
+}
+
+.campaign-detail-mountable-link:hover,
+.campaign-detail-mountable-link:focus-visible {
+  color: #111827;
+  outline: none;
+}
+
+.campaign-detail-mountable-summary,
+.campaign-detail-mountable-proof {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.campaign-detail-mountable-metadata-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.campaign-detail-mountable-metadata {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.6rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 0.72rem;
+  line-height: 1;
+  font-family: var(--font-mono, monospace);
 }
 
 .campaign-detail-comments-header {
@@ -840,6 +953,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
+}
+
+.campaign-detail-comments-panel-inline .campaign-detail-comments-title {
+  font-size: 1.05rem;
 }
 
 .campaign-detail-comment-item {
@@ -914,6 +1031,33 @@
   width: 100%;
 }
 
+@media (min-width: 961px) {
+  .campaign-detail-page {
+    overflow: hidden;
+  }
+
+  .campaign-detail-shell {
+    min-height: calc(100dvh - 8rem);
+  }
+
+  .campaign-detail-content {
+    flex: 1 1 auto;
+  }
+
+  .campaign-detail-post-column,
+  .campaign-detail-comments-column {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .campaign-detail-column-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.25rem;
+  }
+}
+
 @media (max-width: 960px) {
   .campaign-shell-width,
   .campaign-shell-width-expanded,
@@ -923,8 +1067,23 @@
     max-width: 100%;
   }
 
+  .campaign-detail-shell,
+  .campaign-detail-content-shell,
+  .campaign-detail-content,
+  .campaign-detail-post-column,
+  .campaign-detail-comments-column,
+  .campaign-detail-column-scroll {
+    min-height: auto;
+  }
+
   .campaign-detail-content {
     grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .campaign-detail-column-scroll {
+    overflow: visible;
+    padding-right: 0;
   }
 }
 

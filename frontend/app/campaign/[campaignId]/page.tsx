@@ -1,15 +1,16 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { Check, CheckCircle, Copy, DollarSign, LockKeyhole, Scroll } from "lucide-react";
+import { Check, CheckCircle, DollarSign, LockKeyhole, Scroll } from "lucide-react";
 import { useParams } from "next/navigation";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
+import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
-import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
@@ -21,9 +22,12 @@ import {
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
+import { formsMountableSummary, isFormsMountableEnabled } from "@/app/_lib/formsMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
-import { decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
+import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -46,22 +50,6 @@ function splitCampaignId(campaignId: string) {
   }
 
   return { campaignId: null, txHash, index };
-}
-
-function copyText(text: string) {
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text);
-  }
-
-  return Promise.reject(new Error("Clipboard API unavailable"));
-}
-
-function truncateWalletAddress(address: string) {
-  if (address.length <= 22) {
-    return address;
-  }
-
-  return `${address.slice(0, 10)}…${address.slice(-10)}`;
 }
 
 const DETAIL_EXPANDING_FLAG = "freight:detail-expanding";
@@ -102,15 +90,28 @@ export default function CampaignDetailPage() {
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
   const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
-  const [walletAddress, setWalletAddress] = useState("");
-  const [walletBalance, setWalletBalance] = useState<bigint | null>(null);
-  const [walletInfoError, setWalletInfoError] = useState("");
-  const [walletInfoLoading, setWalletInfoLoading] = useState(false);
-  const [walletCopyFeedback, setWalletCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
-  const [walletBalanceIncreasing, setWalletBalanceIncreasing] = useState(false);
-  const walletBalanceAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const infoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const {
+    handleCopyWalletAddress,
+    walletAddress,
+    walletAddressDisplay,
+    walletBalance,
+    walletBalanceIncreasing,
+    walletChainLabel,
+    walletCopyFeedback,
+    walletInfoError,
+    walletInfoLoading,
+    walletUsdParts,
+  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
+  const { currentUserProfile } = useUserProfile(signer ?? null);
+  const walletActionHref = useMemo(() => {
+    const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
+    return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
+  }, [currentUserProfile?.username, walletAddress]);
 
   const recordLookupQuery = useMemo(() => {
     const nextLookupQuery = !campaignRef
@@ -198,55 +199,48 @@ export default function CampaignDetailPage() {
     }, 120);
   }, [closeInfoModal]);
 
-  const handleCopyWalletAddress = useCallback(async () => {
-    if (!walletAddress) {
-      return;
+  const clearWalletInfoCloseTimer = useCallback(() => {
+    if (walletInfoCloseTimerRef.current) {
+      clearTimeout(walletInfoCloseTimerRef.current);
+      walletInfoCloseTimerRef.current = null;
     }
+  }, []);
 
-    try {
-      await copyText(walletAddress);
-      setWalletCopyFeedback("copied");
-      window.setTimeout(() => setWalletCopyFeedback("idle"), 1200);
-    } catch {
-      setWalletCopyFeedback("error");
-      window.setTimeout(() => setWalletCopyFeedback("idle"), 1200);
+  const clearWalletInfoHideTimer = useCallback(() => {
+    if (walletInfoHideTimerRef.current) {
+      clearTimeout(walletInfoHideTimerRef.current);
+      walletInfoHideTimerRef.current = null;
     }
-  }, [walletAddress]);
+  }, []);
+
+  const keepWalletInfoModalOpen = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    clearWalletInfoHideTimer();
+    setIsWalletInfoClosing(false);
+    setShowWalletInfoModal(true);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
 
   const closeWalletInfoModal = useCallback(() => {
+    clearWalletInfoCloseTimer();
     if (!showWalletInfoModal || isWalletInfoClosing) {
       return;
     }
 
     setIsWalletInfoClosing(true);
-    window.setTimeout(() => {
+    clearWalletInfoHideTimer();
+    walletInfoHideTimerRef.current = setTimeout(() => {
       setShowWalletInfoModal(false);
       setIsWalletInfoClosing(false);
+      walletInfoHideTimerRef.current = null;
     }, 220);
-  }, [isWalletInfoClosing, showWalletInfoModal]);
-
-  const keepWalletInfoModalOpen = useCallback(() => {
-    setIsWalletInfoClosing(false);
-    setShowWalletInfoModal(true);
-  }, []);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, isWalletInfoClosing, showWalletInfoModal]);
 
   const scheduleWalletInfoModalClose = useCallback(() => {
-    window.setTimeout(() => {
+    clearWalletInfoCloseTimer();
+    walletInfoCloseTimerRef.current = setTimeout(() => {
       closeWalletInfoModal();
     }, 250);
-  }, [closeWalletInfoModal]);
-
-  const walletChainLabel = useMemo(() => {
-    if (client instanceof ccc.ClientPublicMainnet) {
-      return "Mainnet";
-    }
-
-    if (client instanceof ccc.ClientPublicTestnet) {
-      return "Testnet";
-    }
-
-    return "Custom";
-  }, [client]);
+  }, [clearWalletInfoCloseTimer, closeWalletInfoModal]);
 
   const {
     constraintStatus,
@@ -364,13 +358,22 @@ export default function CampaignDetailPage() {
   }, []);
 
   useEffect(() => {
+    if (signer) {
+      return;
+    }
+
+    setShowWalletInfoModal(false);
+    setIsWalletInfoClosing(false);
+    clearWalletInfoCloseTimer();
+    clearWalletInfoHideTimer();
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, signer]);
+
+  useEffect(() => {
     return () => {
-      if (walletBalanceAnimationTimerRef.current) {
-        clearTimeout(walletBalanceAnimationTimerRef.current);
-        walletBalanceAnimationTimerRef.current = null;
-      }
+      clearWalletInfoCloseTimer();
+      clearWalletInfoHideTimer();
     };
-  }, []);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
 
   useEffect(() => {
     if (infoModalMode !== "mountables-forms") {
@@ -430,80 +433,6 @@ export default function CampaignDetailPage() {
       window.clearTimeout(timeoutId);
     };
   }, [infoModalMode, mountableFormLinks, setIsMountableFormFocused, setMountableFormValidationState, setMountablesPromptError]);
-
-  useEffect(() => {
-    if (!signer) {
-      setShowWalletInfoModal(false);
-      setWalletAddress("");
-      setWalletBalance(null);
-      setWalletInfoError("");
-      setWalletInfoLoading(false);
-      setWalletBalanceIncreasing(false);
-      if (walletBalanceAnimationTimerRef.current) {
-        clearTimeout(walletBalanceAnimationTimerRef.current);
-        walletBalanceAnimationTimerRef.current = null;
-      }
-      return;
-    }
-
-    if (!showWalletInfoModal) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const syncWalletInfo = async () => {
-      setWalletInfoLoading(true);
-      setWalletInfoError("");
-
-      try {
-        const [nextAddress, nextBalance] = await Promise.all([
-          signer.getRecommendedAddress(),
-          signer.getBalance(),
-        ]);
-
-        if (cancelled) {
-          return;
-        }
-
-        setWalletAddress(nextAddress ?? "");
-        setWalletBalance((previousBalance) => {
-          if (previousBalance !== null && nextBalance > previousBalance) {
-            setWalletBalanceIncreasing(true);
-            if (walletBalanceAnimationTimerRef.current) {
-              clearTimeout(walletBalanceAnimationTimerRef.current);
-            }
-            walletBalanceAnimationTimerRef.current = setTimeout(() => {
-              setWalletBalanceIncreasing(false);
-              walletBalanceAnimationTimerRef.current = null;
-            }, 900);
-          }
-
-          return nextBalance;
-        });
-      } catch (walletError) {
-        if (cancelled) {
-          return;
-        }
-
-        setWalletInfoError(walletError instanceof Error ? walletError.message : "Unable to load wallet details");
-      } finally {
-        if (!cancelled) {
-          setWalletInfoLoading(false);
-        }
-      }
-    };
-
-    void syncWalletInfo();
-    const intervalId = window.setInterval(() => {
-      void syncWalletInfo();
-    }, 4000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [showWalletInfoModal, signer]);
 
   useEffect(() => {
     let cancelled = false;
@@ -639,6 +568,29 @@ export default function CampaignDetailPage() {
       ))
       : []
   ), [selectedRecord?.socialMetadata?.comments]);
+
+  const mountableItems = useMemo<CampaignMountableItem[]>(() => {
+    const items: CampaignMountableItem[] = [];
+    const formsMountable = selectedRecord?.mountables?.forms;
+
+    if (formsMountable && isFormsMountableEnabled(formsMountable)) {
+      const metadata = [
+        formsMountable.formId ? `Form ID ${formsMountable.formId}` : "",
+        formsMountable.validatedAt ? `Validated ${new Date(formsMountable.validatedAt).toLocaleDateString()}` : "",
+      ].filter(Boolean);
+
+      items.push({
+        description: formsMountableSummary(formsMountable),
+        href: formsMountable.canonicalFormUrl || formsMountable.formUrl || undefined,
+        key: "forms",
+        metadata,
+        proofInstructions: formsMountable.proofInstructions?.trim() || undefined,
+        title: "Forms",
+      });
+    }
+
+    return items;
+  }, [selectedRecord?.mountables?.forms]);
 
   const headerBody = (
     <div className="create-info-constraints-copy">
@@ -978,23 +930,30 @@ export default function CampaignDetailPage() {
     return (
       <div className="campaign-detail-content">
         <section
-          className="campaign-detail-post-column campaign-detail-card-shell campaign-card-entry"
+          className="campaign-detail-post-column campaign-card-entry"
           style={{ "--campaign-card-enter-delay": "0ms" } as CSSProperties}
         >
-          <CampaignDetailSurface
-            campaign={selectedCampaign}
-            chainSyncError={chainSyncError}
-            isChainSyncing={isChainSyncing}
-            nowMs={nowMs}
-            record={selectedRecord}
-          />
+          <div className="campaign-detail-column-scroll campaign-detail-column-scroll-left">
+            <div className="campaign-detail-card-shell">
+              <CampaignDetailSurface
+                campaign={selectedCampaign}
+                chainSyncError={chainSyncError}
+                isChainSyncing={isChainSyncing}
+                nowMs={nowMs}
+                record={selectedRecord}
+              />
+            </div>
+            <CampaignCommentsPanel comments={comments} fallbackAddress={creatorAddress} variant="inline" />
+          </div>
         </section>
 
         <section
           className="campaign-detail-comments-column campaign-card-entry"
           style={{ "--campaign-card-enter-delay": "110ms" } as CSSProperties}
         >
-          <CampaignCommentsPanel comments={comments} fallbackAddress={creatorAddress} />
+          <div className="campaign-detail-column-scroll campaign-detail-column-scroll-right">
+            <CampaignMountablesPanel items={mountableItems} />
+          </div>
         </section>
       </div>
     );
@@ -1003,115 +962,55 @@ export default function CampaignDetailPage() {
   return (
     <main className="campaign-detail-page">
       <div className={`campaign-detail-shell ${shellWidthClass}`.trim()}>
-        <div className={`campaign-shell-header ${shellWidthClass} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}>
-          <div className="header-info-wrap">
-            <div onMouseEnter={() => openInfoModalFromHover(preventInfoHover)} onMouseLeave={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}>
-              <button
-                type="button"
-                className="header-info-btn"
-                aria-label="Open Freight information"
-                onClick={() => handleReturnToFeed()}
-                onFocus={() => openInfoModalFromHover(preventInfoHover)}
-                onBlur={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
-              >
-                <span className="header-info-inner-ring" aria-hidden="true" />
-                <span className="header-info-glyph" aria-hidden="true">i</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="header-right-actions">
-            {showCreateModal ? (
-              <CreateCampaignHeaderActions
-                createModalStep={createModalStep}
-                isCreateDraftListOpen={isCreateDraftListOpen}
-                isCreateModalClosing={isCreateModalClosing}
-                onReset={resetCreateModal}
-                onSecondaryAction={handleCreateTopRightAction}
-              />
-            ) : null}
-            <div className="wallet-action-slot">
-              {signer ? (
-                <div
-                  className="wallet-info-wrap"
-                  onMouseEnter={keepWalletInfoModalOpen}
-                  onMouseLeave={scheduleWalletInfoModalClose}
-                >
-                  <button
-                    onClick={disconnect}
-                    className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
-                  >
-                    Disconnect
-                  </button>
-                  {showWalletInfoModal && (
-                    <div
-                      className={`wallet-info-modal ${isWalletInfoClosing ? "wallet-info-modal-closing" : ""}`}
-                      role="dialog"
-                      aria-label="Wallet details"
-                      onMouseEnter={keepWalletInfoModalOpen}
-                      onMouseLeave={scheduleWalletInfoModalClose}
-                    >
-                      <div className="wallet-info-section">
-                        <span className="wallet-info-label">
-                          Address <span className="wallet-chain-indicator wallet-chain-indicator-inline">({walletChainLabel})</span>
-                        </span>
-                        <div className="wallet-info-address-row">
-                          <span className="wallet-info-address">{walletAddress ? truncateWalletAddress(walletAddress) : "Loading…"}</span>
-                          <button
-                            type="button"
-                            className="wallet-info-copy-btn"
-                            onClick={() => void handleCopyWalletAddress()}
-                            title={walletAddress}
-                            aria-label="Copy wallet address"
-                          >
-                            <Copy size={14} strokeWidth={2} aria-hidden="true" />
-                          </button>
-                        </div>
-                        {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
-                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
-                      </div>
-                      <div className="wallet-info-section">
-                        <span className="wallet-info-label">Balance</span>
-                        <div className="wallet-info-balance-row">
-                          <span className={`wallet-info-value ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                            {walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
-                          </span>
-                          <span className="wallet-info-balance-approx">≈</span>
-                          <span className={`wallet-info-usd ${walletBalanceIncreasing ? "wallet-balance-increasing" : ""}`.trim()}>
-                            <span className="wallet-info-usd-currency">$</span>
-                            <span>--</span>
-                            <span className="wallet-info-usd-decimals">--</span>
-                          </span>
-                        </div>
-                      </div>
-                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <button
-                  onClick={open}
-                  className="px-4 py-2 rounded-full overflow-hidden font-semibold text-sm btn-wallet w-full sm:w-auto"
-                >
-                  Connect Wallet
-                </button>
-              )}
-            </div>
-          </div>
-
-          <FreightInfoModal
-            open={showInfoModal}
-            closing={isInfoModalClosing}
-            ariaLabel="Freight information modal"
-            body={infoModalBody}
-            actions={infoModalActions}
-            backdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
-            backdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
-            onRequestClose={() => closeInfoModal(resetInfoModalState)}
-            onKeepOpen={keepInfoModalOpen}
-            onScheduleClose={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
-          />
-        </div>
+        <AppShellHeader
+          className={`campaign-shell-header ${shellWidthClass} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          infoButtonAriaLabel="Open Freight information"
+          infoModalAriaLabel="Freight information modal"
+          infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
+          infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
+          infoModalBody={infoModalBody}
+          infoModalActions={infoModalActions}
+          infoModalClosing={isInfoModalClosing}
+          infoModalOpen={showInfoModal}
+          isConnected={Boolean(signer)}
+          onConnect={open}
+          onCopyWalletAddress={() => void handleCopyWalletAddress()}
+          onDisconnect={disconnect}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
+          onInfoButtonClick={() => handleReturnToFeed()}
+          onInfoButtonFocus={() => openInfoModalFromHover(preventInfoHover)}
+          onInfoModalKeepOpen={keepInfoModalOpen}
+          onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(preventInfoHover)}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
+          onRightActionsClick={(event) => event.stopPropagation()}
+          onWalletActionClick={closeWalletInfoModal}
+          onWalletMouseEnter={keepWalletInfoModalOpen}
+          onWalletMouseLeave={scheduleWalletInfoModalClose}
+          rightActions={showCreateModal ? (
+            <CreateCampaignHeaderActions
+              createModalStep={createModalStep}
+              isCreateDraftListOpen={isCreateDraftListOpen}
+              isCreateModalClosing={isCreateModalClosing}
+              onReset={resetCreateModal}
+              onSecondaryAction={handleCreateTopRightAction}
+            />
+          ) : undefined}
+          walletAddress={walletAddress}
+          walletAddressDisplay={walletAddressDisplay}
+          walletBalanceIncreasing={walletBalanceIncreasing}
+          walletBalanceText={walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}
+          walletChainLabel={walletChainLabel}
+          walletCopyFeedback={walletCopyFeedback}
+          walletInfoButtonRef={headerInfoButtonRef}
+          walletInfoError={walletInfoError}
+          walletModalClosing={isWalletInfoClosing}
+          walletModalOpen={showWalletInfoModal}
+          walletUsdParts={walletUsdParts}
+          walletActionHref={walletActionHref}
+          walletActionLabel="Introspect"
+        />
 
         <div className="campaign-detail-content-shell">
           {detailContent}
