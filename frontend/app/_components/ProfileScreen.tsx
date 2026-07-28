@@ -6,7 +6,6 @@ import {
   CheckCircle,
   Copy,
   DollarSign,
-  House,
   LockKeyhole,
   Pencil,
   Scroll,
@@ -55,8 +54,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const signer = ccc.useSigner();
   const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
-  const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [displayNameDraft, setDisplayNameDraft] = useState("");
@@ -64,8 +61,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
-  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
-  const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
   const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalStateRef = useRef<() => void>(() => undefined);
@@ -104,7 +99,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     walletInfoError,
     walletInfoLoading,
     walletUsdParts,
-  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
+  } = useWalletInfo(client, signer ?? null, false, true);
   const {
     currentUserProfile,
     isSavingUserProfile,
@@ -178,49 +173,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
   resetInfoModalStateRef.current = resetInfoModalState;
 
-  const clearWalletInfoCloseTimer = useCallback(() => {
-    if (walletInfoCloseTimerRef.current) {
-      clearTimeout(walletInfoCloseTimerRef.current);
-      walletInfoCloseTimerRef.current = null;
-    }
-  }, []);
-
-  const clearWalletInfoHideTimer = useCallback(() => {
-    if (walletInfoHideTimerRef.current) {
-      clearTimeout(walletInfoHideTimerRef.current);
-      walletInfoHideTimerRef.current = null;
-    }
-  }, []);
-
-  const keepWalletInfoModalOpen = useCallback(() => {
-    clearWalletInfoCloseTimer();
-    clearWalletInfoHideTimer();
-    setIsWalletInfoClosing(false);
-    setShowWalletInfoModal(true);
-  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
-
-  const closeWalletInfoModal = useCallback(() => {
-    clearWalletInfoCloseTimer();
-    if (!showWalletInfoModal || isWalletInfoClosing) {
-      return;
-    }
-
-    setIsWalletInfoClosing(true);
-    clearWalletInfoHideTimer();
-    walletInfoHideTimerRef.current = setTimeout(() => {
-      setShowWalletInfoModal(false);
-      setIsWalletInfoClosing(false);
-      walletInfoHideTimerRef.current = null;
-    }, 220);
-  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, isWalletInfoClosing, showWalletInfoModal]);
-
-  const scheduleWalletInfoModalClose = useCallback(() => {
-    clearWalletInfoCloseTimer();
-    walletInfoCloseTimerRef.current = setTimeout(() => {
-      closeWalletInfoModal();
-    }, 250);
-  }, [clearWalletInfoCloseTimer, closeWalletInfoModal]);
-
   const closeLeaderboardModal = useCallback(() => {
     if (!showLeaderboardModal || isLeaderboardClosing) {
       return;
@@ -243,10 +195,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       clearInfoCloseTimer();
       clearInfoHideTimer();
       clearSubmissionSuccessTimer();
-      clearWalletInfoCloseTimer();
-      clearWalletInfoHideTimer();
     };
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer]);
 
   useEffect(() => {
     if (!showLeaderboardModal || !currentUserProfile?.address) {
@@ -317,7 +267,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const profileLoadErrorMessage = hasProfileErrors
     ? "Sorry, an error occurred. Hover on info for more."
     : "";
-  const homeHref = "/";
   const hasCurrentProfile = Boolean(currentUserProfile);
   const currentProfileAddress = currentUserProfile?.address ?? "";
   const isProfileAvatarVisible = revealedProfileHeroCount >= 1;
@@ -846,10 +795,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
           onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
-          onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
-          onWalletMouseEnter={keepWalletInfoModalOpen}
-          onWalletMouseLeave={scheduleWalletInfoModalClose}
+          onWalletMouseEnter={() => undefined}
+          onWalletMouseLeave={() => undefined}
           rightActions={showCreateModal ? (
             <CreateCampaignHeaderActions
               createModalStep={createModalStep}
@@ -892,12 +840,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           walletCopyFeedback={walletCopyFeedback}
           walletInfoButtonRef={headerInfoButtonRef}
           walletInfoError={walletInfoError}
-          walletModalClosing={isWalletInfoClosing}
-          walletModalOpen={showWalletInfoModal}
+          walletModalClosing={false}
+          walletModalOpen={false}
           walletUsdParts={walletUsdParts}
-          walletActionHref={homeHref}
-          walletActionIcon={<House size={14} strokeWidth={2} aria-hidden="true" />}
-          walletActionLabel="Home"
           walletActionOnly={true}
         />
 
