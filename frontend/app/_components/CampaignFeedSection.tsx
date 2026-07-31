@@ -5,24 +5,8 @@ import { ccc } from "@ckb-ccc/connector-react";
 import CampaignFeedHeaderBar from "@/app/_components/CampaignFeedHeaderBar";
 import CampaignList from "@/app/_components/CampaignList";
 import { useCampaignFeed, type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import type { SettlementModalData } from "@/app/_types/settlement";
 import type { CampaignCell } from "@/lib/transactions";
-
-type SettlementRecipient = {
-  address: string;
-  username: string;
-  handle: string;
-  amountLabel: string;
-};
-
-type SettlementModalData = {
-  campaignTitle: string;
-  randomnessHash: string;
-  randomnessPreimage: string | null;
-  evidenceItems: string[];
-  recipients: SettlementRecipient[];
-  distributionTxHash: string | null;
-  errorMessage?: string | null;
-};
 
 type CampaignFeedSectionProps = {
   client: ccc.Client;

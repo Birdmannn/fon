@@ -8,6 +8,7 @@ type UserProfilePayload = {
   address?: unknown;
   username?: unknown;
   displayName?: unknown;
+  adsfUsdCents?: unknown;
   googleAccount?: {
     sub?: unknown;
     email?: unknown;
@@ -25,6 +26,7 @@ type LeaderboardEntry = {
   handle: string;
   displayName: string;
   fbars: number;
+  adsfUsdCents: number;
   rank: number;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
@@ -44,6 +46,7 @@ type StoredProfileRecord = {
   username?: unknown;
   displayName?: unknown;
   fbars?: unknown;
+  adsfUsdCents?: unknown;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
   googleAccount?: unknown;
@@ -132,6 +135,21 @@ function parseFbars(value: unknown) {
   return 0;
 }
 
+function parseAdsfUsdCents(value: unknown) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
 function sanitizeGoogleAccount(value: unknown): GoogleAccountProfile | null {
   if (!value || typeof value !== "object") {
     return null;
@@ -185,6 +203,7 @@ function buildLeaderboardEntry(profile: StoredProfileRecord): LeaderboardEntry {
       ? profile.displayName.trim()
       : username,
     fbars: parseFbars(profile.fbars),
+    adsfUsdCents: parseAdsfUsdCents(profile.adsfUsdCents),
     rank: 0,
     updatedAt: profile.updatedAt ?? null,
     lastSeenAt: profile.lastSeenAt ?? null,
@@ -238,6 +257,7 @@ export async function GET(request: Request) {
       username: 1,
       displayName: 1,
       fbars: 1,
+      adsfUsdCents: 1,
       updatedAt: 1,
       lastSeenAt: 1,
       ...(includePrivate ? { googleAccount: 1 } : {}),
@@ -318,6 +338,7 @@ export async function POST(request: Request) {
         $setOnInsert: {
           username: buildDefaultUsername(address),
           displayName: buildDefaultDisplayName(existingUserCount),
+          adsfUsdCents: 0,
           createdAt: now,
         },
       },
@@ -325,7 +346,7 @@ export async function POST(request: Request) {
     );
 
     const profiles = (await collection
-      .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, adsfUsdCents: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray()) as StoredProfileRecord[];
     const leaderboard = buildRankedLeaderboard(profiles);
     const profile = leaderboard.find((entry) => entry.address === address) ?? {
@@ -334,6 +355,7 @@ export async function POST(request: Request) {
       handle: formatUsernameHandle(buildDefaultUsername(address)),
       displayName: buildDefaultDisplayName(leaderboard.length),
       fbars: 0,
+      adsfUsdCents: 0,
       rank: leaderboard.length + 1,
       updatedAt: now.toISOString(),
       lastSeenAt: now.toISOString(),
@@ -372,6 +394,10 @@ export async function PATCH(request: Request) {
       nextSet.displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
     }
 
+    if (typeof payload.adsfUsdCents === "number" && Number.isInteger(payload.adsfUsdCents) && payload.adsfUsdCents >= 0) {
+      nextSet.adsfUsdCents = payload.adsfUsdCents;
+    }
+
     if (payload.googleAccount !== undefined) {
       nextSet.googleAccount = googleAccount;
     }
@@ -382,6 +408,7 @@ export async function PATCH(request: Request) {
         $set: nextSet,
         $setOnInsert: {
           createdAt: now,
+          adsfUsdCents: 0,
         },
       },
       { upsert: true }
@@ -392,7 +419,7 @@ export async function PATCH(request: Request) {
     }
 
     const profiles = (await collection
-      .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, updatedAt: 1, lastSeenAt: 1 } })
+      .find({}, { projection: { _id: 0, address: 1, username: 1, displayName: 1, fbars: 1, adsfUsdCents: 1, updatedAt: 1, lastSeenAt: 1 } })
       .toArray()) as StoredProfileRecord[];
     const leaderboard = buildRankedLeaderboard(profiles);
     const profile = leaderboard.find((entry) => entry.address === address) ?? {
@@ -401,6 +428,7 @@ export async function PATCH(request: Request) {
       handle: formatUsernameHandle(typeof payload.username === "string" ? sanitizeUsername(payload.username) : buildDefaultUsername(address)),
       displayName: typeof nextSet.displayName === "string" ? nextSet.displayName : buildDefaultDisplayName(leaderboard.length),
       fbars: 0,
+      adsfUsdCents: typeof nextSet.adsfUsdCents === "number" ? nextSet.adsfUsdCents : 0,
       rank: leaderboard.length + 1,
       updatedAt: now.toISOString(),
       lastSeenAt: now.toISOString(),

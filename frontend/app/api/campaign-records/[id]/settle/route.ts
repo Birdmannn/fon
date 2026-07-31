@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 
-import { getMongoCollection } from "@/lib/mongodb";
+import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
+import { getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
+}
+
+function normalizeAddress(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function convertShannonsToUsdCents(amountShannons: bigint, usdPerCkb: number) {
+  return Math.max(0, Math.floor((Number(amountShannons) / 1e8) * usdPerCkb * 100));
 }
 
 function ensureOptionalRecipients(value: unknown) {
@@ -28,6 +37,7 @@ function ensureOptionalRecipients(value: unknown) {
       username?: unknown;
       handle?: unknown;
       amountLabel?: unknown;
+      amountShannons?: unknown;
     };
 
     if (
@@ -35,8 +45,9 @@ function ensureOptionalRecipients(value: unknown) {
       || typeof candidate.username !== "string"
       || typeof candidate.handle !== "string"
       || typeof candidate.amountLabel !== "string"
+      || typeof candidate.amountShannons !== "string"
     ) {
-      throw new Error(`settledRecipients[${index}] must include string address, username, handle, and amountLabel`);
+      throw new Error(`settledRecipients[${index}] must include string address, username, handle, amountLabel, and amountShannons`);
     }
 
     return {
@@ -44,6 +55,7 @@ function ensureOptionalRecipients(value: unknown) {
       username: candidate.username.trim(),
       handle: candidate.handle.trim(),
       amountLabel: candidate.amountLabel.trim(),
+      amountShannons: candidate.amountShannons.trim(),
     };
   });
 }
@@ -79,6 +91,24 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     const settledRecipients = ensureOptionalRecipients(body?.settledRecipients);
 
     const collection = await getMongoCollection();
+    const existingRecord = await collection.findOne(
+      { _id: new ObjectId(id) },
+      { projection: { _id: 1, settlementTxHash: 1 } },
+    );
+    if (!existingRecord) {
+      return badRequest("Campaign record not found", 404);
+    }
+
+    const settlementCreditKey = `${id}:${settlementTxHash.trim().toLowerCase()}`;
+    let usdPerCkb: number | null = null;
+    if (settledRecipients && settledRecipients.length > 0) {
+      try {
+        usdPerCkb = await fetchCkbUsdPrice({ allowStaleOnFailure: true });
+      } catch {
+        usdPerCkb = null;
+      }
+    }
+
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
       {
@@ -95,6 +125,69 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
 
     if (result.matchedCount === 0) {
       return badRequest("Campaign record not found", 404);
+    }
+
+    if (usdPerCkb !== null && settledRecipients && settledRecipients.length > 0) {
+      const userProfilesCollection = await getUserProfilesCollection();
+      const recipientTotals = new Map<string, number>();
+      const creditMarkers = new Map<string, string>();
+
+      for (const recipient of settledRecipients) {
+        const normalizedAddress = normalizeAddress(recipient.address);
+        if (!normalizedAddress) {
+          continue;
+        }
+
+        const amountShannons = BigInt(recipient.amountShannons);
+        const amountUsdCents = convertShannonsToUsdCents(amountShannons, usdPerCkb);
+        recipientTotals.set(normalizedAddress, (recipientTotals.get(normalizedAddress) ?? 0) + amountUsdCents);
+        creditMarkers.set(normalizedAddress, `adsfSettlementCredits.${settlementCreditKey}`);
+      }
+
+      await Promise.all(
+        Array.from(recipientTotals.entries()).map(async ([address, amountUsdCents]) => {
+          if (amountUsdCents <= 0) {
+            return;
+          }
+
+          const defaultUsername = `freight${address.replace(/^0x/, "").slice(-20)}`;
+          const creditField = creditMarkers.get(address);
+          if (!creditField) {
+            return;
+          }
+
+          const alreadyCredited = await userProfilesCollection.findOne(
+            {
+              address,
+              [creditField]: { $exists: true },
+            },
+            { projection: { _id: 1 } },
+          );
+          if (alreadyCredited) {
+            return;
+          }
+
+          await userProfilesCollection.updateOne(
+            { address },
+            {
+              $inc: { adsfUsdCents: amountUsdCents },
+              $set: {
+                address,
+                updatedAt: new Date(),
+                lastSeenAt: new Date(),
+                [creditField]: new Date().toISOString(),
+              },
+              $setOnInsert: {
+                username: defaultUsername,
+                displayName: defaultUsername,
+                fbars: 0,
+                createdAt: new Date(),
+              },
+            },
+            { upsert: true }
+          );
+        })
+      );
     }
 
     return NextResponse.json({ ok: true, settledAt, settlementTxHash: settlementTxHash.trim() });

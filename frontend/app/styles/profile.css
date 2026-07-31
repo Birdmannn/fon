@@ -366,6 +366,10 @@
   line-height: 1;
 }
 
+.profile-usd-suffix {
+  color: #6b7280;
+}
+
 .profile-inline-loader {
   min-height: 0;
   padding: 0;

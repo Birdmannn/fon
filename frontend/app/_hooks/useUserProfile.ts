@@ -10,12 +10,22 @@ export type LeaderboardEntry = {
   handle: string;
   displayName: string;
   fbars: number;
+  adsfUsdCents: number;
   rank: number;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
 };
 
 export type UserProfile = LeaderboardEntry;
+
+export function formatAdsfUsdParts(valueUsdCents: number | null | undefined) {
+  if (typeof valueUsdCents !== "number" || !Number.isFinite(valueUsdCents) || valueUsdCents < 0) {
+    return null;
+  }
+
+  const whole = Math.round(valueUsdCents / 100).toLocaleString();
+  return { whole };
+}
 
 export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string | null) {
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);

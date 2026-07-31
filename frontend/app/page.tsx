@@ -28,12 +28,13 @@ import {
 } from "@/app/_lib/createCampaignInfo";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
+import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
-import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import type { SettlementModalData } from "@/app/_types/settlement";
 import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
-import { CampaignCell } from "@/lib/transactions";
+import { type CampaignCell } from "@/lib/transactions";
 
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
 const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
@@ -49,24 +50,6 @@ const HOME_INFO_TYPE_ITEMS = [
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
 type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
-type SettlementRecipient = {
-  address: string;
-  username: string;
-  handle: string;
-  amountLabel: string;
-};
-
-type SettlementModalData = {
-  campaignTitle: string;
-  randomnessHash: string;
-  randomnessPreimage: string | null;
-  evidenceItems: string[];
-  recipients: SettlementRecipient[];
-  distributionTxHash: string | null;
-  errorMessage?: string | null;
-  _campaign?: CampaignCell;
-  _record?: CampaignRecord | null;
-};
 
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 

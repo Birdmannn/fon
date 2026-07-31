@@ -33,7 +33,7 @@ import {
 } from "@/app/_lib/createCampaignInfo";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
-import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
 
@@ -42,6 +42,8 @@ const PROFILE_HERO_REVEAL_STEP_MS = 110;
 const PROFILE_HERO_REVEAL_ITEM_COUNT = 3;
 const PROFILE_INFO_FBARS_HEADING = "FBARS:";
 const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
+const PROFILE_INFO_ADSF_HEADING = "ADSF:";
+const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 
 type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
 
@@ -54,8 +56,12 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const signer = ccc.useSigner();
   const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
+  const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
+  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [displayNameModalError, setDisplayNameModalError] = useState("");
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
@@ -99,7 +105,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     walletInfoError,
     walletInfoLoading,
     walletUsdParts,
-  } = useWalletInfo(client, signer ?? null, false, true);
+  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
   const {
     currentUserProfile,
     isSavingUserProfile,
@@ -108,6 +114,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     saveDisplayName,
     userProfileError,
   } = useUserProfile(signer ?? null, targetHandle);
+  const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
 
   const {
     constraintStatus,
@@ -190,13 +197,58 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setShowLeaderboardModal(true);
   }, []);
 
+  const clearWalletInfoCloseTimer = useCallback(() => {
+    if (walletInfoCloseTimerRef.current) {
+      clearTimeout(walletInfoCloseTimerRef.current);
+      walletInfoCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const clearWalletInfoHideTimer = useCallback(() => {
+    if (walletInfoHideTimerRef.current) {
+      clearTimeout(walletInfoHideTimerRef.current);
+      walletInfoHideTimerRef.current = null;
+    }
+  }, []);
+
+  const keepWalletInfoModalOpen = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    clearWalletInfoHideTimer();
+    setIsWalletInfoClosing(false);
+    setShowWalletInfoModal(true);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
+
+  const closeWalletInfoModal = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    if (!showWalletInfoModal || isWalletInfoClosing) {
+      return;
+    }
+
+    setIsWalletInfoClosing(true);
+    clearWalletInfoHideTimer();
+    walletInfoHideTimerRef.current = setTimeout(() => {
+      setShowWalletInfoModal(false);
+      setIsWalletInfoClosing(false);
+      walletInfoHideTimerRef.current = null;
+    }, 220);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, isWalletInfoClosing, showWalletInfoModal]);
+
+  const scheduleWalletInfoModalClose = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    walletInfoCloseTimerRef.current = setTimeout(() => {
+      closeWalletInfoModal();
+    }, 250);
+  }, [clearWalletInfoCloseTimer, closeWalletInfoModal]);
+
   useEffect(() => {
     return () => {
       clearInfoCloseTimer();
       clearInfoHideTimer();
       clearSubmissionSuccessTimer();
+      clearWalletInfoCloseTimer();
+      clearWalletInfoHideTimer();
     };
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
 
   useEffect(() => {
     if (!showLeaderboardModal || !currentUserProfile?.address) {
@@ -625,6 +677,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       <p className="create-info-constraint-item">
         <span>{PROFILE_INFO_FBARS_MESSAGE}</span>
       </p>
+      <p className="mt-3">{PROFILE_INFO_ADSF_HEADING}</p>
+      <p className="create-info-constraint-item">
+        <span>{PROFILE_INFO_ADSF_MESSAGE}</span>
+      </p>
       {profilePageErrorMessages.length > 0 ? (
         <>
           <p className="mt-3 text-red-500 font-semibold">Errors:</p>
@@ -796,8 +852,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
-          onWalletMouseEnter={() => undefined}
-          onWalletMouseLeave={() => undefined}
+          onWalletActionClick={closeWalletInfoModal}
+          onWalletMouseEnter={keepWalletInfoModalOpen}
+          onWalletMouseLeave={scheduleWalletInfoModalClose}
           rightActions={showCreateModal ? (
             <CreateCampaignHeaderActions
               createModalStep={createModalStep}
@@ -840,10 +897,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           walletCopyFeedback={walletCopyFeedback}
           walletInfoButtonRef={headerInfoButtonRef}
           walletInfoError={walletInfoError}
-          walletModalClosing={false}
-          walletModalOpen={false}
+          walletModalClosing={isWalletInfoClosing}
+          walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          walletActionOnly={true}
+          walletActionOnly={false}
         />
 
         {isProfileLoading ? (
@@ -887,12 +944,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   </button>
                 </div>
                 <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
-                  {walletBalanceText !== "--" ? <span className="profile-wallet-balance-note">{walletBalanceText}</span> : null}
-                  <span className="wallet-info-balance-approx">≈</span>
+                  <span className="profile-wallet-balance-note">ADSF:</span>
                   <div className="profile-usd-balance" aria-live="polite">
-                    <span className="profile-usd-currency">$</span>
-                    <span>{walletUsdParts?.whole ?? "--"}</span>
-                    <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
+                    <span>{adsfUsdParts?.whole ?? "--"}</span>
+                    <span className="profile-usd-suffix">USD</span>
                   </div>
                 </div>
               </div>

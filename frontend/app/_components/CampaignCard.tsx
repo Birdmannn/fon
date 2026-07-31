@@ -15,25 +15,9 @@ import {
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
+import type { SettlementModalData } from "@/app/_types/settlement";
 import { CampaignStatus } from "@/lib/contract";
 import type { CampaignCell } from "@/lib/transactions";
-
-type SettlementRecipient = {
-  address: string;
-  username: string;
-  handle: string;
-  amountLabel: string;
-};
-
-type SettlementModalData = {
-  campaignTitle: string;
-  randomnessHash: string;
-  randomnessPreimage: string | null;
-  evidenceItems: string[];
-  recipients: SettlementRecipient[];
-  distributionTxHash: string | null;
-  errorMessage?: string | null;
-};
 
 type CampaignCardProps = {
   campaign: CampaignCell;

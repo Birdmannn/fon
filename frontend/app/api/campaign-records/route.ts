@@ -127,6 +127,7 @@ function ensureOptionalRecipients(value: unknown) {
       username?: unknown;
       handle?: unknown;
       amountLabel?: unknown;
+      amountShannons?: unknown;
     };
 
     return {
@@ -134,6 +135,7 @@ function ensureOptionalRecipients(value: unknown) {
       username: ensureString(candidate.username, `settledRecipients[${index}].username`).trim(),
       handle: ensureString(candidate.handle, `settledRecipients[${index}].handle`).trim(),
       amountLabel: ensureString(candidate.amountLabel, `settledRecipients[${index}].amountLabel`).trim(),
+      amountShannons: ensureString(candidate.amountShannons, `settledRecipients[${index}].amountShannons`).trim(),
     };
   });
 }
