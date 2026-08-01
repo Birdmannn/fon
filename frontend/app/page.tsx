@@ -887,7 +887,7 @@ export default function Home() {
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
-      <div className={`${shellWidthClass} flex flex-col gap-6 pt-[3.75rem]`.trim()}>
+      <div className={`${shellWidthClass} flex flex-col gap-6 pt-[3.75rem] sm:pt-[2.625rem]`.trim()}>
         <AppShellHeader
           className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
