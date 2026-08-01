@@ -598,6 +598,7 @@
 
 .profile-analytics-scroll-hint {
   margin: 0;
+  font-family: var(--font-mono, monospace);
   font-size: 0.74rem;
   line-height: 1.3;
   color: #94a3b8;
@@ -688,10 +689,6 @@
   .profile-address-loader,
   .profile-usd-loader {
     justify-content: flex-start;
-  }
-
-  .profile-analytics-card {
-    padding: 0.8rem 0.7rem 0.9rem;
   }
 
   .profile-analytics-chart {

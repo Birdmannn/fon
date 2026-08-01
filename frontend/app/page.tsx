@@ -889,7 +889,7 @@ export default function Home() {
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className={`${shellWidthClass} flex flex-col gap-6 pt-16`.trim()}>
         <AppShellHeader
-          className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}

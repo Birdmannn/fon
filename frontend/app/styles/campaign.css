@@ -474,6 +474,8 @@
 
 .campaign-shell-header {
   width: 100%;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
   background-color: var(--background);
   transition: var(--campaign-shell-transition), background-color 220ms ease;
 }
