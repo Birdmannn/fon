@@ -18,7 +18,7 @@
 
 .create-campaign-modal {
   position: fixed;
-  top: max(5.5rem, 10vh);
+  top: max(4.75rem, 8vh);
   left: max(1rem, calc(50% - 21rem));
   right: max(1rem, calc(50% - 21rem));
   height: 80vh;
@@ -963,7 +963,7 @@
   .create-campaign-modal {
     left: 0.75rem;
     right: 0.75rem;
-    top: max(4.75rem, 8vh);
+    top: max(4.25rem, 7vh);
     height: 80vh;
   }
 }
