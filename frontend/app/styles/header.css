@@ -68,13 +68,13 @@
 
 .header-info-modal {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 4px);
   left: 0;
   right: 0;
   width: auto;
   min-width: min(26rem, calc(100vw - 2rem));
   max-height: 60vh;
-  padding: 0.9rem 1rem;
+  padding: 0.75rem 1rem;
   border-radius: 1.5rem;
   background-color: var(--background);
   color: var(--foreground);

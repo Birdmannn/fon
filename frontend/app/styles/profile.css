@@ -235,13 +235,6 @@
   flex: 1;
 }
 
-.profile-weekly-marquee-edit-row {
-  gap: 0.5rem;
-}
-
-.profile-weekly-marquee-input {
-  min-width: 0;
-}
 
 .profile-display-name-input:focus {
   border-color: #16a34a;
@@ -259,29 +252,6 @@
   text-decoration: underline;
 }
 
-.profile-weekly-marquee-row {
-  display: flex;
-  align-items: center;
-  margin-top: 0.35rem;
-}
-
-.profile-weekly-marquee-trigger {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #961cac;
-  font-family: var(--font-mono, monospace);
-  font-size: 0.78rem;
-  line-height: 1.3;
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.profile-weekly-marquee-trigger:hover,
-.profile-weekly-marquee-trigger:focus-visible {
-  color: #7c3aed;
-  outline: none;
-}
 
 .profile-wallet-balance-note {
   margin: 0;

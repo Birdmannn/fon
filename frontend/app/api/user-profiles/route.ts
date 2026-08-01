@@ -130,23 +130,6 @@ function normalizeAddress(value: string) {
   return value.trim().toLowerCase();
 }
 
-function sanitizeUsername(value: string) {
-  const normalized = value.trim().replace(/\.ckb$/i, "");
-  if (!normalized) {
-    throw new Error("handle is required");
-  }
-
-  if (!/^[a-z0-9_-]+$/i.test(normalized)) {
-    throw new Error("handle may only contain letters, numbers, dashes, and underscores");
-  }
-
-  if (normalized.length < 3 || normalized.length > 32) {
-    throw new Error("handle must be between 3 and 32 characters");
-  }
-
-  return normalized;
-}
-
 function sanitizeDisplayName(value: string) {
   const normalized = value.trim();
   if (!normalized) {
@@ -399,18 +382,6 @@ function buildActiveWeeklyMarquee(
     },
     activeWeeklyMarqueeWeekKey: bundle.weekKey,
   };
-}
-
-async function findExistingUsernameOwner(username: string, address: string) {
-  const collection = await getUserProfilesCollection();
-  const normalizedUsername = normalizeUsername(username);
-  const matches = await collection.find({}, { projection: { address: 1, username: 1 } }).toArray();
-
-  return matches.find((profile) => {
-    const profileAddress = typeof profile.address === "string" ? normalizeAddress(profile.address) : "";
-    const profileUsername = typeof profile.username === "string" ? normalizeUsername(profile.username) : "";
-    return profileAddress !== address && profileUsername === normalizedUsername;
-  }) ?? null;
 }
 
 async function loadAllProfiles(includePrivate = false) {

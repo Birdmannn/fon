@@ -47,7 +47,7 @@ const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 
-type InfoModalMode = "about" | "edit-display-name" | "edit-weekly-marquee" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
+type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
 
 type ProfileScreenProps = {
   targetHandle?: string | null;
@@ -70,8 +70,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
   const [leaderboardScope, setLeaderboardScope] = useState<"weekly" | "overall">("weekly");
-  const [weeklyMarqueeDraft, setWeeklyMarqueeDraft] = useState("");
-  const [weeklyMarqueeError, setWeeklyMarqueeError] = useState("");
   const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalStateRef = useRef<() => void>(() => undefined);
@@ -117,7 +115,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     isUserProfileLoading,
     overallLeaderboard,
     saveDisplayName,
-    saveWeeklyMarqueeMessage,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
@@ -190,8 +187,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     resetCreateInfoModalState();
     setDisplayNameDraft("");
     setDisplayNameModalError("");
-    setWeeklyMarqueeDraft("");
-    setWeeklyMarqueeError("");
     setSubmissionErrorMessage("");
   }, [resetCreateInfoModalState]);
 
@@ -328,15 +323,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const canEditDisplayName = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
-  const canEditWeeklyMarquee = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress && currentUserProfile?.canEditWeeklyMarquee);
   const activeLeaderboard = leaderboardScope === "weekly" ? weeklyLeaderboard : overallLeaderboard;
   const activeLeaderboardLabel = leaderboardScope === "weekly" ? "Weekly" : "Overall";
   const activeLeaderboardTitle = `${activeLeaderboardLabel} Ranking`;
   const currentUserWeeklyRank = currentUserProfile?.weeklyRank ?? 0;
   const currentUserRankLabel = currentUserWeeklyRank > 0 ? `#${currentUserWeeklyRank}` : "#--";
-  const weeklyMarqueeButtonLabel = (currentUserProfile?.weeklyMarqueeMessage ?? "").trim().length > 0
-    ? "Edit weekly marquee"
-    : "Set weekly marquee";
 
   const profilePageErrorMessages = [userProfileError].filter((message) => message.trim().length > 0);
   const isAwaitingInitialProfile = (!targetHandle && Boolean(signer) && !currentUserProfile && !userProfileError)
@@ -403,29 +394,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setShowInfoModal,
   ]);
 
-  const openWeeklyMarqueeModal = useCallback(() => {
-    if (!canEditWeeklyMarquee) {
-      return;
-    }
-
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    setWeeklyMarqueeDraft(currentUserProfile?.weeklyMarqueeMessage ?? "");
-    setWeeklyMarqueeError("");
-    setInfoModalMode("edit-weekly-marquee");
-    setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-  }, [
-    canEditWeeklyMarquee,
-    clearInfoCloseTimer,
-    clearInfoHideTimer,
-    currentUserProfile?.weeklyMarqueeMessage,
-    setInfoModalInteraction,
-    setIsInfoModalClosing,
-    setShowInfoModal,
-  ]);
-
   const handleDisplayNameSave = useCallback(async () => {
     const nextName = displayNameDraft.trim();
 
@@ -447,16 +415,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       setDisplayNameModalError(error instanceof Error ? error.message : "Failed to update display name");
     }
   }, [closeInfoModal, currentUserProfile?.username, displayNameDraft, router, saveDisplayName, setDisplayNameModalError, targetHandle]);
-
-  const handleWeeklyMarqueeSave = useCallback(async () => {
-    try {
-      await saveWeeklyMarqueeMessage(weeklyMarqueeDraft.trim());
-      setWeeklyMarqueeError("");
-      closeInfoModal();
-    } catch (error) {
-      setWeeklyMarqueeError(error instanceof Error ? error.message : "Failed to update weekly marquee message");
-    }
-  }, [closeInfoModal, saveWeeklyMarqueeMessage, weeklyMarqueeDraft]);
 
   useEffect(() => {
     if (infoModalMode !== "mountables-forms") {
@@ -734,18 +692,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         </>
       ) : null}
     </div>
-  ) : infoModalMode === "edit-weekly-marquee" ? (
-    <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-gray-900">Weekly winner marquee</p>
-      <p className="create-info-constraint-item text-gray-500">
-        <span>Only the current weekly #1 can set the marquee message shown on the home page.</span>
-      </p>
-      {weeklyMarqueeError || userProfileError ? (
-        <p className="create-info-constraint-item text-red-500 mt-3">
-          <span>{weeklyMarqueeError || userProfileError}</span>
-        </p>
-      ) : null}
-    </div>
   ) : (
     <div className="create-info-constraints-copy">
       <p>{PROFILE_INFO_FBARS_HEADING}</p>
@@ -794,36 +740,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary profile-display-name-confirm-btn"
         onClick={() => void handleDisplayNameSave()}
-        disabled={isSavingUserProfile}
-      >
-        {isSavingUserProfile ? "Saving..." : "Confirm"}
-      </button>
-    </div>
-  ) : infoModalMode === "edit-weekly-marquee" ? (
-    <div className="profile-display-name-edit-row profile-weekly-marquee-edit-row">
-      <input
-        type="text"
-        value={weeklyMarqueeDraft}
-        maxLength={120}
-        onChange={(event) => {
-          setWeeklyMarqueeDraft(event.target.value);
-          if (weeklyMarqueeError) {
-            setWeeklyMarqueeError("");
-          }
-        }}
-        onClick={(event) => {
-          if (event.currentTarget.value.length > 0) {
-            event.currentTarget.select();
-          }
-        }}
-        className="create-info-ticket-input profile-display-name-input profile-weekly-marquee-input"
-        aria-label="Weekly marquee message"
-        disabled={isSavingUserProfile}
-      />
-      <button
-        type="button"
-        className="create-info-confirm-btn create-info-confirm-btn-primary profile-display-name-confirm-btn"
-        onClick={() => void handleWeeklyMarqueeSave()}
         disabled={isSavingUserProfile}
       >
         {isSavingUserProfile ? "Saving..." : "Confirm"}
@@ -931,7 +847,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <AppShellHeader
           className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "edit-weekly-marquee" ? "Edit weekly marquee" : showCreateModal ? "Create freight info" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -947,14 +863,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "edit-weekly-marquee" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "edit-weekly-marquee" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "edit-weekly-marquee" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "edit-weekly-marquee" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "edit-weekly-marquee" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
@@ -1049,17 +965,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                       {currentUserRankLabel}
                     </button>
                   </div>
-                  {canEditWeeklyMarquee ? (
-                    <div className="profile-weekly-marquee-row">
-                      <button
-                        type="button"
-                        className="profile-weekly-marquee-trigger"
-                        onClick={openWeeklyMarqueeModal}
-                      >
-                        {weeklyMarqueeButtonLabel}
-                      </button>
-                    </div>
-                  ) : null}
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
                     <div className="profile-usd-balance" aria-live="polite">
