@@ -425,6 +425,7 @@
 
 .profile-analytics-range-label {
   margin: 0;
+  font-family: var(--font-mono, monospace);
   font-size: 0.82rem;
   line-height: 1.35;
   color: #6b7280;
@@ -434,10 +435,6 @@
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
-  padding: 0.85rem 0.95rem 0.95rem;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.82);
 }
 
 .profile-analytics-legend {
@@ -452,6 +449,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  font-family: var(--font-mono, monospace);
   font-size: 0.78rem;
   line-height: 1.2;
   font-weight: 500;
@@ -469,7 +467,7 @@
 
 .profile-analytics-legend-stroke {
   width: 100%;
-  border-top: 2px dashed currentColor;
+  border-top: 1px solid currentColor;
   opacity: 0.95;
 }
 
@@ -485,10 +483,10 @@
 .profile-analytics-chart-shell {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 0.9rem;
+  border: 0;
+  border-radius: 0;
   background: rgba(248, 250, 252, 0.72);
-  padding: 0.25rem;
+  padding: 0;
   outline: none;
 }
 
@@ -519,6 +517,7 @@
 
 .profile-analytics-axis-label {
   fill: #94a3b8;
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
   line-height: 1;
 }
@@ -529,7 +528,6 @@
 
 .profile-analytics-line {
   opacity: 0.96;
-  stroke-dasharray: 7 6;
 }
 
 .profile-analytics-point {
@@ -563,13 +561,14 @@
 }
 
 .profile-analytics-total-label {
+  font-family: var(--font-mono, monospace);
   font-size: 0.74rem;
   line-height: 1.2;
   font-weight: 600;
 }
 
 .profile-analytics-total-value {
-  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-family: var(--font-mono, monospace);
   font-size: 0.95rem;
   line-height: 1.1;
   color: var(--foreground);

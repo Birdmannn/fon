@@ -475,7 +475,11 @@
 .campaign-shell-header {
   width: 100%;
   background-color: var(--background);
-  transition: var(--campaign-shell-transition);
+  transition: var(--campaign-shell-transition), background-color 220ms ease;
+}
+
+.campaign-shell-header-transparent {
+  background-color: transparent;
 }
 
 .campaign-card-surface-interactive:hover .campaign-card-title,

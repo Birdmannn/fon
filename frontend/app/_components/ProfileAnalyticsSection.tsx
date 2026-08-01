@@ -175,7 +175,6 @@ function buildXAxisLabelIndexes(points: ProfileAnalyticsPoint[]) {
 
 export default function ProfileAnalyticsSection({ analytics, error, loading }: ProfileAnalyticsSectionProps) {
   const hasActivity = Boolean(analytics) && ANALYTICS_SERIES.some((series) => (analytics?.totals[series.key] ?? 0) > 0);
-  const hasAnyPoints = Boolean(analytics?.points.length);
 
   const chartModel = useMemo(() => {
     if (!analytics || !hasActivity) {
@@ -233,14 +232,15 @@ export default function ProfileAnalyticsSection({ analytics, error, loading }: P
                 </span>
               ))}
             </div>
+          </div>
 
-            <div
-              className="profile-analytics-chart-shell"
-              tabIndex={0}
-              role="group"
-              aria-label="Scrollable activity chart"
-              aria-describedby="profile-analytics-scroll-hint"
-            >
+          <div
+            className="profile-analytics-chart-shell"
+            tabIndex={0}
+            role="group"
+            aria-label="Scrollable activity chart"
+            aria-describedby="profile-analytics-scroll-hint"
+          >
               <svg
                 viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
                 className="profile-analytics-chart"
@@ -322,7 +322,7 @@ export default function ProfileAnalyticsSection({ analytics, error, loading }: P
                         className={`profile-analytics-line ${series.className}`}
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="2.3"
+                        strokeWidth="1.35"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         vectorEffect="non-scaling-stroke"
@@ -375,48 +375,19 @@ export default function ProfileAnalyticsSection({ analytics, error, loading }: P
                   })}
                 </g>
               </svg>
-            </div>
-
-            <div className="profile-analytics-totals" aria-label="Activity totals">
-              {ANALYTICS_SERIES.map((series) => (
-                <div key={series.key} className="profile-analytics-total-stat">
-                  <span className={`profile-analytics-total-label ${series.className}`}>{series.label}</span>
-                  <strong className="profile-analytics-total-value">{formatNumber(analytics.totals[series.key])}</strong>
-                </div>
-              ))}
-            </div>
-            <p id="profile-analytics-scroll-hint" className="profile-analytics-scroll-hint">
-              Scroll horizontally to view the full chart on smaller screens.
-            </p>
           </div>
 
-          {hasAnyPoints ? (
-            <details className="profile-analytics-details">
-              <summary>View exact daily values</summary>
-              <div className="profile-analytics-table-wrap">
-                <table className="profile-analytics-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Date</th>
-                      <th scope="col">Produced</th>
-                      <th scope="col">Participated</th>
-                      <th scope="col">Rewarded</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analytics.points.map((point) => (
-                      <tr key={point.date}>
-                        <th scope="row">{formatDisplayDate(point.date)}</th>
-                        <td>{formatNumber(point.produced)}</td>
-                        <td>{formatNumber(point.participated)}</td>
-                        <td>{formatNumber(point.rewarded)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="profile-analytics-totals" aria-label="Activity totals">
+            {ANALYTICS_SERIES.map((series) => (
+              <div key={series.key} className="profile-analytics-total-stat">
+                <span className={`profile-analytics-total-label ${series.className}`}>{series.label}</span>
+                <strong className="profile-analytics-total-value">{formatNumber(analytics.totals[series.key])}</strong>
               </div>
-            </details>
-          ) : null}
+            ))}
+          </div>
+          <p id="profile-analytics-scroll-hint" className="profile-analytics-scroll-hint">
+            Scroll horizontally to view the full chart on smaller screens.
+          </p>
         </>
       )}
     </section>
