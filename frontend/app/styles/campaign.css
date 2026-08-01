@@ -474,6 +474,7 @@
 
 .campaign-shell-header {
   width: 100%;
+  background-color: var(--background);
   transition: var(--campaign-shell-transition);
 }
 

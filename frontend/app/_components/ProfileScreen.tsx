@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
@@ -33,6 +34,7 @@ import {
 } from "@/app/_lib/createCampaignInfo";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
+import { useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
 import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
@@ -114,6 +116,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     saveDisplayName,
     userProfileError,
   } = useUserProfile(signer ?? null, targetHandle);
+  const {
+    analytics: profileAnalytics,
+    error: profileAnalyticsError,
+    isLoading: isProfileAnalyticsLoading,
+  } = useProfileAnalytics({
+    address: targetHandle ? null : (currentUserProfile?.address ?? walletAddress ?? null),
+    handle: targetHandle ? targetHandle : null,
+  });
   const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
 
   const {
@@ -910,72 +920,82 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         ) : profileLoadErrorMessage ? (
           <p className="profile-load-error">{profileLoadErrorMessage}</p>
         ) : (
-          <div className="profile-hero-row">
-            <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-              <div className="profile-avatar-placeholder" aria-hidden="true">
-                <span>Profile photo</span>
-              </div>
-              <div className="profile-handle-edit-row">
-                <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-                {canEditDisplayName ? (
-                  <button
-                    type="button"
-                    className="profile-display-name-edit-trigger"
-                    onClick={openDisplayNameModal}
-                    aria-label="Edit display name"
-                  >
-                    <Pencil size={14} strokeWidth={2} aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <section className="profile-summary-card">
-              <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-                <div className="profile-rank-row">
-                  <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
-                  <button
-                    type="button"
-                    className="profile-rank-link"
-                    onClick={openLeaderboardModal}
-                    disabled={!currentUserProfile}
-                  >
-                    {currentUserRankLabel}
-                  </button>
+          <>
+            <div className="profile-hero-row">
+              <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                <div className="profile-avatar-placeholder" aria-hidden="true">
+                  <span>Profile photo</span>
                 </div>
-                <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
-                  <span className="profile-wallet-balance-note">ADSF:</span>
-                  <div className="profile-usd-balance" aria-live="polite">
-                    <span>{adsfUsdParts?.whole ?? "--"}</span>
-                    <span className="profile-usd-suffix">USD</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`profile-address-block profile-hero-item ${isProfileAddressVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-                <div className="profile-address-row">
-                  <span className="profile-address-value">{fullAddressLabel}</span>
-                  {signer && walletAddress && currentUserProfile?.address === walletAddress ? (
+                <div className="profile-handle-edit-row">
+                  <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+                  {canEditDisplayName ? (
                     <button
                       type="button"
-                      className="wallet-info-copy-btn profile-address-copy-btn"
-                      onClick={() => void handleCopyWalletAddress()}
-                      title={walletAddress}
-                      aria-label="Copy full wallet address"
+                      className="profile-display-name-edit-trigger"
+                      onClick={openDisplayNameModal}
+                      aria-label="Edit display name"
                     >
-                      {walletCopyFeedback === "copied" ? (
-                        <Check size={14} strokeWidth={2.4} aria-hidden="true" className="profile-address-copy-success" />
-                      ) : (
-                        <Copy size={14} strokeWidth={2} aria-hidden="true" />
-                      )}
+                      <Pencil size={14} strokeWidth={2} aria-hidden="true" />
                     </button>
                   ) : null}
                 </div>
-                <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
-                {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
               </div>
-            </section>
-          </div>
+
+              <section className="profile-summary-card">
+                <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                  <div className="profile-rank-row">
+                    <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
+                    <button
+                      type="button"
+                      className="profile-rank-link"
+                      onClick={openLeaderboardModal}
+                      disabled={!currentUserProfile}
+                    >
+                      {currentUserRankLabel}
+                    </button>
+                  </div>
+                  <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
+                    <span className="profile-wallet-balance-note">ADSF:</span>
+                    <div className="profile-usd-balance" aria-live="polite">
+                      <span>{adsfUsdParts?.whole ?? "--"}</span>
+                      <span className="profile-usd-suffix">USD</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`profile-address-block profile-hero-item ${isProfileAddressVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                  <div className="profile-address-row">
+                    <span className="profile-address-value">{fullAddressLabel}</span>
+                    {signer && walletAddress && currentUserProfile?.address === walletAddress ? (
+                      <button
+                        type="button"
+                        className="wallet-info-copy-btn profile-address-copy-btn"
+                        onClick={() => void handleCopyWalletAddress()}
+                        title={walletAddress}
+                        aria-label="Copy full wallet address"
+                      >
+                        {walletCopyFeedback === "copied" ? (
+                          <Check size={14} strokeWidth={2.4} aria-hidden="true" className="profile-address-copy-success" />
+                        ) : (
+                          <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
+                  {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
+                </div>
+              </section>
+            </div>
+
+            {currentUserProfile ? (
+              <ProfileAnalyticsSection
+                analytics={profileAnalytics}
+                error={profileAnalyticsError}
+                loading={isProfileAnalyticsLoading}
+              />
+            ) : null}
+          </>
         )}
       </div>
 
