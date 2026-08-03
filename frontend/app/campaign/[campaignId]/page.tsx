@@ -280,7 +280,6 @@ export default function CampaignDetailPage() {
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
-    submissionSuccessPreimage,
     submissionSuccessTxHash,
     transitionMountablesModal,
   } = useCreateCampaignFlow<InfoModalMode>({
@@ -602,7 +601,6 @@ export default function CampaignDetailPage() {
   const detailTicketPriceText = selectedCampaign
     ? (selectedCampaign.data.auxAmount > 0n ? `${formatCkbAmount(selectedCampaign.data.auxAmount)} CKB` : "")
     : (selectedRecord?.argsDraft?.auxAmountCkb?.trim() ? `${selectedRecord.argsDraft.auxAmountCkb.trim()} CKB` : "");
-  const detailRandomnessPreimage = selectedRecord?.randomnessPreimage?.trim() || "";
 
   const headerBody = (
     <div className="create-info-constraints-copy">
@@ -629,11 +627,6 @@ export default function CampaignDetailPage() {
           <p className="create-info-constraint-item text-gray-500">
             <span>How it works: a 32-byte randomness hash is committed up front, then the revealed preimage is combined with this freight&apos;s tx hash, output index, and participant count to deterministically shuffle entrants before taking the winner set.</span>
           </p>
-          {detailRandomnessPreimage ? (
-            <p className="create-info-constraint-item text-amber-600 break-all">
-              <span>Stored randomness preimage: {detailRandomnessPreimage}</span>
-            </p>
-          ) : null}
         </>
       ) : (
         <>
@@ -659,17 +652,6 @@ export default function CampaignDetailPage() {
           {submissionSuccessTxHash}
         </a>
       </p>
-      {submissionSuccessPreimage ? (
-        <>
-          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
-          <p className="text-xs text-amber-600 mt-1">
-            You can store it if you wish — it is used to distribute raffle rewards.
-          </p>
-          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
-            {submissionSuccessPreimage}
-          </p>
-        </>
-      ) : null}
     </div>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
@@ -1071,9 +1053,9 @@ export default function CampaignDetailPage() {
           }}
           onOpenCreateModal={openCreateModal}
           onPreviewErrorChange={setPreviewError}
-          onPublishSuccess={(txHash, randomnessPreimage) => {
+          onPublishSuccess={(txHash) => {
             finalizeCloseCreateModal();
-            openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
+            openSubmissionSuccessInfoModal(txHash);
           }}
           onRequestCloseCreateModal={requestCloseCreateModal}
           onStepChange={setCreateModalStep}

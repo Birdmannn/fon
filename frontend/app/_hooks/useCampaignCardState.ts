@@ -544,7 +544,6 @@ export function useCampaignCardState({
         randomnessPreimage,
         evidenceItems: [
           `Stored randomness hash: ${randomnessHash}`,
-          randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage: not available in the current record store.",
           `Verified participant count used: ${record.settledParticipantCount ?? "0"}`,
           `Reward count: ${String(data.rewardCount)}`,
           "Winner ordering: deterministic by join time, participant address, then outpoint.",
@@ -660,7 +659,6 @@ export function useCampaignCardState({
       const participantCountText = String(participants.length);
       const evidenceItems = [
         `Stored randomness hash: ${randomnessHash}`,
-        randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage: not available in the current record store.",
         `Verified participant count used: ${participantCountText}`,
         `Reward count: ${String(data.rewardCount)}`,
         "Winner ordering: deterministic by join time, participant address, then outpoint.",
@@ -673,7 +671,7 @@ export function useCampaignCardState({
         if (!signer || !userHasPermission) {
           errorMessage = "Only the freight creator can distribute raffle rewards.";
         } else if (!revealedPreimage) {
-          errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added. The preimage was shown in the creation success modal — check your notes.";
+          errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added.";
         } else if (effectiveWinnerCount <= 0n || winners.length === 0) {
           errorMessage = "No eligible verified winners are available for settlement.";
         } else {

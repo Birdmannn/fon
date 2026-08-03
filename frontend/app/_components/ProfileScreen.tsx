@@ -165,7 +165,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
-    submissionSuccessPreimage,
     submissionSuccessTxHash,
     transitionMountablesModal,
   } = useCreateCampaignFlow<InfoModalMode>({
@@ -488,17 +487,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           {submissionSuccessTxHash}
         </a>
       </p>
-      {submissionSuccessPreimage ? (
-        <>
-          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
-          <p className="text-xs text-amber-600 mt-1">
-            You can store it if you wish — it is used to distribute raffle rewards.
-          </p>
-          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
-            {submissionSuccessPreimage}
-          </p>
-        </>
-      ) : null}
     </div>
   ) : infoModalMode === "submission-error" ? (
     <div className="create-info-constraints-copy">
@@ -1078,9 +1066,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
         onOpenCreateModal={openCreateModal}
         onPreviewErrorChange={setPreviewError}
-        onPublishSuccess={(txHash, randomnessPreimage) => {
+        onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
-          openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
+          openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}
         onStepChange={setCreateModalStep}
