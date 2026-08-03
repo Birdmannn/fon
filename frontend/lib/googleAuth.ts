@@ -77,6 +77,10 @@ function randomToken(size = 24) {
   return randomBytes(size).toString("base64url");
 }
 
+export function buildWalletActionNonce(address: string, purpose = "wallet-action") {
+  return `freight-${purpose}:${normalizeAddress(address)}:${randomToken(18)}`;
+}
+
 function cleanExpiredGoogleOAuthStates() {
   const states = getGoogleOAuthStates();
   const cutoff = nowMs() - GOOGLE_OAUTH_STATE_TTL_MS;
