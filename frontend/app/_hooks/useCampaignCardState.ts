@@ -24,7 +24,6 @@ import {
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
-
 async function hasSettlementCreatorPermission(
   signer: ccc.Signer | null,
   client: ccc.Client,
@@ -255,6 +254,40 @@ export function useCampaignCardState({
     mountables: record?.mountables,
   });
 
+  const withSignedNonce = async (purpose: string) => {
+    if (!signer) {
+      throw new Error("Connect a wallet first");
+    }
+
+    const address = await signer.getRecommendedAddress();
+    if (!address) {
+      throw new Error("Unable to resolve wallet address");
+    }
+
+    const nonceResponse = await fetch("/api/wallet/nonce", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ address, purpose }),
+    });
+    const noncePayload = await nonceResponse.json().catch(() => null);
+    if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+      throw new Error(noncePayload?.error ?? `Failed to create ${purpose} nonce`);
+    }
+
+    const signature = await signer.signMessage(noncePayload.nonce);
+    return {
+      address,
+      nonce: noncePayload.nonce,
+      nonceSignature: {
+        signature: signature.signature,
+        identity: signature.identity,
+        signType: signature.signType,
+      },
+    };
+  };
+
   useEffect(() => {
     if (!commentDiscardDecision || commentDiscardDecision.cardId !== cardId) {
       return;
@@ -314,6 +347,25 @@ export function useCampaignCardState({
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to save like");
+      }
+
+      if (!userLiked) {
+        const signed = await withSignedNonce("interaction-like");
+        const interactionResponse = await fetch("/api/fbars/interaction", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...signed,
+            recordId: record._id,
+            actionType: "like",
+          }),
+        });
+        const interactionPayload = await interactionResponse.json().catch(() => null);
+        if (!interactionResponse.ok) {
+          throw new Error(interactionPayload?.error ?? "Failed to award like FBARS");
+        }
       }
     } catch (error) {
       setLikedByAddresses(previousLikedByAddresses);
@@ -415,6 +467,25 @@ export function useCampaignCardState({
         throw new Error(payload?.error ?? "Failed to save comment");
       }
 
+      const signed = await withSignedNonce("interaction-comment");
+      const interactionResponse = await fetch("/api/fbars/interaction", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...signed,
+          recordId: record._id,
+          actionType: "comment",
+          commentCreatedAt: nextComment.createdAt,
+          commentText: nextComment.text,
+        }),
+      });
+      const interactionPayload = await interactionResponse.json().catch(() => null);
+      if (!interactionResponse.ok) {
+        throw new Error(interactionPayload?.error ?? "Failed to award comment FBARS");
+      }
+
       setCommentList(nextComments);
       setCommentDraft("");
       if (commentInputRef.current) {
@@ -478,6 +549,23 @@ export function useCampaignCardState({
         throw new Error(payload?.error ?? "Failed to save reshare");
       }
 
+      const signed = await withSignedNonce("interaction-reshare");
+      const interactionResponse = await fetch("/api/fbars/interaction", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...signed,
+          recordId: record._id,
+          actionType: "reshare",
+        }),
+      });
+      const interactionPayload = await interactionResponse.json().catch(() => null);
+      if (!interactionResponse.ok) {
+        throw new Error(interactionPayload?.error ?? "Failed to award reshare FBARS");
+      }
+
       showActionFeedback("reshare", "success", "Freight link copied");
     } catch (error) {
       setResharedByAddresses(previousResharedByAddresses);
@@ -519,6 +607,24 @@ export function useCampaignCardState({
     setIsDepositing(true);
     try {
       const txHash = await sendDeposit(signer, c, amountCkb);
+      const signed = await withSignedNonce("deposit");
+      const depositResponse = await fetch("/api/fbars/deposit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...signed,
+          recordId: record?._id,
+          txHash,
+          amountCkb: Number(amountCkb),
+        }),
+      });
+      const depositPayload = await depositResponse.json().catch(() => null);
+      if (!depositResponse.ok) {
+        throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
+      }
+
       alert(`Deposit sent! Tx: ${txHash}`);
       setShowDepositModal(false);
       setDepositAmount("");
@@ -767,8 +873,6 @@ export function useCampaignCardState({
     handleReshare,
     handleSettlementClick,
     handleSubmitComment,
-    hasNoRemainingTickets,
-    hasNotStartedRaffle,
     hasReachedMaxAmount,
     hasSettledRewards,
     isCampaignInactive,
@@ -779,16 +883,14 @@ export function useCampaignCardState({
     isRaffleCampaign,
     isSavingComment,
     likes,
-    actionFeedback,
     maxCkb,
     remainingTickets,
     rewardCountValue,
-    reshares,
     setCommentDraft,
     setDepositAmount,
-    setShowDepositModal,
-    shouldGlowSettlement,
+    setIsCommentComposerOpen,
     showDepositModal,
+    shouldGlowSettlement,
     showSettlementAction,
     soldTickets,
     ticketPriceShannons,
@@ -797,5 +899,6 @@ export function useCampaignCardState({
     userCommented,
     userLiked,
     userReshared,
+    actionFeedback,
   };
 }

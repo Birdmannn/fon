@@ -27,6 +27,7 @@ type CreateCampaignLauncherProps = {
   onStepChange: (step: CreateModalStep) => void;
   showCreateModal: boolean;
   isCreateModalClosing: boolean;
+  availableFbars?: number;
 };
 
 export default function CreateCampaignLauncher({
@@ -46,6 +47,7 @@ export default function CreateCampaignLauncher({
   onStepChange,
   showCreateModal,
   isCreateModalClosing,
+  availableFbars,
 }: CreateCampaignLauncherProps) {
   return (
     <>
@@ -79,6 +81,7 @@ export default function CreateCampaignLauncher({
             onMountableSelectionRequired={onMountableSelectionRequired}
             onMountableSelectionStateChange={onMountableSelectionStateChange}
             onPublishSuccess={onPublishSuccess}
+            availableFbars={availableFbars}
           />
         </div>
       ) : null}

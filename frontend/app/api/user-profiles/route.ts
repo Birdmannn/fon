@@ -1,5 +1,17 @@
 import { NextResponse } from "next/server";
 
+import { SignerSignType } from "@ckb-ccc/core";
+
+import {
+  getCurrentWeekKey,
+  getWeeklyMarqueeEditsRemaining,
+  parseInteger,
+  parseNonNegativeInteger,
+  parseWeeklyFbarsState,
+  WEEKLY_MARQUEE_MAX_EDITS,
+  type StoredFbarsProfile,
+} from "@/lib/fbars";
+import { verifyWalletSignature } from "@/lib/googleAuth";
 import { getUserProfilesCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +27,19 @@ const BASE_PROFILE_PROJECTION = {
   adsfUsdCents: 1,
   updatedAt: 1,
   lastSeenAt: 1,
+  weeklyFbarsState: 1,
+  walletFbarsSeededAt: 1,
+  walletFbarsSeedBalanceShannons: 1,
   weeklyMarqueeMessage: 1,
   weeklyMarqueeWeekKey: 1,
   weeklyMarqueeUpdatedAt: 1,
 } as const;
+
+type WalletSignaturePayload = {
+  signature?: unknown;
+  identity?: unknown;
+  signType?: unknown;
+};
 
 type UserProfilePayload = {
   address?: unknown;
@@ -26,6 +47,8 @@ type UserProfilePayload = {
   displayName?: unknown;
   adsfUsdCents?: unknown;
   weeklyMarqueeMessage?: unknown;
+  nonce?: unknown;
+  signature?: WalletSignaturePayload | null;
   googleAccount?: {
     sub?: unknown;
     email?: unknown;
@@ -43,6 +66,7 @@ type LeaderboardEntry = {
   handle: string;
   displayName: string;
   fbars: number;
+  weeklyFbars: number;
   adsfUsdCents: number;
   rank: number;
   updatedAt?: string | null;
@@ -60,11 +84,10 @@ type GoogleAccountProfile = {
   lastRefreshedAt?: string | null;
 };
 
-type StoredProfileRecord = {
+type StoredProfileRecord = StoredFbarsProfile & {
   address?: unknown;
   username?: unknown;
   displayName?: unknown;
-  fbars?: unknown;
   adsfUsdCents?: unknown;
   updatedAt?: string | null;
   lastSeenAt?: string | null;
@@ -80,6 +103,10 @@ type UserProfileResponse = LeaderboardEntry & {
   canEditWeeklyMarquee: boolean;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
+  weeklyMarqueeEditsUsed: number;
+  weeklyMarqueeEditsRemaining: number;
+  weeklyMarqueeMaxEdits: number;
+  hasSeededWalletFbars: boolean;
   googleAccount?: GoogleAccountProfile | null;
 };
 
@@ -87,6 +114,9 @@ type ActiveWeeklyMarqueeResponse = {
   activeWeeklyMarqueeMessage: string | null;
   activeWeeklyMarqueeOwner: WeeklyMarqueeOwner | null;
   activeWeeklyMarqueeWeekKey: string;
+  activeWeeklyMarqueeEditsUsed: number;
+  activeWeeklyMarqueeEditsRemaining: number;
+  activeWeeklyMarqueeMaxEdits: number;
 };
 
 type LeaderboardBundle = {
@@ -153,18 +183,7 @@ function sanitizeWeeklyMarqueeMessage(value: string) {
 }
 
 function parseFbars(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-      return parsed;
-    }
-  }
-
-  return 0;
+  return parseNonNegativeInteger(value);
 }
 
 function parseAdsfUsdCents(value: unknown) {
@@ -221,11 +240,31 @@ function attachGoogleAccountToProfile(profile: UserProfileResponse | null, googl
   };
 }
 
-function buildLeaderboardEntry(profile: StoredProfileRecord): LeaderboardEntry {
+function parseVerifiedSignature(signaturePayload: unknown) {
+  if (!signaturePayload || typeof signaturePayload !== "object") {
+    throw new Error("signature is required");
+  }
+
+  const signature = ensureString((signaturePayload as WalletSignaturePayload).signature, "signature.signature");
+  const identity = ensureString((signaturePayload as WalletSignaturePayload).identity, "signature.identity");
+  const signTypeValue = ensureString((signaturePayload as WalletSignaturePayload).signType, "signature.signType");
+  if (!Object.values(SignerSignType).includes(signTypeValue as SignerSignType)) {
+    throw new Error("Unsupported signer sign type");
+  }
+
+  return {
+    signature,
+    identity,
+    signType: signTypeValue as SignerSignType,
+  };
+}
+
+function buildLeaderboardEntry(profile: StoredProfileRecord, weekKey: string): LeaderboardEntry {
   const address = typeof profile.address === "string" ? normalizeAddress(profile.address) : "";
   const username = typeof profile.username === "string" && profile.username.trim().length > 0
     ? profile.username.trim()
     : buildDefaultUsername(address);
+  const weeklyState = parseWeeklyFbarsState(profile, weekKey);
 
   return {
     address,
@@ -235,6 +274,7 @@ function buildLeaderboardEntry(profile: StoredProfileRecord): LeaderboardEntry {
       ? profile.displayName.trim()
       : username,
     fbars: parseFbars(profile.fbars),
+    weeklyFbars: parseInteger(weeklyState.total),
     adsfUsdCents: parseAdsfUsdCents(profile.adsfUsdCents),
     rank: 0,
     updatedAt: profile.updatedAt ?? null,
@@ -242,12 +282,14 @@ function buildLeaderboardEntry(profile: StoredProfileRecord): LeaderboardEntry {
   };
 }
 
-function buildRankedLeaderboard(profiles: StoredProfileRecord[]): LeaderboardEntry[] {
-  return profiles
-    .map(buildLeaderboardEntry)
+function rankLeaderboard(entries: LeaderboardEntry[], metric: "overall" | "weekly") {
+  return entries
+    .slice()
     .sort((left, right) => {
-      if (right.fbars !== left.fbars) {
-        return right.fbars - left.fbars;
+      const leftValue = metric === "weekly" ? left.weeklyFbars : left.fbars;
+      const rightValue = metric === "weekly" ? right.weeklyFbars : right.fbars;
+      if (rightValue !== leftValue) {
+        return rightValue - leftValue;
       }
 
       const handleCompare = left.handle.localeCompare(right.handle, undefined, { sensitivity: "base" });
@@ -263,27 +305,17 @@ function buildRankedLeaderboard(profiles: StoredProfileRecord[]): LeaderboardEnt
     }));
 }
 
-function getUtcCalendarWeekStart(value = new Date()) {
-  const date = new Date(value);
-  date.setUTCHours(0, 0, 0, 0);
-  const dayOffset = (date.getUTCDay() + 6) % 7;
-  date.setUTCDate(date.getUTCDate() - dayOffset);
-  return date;
-}
-
-function getCurrentWeekKey(value = new Date()) {
-  return getUtcCalendarWeekStart(value).toISOString().slice(0, 10);
-}
-
 function buildLeaderboardBundle(profiles: StoredProfileRecord[], now = new Date()): LeaderboardBundle {
-  const overallLeaderboard = buildRankedLeaderboard(profiles);
-  const weeklyLeaderboard = buildRankedLeaderboard(profiles);
+  const weekKey = getCurrentWeekKey(now);
+  const baseEntries = profiles.map((profile) => buildLeaderboardEntry(profile, weekKey));
+  const overallLeaderboard = rankLeaderboard(baseEntries, "overall");
+  const weeklyLeaderboard = rankLeaderboard(baseEntries, "weekly");
 
   return {
     overallLeaderboard,
     weeklyLeaderboard,
-    weekKey: getCurrentWeekKey(now),
-    weeklyWinnerAddress: weeklyLeaderboard[0]?.address ?? null,
+    weekKey,
+    weeklyWinnerAddress: (weeklyLeaderboard[0]?.weeklyFbars ?? 0) > 0 ? (weeklyLeaderboard[0]?.address ?? null) : null,
   };
 }
 
@@ -301,6 +333,7 @@ function buildFallbackUserProfileResponse(address: string, bundle: LeaderboardBu
     handle: formatUsernameHandle(username),
     displayName: buildDefaultDisplayName(bundle.overallLeaderboard.length),
     fbars: 0,
+    weeklyFbars: 0,
     adsfUsdCents: 0,
     rank: bundle.weeklyLeaderboard.length + 1,
     weeklyRank: bundle.weeklyLeaderboard.length + 1,
@@ -308,6 +341,10 @@ function buildFallbackUserProfileResponse(address: string, bundle: LeaderboardBu
     canEditWeeklyMarquee: false,
     weeklyMarqueeMessage: null,
     weeklyMarqueeWeekKey: null,
+    weeklyMarqueeEditsUsed: 0,
+    weeklyMarqueeEditsRemaining: WEEKLY_MARQUEE_MAX_EDITS,
+    weeklyMarqueeMaxEdits: WEEKLY_MARQUEE_MAX_EDITS,
+    hasSeededWalletFbars: false,
     updatedAt: now.toISOString(),
     lastSeenAt: now.toISOString(),
   };
@@ -332,14 +369,20 @@ function buildUserProfileResponse(
   const weeklyMarqueeWeekKey = typeof rawProfile?.weeklyMarqueeWeekKey === "string"
     ? rawProfile.weeklyMarqueeWeekKey
     : null;
+  const weeklyState = parseWeeklyFbarsState(rawProfile, bundle.weekKey);
+  const weeklyMarqueeEditsRemaining = getWeeklyMarqueeEditsRemaining(rawProfile, bundle.weekKey);
 
   return {
     ...baseEntry,
     weeklyRank: weeklyEntry?.rank ?? 0,
     overallRank: overallEntry?.rank ?? 0,
-    canEditWeeklyMarquee: bundle.weeklyWinnerAddress === baseEntry.address,
+    canEditWeeklyMarquee: bundle.weeklyWinnerAddress === baseEntry.address && weeklyMarqueeEditsRemaining > 0,
     weeklyMarqueeMessage,
     weeklyMarqueeWeekKey,
+    weeklyMarqueeEditsUsed: weeklyState.marqueeEditCount,
+    weeklyMarqueeEditsRemaining,
+    weeklyMarqueeMaxEdits: WEEKLY_MARQUEE_MAX_EDITS,
+    hasSeededWalletFbars: typeof rawProfile?.walletFbarsSeededAt === "string" && rawProfile.walletFbarsSeededAt.trim().length > 0,
   };
 }
 
@@ -352,6 +395,9 @@ function buildActiveWeeklyMarquee(
       activeWeeklyMarqueeMessage: null,
       activeWeeklyMarqueeOwner: null,
       activeWeeklyMarqueeWeekKey: bundle.weekKey,
+      activeWeeklyMarqueeEditsUsed: 0,
+      activeWeeklyMarqueeEditsRemaining: WEEKLY_MARQUEE_MAX_EDITS,
+      activeWeeklyMarqueeMaxEdits: WEEKLY_MARQUEE_MAX_EDITS,
     };
   }
 
@@ -363,12 +409,16 @@ function buildActiveWeeklyMarquee(
   const weeklyMarqueeWeekKey = typeof winnerProfile?.weeklyMarqueeWeekKey === "string"
     ? winnerProfile.weeklyMarqueeWeekKey
     : null;
+  const weeklyState = parseWeeklyFbarsState(winnerProfile, bundle.weekKey);
 
   if (!winner || !weeklyMarqueeMessage || weeklyMarqueeWeekKey !== bundle.weekKey) {
     return {
       activeWeeklyMarqueeMessage: null,
       activeWeeklyMarqueeOwner: null,
       activeWeeklyMarqueeWeekKey: bundle.weekKey,
+      activeWeeklyMarqueeEditsUsed: weeklyState.marqueeEditCount,
+      activeWeeklyMarqueeEditsRemaining: getWeeklyMarqueeEditsRemaining(winnerProfile, bundle.weekKey),
+      activeWeeklyMarqueeMaxEdits: WEEKLY_MARQUEE_MAX_EDITS,
     };
   }
 
@@ -381,6 +431,9 @@ function buildActiveWeeklyMarquee(
       displayName: winner.displayName,
     },
     activeWeeklyMarqueeWeekKey: bundle.weekKey,
+    activeWeeklyMarqueeEditsUsed: weeklyState.marqueeEditCount,
+    activeWeeklyMarqueeEditsRemaining: getWeeklyMarqueeEditsRemaining(winnerProfile, bundle.weekKey),
+    activeWeeklyMarqueeMaxEdits: WEEKLY_MARQUEE_MAX_EDITS,
   };
 }
 
@@ -459,7 +512,8 @@ export async function GET(request: Request) {
 
     const uniqueAddresses = Array.from(new Set(requestedAddresses));
     const profiles = (await collection.find({ address: { $in: uniqueAddresses } }, { projection }).toArray()) as StoredProfileRecord[];
-    const leaderboard = buildRankedLeaderboard(profiles);
+    const bundle = buildLeaderboardBundle(profiles);
+    const leaderboard = bundle.overallLeaderboard.filter((entry) => uniqueAddresses.includes(entry.address));
 
     if (!includePrivate) {
       return NextResponse.json({
@@ -473,11 +527,15 @@ export async function GET(request: Request) {
       profiles: leaderboard.map((entry) => attachGoogleAccountToProfile(
         {
           ...entry,
-          weeklyRank: entry.rank,
+          weeklyRank: bundle.weeklyLeaderboard.find((weeklyEntry) => weeklyEntry.address === entry.address)?.rank ?? 0,
           overallRank: entry.rank,
           canEditWeeklyMarquee: false,
           weeklyMarqueeMessage: null,
           weeklyMarqueeWeekKey: null,
+          weeklyMarqueeEditsUsed: parseWeeklyFbarsState(profilesByAddress.get(entry.address), bundle.weekKey).marqueeEditCount,
+          weeklyMarqueeEditsRemaining: getWeeklyMarqueeEditsRemaining(profilesByAddress.get(entry.address), bundle.weekKey),
+          weeklyMarqueeMaxEdits: WEEKLY_MARQUEE_MAX_EDITS,
+          hasSeededWalletFbars: typeof profilesByAddress.get(entry.address)?.walletFbarsSeededAt === "string",
         },
         sanitizeGoogleAccount(profilesByAddress.get(entry.address)?.googleAccount),
       )).filter(Boolean),
@@ -562,13 +620,33 @@ export async function PATCH(request: Request) {
     }
 
     if (payload.weeklyMarqueeMessage !== undefined) {
+      const nonce = ensureString(payload.nonce, "nonce");
+      const signature = parseVerifiedSignature(payload.signature);
+      await verifyWalletSignature({
+        address,
+        nonce,
+        signature,
+      });
+
       const profiles = await loadAllProfiles();
       const bundle = buildLeaderboardBundle(profiles, now);
+      const profilesByAddress = buildProfilesByAddress(profiles);
+      const currentProfile = profilesByAddress.get(address) ?? null;
       if (bundle.weeklyWinnerAddress !== address) {
         return badRequest("Only the current weekly top ranker can update the marquee message", 403);
       }
 
+      const weeklyState = parseWeeklyFbarsState(currentProfile, bundle.weekKey);
+      if (weeklyState.marqueeEditCount >= WEEKLY_MARQUEE_MAX_EDITS) {
+        return badRequest("Weekly marquee edit limit reached for this week", 403);
+      }
+
       const weeklyMarqueeMessage = sanitizeWeeklyMarqueeMessage(ensureString(payload.weeklyMarqueeMessage, "weeklyMarqueeMessage"));
+      nextSet.weeklyFbarsState = {
+        ...weeklyState,
+        weekKey: bundle.weekKey,
+        marqueeEditCount: weeklyState.marqueeEditCount + 1,
+      };
       if (weeklyMarqueeMessage) {
         nextSet.weeklyMarqueeMessage = weeklyMarqueeMessage;
         nextSet.weeklyMarqueeWeekKey = bundle.weekKey;

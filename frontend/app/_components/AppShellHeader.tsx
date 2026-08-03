@@ -105,6 +105,11 @@ export default function AppShellHeader({
   walletActionLabel,
   walletActionOnly = false,
 }: AppShellHeaderProps) {
+  const handleInfoButtonClick = () => {
+    onInfoModalRequestClose();
+    onInfoButtonClick();
+  };
+
   return (
     <div className={className} onClick={onContainerClick}>
       <div className="header-info-wrap" onClick={onInfoWrapClick}>
@@ -114,7 +119,7 @@ export default function AppShellHeader({
             type="button"
             className="header-info-btn"
             aria-label={infoButtonAriaLabel}
-            onClick={onInfoButtonClick}
+            onClick={handleInfoButtonClick}
             onFocus={onInfoButtonFocus}
             onBlur={onInfoButtonBlur}
           >

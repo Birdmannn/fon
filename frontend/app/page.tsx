@@ -1015,6 +1015,7 @@ export default function Home() {
         onStepChange={setCreateModalStep}
         showCreateModal={showCreateModal}
         isCreateModalClosing={isCreateModalClosing}
+        availableFbars={currentUserProfile?.fbars}
       />
     </main>
   );
