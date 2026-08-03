@@ -28,12 +28,13 @@ import {
 } from "@/app/_lib/createCampaignInfo";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
+import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
-import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import type { SettlementModalData } from "@/app/_types/settlement";
 import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
-import { CampaignCell } from "@/lib/transactions";
+import { type CampaignCell } from "@/lib/transactions";
 
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
 const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
@@ -49,24 +50,6 @@ const HOME_INFO_TYPE_ITEMS = [
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
 type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
-type SettlementRecipient = {
-  address: string;
-  username: string;
-  handle: string;
-  amountLabel: string;
-};
-
-type SettlementModalData = {
-  campaignTitle: string;
-  randomnessHash: string;
-  randomnessPreimage: string | null;
-  evidenceItems: string[];
-  recipients: SettlementRecipient[];
-  distributionTxHash: string | null;
-  errorMessage?: string | null;
-  _campaign?: CampaignCell;
-  _record?: CampaignRecord | null;
-};
 
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 
@@ -226,7 +209,6 @@ export default function Home() {
     setSubmissionSuccessPreimage,
     setSubmissionSuccessTxHash,
     showCreateModal,
-    submissionSuccessPreimage,
     submissionSuccessTxHash,
     transitionMountablesModal,
   } = useCreateCampaignFlow<InfoModalMode>({
@@ -435,17 +417,6 @@ export default function Home() {
           {submissionSuccessTxHash}
         </a>
       </p>
-      {submissionSuccessPreimage && (
-        <>
-          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
-          <p className="text-xs text-amber-600 mt-1">
-            You can store it if you wish — it is used to distribute raffle rewards.
-          </p>
-          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
-            {submissionSuccessPreimage}
-          </p>
-        </>
-      )}
     </div>
   ) : infoModalMode === "ticket-buy-success" ? (
     <div className="create-info-constraints-copy">
@@ -904,9 +875,9 @@ export default function Home() {
 
   return (
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
-      <div className={`${shellWidthClass} flex flex-col gap-6 pt-16`.trim()}>
+      <div className={`${shellWidthClass} flex flex-col gap-6 pt-[3.75rem] sm:pt-[2.625rem]`.trim()}>
         <AppShellHeader
-          className={`campaign-shell-header ${shellWidthClass} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
@@ -1036,9 +1007,9 @@ export default function Home() {
         }}
         onOpenCreateModal={openCreateModal}
         onPreviewErrorChange={setPreviewError}
-        onPublishSuccess={(txHash, randomnessPreimage) => {
+        onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
-          openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
+          openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}
         onStepChange={setCreateModalStep}

@@ -474,7 +474,14 @@
 
 .campaign-shell-header {
   width: 100%;
-  transition: var(--campaign-shell-transition);
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  background-color: var(--background);
+  transition: var(--campaign-shell-transition), background-color 220ms ease;
+}
+
+.campaign-shell-header-transparent {
+  background-color: transparent;
 }
 
 .campaign-card-surface-interactive:hover .campaign-card-title,
@@ -729,7 +736,7 @@
 
 .campaign-detail-page {
   min-height: 100dvh;
-  padding: 5rem 1.25rem 3rem;
+  padding: 4rem 1.25rem 3rem;
   display: flex;
   justify-content: center;
 }
@@ -743,7 +750,7 @@
 }
 
 .campaign-detail-content-shell {
-  padding-top: 1.8rem;
+  padding-top: 1rem;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;

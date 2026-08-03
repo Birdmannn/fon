@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
@@ -33,7 +34,8 @@ import {
 } from "@/app/_lib/createCampaignInfo";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
-import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import { useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
+import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
 
@@ -42,6 +44,8 @@ const PROFILE_HERO_REVEAL_STEP_MS = 110;
 const PROFILE_HERO_REVEAL_ITEM_COUNT = 3;
 const PROFILE_INFO_FBARS_HEADING = "FBARS:";
 const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
+const PROFILE_INFO_ADSF_HEADING = "ADSF:";
+const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 
 type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
 
@@ -54,13 +58,18 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const signer = ccc.useSigner();
   const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
+  const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
+  const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
+  const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [displayNameModalError, setDisplayNameModalError] = useState("");
   const [submissionErrorMessage, setSubmissionErrorMessage] = useState("");
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
+  const [leaderboardScope, setLeaderboardScope] = useState<"weekly" | "overall">("weekly");
   const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalStateRef = useRef<() => void>(() => undefined);
@@ -99,15 +108,25 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     walletInfoError,
     walletInfoLoading,
     walletUsdParts,
-  } = useWalletInfo(client, signer ?? null, false, true);
+  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
   const {
     currentUserProfile,
     isSavingUserProfile,
     isUserProfileLoading,
-    leaderboard,
+    overallLeaderboard,
     saveDisplayName,
     userProfileError,
+    weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
+  const {
+    analytics: profileAnalytics,
+    error: profileAnalyticsError,
+    isLoading: isProfileAnalyticsLoading,
+  } = useProfileAnalytics({
+    address: targetHandle ? null : (currentUserProfile?.address ?? walletAddress ?? null),
+    handle: targetHandle ? targetHandle : null,
+  });
+  const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
 
   const {
     constraintStatus,
@@ -146,7 +165,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
-    submissionSuccessPreimage,
     submissionSuccessTxHash,
     transitionMountablesModal,
   } = useCreateCampaignFlow<InfoModalMode>({
@@ -186,17 +204,67 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   }, [isLeaderboardClosing, showLeaderboardModal]);
 
   const openLeaderboardModal = useCallback(() => {
+    setLeaderboardScope("weekly");
     setIsLeaderboardClosing(false);
     setShowLeaderboardModal(true);
   }, []);
+
+  const toggleLeaderboardScope = useCallback(() => {
+    setLeaderboardScope((current) => current === "weekly" ? "overall" : "weekly");
+  }, []);
+
+  const clearWalletInfoCloseTimer = useCallback(() => {
+    if (walletInfoCloseTimerRef.current) {
+      clearTimeout(walletInfoCloseTimerRef.current);
+      walletInfoCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const clearWalletInfoHideTimer = useCallback(() => {
+    if (walletInfoHideTimerRef.current) {
+      clearTimeout(walletInfoHideTimerRef.current);
+      walletInfoHideTimerRef.current = null;
+    }
+  }, []);
+
+  const keepWalletInfoModalOpen = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    clearWalletInfoHideTimer();
+    setIsWalletInfoClosing(false);
+    setShowWalletInfoModal(true);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
+
+  const closeWalletInfoModal = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    if (!showWalletInfoModal || isWalletInfoClosing) {
+      return;
+    }
+
+    setIsWalletInfoClosing(true);
+    clearWalletInfoHideTimer();
+    walletInfoHideTimerRef.current = setTimeout(() => {
+      setShowWalletInfoModal(false);
+      setIsWalletInfoClosing(false);
+      walletInfoHideTimerRef.current = null;
+    }, 220);
+  }, [clearWalletInfoCloseTimer, clearWalletInfoHideTimer, isWalletInfoClosing, showWalletInfoModal]);
+
+  const scheduleWalletInfoModalClose = useCallback(() => {
+    clearWalletInfoCloseTimer();
+    walletInfoCloseTimerRef.current = setTimeout(() => {
+      closeWalletInfoModal();
+    }, 250);
+  }, [clearWalletInfoCloseTimer, closeWalletInfoModal]);
 
   useEffect(() => {
     return () => {
       clearInfoCloseTimer();
       clearInfoHideTimer();
       clearSubmissionSuccessTimer();
+      clearWalletInfoCloseTimer();
+      clearWalletInfoHideTimer();
     };
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, clearWalletInfoCloseTimer, clearWalletInfoHideTimer]);
 
   useEffect(() => {
     if (!showLeaderboardModal || !currentUserProfile?.address) {
@@ -205,7 +273,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
     const row = document.querySelector<HTMLElement>(`[data-leaderboard-address="${currentUserProfile.address}"]`);
     row?.scrollIntoView({ block: "center" });
-  }, [currentUserProfile?.address, showLeaderboardModal]);
+  }, [currentUserProfile?.address, leaderboardScope, overallLeaderboard, showLeaderboardModal, weeklyLeaderboard]);
 
 
   useEffect(() => {
@@ -254,7 +322,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const canEditDisplayName = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
-  const currentUserRankLabel = currentUserProfile ? `#${currentUserProfile.rank}` : "#--";
+  const activeLeaderboard = leaderboardScope === "weekly" ? weeklyLeaderboard : overallLeaderboard;
+  const activeLeaderboardLabel = leaderboardScope === "weekly" ? "Weekly" : "Overall";
+  const activeLeaderboardTitle = `${activeLeaderboardLabel} Ranking`;
+  const currentUserWeeklyRank = currentUserProfile?.weeklyRank ?? 0;
+  const currentUserRankLabel = currentUserWeeklyRank > 0 ? `#${currentUserWeeklyRank}` : "#--";
 
   const profilePageErrorMessages = [userProfileError].filter((message) => message.trim().length > 0);
   const isAwaitingInitialProfile = (!targetHandle && Boolean(signer) && !currentUserProfile && !userProfileError)
@@ -415,17 +487,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           {submissionSuccessTxHash}
         </a>
       </p>
-      {submissionSuccessPreimage ? (
-        <>
-          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
-          <p className="text-xs text-amber-600 mt-1">
-            You can store it if you wish — it is used to distribute raffle rewards.
-          </p>
-          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
-            {submissionSuccessPreimage}
-          </p>
-        </>
-      ) : null}
     </div>
   ) : infoModalMode === "submission-error" ? (
     <div className="create-info-constraints-copy">
@@ -602,8 +663,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   ) : showLeaderboardModal ? (
     <div className="create-info-constraints-copy">
-      <p>Leaderboard:</p>
-      {leaderboard.slice(0, 5).map((entry) => (
+      <p>{activeLeaderboardTitle}:</p>
+      {activeLeaderboard.slice(0, 5).map((entry) => (
         <p key={entry.address} className="create-info-constraint-item text-gray-500">
           <span>#{entry.rank} {entry.handle} — {entry.fbars} FBARS</span>
         </p>
@@ -624,6 +685,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       <p>{PROFILE_INFO_FBARS_HEADING}</p>
       <p className="create-info-constraint-item">
         <span>{PROFILE_INFO_FBARS_MESSAGE}</span>
+      </p>
+      <p className="mt-3">{PROFILE_INFO_ADSF_HEADING}</p>
+      <p className="create-info-constraint-item">
+        <span>{PROFILE_INFO_ADSF_MESSAGE}</span>
       </p>
       {profilePageErrorMessages.length > 0 ? (
         <>
@@ -768,7 +833,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     <main className="profile-page">
       <div className="campaign-shell-width profile-page-shell">
         <AppShellHeader
-          className="campaign-shell-header campaign-shell-width fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+          className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
@@ -796,8 +861,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
-          onWalletMouseEnter={() => undefined}
-          onWalletMouseLeave={() => undefined}
+          onWalletActionClick={closeWalletInfoModal}
+          onWalletMouseEnter={keepWalletInfoModalOpen}
+          onWalletMouseLeave={scheduleWalletInfoModalClose}
           rightActions={showCreateModal ? (
             <CreateCampaignHeaderActions
               createModalStep={createModalStep}
@@ -840,10 +906,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           walletCopyFeedback={walletCopyFeedback}
           walletInfoButtonRef={headerInfoButtonRef}
           walletInfoError={walletInfoError}
-          walletModalClosing={false}
-          walletModalOpen={false}
+          walletModalClosing={isWalletInfoClosing}
+          walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
-          walletActionOnly={true}
+          walletActionOnly={false}
         />
 
         {isProfileLoading ? (
@@ -853,74 +919,82 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         ) : profileLoadErrorMessage ? (
           <p className="profile-load-error">{profileLoadErrorMessage}</p>
         ) : (
-          <div className="profile-hero-row">
-            <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-              <div className="profile-avatar-placeholder" aria-hidden="true">
-                <span>Profile photo</span>
-              </div>
-              <div className="profile-handle-edit-row">
-                <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-                {canEditDisplayName ? (
-                  <button
-                    type="button"
-                    className="profile-display-name-edit-trigger"
-                    onClick={openDisplayNameModal}
-                    aria-label="Edit display name"
-                  >
-                    <Pencil size={14} strokeWidth={2} aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <section className="profile-summary-card">
-              <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-                <div className="profile-rank-row">
-                  <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
-                  <button
-                    type="button"
-                    className="profile-rank-link"
-                    onClick={openLeaderboardModal}
-                    disabled={!currentUserProfile}
-                  >
-                    {currentUserRankLabel}
-                  </button>
+          <>
+            <div className="profile-hero-row">
+              <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                <div className="profile-avatar-placeholder" aria-hidden="true">
+                  <span>Profile photo</span>
                 </div>
-                <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
-                  {walletBalanceText !== "--" ? <span className="profile-wallet-balance-note">{walletBalanceText}</span> : null}
-                  <span className="wallet-info-balance-approx">≈</span>
-                  <div className="profile-usd-balance" aria-live="polite">
-                    <span className="profile-usd-currency">$</span>
-                    <span>{walletUsdParts?.whole ?? "--"}</span>
-                    <span className="profile-usd-decimals">{walletUsdParts ? walletUsdParts.decimals : "--"}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`profile-address-block profile-hero-item ${isProfileAddressVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-                <div className="profile-address-row">
-                  <span className="profile-address-value">{fullAddressLabel}</span>
-                  {signer && walletAddress && currentUserProfile?.address === walletAddress ? (
+                <div className="profile-handle-edit-row">
+                  <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+                  {canEditDisplayName ? (
                     <button
                       type="button"
-                      className="wallet-info-copy-btn profile-address-copy-btn"
-                      onClick={() => void handleCopyWalletAddress()}
-                      title={walletAddress}
-                      aria-label="Copy full wallet address"
+                      className="profile-display-name-edit-trigger"
+                      onClick={openDisplayNameModal}
+                      aria-label="Edit display name"
                     >
-                      {walletCopyFeedback === "copied" ? (
-                        <Check size={14} strokeWidth={2.4} aria-hidden="true" className="profile-address-copy-success" />
-                      ) : (
-                        <Copy size={14} strokeWidth={2} aria-hidden="true" />
-                      )}
+                      <Pencil size={14} strokeWidth={2} aria-hidden="true" />
                     </button>
                   ) : null}
                 </div>
-                <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
-                {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
               </div>
-            </section>
-          </div>
+
+              <section className="profile-summary-card">
+                <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                  <div className="profile-rank-row">
+                    <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
+                    <button
+                      type="button"
+                      className="profile-rank-link"
+                      onClick={openLeaderboardModal}
+                      disabled={!currentUserProfile}
+                    >
+                      {currentUserRankLabel}
+                    </button>
+                  </div>
+                  <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
+                    <span className="profile-wallet-balance-note">ADSF:</span>
+                    <div className="profile-usd-balance" aria-live="polite">
+                      <span>{adsfUsdParts?.whole ?? "--"}</span>
+                      <span className="profile-usd-suffix">USD</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`profile-address-block profile-hero-item ${isProfileAddressVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                  <div className="profile-address-row">
+                    <span className="profile-address-value">{fullAddressLabel}</span>
+                    {signer && walletAddress && currentUserProfile?.address === walletAddress ? (
+                      <button
+                        type="button"
+                        className="wallet-info-copy-btn profile-address-copy-btn"
+                        onClick={() => void handleCopyWalletAddress()}
+                        title={walletAddress}
+                        aria-label="Copy full wallet address"
+                      >
+                        {walletCopyFeedback === "copied" ? (
+                          <Check size={14} strokeWidth={2.4} aria-hidden="true" className="profile-address-copy-success" />
+                        ) : (
+                          <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
+                  {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
+                </div>
+              </section>
+            </div>
+
+            {currentUserProfile ? (
+              <ProfileAnalyticsSection
+                analytics={profileAnalytics}
+                error={profileAnalyticsError}
+                loading={isProfileAnalyticsLoading}
+              />
+            ) : null}
+          </>
         )}
       </div>
 
@@ -941,13 +1015,20 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           >
             <div className="profile-leaderboard-modal" onClick={(event) => event.stopPropagation()}>
               <div className="profile-leaderboard-header">
-                <h2 className="profile-leaderboard-title">
-                  W Ranking
-                </h2>
+                <button
+                  type="button"
+                  className="profile-leaderboard-title-button"
+                  onClick={toggleLeaderboardScope}
+                >
+                  <h2 className="profile-leaderboard-title">
+                    {activeLeaderboardTitle}
+                  </h2>
+                </button>
                 <Trophy className="profile-leaderboard-title-icon" size={24} strokeWidth={2} aria-hidden="true" />
               </div>
+              <p className="profile-leaderboard-scope-note">Click title to switch between weekly and overall.</p>
               <div className="profile-leaderboard-list" role="list">
-                {leaderboard.map((entry) => {
+                {activeLeaderboard.map((entry) => {
                   const isCurrentUser = entry.address === currentUserProfile?.address;
 
                   return (
@@ -963,6 +1044,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     </div>
                   );
                 })}
+                {activeLeaderboard.length === 0 ? (
+                  <p className="profile-leaderboard-scope-note">No ranked users yet.</p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -982,9 +1066,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
         onOpenCreateModal={openCreateModal}
         onPreviewErrorChange={setPreviewError}
-        onPublishSuccess={(txHash, randomnessPreimage) => {
+        onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
-          openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
+          openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}
         onStepChange={setCreateModalStep}

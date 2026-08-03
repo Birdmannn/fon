@@ -4,27 +4,11 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import type { CampaignRecord, MergedCampaign } from "@/app/_hooks/useCampaignFeed";
+import type { SettlementModalData } from "@/app/_types/settlement";
 import { getCampaignStableId } from "@/lib/campaignIdentity";
 import type { CampaignCell } from "@/lib/transactions";
 
 import CampaignCard from "./CampaignCard";
-
-type SettlementRecipient = {
-  address: string;
-  username: string;
-  handle: string;
-  amountLabel: string;
-};
-
-type SettlementModalData = {
-  campaignTitle: string;
-  randomnessHash: string;
-  randomnessPreimage: string | null;
-  evidenceItems: string[];
-  recipients: SettlementRecipient[];
-  distributionTxHash: string | null;
-  errorMessage?: string | null;
-};
 
 type CampaignListProps = {
   campaigns: MergedCampaign[];

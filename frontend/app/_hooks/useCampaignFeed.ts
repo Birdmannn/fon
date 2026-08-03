@@ -76,6 +76,7 @@ export type CampaignRecord = {
     username: string;
     handle: string;
     amountLabel: string;
+    amountShannons: string;
   }> | null;
 };
 

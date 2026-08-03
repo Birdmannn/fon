@@ -57,6 +57,7 @@ const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 const SHELL_TRANSITION_MS = 420;
 const DETAIL_CAMPAIGN_FETCH_LIMIT = 200;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
 
 type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success";
 
@@ -279,7 +280,6 @@ export default function CampaignDetailPage() {
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
-    submissionSuccessPreimage,
     submissionSuccessTxHash,
     transitionMountablesModal,
   } = useCreateCampaignFlow<InfoModalMode>({
@@ -592,15 +592,50 @@ export default function CampaignDetailPage() {
     return items;
   }, [selectedRecord?.mountables?.forms]);
 
+  const detailCampaignType = selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? 0;
+  const detailTypeLabel = TYPE_LABELS[detailCampaignType] ?? `Type ${detailCampaignType}`;
+  const detailUsesRaffleRandomness = detailCampaignType === 4;
+  const detailRewardCountValue = selectedCampaign
+    ? Number(selectedCampaign.data.rewardCount)
+    : Number.parseInt(selectedRecord?.argsDraft?.rewardCount ?? "0", 10);
+  const detailTicketPriceText = selectedCampaign
+    ? (selectedCampaign.data.auxAmount > 0n ? `${formatCkbAmount(selectedCampaign.data.auxAmount)} CKB` : "")
+    : (selectedRecord?.argsDraft?.auxAmountCkb?.trim() ? `${selectedRecord.argsDraft.auxAmountCkb.trim()} CKB` : "");
+
   const headerBody = (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Freight details</p>
       <p className="create-info-constraint-item text-gray-500">
-        <span>Browse a freight in full, then jump back to the feed when you are done.</span>
+        <span>Type: {detailTypeLabel}</span>
       </p>
-      <p className="create-info-constraint-item text-gray-500">
-        <span>Use the shared create composer here without leaving this detail page.</span>
-      </p>
+      {detailUsesRaffleRandomness ? (
+        <>
+          <p className="mt-3 create-review-section-label text-gray-900">Randomness</p>
+          <p className="create-info-constraint-item text-gray-500">
+            <span>Yes — this freight is a raffle, so settlement uses committed randomness.</span>
+          </p>
+          {detailTicketPriceText ? (
+            <p className="create-info-constraint-item text-gray-500">
+              <span>Ticket price: {detailTicketPriceText}</span>
+            </p>
+          ) : null}
+          {Number.isFinite(detailRewardCountValue) && detailRewardCountValue > 0 ? (
+            <p className="create-info-constraint-item text-gray-500">
+              <span>Winners selected: {detailRewardCountValue}</span>
+            </p>
+          ) : null}
+          <p className="create-info-constraint-item text-gray-500">
+            <span>How it works: a 32-byte randomness hash is committed up front, then the revealed preimage is combined with this freight&apos;s tx hash, output index, and participant count to deterministically shuffle entrants before taking the winner set.</span>
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="mt-3 create-review-section-label text-gray-900">Randomness</p>
+          <p className="create-info-constraint-item text-gray-500">
+            <span>No — this freight type does not use raffle randomness.</span>
+          </p>
+        </>
+      )}
     </div>
   );
 
@@ -617,17 +652,6 @@ export default function CampaignDetailPage() {
           {submissionSuccessTxHash}
         </a>
       </p>
-      {submissionSuccessPreimage ? (
-        <>
-          <p className="mt-3 text-gray-900 font-semibold text-xs">Randomness preimage</p>
-          <p className="text-xs text-amber-600 mt-1">
-            You can store it if you wish — it is used to distribute raffle rewards.
-          </p>
-          <p className="create-info-constraint-item text-gray-500 font-mono break-all text-xs mt-1">
-            {submissionSuccessPreimage}
-          </p>
-        </>
-      ) : null}
     </div>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
@@ -963,7 +987,7 @@ export default function CampaignDetailPage() {
     <main className="campaign-detail-page">
       <div className={`campaign-detail-shell ${shellWidthClass}`.trim()}>
         <AppShellHeader
-          className={`campaign-shell-header ${shellWidthClass} fixed top-8 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel="Freight information modal"
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
@@ -1029,9 +1053,9 @@ export default function CampaignDetailPage() {
           }}
           onOpenCreateModal={openCreateModal}
           onPreviewErrorChange={setPreviewError}
-          onPublishSuccess={(txHash, randomnessPreimage) => {
+          onPublishSuccess={(txHash) => {
             finalizeCloseCreateModal();
-            openSubmissionSuccessInfoModal(txHash, randomnessPreimage);
+            openSubmissionSuccessInfoModal(txHash);
           }}
           onRequestCloseCreateModal={requestCloseCreateModal}
           onStepChange={setCreateModalStep}

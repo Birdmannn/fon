@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { CampaignComment, CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import type { SettlementModalData, SettlementRecipient } from "@/app/_types/settlement";
 import {
   buildDefaultHandle,
   buildDefaultUsername,
@@ -23,24 +24,6 @@ import {
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
-type SettlementRecipient = {
-  address: string;
-  username: string;
-  handle: string;
-  amountLabel: string;
-};
-
-type SettlementModalData = {
-  campaignTitle: string;
-  randomnessHash: string;
-  randomnessPreimage: string | null;
-  evidenceItems: string[];
-  recipients: SettlementRecipient[];
-  distributionTxHash: string | null;
-  errorMessage?: string | null;
-  _campaign?: CampaignCell;
-  _record?: CampaignRecord | null;
-};
 
 async function hasSettlementCreatorPermission(
   signer: ccc.Signer | null,
@@ -561,7 +544,6 @@ export function useCampaignCardState({
         randomnessPreimage,
         evidenceItems: [
           `Stored randomness hash: ${randomnessHash}`,
-          randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage: not available in the current record store.",
           `Verified participant count used: ${record.settledParticipantCount ?? "0"}`,
           `Reward count: ${String(data.rewardCount)}`,
           "Winner ordering: deterministic by join time, participant address, then outpoint.",
@@ -662,6 +644,7 @@ export function useCampaignCardState({
         : BigInt(Math.min(Number(data.rewardCount), participants.length));
       const rewardPerWinner = effectiveWinnerCount > 0n ? data.currentDeposits / effectiveWinnerCount : 0n;
       const recipientAmountLabel = `${formatCkbAmount(rewardPerWinner)} CKB`;
+      const recipientAmountShannons = rewardPerWinner.toString();
       const recipients: SettlementRecipient[] = winnerAddresses.map((address) => {
         const normalizedAddress = address.trim().toLowerCase();
         const profile = profilesByAddress.get(normalizedAddress);
@@ -670,12 +653,12 @@ export function useCampaignCardState({
           username: profile?.username ?? buildDefaultUsername(address),
           handle: profile?.handle ?? buildDefaultHandle(address),
           amountLabel: recipientAmountLabel,
+          amountShannons: recipientAmountShannons,
         };
       });
       const participantCountText = String(participants.length);
       const evidenceItems = [
         `Stored randomness hash: ${randomnessHash}`,
-        randomnessPreimage ? `Revealed preimage: ${randomnessPreimage}` : "Revealed preimage: not available in the current record store.",
         `Verified participant count used: ${participantCountText}`,
         `Reward count: ${String(data.rewardCount)}`,
         "Winner ordering: deterministic by join time, participant address, then outpoint.",
@@ -688,7 +671,7 @@ export function useCampaignCardState({
         if (!signer || !userHasPermission) {
           errorMessage = "Only the freight creator can distribute raffle rewards.";
         } else if (!revealedPreimage) {
-          errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added. The preimage was shown in the creation success modal — check your notes.";
+          errorMessage = "Randomness preimage not found. This campaign may have been created before automatic preimage storage was added.";
         } else if (effectiveWinnerCount <= 0n || winners.length === 0) {
           errorMessage = "No eligible verified winners are available for settlement.";
         } else {

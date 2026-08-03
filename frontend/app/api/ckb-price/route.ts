@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
+import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
 
-const CKB_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price?ids=nervos-network&vs_currencies=usd";
+export const dynamic = "force-dynamic";
 
 function badRequest(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -10,22 +10,7 @@ function badRequest(message: string, status = 400) {
 
 export async function GET() {
   try {
-    const response = await fetch(CKB_PRICE_URL, {
-      headers: {
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(typeof payload?.error === "string" ? payload.error : "Failed to fetch CKB price");
-    }
-
-    const usd = payload?.["nervos-network"]?.usd;
-    if (typeof usd !== "number" || !Number.isFinite(usd) || usd <= 0) {
-      throw new Error("Invalid CKB USD price returned from CoinGecko");
-    }
-
+    const usd = await fetchCkbUsdPrice();
     return NextResponse.json({ usd });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch CKB price";
