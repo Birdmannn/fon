@@ -678,7 +678,12 @@
 .profile-transactions-list {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0;
+}
+
+.profile-freight-row + .profile-freight-row,
+.profile-transaction-row-simple + .profile-transaction-row-simple {
+  border-top: 1px solid rgba(23, 23, 23, 0.08);
 }
 
 .profile-freight-row,
