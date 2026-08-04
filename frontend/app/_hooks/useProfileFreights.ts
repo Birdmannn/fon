@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ProfileFreightRow } from "@/app/_types/profileTabs";
+
+const profileFreightsCache = new Map<string, ProfileFreightRow[]>();
 
 type UseProfileFreightsArgs = {
   address?: string | null;
@@ -13,7 +15,9 @@ type UseProfileFreightsArgs = {
 export function useProfileFreights({ address, enabled = true, handle }: UseProfileFreightsArgs) {
   const [rows, setRows] = useState<ProfileFreightRow[]>([]);
   const [error, setError] = useState("");
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const query = useMemo(() => {
     if (!enabled) {
@@ -33,51 +37,89 @@ export function useProfileFreights({ address, enabled = true, handle }: UseProfi
     return null;
   }, [address, enabled, handle]);
 
-  useEffect(() => {
+  const fetchRows = useCallback(async (forceRefresh = false) => {
     if (!query) {
-      setRows([]);
+      return;
+    }
+
+    const hasCachedRows = profileFreightsCache.has(query);
+    if (!forceRefresh && hasCachedRows) {
+      setRows(profileFreightsCache.get(query) ?? []);
       setError("");
+      setHasLoaded(true);
       setIsLoading(false);
       return;
     }
 
-    let cancelled = false;
-    setIsLoading(true);
+    if (forceRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError("");
 
-    void (async () => {
-      try {
-        const response = await fetch(`/api/user-profiles/freights?${query}`, {
-          cache: "no-store",
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Failed to load profile freights");
-        }
-
-        if (!cancelled) {
-          setRows(Array.isArray(payload?.rows) ? (payload.rows as ProfileFreightRow[]) : []);
-        }
-      } catch (nextError) {
-        if (!cancelled) {
-          setRows([]);
-          setError(nextError instanceof Error ? nextError.message : "Failed to load profile freights");
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+    try {
+      const response = await fetch(`/api/user-profiles/freights?${query}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to load profile freights");
       }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
+      const nextRows = Array.isArray(payload?.rows) ? (payload.rows as ProfileFreightRow[]) : [];
+      profileFreightsCache.set(query, nextRows);
+      setRows(nextRows);
+      setHasLoaded(true);
+    } catch (nextError) {
+      if (!hasCachedRows) {
+        setRows([]);
+        setError(nextError instanceof Error ? nextError.message : "Failed to load profile freights");
+        setHasLoaded(true);
+      }
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
   }, [query]);
+
+  useEffect(() => {
+    if (!query) {
+      setRows([]);
+      setError("");
+      setHasLoaded(false);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    const cachedRows = profileFreightsCache.get(query);
+    if (cachedRows) {
+      setRows(cachedRows);
+      setError("");
+      setHasLoaded(true);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
+    setRows([]);
+    setError("");
+    setHasLoaded(false);
+    setIsLoading(false);
+    setIsRefreshing(false);
+  }, [fetchRows, query]);
+
+  const refresh = useCallback(() => {
+    void fetchRows(true);
+  }, [fetchRows]);
 
   return {
     error,
+    hasLoaded,
     isLoading,
+    isRefreshing,
+    refresh,
     rows,
   };
 }

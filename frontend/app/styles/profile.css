@@ -687,10 +687,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid rgba(23, 23, 23, 0.1);
-  border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.82);
+  padding: 0.95rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .profile-freight-row {
@@ -716,8 +716,7 @@
 }
 
 .profile-freight-row-rewarded {
-  border-color: rgba(150, 28, 172, 0.28);
-  background: rgba(150, 28, 172, 0.06);
+  color: #961cac;
 }
 
 .profile-freight-row-main {
@@ -730,8 +729,7 @@
 
 .profile-freight-inline-date,
 .profile-freight-inline-amount,
-.profile-transaction-row-simple-date,
-.profile-transaction-row-simple-amount {
+.profile-transaction-row-simple-date {
   font-family: var(--font-mono, monospace);
   font-size: 0.76rem;
   line-height: 1.35;
@@ -769,8 +767,7 @@
   background: #6b7280;
 }
 
-.profile-freight-inline-title,
-.profile-transaction-row-simple-hash {
+.profile-freight-inline-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -783,12 +780,21 @@
 }
 
 .profile-transaction-row-simple-hash {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.84rem;
+  line-height: 1.3;
+  color: var(--foreground);
   text-decoration: underline;
   text-decoration-thickness: from-font;
 }
 
 .profile-transaction-row-simple-amount {
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 0.92rem;
 }
 
 .profile-transaction-summary-amount-positive,
@@ -936,11 +942,39 @@
   flex-shrink: 0;
 }
 
+.profile-tab-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.profile-tab-refresh-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.2;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.profile-tab-refresh-button:hover,
+.profile-tab-refresh-button:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+.profile-tab-refresh-button:disabled {
+  cursor: default;
+  opacity: 0.7;
+  text-decoration: none;
+}
+
 .profile-transactions-coverage {
-  padding: 0.8rem 1rem;
-  border: 1px solid rgba(234, 179, 8, 0.24);
-  border-radius: 0.9rem;
-  background: rgba(234, 179, 8, 0.08);
+  padding: 0.8rem 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .profile-transactions-coverage-note {
@@ -1091,6 +1125,10 @@
 
   .profile-transaction-row-simple-hash {
     grid-column: 1 / -1;
+  }
+
+  .profile-tab-toolbar {
+    justify-content: flex-start;
   }
 }
 

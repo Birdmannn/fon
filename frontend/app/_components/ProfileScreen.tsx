@@ -142,7 +142,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   });
   const {
     error: profileFreightsError,
+    hasLoaded: hasLoadedProfileFreights,
     isLoading: isProfileFreightsLoading,
+    isRefreshing: isProfileFreightsRefreshing,
+    refresh: refreshProfileFreights,
     rows: profileFreightRows,
   } = useProfileFreights({
     address: profileAddress,
@@ -152,7 +155,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const {
     coverage: profileTransactionsCoverage,
     error: profileTransactionsError,
+    hasLoaded: hasLoadedProfileTransactions,
     isLoading: isProfileTransactionsLoading,
+    isRefreshing: isProfileTransactionsRefreshing,
+    refresh: refreshProfileTransactions,
     rows: profileTransactionRows,
   } = useProfileTransactions({
     address: profileAddress,
@@ -1057,7 +1063,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div id="profile-tab-panel-freights" aria-labelledby="profile-tab-freights">
                     <ProfileFreightsSection
                       error={profileFreightsError}
+                      hasLoaded={hasLoadedProfileFreights}
+                      isRefreshing={isProfileFreightsRefreshing}
                       loading={isProfileFreightsLoading}
+                      onRefresh={refreshProfileFreights}
                       rows={profileFreightRows}
                     />
                   </div>
@@ -1067,7 +1076,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     <ProfileTransactionsSection
                       coverage={profileTransactionsCoverage}
                       error={profileTransactionsError}
+                      hasLoaded={hasLoadedProfileTransactions}
+                      isRefreshing={isProfileTransactionsRefreshing}
                       loading={isProfileTransactionsLoading}
+                      onRefresh={refreshProfileTransactions}
                       rows={profileTransactionRows}
                     />
                   </div>

@@ -27,19 +27,34 @@ function getInlineFreightMeta(row: ProfileFreightRow) {
 
 type ProfileFreightsSectionProps = {
   error: string;
+  hasLoaded: boolean;
+  isRefreshing: boolean;
   loading: boolean;
+  onRefresh: () => void;
   rows: ProfileFreightRow[];
 };
 
-export default function ProfileFreightsSection({ error, loading, rows }: ProfileFreightsSectionProps) {
+export default function ProfileFreightsSection({ error, hasLoaded, isRefreshing, loading, onRefresh, rows }: ProfileFreightsSectionProps) {
   return (
     <section className="profile-tab-panel" aria-labelledby="profile-tab-freights" role="tabpanel">
+      <div className="profile-tab-toolbar">
+        <button
+          type="button"
+          className="profile-tab-refresh-button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+        >
+          {isRefreshing ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
       {loading ? (
         <div className="profile-tab-state profile-tab-state-loading">
           <ThreeDotLoader label="Loading freights" inline />
         </div>
       ) : error ? (
         <p className="profile-tab-state profile-tab-state-error">{error}</p>
+      ) : !hasLoaded ? (
+        <p className="profile-tab-state profile-tab-state-empty">Click refresh to load freights.</p>
       ) : rows.length === 0 ? (
         <p className="profile-tab-state profile-tab-state-empty">No freight activity yet.</p>
       ) : (
