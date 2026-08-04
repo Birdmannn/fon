@@ -246,8 +246,11 @@ export function useCampaignCardState({
     publishError: record?.publishError ?? null,
     randomnessPreimage: record?.randomnessPreimage ?? null,
     activatedTxHash: record?.activatedTxHash ?? null,
+    activatedAt: record?.activatedAt ?? null,
+    activatedByAddress: record?.activatedByAddress ?? null,
     settlementTxHash: record?.settlementTxHash ?? null,
     settledAt: record?.settledAt ?? null,
+    settledByAddress: record?.settledByAddress ?? null,
     soldTicketCount: record?.soldTicketCount ?? null,
     settledParticipantCount: record?.settledParticipantCount ?? null,
     settledRecipients: record?.settledRecipients ?? null,
@@ -607,6 +610,23 @@ export function useCampaignCardState({
     setIsDepositing(true);
     try {
       const txHash = await sendDeposit(signer, c, amountCkb);
+      await fetch("/api/campaign-deposits", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amountShannons: amountShannons.toString(),
+          campaignId: getCampaignStableId(c),
+          campaignRecordId: record?._id ?? null,
+          depositedAt: new Date().toISOString(),
+          depositorAddress: await signer.getRecommendedAddress(),
+          txHash,
+        }),
+      }).catch(() => {
+        // Non-fatal — transaction history can miss this row, but the on-chain deposit still succeeded.
+      });
+
       const signed = await withSignedNonce("deposit");
       const depositResponse = await fetch("/api/fbars/deposit", {
         method: "POST",
@@ -801,6 +821,7 @@ export function useCampaignCardState({
                 body: JSON.stringify({
                   settlementTxHash: distributionTxHash,
                   settledAt,
+                  settledByAddress: currentWalletAddress,
                   soldTicketCount: String(soldTickets),
                   settledParticipantCount: participantCountText,
                   settledRecipients: recipients,
@@ -809,6 +830,9 @@ export function useCampaignCardState({
               const settlePayload = await settleResponse.json().catch(() => null);
               if (settleResponse.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
                 settledAt = settlePayload.settledAt.trim();
+              }
+              if (settleResponse.ok && Array.isArray(settlePayload?.settledRecipients)) {
+                recipients.splice(0, recipients.length, ...settlePayload.settledRecipients);
               }
             } catch {
               // Non-fatal — optimistic UI update still uses the local timestamp.
@@ -873,6 +897,7 @@ export function useCampaignCardState({
     handleReshare,
     handleSettlementClick,
     handleSubmitComment,
+    hasNotStartedRaffle,
     hasReachedMaxAmount,
     hasSettledRewards,
     isCampaignInactive,
@@ -885,10 +910,12 @@ export function useCampaignCardState({
     likes,
     maxCkb,
     remainingTickets,
+    reshares,
     rewardCountValue,
     setCommentDraft,
     setDepositAmount,
     setIsCommentComposerOpen,
+    setShowDepositModal,
     showDepositModal,
     shouldGlowSettlement,
     showSettlementAction,

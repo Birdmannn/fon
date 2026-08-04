@@ -19,23 +19,41 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       return badRequest("Invalid campaign record id", 404);
     }
 
-    const body = (await request.json()) as { activatedTxHash?: unknown };
+    const body = (await request.json()) as {
+      activatedAt?: unknown;
+      activatedByAddress?: unknown;
+      activatedTxHash?: unknown;
+    };
     const activatedTxHash = body?.activatedTxHash;
     if (typeof activatedTxHash !== "string" || activatedTxHash.trim() === "") {
       return badRequest("activatedTxHash must be a non-empty string");
     }
 
+    const activatedAt = typeof body?.activatedAt === "string" && body.activatedAt.trim()
+      ? body.activatedAt.trim()
+      : new Date().toISOString();
+    const activatedByAddress = typeof body?.activatedByAddress === "string" && body.activatedByAddress.trim()
+      ? body.activatedByAddress.trim().toLowerCase()
+      : null;
+
     const collection = await getMongoCollection();
     const result = await collection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: { activatedTxHash: activatedTxHash.trim(), updatedAt: new Date() } }
+      {
+        $set: {
+          activatedAt,
+          activatedByAddress,
+          activatedTxHash: activatedTxHash.trim(),
+          updatedAt: new Date(),
+        },
+      }
     );
 
     if (result.matchedCount === 0) {
       return badRequest("Campaign record not found", 404);
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, activatedAt, activatedTxHash: activatedTxHash.trim() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to mark campaign as activated";
     return NextResponse.json({ error: message }, { status: 500 });

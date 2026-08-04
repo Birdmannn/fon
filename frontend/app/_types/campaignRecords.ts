@@ -7,6 +7,15 @@ export type CampaignComment = {
   createdAt?: string;
 };
 
+export type CampaignSettledRecipient = {
+  address: string;
+  username: string;
+  handle: string;
+  amountLabel: string;
+  amountShannons: string;
+  creditedUsdCents?: number | null;
+};
+
 export type CampaignRecord = {
   _id?: string;
   title?: string;
@@ -42,15 +51,12 @@ export type CampaignRecord = {
   publishError?: string | null;
   randomnessPreimage?: string | null;
   activatedTxHash?: string | null;
+  activatedAt?: string | null;
+  activatedByAddress?: string | null;
   settlementTxHash?: string | null;
   settledAt?: string | null;
+  settledByAddress?: string | null;
   soldTicketCount?: string | null;
   settledParticipantCount?: string | null;
-  settledRecipients?: Array<{
-    address: string;
-    username: string;
-    handle: string;
-    amountLabel: string;
-    amountShannons: string;
-  }> | null;
+  settledRecipients?: CampaignSettledRecipient[] | null;
 };

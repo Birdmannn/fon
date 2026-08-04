@@ -425,6 +425,72 @@
   animation: create-campaign-modal-hide 620ms ease forwards;
 }
 
+.profile-tab-shell {
+  margin-top: 1.5rem;
+}
+
+.profile-tab-bar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.profile-tab-button {
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 9999px;
+  background: transparent;
+  color: #6b7280;
+  padding: 0.45rem 0.9rem;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 0.86rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease;
+}
+
+.profile-tab-button:hover,
+.profile-tab-button:focus-visible {
+  color: var(--foreground);
+  border-color: rgba(23, 23, 23, 0.22);
+  outline: none;
+}
+
+.profile-tab-button-active {
+  background: #171717;
+  border-color: #171717;
+  color: #ffffff;
+}
+
+.profile-tab-panel,
+.profile-analytics-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.75rem;
+}
+
+.profile-tab-panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.profile-tab-panel-title {
+  margin: 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: clamp(1rem, 2.6vw, 1.2rem);
+  line-height: 1.1;
+  font-weight: 700;
+}
+
+.profile-tab-panel-copy {
+  margin: 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
 .profile-analytics-section {
   display: flex;
   flex-direction: column;
@@ -598,6 +664,184 @@
   color: var(--foreground);
 }
 
+.profile-tab-state,
+.profile-analytics-state {
+  margin: 0;
+  padding: 1rem 0;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.profile-tab-state-loading,
+.profile-analytics-state-loading {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  min-height: 3rem;
+}
+
+.profile-tab-state-empty,
+.profile-analytics-state-empty {
+  color: #6b7280;
+}
+
+.profile-tab-state-error,
+.profile-analytics-state-error {
+  color: #dc2626;
+}
+
+.profile-freights-list,
+.profile-transactions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.profile-freight-row,
+.profile-transaction-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.profile-freight-row {
+  text-decoration: none;
+}
+
+.profile-freight-row:hover,
+.profile-freight-row:focus-visible {
+  border-color: rgba(23, 23, 23, 0.24);
+  outline: none;
+}
+
+.profile-freight-row-rewarded {
+  border-color: rgba(150, 28, 172, 0.28);
+  background: rgba(150, 28, 172, 0.06);
+}
+
+.profile-freight-row-main,
+.profile-transaction-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.profile-freight-row-heading,
+.profile-transaction-heading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.profile-freight-title,
+.profile-transaction-title {
+  margin: 0;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  font-size: 1rem;
+  line-height: 1.25;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.profile-freight-badge,
+.profile-transaction-kind,
+.profile-transaction-delta-pill,
+.profile-freight-kind-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+  border-radius: 9999px;
+  padding: 0.16rem 0.55rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.profile-freight-badge,
+.profile-transaction-kind,
+.profile-freight-kind-pill {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.profile-freight-badge-rewarded {
+  background: rgba(150, 28, 172, 0.14);
+  color: #961cac;
+}
+
+.profile-freight-badge-created {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
+}
+
+.profile-freight-badge-participated {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+.profile-freight-badge-commented {
+  background: rgba(107, 114, 128, 0.14);
+  color: #6b7280;
+}
+
+.profile-freight-meta-row,
+.profile-transaction-meta-row,
+.profile-transaction-context-row,
+.profile-transaction-deltas-row,
+.profile-transactions-coverage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+}
+
+.profile-freight-date,
+.profile-freight-creator,
+.profile-transaction-time,
+.profile-transaction-channel,
+.profile-transaction-role,
+.profile-transaction-context,
+.profile-transactions-coverage-note,
+.profile-transaction-link,
+.profile-freight-row-arrow {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.76rem;
+  line-height: 1.35;
+  color: #6b7280;
+}
+
+.profile-transaction-link {
+  overflow-wrap: anywhere;
+}
+
+.profile-transaction-delta-pill {
+  background: rgba(23, 23, 23, 0.06);
+  color: #111827;
+}
+
+.profile-freight-row-arrow {
+  flex-shrink: 0;
+}
+
+.profile-transactions-coverage {
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(234, 179, 8, 0.24);
+  border-radius: 0.9rem;
+  background: rgba(234, 179, 8, 0.08);
+}
+
+.profile-transactions-coverage-note {
+  margin: 0;
+  color: #92400e;
+}
+
 .profile-analytics-state {
   margin: 0;
   padding: 1rem 0;
@@ -721,6 +965,11 @@
 
   .profile-analytics-totals {
     justify-content: flex-start;
+  }
+
+  .profile-freight-row,
+  .profile-transaction-row {
+    flex-direction: column;
   }
 }
 
