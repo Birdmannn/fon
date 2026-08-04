@@ -7,6 +7,7 @@ import {
 } from "@/app/api/user-profiles/_lib/profileTarget";
 import type { ProfileTransactionRow, ProfileTransactionsCoverage } from "@/app/_types/profileTabs";
 import { buildStableCampaignId, normalizeHash } from "@/lib/campaignIdentity";
+import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
 import { getAddressNetDeltaMap } from "@/lib/txBalanceDelta";
 import {
   getCampaignDepositsCollection,
@@ -118,6 +119,22 @@ function amountLabelFromShannons(amountShannons: string) {
   }
 }
 
+function convertShannonsToUsdCentsSigned(amountShannons: string | null, usdPerCkb: number | null) {
+  if (!amountShannons || usdPerCkb === null) {
+    return null;
+  }
+
+  try {
+    const value = BigInt(amountShannons);
+    const sign = value > 0n ? 1 : value < 0n ? -1 : 0;
+    const absolute = value < 0n ? -value : value;
+    const cents = Math.floor((Number(absolute) / 1e8) * usdPerCkb * 100);
+    return sign * cents;
+  } catch {
+    return null;
+  }
+}
+
 function parseRecipients(value: unknown): Recipient[] {
   if (!Array.isArray(value)) {
     return [];
@@ -179,7 +196,7 @@ export async function GET(request: Request) {
       getFbarEventsCollection(),
     ]);
 
-    const [createdRecords, activatedRecords, settlementRecords, rewardRecords, participantRows, depositRows, fbarEvents, legacyActivationCount] = await Promise.all([
+    const [createdRecords, activatedRecords, settlementRecords, rewardRecords, participantRows, depositRows, fbarEvents, legacyActivationCount, usdPerCkb] = await Promise.all([
       campaignRecordsCollection.find(
         {
           status: "published",
@@ -300,7 +317,7 @@ export async function GET(request: Request) {
       fbarEventsCollection.find(
         {
           address: targetAddress,
-          kind: { $in: ["wallet-seed", "freight-create", "deposit"] },
+          kind: { $in: ["freight-create", "deposit"] },
         },
         {
           projection: {
@@ -326,6 +343,7 @@ export async function GET(request: Request) {
           ],
         }
       ),
+      fetchCkbUsdPrice({ allowStaleOnFailure: true }).catch(() => null),
     ]);
 
     const referencedCampaignIds = Array.from(new Set([
@@ -362,8 +380,7 @@ export async function GET(request: Request) {
       }
     });
 
-    const fbarByKindAndTxHash = new Map<string, FbarEventTransaction>();
-    const walletSeedRows: ProfileTransactionRow[] = [];
+    const fbarRows: ProfileTransactionRow[] = [];
 
     fbarEvents.forEach((event) => {
       const kind = asString(event.kind).toLowerCase();
@@ -375,30 +392,52 @@ export async function GET(request: Request) {
       const delta = typeof event.delta === "number" && Number.isFinite(event.delta) ? event.delta : null;
       const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata as Record<string, unknown> : {};
       const txHash = normalizeHash(asString(metadata.txHash));
+      if (!txHash) {
+        return;
+      }
 
-      if (kind === "wallet-seed") {
-        const balanceShannons = asString(metadata.balanceShannons);
-        walletSeedRows.push({
+      const campaignId = normalizeHash(asString(metadata.campaignId));
+      const record = campaignId ? recordByCampaignId.get(campaignId) ?? null : null;
+
+      if (kind === "freight-create") {
+        fbarRows.push({
           adsfUsdCentsDelta: null,
-          amountLabel: amountLabelFromShannons(balanceShannons),
-          campaignId: null,
-          campaignRecordId: null,
-          campaignTitle: null,
+          amountLabel: null,
+          campaignId: campaignId || null,
+          campaignRecordId: typeof record?._id?.toString === "function" ? record._id.toString() : null,
+          campaignTitle: normalizeTitle(record?.title),
+          ckbUsdCentsDelta: null,
           channel: "offchain",
           fbarsDelta: delta,
-          id: buildRowId(["wallet-seed", asString(event.eventKey)]),
-          kind: "wallet_seed",
+          id: buildRowId(["freight-create-fbars", txHash]),
+          kind: "freight_create",
           occurredAt,
           onchainNetDeltaShannons: null,
           role: "actor",
-          summary: "Seeded wallet FBARS",
-          txHash: null,
+          summary: "Freight create FBARS",
+          txHash,
         });
         return;
       }
 
-      if (txHash && (kind === "freight-create" || kind === "deposit")) {
-        fbarByKindAndTxHash.set(`${kind}:${txHash}`, event);
+      if (kind === "deposit") {
+        fbarRows.push({
+          adsfUsdCentsDelta: null,
+          amountLabel: null,
+          campaignId: campaignId || null,
+          campaignRecordId: typeof record?._id?.toString === "function" ? record._id.toString() : null,
+          campaignTitle: normalizeTitle(record?.title),
+          ckbUsdCentsDelta: null,
+          channel: "offchain",
+          fbarsDelta: delta,
+          id: buildRowId(["campaign-deposit-fbars", txHash]),
+          kind: "campaign_deposit",
+          occurredAt,
+          onchainNetDeltaShannons: null,
+          role: "actor",
+          summary: "Deposit FBARS",
+          txHash,
+        });
       }
     });
 
@@ -412,7 +451,7 @@ export async function GET(request: Request) {
     ].filter(Boolean)));
 
     const deltaByTxHash = await getAddressNetDeltaMap(txHashes, targetAddress);
-    const rows: ProfileTransactionRow[] = [...walletSeedRows];
+    const rows: ProfileTransactionRow[] = [...fbarRows];
 
     createdRecords.forEach((record) => {
       const txHash = normalizeHash(asString(record.txHash));
@@ -421,15 +460,15 @@ export async function GET(request: Request) {
         return;
       }
 
-      const fbarEvent = fbarByKindAndTxHash.get(`freight-create:${txHash}`);
       rows.push({
         adsfUsdCentsDelta: null,
         amountLabel: null,
         campaignId: deriveCampaignId(record),
         campaignRecordId: typeof record._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record.title),
-        channel: fbarEvent ? "hybrid" : "onchain",
-        fbarsDelta: typeof fbarEvent?.delta === "number" ? fbarEvent.delta : null,
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
+        channel: "onchain",
+        fbarsDelta: null,
         id: buildRowId(["freight-create", txHash]),
         kind: "freight_create",
         occurredAt,
@@ -453,6 +492,7 @@ export async function GET(request: Request) {
         campaignId: deriveCampaignId(record),
         campaignRecordId: typeof record._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record.title),
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
         channel: "onchain",
         fbarsDelta: null,
         id: buildRowId(["campaign-activate", txHash]),
@@ -480,6 +520,7 @@ export async function GET(request: Request) {
         campaignId,
         campaignRecordId: typeof record?._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record?.title),
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
         channel: "onchain",
         fbarsDelta: null,
         id: buildRowId(["campaign-participation", txHash]),
@@ -501,7 +542,6 @@ export async function GET(request: Request) {
       }
 
       const record = recordByCampaignId.get(campaignId);
-      const fbarEvent = fbarByKindAndTxHash.get(`deposit:${txHash}`);
       const amountShannons = asString(row.amountShannons);
       rows.push({
         adsfUsdCentsDelta: null,
@@ -509,8 +549,9 @@ export async function GET(request: Request) {
         campaignId,
         campaignRecordId: asString(row.campaignRecordId) || (typeof record?._id?.toString === "function" ? record._id.toString() : null),
         campaignTitle: normalizeTitle(record?.title),
-        channel: fbarEvent ? "hybrid" : "onchain",
-        fbarsDelta: typeof fbarEvent?.delta === "number" ? fbarEvent.delta : null,
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
+        channel: "onchain",
+        fbarsDelta: null,
         id: buildRowId(["campaign-deposit", txHash]),
         kind: "campaign_deposit",
         occurredAt,
@@ -534,6 +575,7 @@ export async function GET(request: Request) {
         campaignId: deriveCampaignId(record),
         campaignRecordId: typeof record._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record.title),
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
         channel: "onchain",
         fbarsDelta: null,
         id: buildRowId(["campaign-settlement", txHash]),
@@ -571,7 +613,8 @@ export async function GET(request: Request) {
         campaignId: deriveCampaignId(record),
         campaignRecordId: typeof record._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record.title),
-        channel: "hybrid",
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
+        channel: "onchain",
         fbarsDelta: null,
         id: buildRowId(["campaign-reward", txHash, targetAddress]),
         kind: "campaign_reward",

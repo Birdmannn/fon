@@ -29,6 +29,7 @@ export type ProfileTransactionRow = {
   campaignId: string | null;
   campaignRecordId: string | null;
   campaignTitle: string | null;
+  ckbUsdCentsDelta: number | null;
   channel: ProfileTransactionChannel;
   fbarsDelta: number | null;
   id: string;

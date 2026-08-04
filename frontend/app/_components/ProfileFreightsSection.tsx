@@ -3,20 +3,26 @@
 import Link from "next/link";
 
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
-import type { ProfileFreightInteractionKind, ProfileFreightRow } from "@/app/_types/profileTabs";
+import type { ProfileFreightRow } from "@/app/_types/profileTabs";
 
-const INTERACTION_LABELS: Record<ProfileFreightInteractionKind, string> = {
-  commented: "Commented",
-  created: "Created",
-  participated: "Participated",
-  rewarded: "Rewarded",
-};
-
-function formatInteractionDate(value: string) {
+function formatCompactDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
+    month: "short",
+    day: "numeric",
   }).format(new Date(value));
+}
+
+function truncateFreightTitle(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length <= 10) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, 10)}…`;
+}
+
+function getInlineFreightMeta(row: ProfileFreightRow) {
+  return row.creatorHandle;
 }
 
 type ProfileFreightsSectionProps = {
@@ -27,12 +33,7 @@ type ProfileFreightsSectionProps = {
 
 export default function ProfileFreightsSection({ error, loading, rows }: ProfileFreightsSectionProps) {
   return (
-    <section className="profile-tab-panel" aria-labelledby="profile-freights-title" role="tabpanel">
-      <div className="profile-tab-panel-header">
-        <h2 id="profile-freights-title" className="profile-tab-panel-title">Freights</h2>
-        <p className="profile-tab-panel-copy">Latest freight interactions, one row per freight.</p>
-      </div>
-
+    <section className="profile-tab-panel" aria-labelledby="profile-tab-freights" role="tabpanel">
       {loading ? (
         <div className="profile-tab-state profile-tab-state-loading">
           <ThreeDotLoader label="Loading freights" inline />
@@ -49,26 +50,12 @@ export default function ProfileFreightsSection({ error, loading, rows }: Profile
               href={row.href}
               className={`profile-freight-row ${row.strongestInteraction === "rewarded" ? "profile-freight-row-rewarded" : ""}`.trim()}
             >
-              <div className="profile-freight-row-main">
-                <div className="profile-freight-row-heading">
-                  <h3 className="profile-freight-title">{row.title}</h3>
-                  <span className={`profile-freight-badge profile-freight-badge-${row.strongestInteraction}`.trim()}>
-                    {INTERACTION_LABELS[row.strongestInteraction]}
-                  </span>
-                </div>
-                <div className="profile-freight-meta-row">
-                  <span className="profile-freight-date">Interacted {formatInteractionDate(row.latestInteractionAt)}</span>
-                  <span className="profile-freight-creator">by {row.creatorHandle}</span>
-                </div>
-                <div className="profile-freight-kinds-row" aria-label="Freight interaction kinds">
-                  {row.interactionKinds.map((kind) => (
-                    <span key={`${row.campaignId}-${kind}`} className="profile-freight-kind-pill">
-                      {INTERACTION_LABELS[kind]}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <span className="profile-freight-row-arrow" aria-hidden="true">→</span>
+              <span className="profile-freight-inline-date">{formatCompactDate(row.latestInteractionAt)}</span>
+              <span className="profile-freight-inline-main">
+                <span className={`profile-freight-inline-dot profile-freight-inline-dot-${row.strongestInteraction}`.trim()} aria-hidden="true" />
+                <span className="profile-freight-inline-title">{truncateFreightTitle(row.title)}</span>
+              </span>
+              <span className="profile-freight-inline-amount">{getInlineFreightMeta(row)}</span>
             </Link>
           ))}
         </div>

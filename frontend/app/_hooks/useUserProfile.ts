@@ -230,20 +230,6 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     }
   }, [loadProfile, signer, targetHandle]);
 
-  useEffect(() => {
-    if (!signer || targetHandle || isUserProfileLoading || isSeedingWalletFbars) {
-      return;
-    }
-
-    if (!currentUserProfile || currentUserProfile.hasSeededWalletFbars) {
-      return;
-    }
-
-    void seedWalletFbars().catch((error) => {
-      setUserProfileError(error instanceof Error ? error.message : "Failed to seed wallet FBARS");
-    });
-  }, [currentUserProfile, isSeedingWalletFbars, isUserProfileLoading, seedWalletFbars, signer, targetHandle]);
-
   const saveDisplayName = useCallback(async (displayName: string) => {
     if (!signer) {
       throw new Error("Connect a wallet first");

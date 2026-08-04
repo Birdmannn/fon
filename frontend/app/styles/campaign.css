@@ -518,6 +518,13 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
+}
+
+.campaign-card-body-feed {
+  gap: 0.6rem;
+}
+
+.campaign-card-body-detail {
   gap: 0.75rem;
 }
 
@@ -526,6 +533,13 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
+}
+
+.campaign-card-content-feed {
+  gap: 0.25rem;
+}
+
+.campaign-card-content-detail {
   gap: 0.35rem;
 }
 
@@ -542,7 +556,6 @@
 .campaign-card-description {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
   font-size: 0.875rem;
   line-height: 1.5rem;
   color: #374151;
@@ -551,16 +564,36 @@
   transition: transform 180ms ease, font-weight 180ms ease;
 }
 
+.campaign-card-description-feed {
+  gap: 0.15rem;
+}
+
+.campaign-card-description-detail {
+  gap: 0.25rem;
+}
+
 .campaign-card-description-line {
   margin: 0;
   white-space: pre-wrap;
 }
 
 .campaign-card-description-quote {
-  padding-left: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.3rem 0.75rem 0.3rem 0.85rem;
   border-left: 2px solid #9ca3af;
+  background: #f3f4f6;
   color: #4b5563;
+}
+
+.campaign-card-description-quote-line {
+  margin: 0;
   white-space: pre-wrap;
+}
+
+.campaign-card-description-quote-spacer {
+  min-height: 1.5rem;
 }
 
 .campaign-card-description-spacer {
@@ -811,7 +844,7 @@
 
 .campaign-detail-content {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 3.2fr) minmax(0, 0.8fr);
   gap: 1rem;
   align-items: stretch;
   min-height: 0;

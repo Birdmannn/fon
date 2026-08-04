@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Copy, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
 import {
   buildDefaultHandle,
   decodeCreatedByAddress,
@@ -223,7 +224,7 @@ export default function CampaignCardSurface({
 
   return (
     <div className={rootClassName} onClick={onOpenDetail} role={onOpenDetail ? "button" : undefined} tabIndex={onOpenDetail ? 0 : undefined}>
-      <div className="campaign-card-body">
+      <div className="campaign-card-body campaign-card-body-feed">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <button
@@ -270,32 +271,11 @@ export default function CampaignCardSurface({
           )}
         </div>
 
-        <div className="campaign-card-content">
+        <div className="campaign-card-content campaign-card-content-feed">
           <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
           <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
-            <div className="campaign-card-description">
-              {descriptionLines.map((line, index) => {
-                const isQuote = /^\s*>/.test(line);
-                const quoteText = line.replace(/^\s*>\s?/, "");
-
-                if (isQuote) {
-                  return (
-                    <div key={`${line}-${index}`} className="campaign-card-description-quote">
-                      {quoteText}
-                    </div>
-                  );
-                }
-
-                if (line.trim().length === 0) {
-                  return <div key={`blank-${index}`} className="campaign-card-description-spacer" aria-hidden="true" />;
-                }
-
-                return (
-                  <p key={`${line}-${index}`} className="campaign-card-description-line">
-                    {line}
-                  </p>
-                );
-              })}
+            <div className="campaign-card-description campaign-card-description-feed">
+              <CampaignDescriptionContent lines={descriptionLines} />
             </div>
           </div>
           {shouldShowReadMore && (

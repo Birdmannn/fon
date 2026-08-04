@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Copy, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
@@ -241,100 +242,81 @@ export default function CampaignDetailSurface({
 
   return (
     <div className="campaign-card-surface campaign-card-surface-detail p-4 flex flex-col gap-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <button
-            type="button"
-            onClick={() => void handleCopyAddress()}
-            className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
-            title={creatorAddress}
-            aria-label="Copy creator address"
-          >
-            <Copy size={14} strokeWidth={2} aria-hidden="true" />
-            <span>{truncateAddress(creatorAddress)}</span>
-          </button>
-          <Link href={`/user/${encodeURIComponent(creatorHandle)}`} className="campaign-card-handle-link">
-            {creatorHandle}
-          </Link>
-          {copyFeedback === "copied" ? <span className="text-[11px] text-green-600">Copied</span> : null}
-          {copyFeedback === "error" ? <span className="text-[11px] text-red-500">Copy failed</span> : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`status-indicator status-${getStatusClassName(displayStatus)}`} title={STATUS_LABELS[displayStatus] ?? String(displayStatus)} />
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
-        <span className="font-medium text-gray-800">{TYPE_LABELS[campaignType] ?? String(campaignType)}</span>
-        {isRaffleCampaign && ticketPriceLabel ? (
-          <>
-            <span className="campaign-card-ticket-price">
-              1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {ticketPriceLabel} CKB
-            </span>
-            {rewardCountValue > 0 ? (
-              <>
-                <span className="font-medium text-gray-800">then:</span>
-                <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`.trim()}>
-                  take {String(rewardCountValue)}
-                </span>
-              </>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-
-      <div className="campaign-card-content">
-        <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
-        <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
-          <div className="campaign-card-description">
-            {descriptionLines.map((line, index) => {
-              const isQuote = /^\s*>/.test(line);
-              const quoteText = line.replace(/^\s*>\s?/, "");
-
-              if (isQuote) {
-                return (
-                  <div key={`${line}-${index}`} className="campaign-card-description-quote">
-                    {quoteText}
-                  </div>
-                );
-              }
-
-              if (line.trim().length === 0) {
-                return <div key={`blank-${index}`} className="campaign-card-description-spacer" aria-hidden="true" />;
-              }
-
-              return (
-                <p key={`${line}-${index}`} className="campaign-card-description-line">
-                  {line}
-                </p>
-              );
-            })}
+      <div className="campaign-card-body campaign-card-body-detail">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <button
+              type="button"
+              onClick={() => void handleCopyAddress()}
+              className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
+              title={creatorAddress}
+              aria-label="Copy creator address"
+            >
+              <Copy size={14} strokeWidth={2} aria-hidden="true" />
+              <span>{truncateAddress(creatorAddress)}</span>
+            </button>
+            <Link href={`/user/${encodeURIComponent(creatorHandle)}`} className="campaign-card-handle-link">
+              {creatorHandle}
+            </Link>
+            {copyFeedback === "copied" ? <span className="text-[11px] text-green-600">Copied</span> : null}
+            {copyFeedback === "error" ? <span className="text-[11px] text-red-500">Copy failed</span> : null}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`status-indicator status-${getStatusClassName(displayStatus)}`} title={STATUS_LABELS[displayStatus] ?? String(displayStatus)} />
           </div>
         </div>
-        {shouldShowReadMore ? (
-          <button
-            type="button"
-            className="campaign-card-read-more"
-            onClick={() => setIsDescriptionExpanded((current) => !current)}
-          >
-            {isDescriptionExpanded ? "Show less" : "Read more..."}
-          </button>
+
+        <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
+          <span className="font-medium text-gray-800">{TYPE_LABELS[campaignType] ?? String(campaignType)}</span>
+          {isRaffleCampaign && ticketPriceLabel ? (
+            <>
+              <span className="campaign-card-ticket-price">
+                1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {ticketPriceLabel} CKB
+              </span>
+              {rewardCountValue > 0 ? (
+                <>
+                  <span className="font-medium text-gray-800">then:</span>
+                  <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`.trim()}>
+                    take {String(rewardCountValue)}
+                  </span>
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <div className="campaign-card-content campaign-card-content-detail">
+          <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
+          <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
+            <div className="campaign-card-description campaign-card-description-detail">
+              <CampaignDescriptionContent lines={descriptionLines} />
+            </div>
+          </div>
+          {shouldShowReadMore ? (
+            <button
+              type="button"
+              className="campaign-card-read-more"
+              onClick={() => setIsDescriptionExpanded((current) => !current)}
+            >
+              {isDescriptionExpanded ? "Show less" : "Read more..."}
+            </button>
+          ) : null}
+        </div>
+
+        {record.socialMetadata?.mentions?.length ? (
+          <div className="flex flex-wrap gap-2 text-xs">
+            {record.socialMetadata.mentions.map((mention) => (
+              <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
+            ))}
+          </div>
+        ) : null}
+
+        {!campaign ? (
+          <p className="text-[11px] text-gray-400">
+            {chainSyncError || (isChainSyncing ? "Syncing live chain data..." : "Live chain data unavailable right now.")}
+          </p>
         ) : null}
       </div>
-
-      {record.socialMetadata?.mentions?.length ? (
-        <div className="flex flex-wrap gap-2 text-xs">
-          {record.socialMetadata.mentions.map((mention) => (
-            <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
-          ))}
-        </div>
-      ) : null}
-
-      {!campaign ? (
-        <p className="text-[11px] text-gray-400">
-          {chainSyncError || (isChainSyncing ? "Syncing live chain data..." : "Live chain data unavailable right now.")}
-        </p>
-      ) : null}
 
       <div className="campaign-card-footer">
         <div className="campaign-card-footer-meta">
