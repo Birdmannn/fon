@@ -38,6 +38,7 @@ function ensureOptionalRecipients(value: unknown) {
       handle?: unknown;
       amountLabel?: unknown;
       amountShannons?: unknown;
+      creditedUsdCents?: unknown;
     };
 
     if (
@@ -50,12 +51,17 @@ function ensureOptionalRecipients(value: unknown) {
       throw new Error(`settledRecipients[${index}] must include string address, username, handle, amountLabel, and amountShannons`);
     }
 
+    const creditedUsdCents = typeof candidate.creditedUsdCents === "number" && Number.isInteger(candidate.creditedUsdCents) && candidate.creditedUsdCents >= 0
+      ? candidate.creditedUsdCents
+      : null;
+
     return {
       address: candidate.address.trim(),
       username: candidate.username.trim(),
       handle: candidate.handle.trim(),
       amountLabel: candidate.amountLabel.trim(),
       amountShannons: candidate.amountShannons.trim(),
+      creditedUsdCents,
     };
   });
 }
@@ -70,6 +76,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     const body = (await request.json()) as {
       settlementTxHash?: unknown;
       settledAt?: unknown;
+      settledByAddress?: unknown;
       soldTicketCount?: unknown;
       settledParticipantCount?: unknown;
       settledRecipients?: unknown;
@@ -82,6 +89,9 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     const settledAt = typeof body?.settledAt === "string" && body.settledAt.trim()
       ? body.settledAt.trim()
       : new Date().toISOString();
+    const settledByAddress = typeof body?.settledByAddress === "string" && body.settledByAddress.trim()
+      ? normalizeAddress(body.settledByAddress)
+      : null;
     const soldTicketCount = typeof body?.soldTicketCount === "string" && body.soldTicketCount.trim()
       ? body.soldTicketCount.trim()
       : null;
@@ -109,37 +119,27 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       }
     }
 
-    const result = await collection.updateOne(
-      { _id: new ObjectId(id) },
-      {
-        $set: {
-          settlementTxHash: settlementTxHash.trim(),
-          settledAt,
-          soldTicketCount,
-          settledParticipantCount,
-          settledRecipients,
-          updatedAt: new Date(),
-        },
-      }
-    );
-
-    if (result.matchedCount === 0) {
-      return badRequest("Campaign record not found", 404);
-    }
-
+    let nextSettledRecipients = settledRecipients;
     if (usdPerCkb !== null && settledRecipients && settledRecipients.length > 0) {
       const userProfilesCollection = await getUserProfilesCollection();
       const recipientTotals = new Map<string, number>();
       const creditMarkers = new Map<string, string>();
 
-      for (const recipient of settledRecipients) {
+      nextSettledRecipients = settledRecipients.map((recipient) => {
+        const amountUsdCents = convertShannonsToUsdCents(BigInt(recipient.amountShannons), usdPerCkb);
+        return {
+          ...recipient,
+          creditedUsdCents: amountUsdCents,
+        };
+      });
+
+      for (const recipient of nextSettledRecipients) {
         const normalizedAddress = normalizeAddress(recipient.address);
         if (!normalizedAddress) {
           continue;
         }
 
-        const amountShannons = BigInt(recipient.amountShannons);
-        const amountUsdCents = convertShannonsToUsdCents(amountShannons, usdPerCkb);
+        const amountUsdCents = recipient.creditedUsdCents ?? 0;
         recipientTotals.set(normalizedAddress, (recipientTotals.get(normalizedAddress) ?? 0) + amountUsdCents);
         creditMarkers.set(normalizedAddress, `adsfSettlementCredits.${settlementCreditKey}`);
       }
@@ -190,7 +190,31 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       );
     }
 
-    return NextResponse.json({ ok: true, settledAt, settlementTxHash: settlementTxHash.trim() });
+    const result = await collection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          settlementTxHash: settlementTxHash.trim(),
+          settledAt,
+          settledByAddress,
+          soldTicketCount,
+          settledParticipantCount,
+          settledRecipients: nextSettledRecipients,
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    if (result.matchedCount === 0) {
+      return badRequest("Campaign record not found", 404);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      settledAt,
+      settlementTxHash: settlementTxHash.trim(),
+      settledRecipients: nextSettledRecipients,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to mark campaign as settled";
     return NextResponse.json({ error: message }, { status: 500 });

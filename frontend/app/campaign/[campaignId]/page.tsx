@@ -1061,6 +1061,7 @@ export default function CampaignDetailPage() {
           onStepChange={setCreateModalStep}
           showCreateModal={showCreateModal}
           isCreateModalClosing={isCreateModalClosing}
+          availableFbars={currentUserProfile?.fbars}
         />
       </div>
     </main>

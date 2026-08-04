@@ -38,8 +38,12 @@ type CampaignRecordPayload = {
   txHash?: unknown;
   publishError?: unknown;
   randomnessPreimage?: unknown;
+  activatedTxHash?: unknown;
+  activatedAt?: unknown;
+  activatedByAddress?: unknown;
   settlementTxHash?: unknown;
   settledAt?: unknown;
+  settledByAddress?: unknown;
   soldTicketCount?: unknown;
   settledParticipantCount?: unknown;
   settledRecipients?: unknown;
@@ -128,7 +132,12 @@ function ensureOptionalRecipients(value: unknown) {
       handle?: unknown;
       amountLabel?: unknown;
       amountShannons?: unknown;
+      creditedUsdCents?: unknown;
     };
+
+    const creditedUsdCents = typeof candidate.creditedUsdCents === "number" && Number.isInteger(candidate.creditedUsdCents) && candidate.creditedUsdCents >= 0
+      ? candidate.creditedUsdCents
+      : null;
 
     return {
       address: ensureString(candidate.address, `settledRecipients[${index}].address`).trim(),
@@ -136,6 +145,7 @@ function ensureOptionalRecipients(value: unknown) {
       handle: ensureString(candidate.handle, `settledRecipients[${index}].handle`).trim(),
       amountLabel: ensureString(candidate.amountLabel, `settledRecipients[${index}].amountLabel`).trim(),
       amountShannons: ensureString(candidate.amountShannons, `settledRecipients[${index}].amountShannons`).trim(),
+      creditedUsdCents,
     };
   });
 }
@@ -227,8 +237,12 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const creatorAddress = ensureOptionalString(payload.creatorAddress, "creatorAddress");
   const creatorHandle = ensureOptionalString(payload.creatorHandle, "creatorHandle");
   const randomnessPreimage = ensureOptionalString(payload.randomnessPreimage, "randomnessPreimage");
+  const activatedTxHash = ensureOptionalString(payload.activatedTxHash, "activatedTxHash");
+  const activatedAt = ensureOptionalString(payload.activatedAt, "activatedAt");
+  const activatedByAddress = ensureOptionalString(payload.activatedByAddress, "activatedByAddress");
   const settlementTxHash = ensureOptionalString(payload.settlementTxHash, "settlementTxHash");
   const settledAt = ensureOptionalString(payload.settledAt, "settledAt");
+  const settledByAddress = ensureOptionalString(payload.settledByAddress, "settledByAddress");
   const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
@@ -242,6 +256,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     chainCreatedAt,
     campaignType,
     summaryDraft,
+    // Preserve transaction-history metadata on initial record creation.
     argsDraft: {
       taskStartDelayHours,
       taskDurationHours,
@@ -271,8 +286,12 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     txHash,
     publishError,
     randomnessPreimage,
+    activatedTxHash,
+    activatedAt,
+    activatedByAddress,
     settlementTxHash,
     settledAt,
+    settledByAddress,
     soldTicketCount,
     settledParticipantCount,
     settledRecipients,

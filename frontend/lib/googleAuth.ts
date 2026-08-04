@@ -1,6 +1,8 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 
-import { ClientPublicTestnet, Signature, Signer, SignerCkbPublicKey, SignerSignType } from "@ckb-ccc/core";
+import { Signature, Signer, SignerCkbPublicKey, SignerSignType } from "@ckb-ccc/core";
+
+import { getPublicCkbClient } from "@/lib/ckbClient";
 
 const GOOGLE_OAUTH_SCOPE = ["openid", "email", "profile"].join(" ");
 const GOOGLE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -162,7 +164,7 @@ export async function verifyWalletSignature(params: {
     signType: SignerSignType;
   };
 }) {
-  const signer = new SignerCkbPublicKey(new ClientPublicTestnet(), params.signature.identity);
+  const signer = new SignerCkbPublicKey(getPublicCkbClient(), params.signature.identity);
   const addressObj = await signer.getRecommendedAddressObj();
   const derivedAddress = normalizeAddress(addressObj.toString());
   const expectedAddress = normalizeAddress(params.address);

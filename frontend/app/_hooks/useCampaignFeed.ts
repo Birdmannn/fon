@@ -4,6 +4,8 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { buildDefaultHandle, deriveDisplayStatus } from "@/lib/campaignDisplay";
+import type { CampaignRecord } from "@/app/_types/campaignRecords";
+export type { CampaignComment, CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildCampaignRecordIndexes,
   findCampaignRecord,
@@ -13,72 +15,6 @@ import {
 } from "@/lib/campaignIdentity";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
-
-export type CampaignComment = {
-  text: string;
-  creatorAddress?: string | null;
-  creatorHandle?: string | null;
-  createdAt?: string;
-};
-
-export type CampaignRecord = {
-  _id?: string;
-  title?: string;
-  description?: string;
-  campaignId?: string | null;
-  createdByHash?: string | null;
-  chainCreatedAt?: string | null;
-  campaignType?: number;
-  summaryDraft?: string;
-  argsDraft?: {
-    taskStartDelayHours?: string;
-    taskDurationHours?: string;
-    maxAmountCkb?: string;
-    auxAmountCkb?: string;
-    rewardCount?: string;
-  };
-  mountables?: {
-    forms?: {
-      enabled?: boolean;
-      formUrl?: string;
-      canonicalFormUrl?: string;
-      formId?: string;
-      validatedAt?: string;
-      payoutMode?: "assured" | "random_subset" | "overflow_only";
-      proofMode?: "external_proof";
-      guaranteedSlots?: string;
-      randomWinnerCount?: string;
-      proofInstructions?: string;
-    } | null;
-  };
-  socialMetadata?: {
-    mentions?: string[];
-    comments?: unknown[];
-    likeCount?: number;
-    likedByAddresses?: string[];
-    bookmarkCount?: number;
-    reshareCount?: number;
-    resharedByAddresses?: string[];
-  };
-  creatorAddress?: string | null;
-  creatorHandle?: string | null;
-  status?: "draft" | "published" | "publish_failed";
-  txHash?: string | null;
-  publishError?: string | null;
-  randomnessPreimage?: string | null;
-  activatedTxHash?: string | null;
-  settlementTxHash?: string | null;
-  settledAt?: string | null;
-  soldTicketCount?: string | null;
-  settledParticipantCount?: string | null;
-  settledRecipients?: Array<{
-    address: string;
-    username: string;
-    handle: string;
-    amountLabel: string;
-    amountShannons: string;
-  }> | null;
-};
 
 export type MergedCampaign = {
   campaign: CampaignCell;

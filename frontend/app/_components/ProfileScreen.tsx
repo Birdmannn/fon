@@ -21,6 +21,8 @@ import AppShellHeader from "@/app/_components/AppShellHeader";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
+import ProfileFreightsSection from "@/app/_components/ProfileFreightsSection";
+import ProfileTransactionsSection from "@/app/_components/ProfileTransactionsSection";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
@@ -35,6 +37,8 @@ import {
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
+import { useProfileFreights } from "@/app/_hooks/useProfileFreights";
+import { useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
 import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
@@ -48,6 +52,13 @@ const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 
 type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
+type ProfileTabKey = "activity" | "freights" | "transactions";
+
+const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
+  { key: "activity", label: "Activity" },
+  { key: "freights", label: "Freights" },
+  { key: "transactions", label: "Transactions" },
+];
 
 type ProfileScreenProps = {
   targetHandle?: string | null;
@@ -70,6 +81,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
   const [leaderboardScope, setLeaderboardScope] = useState<"weekly" | "overall">("weekly");
+  const [activeTab, setActiveTab] = useState<ProfileTabKey>("activity");
   const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalStateRef = useRef<() => void>(() => undefined);
@@ -118,13 +130,40 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
+  const profileAddress = currentUserProfile?.address ?? (targetHandle ? null : (walletAddress || null));
+
   const {
     analytics: profileAnalytics,
     error: profileAnalyticsError,
     isLoading: isProfileAnalyticsLoading,
   } = useProfileAnalytics({
-    address: targetHandle ? null : (currentUserProfile?.address ?? walletAddress ?? null),
-    handle: targetHandle ? targetHandle : null,
+    address: profileAddress,
+    handle: profileAddress ? null : targetHandle,
+  });
+  const {
+    error: profileFreightsError,
+    hasLoaded: hasLoadedProfileFreights,
+    isLoading: isProfileFreightsLoading,
+    isRefreshing: isProfileFreightsRefreshing,
+    refresh: refreshProfileFreights,
+    rows: profileFreightRows,
+  } = useProfileFreights({
+    address: profileAddress,
+    enabled: activeTab === "freights",
+    handle: profileAddress ? null : targetHandle,
+  });
+  const {
+    coverage: profileTransactionsCoverage,
+    error: profileTransactionsError,
+    hasLoaded: hasLoadedProfileTransactions,
+    isLoading: isProfileTransactionsLoading,
+    isRefreshing: isProfileTransactionsRefreshing,
+    refresh: refreshProfileTransactions,
+    rows: profileTransactionRows,
+  } = useProfileTransactions({
+    address: profileAddress,
+    enabled: activeTab === "transactions",
+    handle: profileAddress ? null : targetHandle,
   });
   const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
 
@@ -943,7 +982,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <section className="profile-summary-card">
                 <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
                   <div className="profile-rank-row">
-                    <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: 0 FBARS</p>
+                    <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: {currentUserProfile?.fbars ?? 0} FBARS</p>
                     <button
                       type="button"
                       className="profile-rank-link"
@@ -988,11 +1027,64 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             </div>
 
             {currentUserProfile ? (
-              <ProfileAnalyticsSection
-                analytics={profileAnalytics}
-                error={profileAnalyticsError}
-                loading={isProfileAnalyticsLoading}
-              />
+              <>
+                <div className="profile-tab-shell">
+                  <div className="profile-tab-bar" role="tablist" aria-label="Profile views">
+                    {PROFILE_TABS.map((tab) => {
+                      const isSelected = activeTab === tab.key;
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          role="tab"
+                          aria-controls={`profile-tab-panel-${tab.key}`}
+                          aria-selected={isSelected}
+                          id={`profile-tab-${tab.key}`}
+                          className={`profile-tab-button ${isSelected ? "profile-tab-button-active" : ""}`.trim()}
+                          onClick={() => setActiveTab(tab.key)}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {activeTab === "activity" ? (
+                  <div id="profile-tab-panel-activity" aria-labelledby="profile-tab-activity" role="tabpanel">
+                    <ProfileAnalyticsSection
+                      analytics={profileAnalytics}
+                      error={profileAnalyticsError}
+                      loading={isProfileAnalyticsLoading}
+                    />
+                  </div>
+                ) : null}
+                {activeTab === "freights" ? (
+                  <div id="profile-tab-panel-freights" aria-labelledby="profile-tab-freights">
+                    <ProfileFreightsSection
+                      error={profileFreightsError}
+                      hasLoaded={hasLoadedProfileFreights}
+                      isRefreshing={isProfileFreightsRefreshing}
+                      loading={isProfileFreightsLoading}
+                      onRefresh={refreshProfileFreights}
+                      rows={profileFreightRows}
+                    />
+                  </div>
+                ) : null}
+                {activeTab === "transactions" ? (
+                  <div id="profile-tab-panel-transactions" aria-labelledby="profile-tab-transactions">
+                    <ProfileTransactionsSection
+                      coverage={profileTransactionsCoverage}
+                      error={profileTransactionsError}
+                      hasLoaded={hasLoadedProfileTransactions}
+                      isRefreshing={isProfileTransactionsRefreshing}
+                      loading={isProfileTransactionsLoading}
+                      onRefresh={refreshProfileTransactions}
+                      rows={profileTransactionRows}
+                    />
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </>
         )}
@@ -1074,6 +1166,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onStepChange={setCreateModalStep}
         showCreateModal={showCreateModal}
         isCreateModalClosing={isCreateModalClosing}
+        availableFbars={currentUserProfile?.fbars}
       />
     </main>
   );

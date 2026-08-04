@@ -200,16 +200,7 @@ export default function ProfileAnalyticsSection({ analytics, error, loading }: P
   }, [analytics, hasActivity]);
 
   return (
-    <section className="profile-analytics-section" aria-labelledby="profile-analytics-title">
-      <div className="profile-analytics-header">
-        <h2 id="profile-analytics-title" className="profile-analytics-title">Activity</h2>
-        <p className="profile-analytics-range-label">
-          {analytics
-            ? `Last 90 days · ${formatDisplayDate(analytics.range.startDate)} – ${formatDisplayDate(analytics.range.endDate)}`
-            : "Last 90 days"}
-        </p>
-      </div>
-
+    <section className="profile-analytics-section">
       {loading ? (
         <div className="profile-analytics-state profile-analytics-state-loading">
           <ThreeDotLoader label="Loading activity graph" inline />

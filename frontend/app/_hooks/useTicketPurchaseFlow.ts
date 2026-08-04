@@ -91,10 +91,15 @@ export function useTicketPurchaseFlow({ onSubmissionError, onTicketBuySuccess }:
         const activateTxHash = await sendUpdateCampaignStatus(signer, ticketPurchaseCampaign);
 
         if (ticketPurchaseRecord?._id) {
+          const activatedByAddress = await signer.getRecommendedAddress();
           await fetch(`/api/campaign-records/${ticketPurchaseRecord._id}/activate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ activatedTxHash: activateTxHash }),
+            body: JSON.stringify({
+              activatedAt: new Date().toISOString(),
+              activatedByAddress,
+              activatedTxHash: activateTxHash,
+            }),
           }).catch(() => {
             // Non-fatal — the on-chain state is the source of truth
           });

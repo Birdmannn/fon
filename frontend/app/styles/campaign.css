@@ -130,6 +130,35 @@
   outline: none;
 }
 
+.campaign-detail-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.campaign-detail-card-title {
+  margin: 0;
+  font-size: 2.1rem;
+  line-height: 1.1;
+  font-weight: 700;
+  color: #111827;
+}
+
+.campaign-detail-card-byline {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 2.1rem;
+  line-height: 1.1;
+  color: #9ca3af;
+}
+
+.campaign-detail-card-byline .campaign-card-handle-link {
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .campaign-feed-loading {
   display: flex;
   align-items: center;
@@ -513,12 +542,34 @@
   transition: transform 180ms ease, font-weight 180ms ease;
 }
 
+.campaign-card-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.campaign-card-body-feed {
+  gap: 0.6rem;
+}
+
+.campaign-card-body-detail {
+  gap: 0.75rem;
+}
+
 .campaign-card-content {
   display: flex;
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  gap: 0.5rem;
+}
+
+.campaign-card-content-feed {
+  gap: 0.25rem;
+}
+
+.campaign-card-content-detail {
+  gap: 0.35rem;
 }
 
 .campaign-card-description-wrap {
@@ -534,7 +585,6 @@
 .campaign-card-description {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
   font-size: 0.875rem;
   line-height: 1.5rem;
   color: #374151;
@@ -543,16 +593,38 @@
   transition: transform 180ms ease, font-weight 180ms ease;
 }
 
+.campaign-card-description-feed {
+  gap: 0.15rem;
+}
+
+.campaign-card-description-detail {
+  gap: 0.25rem;
+  font-size: 1.05rem;
+  line-height: 1.52rem;
+}
+
 .campaign-card-description-line {
   margin: 0;
   white-space: pre-wrap;
 }
 
 .campaign-card-description-quote {
-  padding-left: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.3rem 0.75rem 0.3rem 0.85rem;
   border-left: 2px solid #9ca3af;
+  background: #f3f4f6;
   color: #4b5563;
+}
+
+.campaign-card-description-quote-line {
+  margin: 0;
   white-space: pre-wrap;
+}
+
+.campaign-card-description-quote-spacer {
+  min-height: 1.5rem;
 }
 
 .campaign-card-description-spacer {
@@ -803,7 +875,7 @@
 
 .campaign-detail-content {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 3.2fr) minmax(0, 0.8fr);
   gap: 1rem;
   align-items: stretch;
   min-height: 0;
@@ -1066,6 +1138,10 @@
 }
 
 @media (max-width: 960px) {
+  .campaign-detail-card-title {
+    font-size: clamp(1.5rem, 7vw, 2.1rem);
+  }
+
   .campaign-shell-width,
   .campaign-shell-width-expanded,
   .campaign-shell-width-md,

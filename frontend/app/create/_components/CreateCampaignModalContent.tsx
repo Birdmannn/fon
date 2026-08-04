@@ -279,6 +279,7 @@ type CreateCampaignModalContentProps = {
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
   onMountableSelectionRequired?: () => void;
   onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean }) => void;
+  availableFbars?: number;
 };
 
 function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
@@ -329,6 +330,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onPublishSuccess,
   onMountableSelectionRequired,
   onMountableSelectionStateChange,
+  availableFbars,
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
@@ -1671,6 +1673,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
+    if (typeof availableFbars === "number" && availableFbars < 20) {
+      setStatus("error");
+      setErrorMsg("At least 20 FBARS are required to create a freight");
+      return;
+    }
+
     const summaryToPublish = isModal
       ? truncateToUtf8Bytes(activeReviewSummary.trim(), SUMMARY_MAX_BYTES)
       : generatedOnchainSummary;
@@ -1711,6 +1719,43 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         summary: summaryToPublish,
         randomnessHash,
       });
+
+      const creatorAddress = await signer.getRecommendedAddress();
+      if (!creatorAddress) {
+        throw new Error("Unable to resolve wallet address for FBARS update");
+      }
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address: creatorAddress, purpose: "freight-create" }),
+      });
+      const noncePayload = await nonceResponse.json().catch(() => null);
+      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+        throw new Error(noncePayload?.error ?? "Failed to create freight FBARS nonce");
+      }
+      const signature = await signer.signMessage(noncePayload.nonce);
+      const freightFbarsResponse = await fetch("/api/fbars/freight-create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: creatorAddress,
+          nonce: noncePayload.nonce,
+          txHash: publishResult.txHash,
+          nonceSignature: {
+            signature: signature.signature,
+            identity: signature.identity,
+            signType: signature.signType,
+          },
+        }),
+      });
+      const freightFbarsPayload = await freightFbarsResponse.json().catch(() => null);
+      if (!freightFbarsResponse.ok) {
+        throw new Error(freightFbarsPayload?.error ?? "Failed to apply freight creation FBARS cost");
+      }
 
       if (isModal) {
         const draftRecordId = stagedDraftRecordId ?? activeDraftRecordId;

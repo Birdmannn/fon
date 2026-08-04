@@ -10,6 +10,7 @@ export type LeaderboardEntry = {
   handle: string;
   displayName: string;
   fbars: number;
+  weeklyFbars: number;
   adsfUsdCents: number;
   rank: number;
   updatedAt?: string | null;
@@ -22,6 +23,10 @@ export type UserProfile = LeaderboardEntry & {
   canEditWeeklyMarquee: boolean;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
+  weeklyMarqueeEditsUsed: number;
+  weeklyMarqueeEditsRemaining: number;
+  weeklyMarqueeMaxEdits: number;
+  hasSeededWalletFbars: boolean;
 };
 
 export type WeeklyMarqueeOwner = {
@@ -30,6 +35,24 @@ export type WeeklyMarqueeOwner = {
   handle: string;
   displayName: string;
 };
+
+type UserProfilePayload = {
+  profile?: UserProfile | null;
+  leaderboard?: LeaderboardEntry[];
+  weeklyLeaderboard?: LeaderboardEntry[];
+  overallLeaderboard?: LeaderboardEntry[];
+  activeWeeklyMarqueeMessage?: string | null;
+  activeWeeklyMarqueeWeekKey?: string | null;
+  activeWeeklyMarqueeOwner?: WeeklyMarqueeOwner | null;
+  activeWeeklyMarqueeEditsUsed?: number;
+  activeWeeklyMarqueeEditsRemaining?: number;
+  activeWeeklyMarqueeMaxEdits?: number;
+  error?: string;
+};
+
+function parseCount(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
 
 export function formatAdsfUsdParts(valueUsdCents: number | null | undefined) {
   if (typeof valueUsdCents !== "number" || !Number.isFinite(valueUsdCents) || valueUsdCents < 0) {
@@ -48,22 +71,88 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
   const [activeWeeklyMarqueeMessage, setActiveWeeklyMarqueeMessage] = useState<string | null>(null);
   const [activeWeeklyMarqueeWeekKey, setActiveWeeklyMarqueeWeekKey] = useState<string | null>(null);
   const [activeWeeklyMarqueeOwner, setActiveWeeklyMarqueeOwner] = useState<WeeklyMarqueeOwner | null>(null);
+  const [activeWeeklyMarqueeEditsUsed, setActiveWeeklyMarqueeEditsUsed] = useState(0);
+  const [activeWeeklyMarqueeEditsRemaining, setActiveWeeklyMarqueeEditsRemaining] = useState(0);
+  const [activeWeeklyMarqueeMaxEdits, setActiveWeeklyMarqueeMaxEdits] = useState(2);
   const [userProfileError, setUserProfileError] = useState("");
   const [isUserProfileLoading, setIsUserProfileLoading] = useState(false);
   const [isSavingUserProfile, setIsSavingUserProfile] = useState(false);
+  const [isSeedingWalletFbars, setIsSeedingWalletFbars] = useState(false);
+
+  const resetState = useCallback(() => {
+    setCurrentUserProfile(null);
+    setLeaderboard([]);
+    setWeeklyLeaderboard([]);
+    setOverallLeaderboard([]);
+    setActiveWeeklyMarqueeMessage(null);
+    setActiveWeeklyMarqueeWeekKey(null);
+    setActiveWeeklyMarqueeOwner(null);
+    setActiveWeeklyMarqueeEditsUsed(0);
+    setActiveWeeklyMarqueeEditsRemaining(0);
+    setActiveWeeklyMarqueeMaxEdits(2);
+  }, []);
+
+  const applyProfilePayload = useCallback((payload: UserProfilePayload | null) => {
+    const nextWeeklyLeaderboard = Array.isArray(payload?.weeklyLeaderboard)
+      ? payload.weeklyLeaderboard as LeaderboardEntry[]
+      : Array.isArray(payload?.leaderboard)
+        ? payload.leaderboard as LeaderboardEntry[]
+        : [];
+    const nextOverallLeaderboard = Array.isArray(payload?.overallLeaderboard)
+      ? payload.overallLeaderboard as LeaderboardEntry[]
+      : [];
+
+    setCurrentUserProfile(payload?.profile ?? null);
+    setLeaderboard(nextWeeklyLeaderboard);
+    setWeeklyLeaderboard(nextWeeklyLeaderboard);
+    setOverallLeaderboard(nextOverallLeaderboard);
+    setActiveWeeklyMarqueeMessage(typeof payload?.activeWeeklyMarqueeMessage === "string" ? payload.activeWeeklyMarqueeMessage : null);
+    setActiveWeeklyMarqueeWeekKey(typeof payload?.activeWeeklyMarqueeWeekKey === "string" ? payload.activeWeeklyMarqueeWeekKey : null);
+    setActiveWeeklyMarqueeOwner(payload?.activeWeeklyMarqueeOwner ?? null);
+    setActiveWeeklyMarqueeEditsUsed(parseCount(payload?.activeWeeklyMarqueeEditsUsed));
+    setActiveWeeklyMarqueeEditsRemaining(parseCount(payload?.activeWeeklyMarqueeEditsRemaining));
+    setActiveWeeklyMarqueeMaxEdits(parseCount(payload?.activeWeeklyMarqueeMaxEdits, 2));
+  }, []);
+
+  const loadProfile = useCallback(async () => {
+    const response = targetHandle
+      ? await fetch(`/api/user-profiles?handle=${encodeURIComponent(targetHandle)}`, {
+          cache: "no-store",
+        })
+      : await (async () => {
+          if (!signer) {
+            throw new Error("Connect a wallet first");
+          }
+
+          const address = await signer.getRecommendedAddress();
+          if (!address) {
+            throw new Error("Unable to resolve wallet address");
+          }
+
+          return fetch("/api/user-profiles", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ address }),
+          });
+        })();
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "Failed to load user profile");
+    }
+
+    applyProfilePayload(payload);
+    return payload;
+  }, [applyProfilePayload, signer, targetHandle]);
 
   useEffect(() => {
     if (!signer && !targetHandle) {
-      setCurrentUserProfile(null);
-      setLeaderboard([]);
-      setWeeklyLeaderboard([]);
-      setOverallLeaderboard([]);
-      setActiveWeeklyMarqueeMessage(null);
-      setActiveWeeklyMarqueeWeekKey(null);
-      setActiveWeeklyMarqueeOwner(null);
+      resetState();
       setUserProfileError("");
       setIsUserProfileLoading(false);
       setIsSavingUserProfile(false);
+      setIsSeedingWalletFbars(false);
       return;
     }
 
@@ -71,75 +160,75 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     setIsUserProfileLoading(true);
     setUserProfileError("");
 
-    void (async () => {
-      try {
-        const response = targetHandle
-          ? await fetch(`/api/user-profiles?handle=${encodeURIComponent(targetHandle)}`, {
-              cache: "no-store",
-            })
-          : await (async () => {
-              if (!signer) {
-                throw new Error("Connect a wallet first");
-              }
-
-              const address = await signer.getRecommendedAddress();
-              if (!address) {
-                throw new Error("Unable to resolve wallet address");
-              }
-
-              return fetch("/api/user-profiles", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ address }),
-              });
-            })();
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(payload?.error ?? "Failed to load user profile");
-        }
-
-        if (!cancelled) {
-          const nextWeeklyLeaderboard = Array.isArray(payload?.weeklyLeaderboard)
-            ? payload.weeklyLeaderboard as LeaderboardEntry[]
-            : Array.isArray(payload?.leaderboard)
-              ? payload.leaderboard as LeaderboardEntry[]
-              : [];
-          const nextOverallLeaderboard = Array.isArray(payload?.overallLeaderboard)
-            ? payload.overallLeaderboard as LeaderboardEntry[]
-            : [];
-
-          setCurrentUserProfile(payload?.profile ?? null);
-          setLeaderboard(nextWeeklyLeaderboard);
-          setWeeklyLeaderboard(nextWeeklyLeaderboard);
-          setOverallLeaderboard(nextOverallLeaderboard);
-          setActiveWeeklyMarqueeMessage(typeof payload?.activeWeeklyMarqueeMessage === "string" ? payload.activeWeeklyMarqueeMessage : null);
-          setActiveWeeklyMarqueeWeekKey(typeof payload?.activeWeeklyMarqueeWeekKey === "string" ? payload.activeWeeklyMarqueeWeekKey : null);
-          setActiveWeeklyMarqueeOwner(payload?.activeWeeklyMarqueeOwner ?? null);
-        }
-      } catch (error) {
+    void loadProfile()
+      .catch((error) => {
         if (!cancelled) {
           setUserProfileError(error instanceof Error ? error.message : "Failed to load user profile");
-          setCurrentUserProfile(null);
-          setLeaderboard([]);
-          setWeeklyLeaderboard([]);
-          setOverallLeaderboard([]);
-          setActiveWeeklyMarqueeMessage(null);
-          setActiveWeeklyMarqueeWeekKey(null);
-          setActiveWeeklyMarqueeOwner(null);
+          resetState();
         }
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) {
           setIsUserProfileLoading(false);
         }
-      }
-    })();
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [signer, targetHandle]);
+  }, [loadProfile, resetState, signer, targetHandle]);
+
+  const seedWalletFbars = useCallback(async () => {
+    if (!signer || targetHandle) {
+      return null;
+    }
+
+    const address = await signer.getRecommendedAddress();
+    if (!address) {
+      throw new Error("Unable to resolve wallet address");
+    }
+
+    setIsSeedingWalletFbars(true);
+    try {
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address, purpose: "wallet-seed" }),
+      });
+      const noncePayload = await nonceResponse.json().catch(() => null);
+      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+        throw new Error(noncePayload?.error ?? "Failed to create wallet seed nonce");
+      }
+
+      const signature = await signer.signMessage(noncePayload.nonce);
+      const response = await fetch("/api/user-profiles/seed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address,
+          nonce: noncePayload.nonce,
+          signature: {
+            signature: signature.signature,
+            identity: signature.identity,
+            signType: signature.signType,
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to seed wallet FBARS");
+      }
+
+      await loadProfile();
+      return payload;
+    } finally {
+      setIsSeedingWalletFbars(false);
+    }
+  }, [loadProfile, signer, targetHandle]);
 
   const saveDisplayName = useCallback(async (displayName: string) => {
     if (!signer) {
@@ -167,22 +256,7 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
         throw new Error(payload?.error ?? "Failed to update display name");
       }
 
-      const nextWeeklyLeaderboard = Array.isArray(payload?.weeklyLeaderboard)
-        ? payload.weeklyLeaderboard as LeaderboardEntry[]
-        : Array.isArray(payload?.leaderboard)
-          ? payload.leaderboard as LeaderboardEntry[]
-          : [];
-      const nextOverallLeaderboard = Array.isArray(payload?.overallLeaderboard)
-        ? payload.overallLeaderboard as LeaderboardEntry[]
-        : [];
-
-      setCurrentUserProfile(payload?.profile ?? null);
-      setLeaderboard(nextWeeklyLeaderboard);
-      setWeeklyLeaderboard(nextWeeklyLeaderboard);
-      setOverallLeaderboard(nextOverallLeaderboard);
-      setActiveWeeklyMarqueeMessage(typeof payload?.activeWeeklyMarqueeMessage === "string" ? payload.activeWeeklyMarqueeMessage : null);
-      setActiveWeeklyMarqueeWeekKey(typeof payload?.activeWeeklyMarqueeWeekKey === "string" ? payload.activeWeeklyMarqueeWeekKey : null);
-      setActiveWeeklyMarqueeOwner(payload?.activeWeeklyMarqueeOwner ?? null);
+      applyProfilePayload(payload);
       return payload?.profile as UserProfile | null;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update display name";
@@ -191,7 +265,7 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     } finally {
       setIsSavingUserProfile(false);
     }
-  }, [signer]);
+  }, [applyProfilePayload, signer]);
 
   const saveWeeklyMarqueeMessage = useCallback(async (weeklyMarqueeMessage: string) => {
     if (!signer) {
@@ -207,34 +281,41 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     setUserProfileError("");
 
     try {
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address, purpose: "marquee-edit" }),
+      });
+      const noncePayload = await nonceResponse.json().catch(() => null);
+      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+        throw new Error(noncePayload?.error ?? "Failed to create marquee edit nonce");
+      }
+
+      const signature = await signer.signMessage(noncePayload.nonce);
       const response = await fetch("/api/user-profiles", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ address, weeklyMarqueeMessage }),
+        body: JSON.stringify({
+          address,
+          weeklyMarqueeMessage,
+          nonce: noncePayload.nonce,
+          signature: {
+            signature: signature.signature,
+            identity: signature.identity,
+            signType: signature.signType,
+          },
+        }),
       });
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to update weekly marquee message");
       }
 
-      const nextWeeklyLeaderboard = Array.isArray(payload?.weeklyLeaderboard)
-        ? payload.weeklyLeaderboard as LeaderboardEntry[]
-        : Array.isArray(payload?.leaderboard)
-          ? payload.leaderboard as LeaderboardEntry[]
-          : [];
-      const nextOverallLeaderboard = Array.isArray(payload?.overallLeaderboard)
-        ? payload.overallLeaderboard as LeaderboardEntry[]
-        : [];
-
-      setCurrentUserProfile(payload?.profile ?? null);
-      setLeaderboard(nextWeeklyLeaderboard);
-      setWeeklyLeaderboard(nextWeeklyLeaderboard);
-      setOverallLeaderboard(nextOverallLeaderboard);
-      setActiveWeeklyMarqueeMessage(typeof payload?.activeWeeklyMarqueeMessage === "string" ? payload.activeWeeklyMarqueeMessage : null);
-      setActiveWeeklyMarqueeWeekKey(typeof payload?.activeWeeklyMarqueeWeekKey === "string" ? payload.activeWeeklyMarqueeWeekKey : null);
-      setActiveWeeklyMarqueeOwner(payload?.activeWeeklyMarqueeOwner ?? null);
+      applyProfilePayload(payload);
       return payload?.profile as UserProfile | null;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update weekly marquee message";
@@ -243,19 +324,24 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     } finally {
       setIsSavingUserProfile(false);
     }
-  }, [signer]);
+  }, [applyProfilePayload, signer]);
 
   return {
+    activeWeeklyMarqueeEditsRemaining,
+    activeWeeklyMarqueeEditsUsed,
+    activeWeeklyMarqueeMaxEdits,
     activeWeeklyMarqueeMessage,
     activeWeeklyMarqueeOwner,
     activeWeeklyMarqueeWeekKey,
     currentUserProfile,
     isSavingUserProfile,
+    isSeedingWalletFbars,
     isUserProfileLoading,
     leaderboard,
     overallLeaderboard,
     saveDisplayName,
     saveWeeklyMarqueeMessage,
+    seedWalletFbars,
     setCurrentUserProfile,
     userProfileError,
     weeklyLeaderboard,
