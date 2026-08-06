@@ -1,8 +1,14 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 
 import { Signature, Signer, SignerCkbPublicKey, SignerSignType } from "@ckb-ccc/core";
+import { type CredentialKeyType, verifyCredential } from "@joyid/ckb";
+import { type SigningAlg } from "@joyid/common";
 
 import { getPublicCkbClient } from "@/lib/ckbClient";
+
+const joyidServerUrl = process.env.NEXT_PUBLIC_CKB_NETWORK?.trim().toLowerCase() === "mainnet"
+  ? "https://api.joy.id/api/v1"
+  : "https://api.testnet.joyid.dev/api/v1";
 
 const GOOGLE_OAUTH_SCOPE = ["openid", "email", "profile"].join(" ");
 const GOOGLE_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -155,6 +161,39 @@ export function buildGoogleAuthorizeUrl(state: string) {
   return url.toString();
 }
 
+function parseWalletIdentity(identity: string, signType: SignerSignType):
+  | { publicKey: string }
+  | { keyType: CredentialKeyType; publicKey: string } {
+  if (signType !== SignerSignType.JoyId) {
+    return { publicKey: identity };
+  }
+
+  const parsed = JSON.parse(identity) as { keyType?: unknown; publicKey?: unknown };
+  if (typeof parsed.publicKey !== "string" || !parsed.publicKey.trim()) {
+    throw new Error("JoyID signature identity is missing a public key");
+  }
+  if (typeof parsed.keyType !== "string" || !parsed.keyType.trim()) {
+    throw new Error("JoyID signature identity is missing a key type");
+  }
+
+  return {
+    keyType: parsed.keyType.trim() as CredentialKeyType,
+    publicKey: parsed.publicKey.trim(),
+  };
+}
+
+function parseJoyIdSignaturePayload(signature: string): { alg: SigningAlg; message?: unknown; signature?: unknown } {
+  const parsed = JSON.parse(signature) as { alg?: unknown; message?: unknown; signature?: unknown };
+  if (parsed.alg !== -257 && parsed.alg !== -7) {
+    throw new Error("JoyID signature payload is missing alg");
+  }
+
+  return {
+    ...parsed,
+    alg: parsed.alg,
+  };
+}
+
 export async function verifyWalletSignature(params: {
   address: string;
   nonce: string;
@@ -164,10 +203,58 @@ export async function verifyWalletSignature(params: {
     signType: SignerSignType;
   };
 }) {
-  const signer = new SignerCkbPublicKey(getPublicCkbClient(), params.signature.identity);
-  const addressObj = await signer.getRecommendedAddressObj();
-  const derivedAddress = normalizeAddress(addressObj.toString());
+  console.log("[wallet-seed] verifyWalletSignature input", {
+    address: params.address,
+    nonce: params.nonce,
+    signature: {
+      identity: params.signature.identity,
+      signType: params.signature.signType,
+      signaturePreview: `${params.signature.signature.slice(0, 14)}…${params.signature.signature.slice(-10)}`,
+    },
+  });
+
+  const parsedIdentity = parseWalletIdentity(params.signature.identity, params.signature.signType);
   const expectedAddress = normalizeAddress(params.address);
+
+  let derivedAddress = expectedAddress;
+  if (params.signature.signType === SignerSignType.JoyId) {
+    if (!("keyType" in parsedIdentity)) {
+      throw new Error("JoyID signature identity is missing a key type");
+    }
+
+    const joyIdSignature = parseJoyIdSignaturePayload(params.signature.signature);
+    const credentialMatches = await verifyCredential(
+      {
+        address: expectedAddress,
+        alg: joyIdSignature.alg,
+        keyType: parsedIdentity.keyType,
+        pubkey: parsedIdentity.publicKey,
+      },
+      joyidServerUrl,
+    );
+
+    console.log("[wallet-seed] verifyWalletSignature JoyID credential match", {
+      credentialMatches,
+      expectedAddress,
+      keyType: parsedIdentity.keyType,
+      publicKeyPreview: `${parsedIdentity.publicKey.slice(0, 12)}…${parsedIdentity.publicKey.slice(-12)}`,
+      alg: joyIdSignature.alg,
+    });
+
+    if (!credentialMatches) {
+      throw new Error("JoyID credential does not match the provided address");
+    }
+  } else {
+    const signer = new SignerCkbPublicKey(getPublicCkbClient(), parsedIdentity.publicKey);
+    const addressObj = await signer.getRecommendedAddressObj();
+    derivedAddress = normalizeAddress(addressObj.toString());
+  }
+
+  console.log("[wallet-seed] verifyWalletSignature derived address", {
+    derivedAddress,
+    expectedAddress,
+  });
+
   if (derivedAddress !== expectedAddress) {
     throw new Error("Wallet signature identity does not match the provided address");
   }
@@ -177,6 +264,10 @@ export async function verifyWalletSignature(params: {
     params.signature.identity,
     params.signature.signType,
   ));
+
+  console.log("[wallet-seed] verifyWalletSignature verified", {
+    verified,
+  });
 
   if (!verified) {
     throw new Error("Wallet signature verification failed");

@@ -42,6 +42,7 @@ import { useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
 import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
+import { markWalletSeedIntent } from "@/lib/walletSeed";
 
 const INFO_MODAL_ANIMATION_MS = 620;
 const PROFILE_HERO_REVEAL_STEP_MS = 110;
@@ -66,6 +67,10 @@ type ProfileScreenProps = {
 
 export default function ProfileScreen({ targetHandle = null }: ProfileScreenProps) {
   const { open, disconnect, client } = ccc.useCcc();
+  const openWalletWithSeed = useCallback(() => {
+    markWalletSeedIntent();
+    open();
+  }, [open]);
   const signer = ccc.useSigner();
   const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
@@ -209,7 +214,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     initialInfoModalMode: "about",
-    openWallet: open,
+    openWallet: openWalletWithSeed,
     signer,
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -882,7 +887,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           infoModalClosing={isInfoModalClosing}
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
-          onConnect={open}
+          onConnect={openWalletWithSeed}
           onContainerClick={showCreateModal ? (event) => {
             if (event.target === event.currentTarget) {
               requestCloseCreateModal();
@@ -995,7 +1000,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
                     <div className="profile-usd-balance" aria-live="polite">
-                      <span>{adsfUsdParts?.whole ?? "--"}</span>
+                      <span>{adsfUsdParts?.whole ?? "--"} </span>
                       <span className="profile-usd-suffix">USD</span>
                     </div>
                   </div>

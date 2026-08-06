@@ -4,6 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ccc } from "@ckb-ccc/connector-react";
 
+import {
+  clearWalletSeedIntent,
+  finishWalletSeedAttempt,
+  hasWalletSeedIntent,
+  startWalletSeedAttempt,
+} from "@/lib/walletSeed";
+
 export type LeaderboardEntry = {
   address: string;
   username: string;
@@ -198,11 +205,26 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
         body: JSON.stringify({ address, purpose: "wallet-seed" }),
       });
       const noncePayload = await nonceResponse.json().catch(() => null);
+      console.log("[wallet-seed] client nonce response", {
+        address,
+        noncePayload,
+        ok: nonceResponse.ok,
+        status: nonceResponse.status,
+      });
       if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
         throw new Error(noncePayload?.error ?? "Failed to create wallet seed nonce");
       }
 
       const signature = await signer.signMessage(noncePayload.nonce);
+      console.log("[wallet-seed] client signMessage result", {
+        address,
+        nonce: noncePayload.nonce,
+        signature: {
+          identity: signature.identity,
+          signType: signature.signType,
+          signaturePreview: `${signature.signature.slice(0, 14)}…${signature.signature.slice(-10)}`,
+        },
+      });
       const response = await fetch("/api/user-profiles/seed", {
         method: "POST",
         headers: {
@@ -219,6 +241,12 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
         }),
       });
       const payload = await response.json().catch(() => null);
+      console.log("[wallet-seed] client seed response", {
+        address,
+        ok: response.ok,
+        payload,
+        status: response.status,
+      });
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to seed wallet FBARS");
       }
@@ -229,6 +257,41 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       setIsSeedingWalletFbars(false);
     }
   }, [loadProfile, signer, targetHandle]);
+
+  useEffect(() => {
+    if (!signer || targetHandle || isUserProfileLoading || isSeedingWalletFbars) {
+      return;
+    }
+
+    if (!currentUserProfile) {
+      return;
+    }
+
+    const address = currentUserProfile.address;
+
+    if (currentUserProfile.hasSeededWalletFbars) {
+      clearWalletSeedIntent();
+      finishWalletSeedAttempt(address);
+      return;
+    }
+
+    if (!hasWalletSeedIntent()) {
+      return;
+    }
+
+    if (!startWalletSeedAttempt(address)) {
+      return;
+    }
+
+    clearWalletSeedIntent();
+    void seedWalletFbars()
+      .catch((error) => {
+        setUserProfileError(error instanceof Error ? error.message : "Failed to seed wallet FBARS");
+      })
+      .finally(() => {
+        finishWalletSeedAttempt(address);
+      });
+  }, [currentUserProfile, isSeedingWalletFbars, isUserProfileLoading, seedWalletFbars, signer, targetHandle]);
 
   const saveDisplayName = useCallback(async (displayName: string) => {
     if (!signer) {

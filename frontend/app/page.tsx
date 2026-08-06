@@ -34,6 +34,7 @@ import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { SettlementModalData } from "@/app/_types/settlement";
 import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
+import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { type CampaignCell } from "@/lib/transactions";
 
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
@@ -55,6 +56,10 @@ const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 
 export default function Home() {
   const { open, disconnect, client } = ccc.useCcc();
+  const openWalletWithSeed = useCallback(() => {
+    markWalletSeedIntent();
+    open();
+  }, [open]);
   const signer = ccc.useSigner();
   const router = useRouter();
   const INFO_MODAL_ANIMATION_MS = 620;
@@ -214,7 +219,7 @@ export default function Home() {
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     initialInfoModalMode: "about",
-    openWallet: open,
+    openWallet: openWalletWithSeed,
     signer,
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -887,7 +892,7 @@ export default function Home() {
           infoModalClosing={isInfoModalClosing}
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
-          onConnect={open}
+          onConnect={openWalletWithSeed}
           onContainerClick={showCreateModal ? (event) => {
             if (event.target === event.currentTarget) {
               requestCloseCreateModal();

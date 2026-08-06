@@ -28,6 +28,7 @@ import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
+import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -63,6 +64,10 @@ type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-c
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
+  const openWalletWithSeed = useCallback(() => {
+    markWalletSeedIntent();
+    open();
+  }, [open]);
   const signer = ccc.useSigner();
   const params = useParams<{ campaignId: string }>();
   const encodedCampaignIdParam = Array.isArray(params.campaignId) ? (params.campaignId[0] ?? "") : (params.campaignId ?? "");
@@ -285,7 +290,7 @@ export default function CampaignDetailPage() {
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     initialInfoModalMode: "about",
-    openWallet: open,
+    openWallet: openWalletWithSeed,
     signer,
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -997,7 +1002,7 @@ export default function CampaignDetailPage() {
           infoModalClosing={isInfoModalClosing}
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
-          onConnect={open}
+          onConnect={openWalletWithSeed}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
