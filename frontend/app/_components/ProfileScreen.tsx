@@ -51,8 +51,9 @@ const PROFILE_INFO_FBARS_HEADING = "FBARS:";
 const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
+const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
+type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
 
 const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
@@ -108,6 +109,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsInfoModalClosing,
     setShowInfoModal,
     showInfoModal,
+    submissionSuccessTimerRef,
     keepInfoModalOpen,
   } = useInfoModalState({
     animationMs: INFO_MODAL_ANIMATION_MS,
@@ -232,6 +234,29 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setDisplayNameModalError("");
     setSubmissionErrorMessage("");
   }, [resetCreateInfoModalState]);
+
+  const openInsufficientFbarsInfoModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setInfoModalMode("insufficient-fbars");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    submissionSuccessTimerRef.current = setTimeout(() => {
+      closeInfoModal(resetInfoModalState);
+    }, 3000);
+  }, [
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    clearSubmissionSuccessTimer,
+    closeInfoModal,
+    resetInfoModalState,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+    submissionSuccessTimerRef,
+  ]);
 
   resetInfoModalStateRef.current = resetInfoModalState;
 
@@ -537,6 +562,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       <p className="mt-3 create-review-section-label text-red-500">Oops, an error occurred</p>
       <p className="create-info-constraint-item text-red-500 break-words">
         <span>{submissionErrorMessage}</span>
+      </p>
+    </div>
+  ) : infoModalMode === "insufficient-fbars" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Not enough FBARS</p>
+      <p className="create-info-constraint-item text-gray-500 break-words">
+        <span>{INSUFFICIENT_FBARS_MESSAGE}</span>
       </p>
     </div>
   ) : infoModalMode === "edit-display-name" ? (
@@ -879,7 +911,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <AppShellHeader
           className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : showCreateModal ? "Create freight info" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -1157,6 +1189,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onConstraintStatusChange={setConstraintStatus}
         onDraftListOpenChange={setIsCreateDraftListOpen}
         onDraftSelectionRequest={handleDraftSelectionRequest}
+        onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
         onMountableSelectionStateChange={({ formsSelected }) => {
           setFormsMountableSelected(formsSelected);

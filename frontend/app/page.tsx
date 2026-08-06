@@ -40,6 +40,7 @@ import { type CampaignCell } from "@/lib/transactions";
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
 const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
 const HOME_INFO_TYPES_HEADING = "Freight types:";
+const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 const HOME_INFO_TYPE_ITEMS = [
   "1. Simple Task — a basic freight for posting a task without pooled deposits.",
   "2. Funded Task — a task funded up front so rewards can be distributed from the pool.",
@@ -50,7 +51,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
 
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 
@@ -349,6 +350,44 @@ export default function Home() {
     setShowInfoModal(true);
   }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
 
+  const openInsufficientFbarsInfoModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setInfoModalMode("insufficient-fbars");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    submissionSuccessTimerRef.current = setTimeout(() => {
+      closeInfoModal(() => {
+        setInfoModalMode("about");
+        setSaveDraftPromptError("");
+        setSubmissionSuccessTxHash("");
+        setSubmissionSuccessPreimage(null);
+        setSubmissionErrorMessage("");
+        setSettlementModalData(null);
+        setIsLoadingSettlementModal(false);
+        resetTicketPurchaseState();
+      });
+    }, 3000);
+  }, [
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    clearSubmissionSuccessTimer,
+    closeInfoModal,
+    resetTicketPurchaseState,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setIsLoadingSettlementModal,
+    setSaveDraftPromptError,
+    setSettlementModalData,
+    setShowInfoModal,
+    setSubmissionErrorMessage,
+    setSubmissionSuccessPreimage,
+    setSubmissionSuccessTxHash,
+    submissionSuccessTimerRef,
+  ]);
+
   const handleCommentDiscardChoice = useCallback((discard: boolean) => {
     if (!pendingCommentDiscardId) {
       closeInfoModal();
@@ -443,6 +482,13 @@ export default function Home() {
       <p className="mt-3 create-review-section-label text-red-500">Oops, an error occurred</p>
       <p className="create-info-constraint-item text-red-500 break-words">
         <span>{submissionErrorMessage}</span>
+      </p>
+    </div>
+  ) : infoModalMode === "insufficient-fbars" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Not enough FBARS</p>
+      <p className="create-info-constraint-item text-gray-500 break-words">
+        <span>{INSUFFICIENT_FBARS_MESSAGE}</span>
       </p>
     </div>
   ) : infoModalMode === "discard-comment-confirm" ? (
@@ -884,7 +930,7 @@ export default function Home() {
         <AppShellHeader
           className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
           infoModalBody={infoModalBody}
@@ -900,7 +946,7 @@ export default function Home() {
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -922,7 +968,7 @@ export default function Home() {
             setSettlementModalData(null);
             setIsLoadingSettlementModal(false);
           })}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -933,7 +979,7 @@ export default function Home() {
             resetTicketPurchaseState();
           })}
           onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -1003,6 +1049,7 @@ export default function Home() {
         onConstraintStatusChange={setConstraintStatus}
         onDraftListOpenChange={setIsCreateDraftListOpen}
         onDraftSelectionRequest={handleDraftSelectionRequest}
+        onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
         onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected }) => {
           setFormsMountableSelected(formsSelected);

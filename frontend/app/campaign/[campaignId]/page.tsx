@@ -59,8 +59,9 @@ const SHELL_TRANSITION_MS = 420;
 const DETAIL_CAMPAIGN_FETCH_LIMIT = 200;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
+const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -304,6 +305,26 @@ export default function CampaignDetailPage() {
   const resetInfoModalState = useCallback(() => {
     resetCreateInfoModalState();
   }, [resetCreateInfoModalState]);
+
+  const openInsufficientFbarsInfoModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("insufficient-fbars");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    infoCloseTimerRef.current = setTimeout(() => {
+      closeInfoModal(resetInfoModalState);
+    }, 3000);
+  }, [
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    closeInfoModal,
+    resetInfoModalState,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+  ]);
 
   const preventInfoHover = infoModalMode === "save-draft-confirm"
     || infoModalMode === "mountables"
@@ -658,6 +679,13 @@ export default function CampaignDetailPage() {
         </a>
       </p>
     </div>
+  ) : infoModalMode === "insufficient-fbars" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Not enough FBARS</p>
+      <p className="create-info-constraint-item text-gray-500 break-words">
+        <span>{INSUFFICIENT_FBARS_MESSAGE}</span>
+      </p>
+    </div>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Save draft?</p>
@@ -994,7 +1022,7 @@ export default function CampaignDetailPage() {
         <AppShellHeader
           className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel="Freight information modal"
+          infoModalAriaLabel={infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -1052,6 +1080,7 @@ export default function CampaignDetailPage() {
           onConstraintStatusChange={setConstraintStatus}
           onDraftListOpenChange={setIsCreateDraftListOpen}
           onDraftSelectionRequest={handleDraftSelectionRequest}
+          onInsufficientFbars={openInsufficientFbarsInfoModal}
           onMountableSelectionRequired={openMountablesModal}
           onMountableSelectionStateChange={({ formsSelected }) => {
             setFormsMountableSelected(formsSelected);
