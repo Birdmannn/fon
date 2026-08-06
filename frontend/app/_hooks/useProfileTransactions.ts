@@ -128,6 +128,14 @@ export function useProfileTransactions({ address, enabled = true, handle }: UseP
     setIsRefreshing(false);
   }, [fetchRows, query]);
 
+  useEffect(() => {
+    if (!query || profileTransactionsCache.has(query)) {
+      return;
+    }
+
+    void fetchRows(false);
+  }, [fetchRows, query]);
+
   const refresh = useCallback(() => {
     void fetchRows(true);
   }, [fetchRows]);

@@ -30,23 +30,12 @@ type ProfileFreightsSectionProps = {
   hasLoaded: boolean;
   isRefreshing: boolean;
   loading: boolean;
-  onRefresh: () => void;
   rows: ProfileFreightRow[];
 };
 
-export default function ProfileFreightsSection({ error, hasLoaded, isRefreshing, loading, onRefresh, rows }: ProfileFreightsSectionProps) {
+export default function ProfileFreightsSection({ error, hasLoaded, loading, rows }: ProfileFreightsSectionProps) {
   return (
     <section className="profile-tab-panel" aria-labelledby="profile-tab-freights" role="tabpanel">
-      <div className="profile-tab-toolbar">
-        <button
-          type="button"
-          className="profile-tab-refresh-button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
       {loading ? (
         <div className="profile-tab-state profile-tab-state-loading">
           <ThreeDotLoader label="Loading freights" inline />

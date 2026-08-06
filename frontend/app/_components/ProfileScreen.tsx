@@ -156,7 +156,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileFreightRows,
   } = useProfileFreights({
     address: profileAddress,
-    enabled: activeTab === "freights",
     handle: profileAddress ? null : targetHandle,
   });
   const {
@@ -169,7 +168,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileTransactionRows,
   } = useProfileTransactions({
     address: profileAddress,
-    enabled: activeTab === "transactions",
     handle: profileAddress ? null : targetHandle,
   });
   const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
@@ -1069,6 +1067,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-tab-bar" role="tablist" aria-label="Profile views">
                     {PROFILE_TABS.map((tab) => {
                       const isSelected = activeTab === tab.key;
+                      const isRefreshingActiveTab = (tab.key === "freights" && isProfileFreightsRefreshing)
+                        || (tab.key === "transactions" && isProfileTransactionsRefreshing);
+
                       return (
                         <button
                           key={tab.key}
@@ -1078,9 +1079,27 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                           aria-selected={isSelected}
                           id={`profile-tab-${tab.key}`}
                           className={`profile-tab-button ${isSelected ? "profile-tab-button-active" : ""}`.trim()}
-                          onClick={() => setActiveTab(tab.key)}
+                          onClick={() => {
+                            if (isSelected) {
+                              if (tab.key === "freights") {
+                                refreshProfileFreights();
+                                return;
+                              }
+
+                              if (tab.key === "transactions") {
+                                refreshProfileTransactions();
+                                return;
+                              }
+                            }
+
+                            setActiveTab(tab.key);
+                          }}
                         >
-                          {tab.label}
+                          {isRefreshingActiveTab ? (
+                            <ThreeDotLoader className="profile-tab-button-loader" label={`Refreshing ${tab.label}`} />
+                          ) : (
+                            tab.label
+                          )}
                         </button>
                       );
                     })}
@@ -1103,7 +1122,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                       hasLoaded={hasLoadedProfileFreights}
                       isRefreshing={isProfileFreightsRefreshing}
                       loading={isProfileFreightsLoading}
-                      onRefresh={refreshProfileFreights}
                       rows={profileFreightRows}
                     />
                   </div>
@@ -1116,7 +1134,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                       hasLoaded={hasLoadedProfileTransactions}
                       isRefreshing={isProfileTransactionsRefreshing}
                       loading={isProfileTransactionsLoading}
-                      onRefresh={refreshProfileTransactions}
                       rows={profileTransactionRows}
                     />
                   </div>
