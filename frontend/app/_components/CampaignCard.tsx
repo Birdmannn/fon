@@ -70,10 +70,14 @@ export default function CampaignCard({
     comments,
     depositAmount,
     depositedCkb,
+    giftDeliverable,
     handleBookmark,
     handleComment,
     handleDepositClick,
     handleDepositSubmit,
+    handleGiftApprove,
+    handleGiftClaim,
+    handleGiftInfoClick,
     handleLike,
     handleReshare,
     handleSettlementClick,
@@ -87,6 +91,8 @@ export default function CampaignCard({
     isPurchaseDisabled,
     isRaffleCampaign,
     isSavingComment,
+    canGiftApprove,
+    canGiftClaim,
     likes,
     actionFeedback,
     maxCkb,
@@ -230,6 +236,42 @@ export default function CampaignCard({
               )}
             </button>
           )}
+
+          {giftDeliverable.enabled ? (
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleGiftInfoClick}
+                className="campaign-action-btn action-gift"
+                data-tooltip="Gift details"
+              >
+                <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count">gift</span>
+              </button>
+              {canGiftApprove ? (
+                <button
+                  type="button"
+                  onClick={() => void handleGiftApprove()}
+                  className="campaign-action-btn action-gift-approve"
+                  data-tooltip="Approve gift"
+                >
+                  <Check className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count">approve</span>
+                </button>
+              ) : null}
+              {canGiftClaim ? (
+                <button
+                  type="button"
+                  onClick={() => void handleGiftClaim()}
+                  className="campaign-action-btn action-gift-claim"
+                  data-tooltip="Claim gift"
+                >
+                  <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count">claim</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {actionFeedback ? (

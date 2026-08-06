@@ -59,6 +59,15 @@
   opacity: 1;
 }
 
+.campaign-action-btn.action-gift,
+.campaign-action-btn.action-gift:hover,
+.campaign-action-btn.action-gift-approve,
+.campaign-action-btn.action-gift-approve:hover,
+.campaign-action-btn.action-gift-claim,
+.campaign-action-btn.action-gift-claim:hover {
+  color: #7c3aed;
+}
+
 .campaign-action-btn.action-bookmark.campaign-action-active,
 .campaign-action-btn.action-bookmark.campaign-action-active:hover {
   color: #3b82f6; /* blue */
@@ -157,6 +166,40 @@
 .campaign-detail-card-byline .campaign-card-handle-link {
   font-size: inherit;
   line-height: inherit;
+}
+
+.campaign-gift-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.campaign-gift-meta-row-detail {
+  margin-bottom: 0.85rem;
+}
+
+.campaign-gift-pill,
+.campaign-gift-copy {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.6rem;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.campaign-gift-pill {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+  font-weight: 700;
+}
+
+.campaign-gift-copy {
+  color: #6b7280;
+  background: rgba(124, 58, 237, 0.06);
 }
 
 .campaign-feed-loading {
@@ -534,7 +577,10 @@
 }
 
 .campaign-card-surface-detail {
-  min-height: 28rem;
+  min-height: 0;
+  height: auto;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .campaign-card-title {

@@ -1,4 +1,5 @@
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
+import type { GiftDeliverable } from "@/lib/giftDeliverables";
 
 export type CampaignComment = {
   text: string;
@@ -44,6 +45,7 @@ export type CampaignRecord = {
     reshareCount?: number;
     resharedByAddresses?: string[];
   };
+  giftDeliverable?: GiftDeliverable | null;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: "draft" | "published" | "publish_failed";

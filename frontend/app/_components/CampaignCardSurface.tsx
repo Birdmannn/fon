@@ -5,6 +5,7 @@ import { Copy, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
   decodeCreatedByAddress,
@@ -12,29 +13,9 @@ import {
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
+import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
-
-type CampaignRecord = {
-  title?: string;
-  description?: string;
-  creatorAddress?: string | null;
-  creatorHandle?: string | null;
-  settlementTxHash?: string | null;
-  soldTicketCount?: string | null;
-  mountables?: {
-    forms?: {
-      enabled?: boolean;
-      formUrl?: string;
-      canonicalFormUrl?: string;
-      formId?: string;
-      validatedAt?: string;
-    } | null;
-  };
-  socialMetadata?: {
-    mentions?: string[];
-  };
-};
 
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
@@ -177,10 +158,12 @@ export default function CampaignCardSurface({
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
-  const displayDescription = sanitizeCampaignDescription(record?.description?.trim() || decodeSummary(data.summary));
+  const rawDescription = record?.description?.trim() || decodeSummary(data.summary);
+  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const mentions = record?.socialMetadata?.mentions ?? [];
+  const giftDeliverable = record?.giftDeliverable;
   const rewardCountValue = Number(data.rewardCount);
   const shouldGlowSettlement = deriveRaffleSettlementUiState({
     campaign,
@@ -299,6 +282,18 @@ export default function CampaignCardSurface({
             ))}
           </div>
         )}
+
+        {giftDeliverable?.enabled ? (
+          <div className="campaign-gift-meta-row">
+            <span className="campaign-gift-pill">Gift</span>
+            <span className="campaign-gift-copy">
+              {giftDeliverable.claimants?.length ? `${giftDeliverable.claimants.length} tagged claimants` : "Open claim"}
+            </span>
+            <span className="campaign-gift-copy">
+              {giftDeliverable.splitMode ? `${giftDeliverable.splitMode} split` : "split pending"}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="campaign-card-footer">

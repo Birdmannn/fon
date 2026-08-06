@@ -9,6 +9,17 @@ export type SettlementRecipient = {
   amountShannons: string;
 };
 
+export type GiftModalData = {
+  approvalCount: number;
+  canApprove: boolean;
+  canClaim: boolean;
+  claimAmountLabel: string | null;
+  claimantsLabel: string;
+  errorMessage?: string | null;
+  giftEnabled: boolean;
+  requiredApprovalCount: number | null;
+};
+
 export type SettlementModalData = {
   campaignTitle: string;
   randomnessHash: string;
@@ -17,6 +28,7 @@ export type SettlementModalData = {
   recipients: SettlementRecipient[];
   distributionTxHash: string | null;
   errorMessage?: string | null;
+  gift?: GiftModalData | null;
   _campaign?: CampaignCell;
   _record?: CampaignRecord | null;
 };

@@ -13,7 +13,21 @@ import {
   MINUTES_PER_HOUR,
   normalizeCreateCampaignParams,
   TIMING_MINUTE_STEP,
+  validateGiftCreateConfiguration,
 } from "@/lib/campaignValidation";
+import {
+  buildGiftDeliverable,
+  buildGiftMentionList,
+  createEmptyGiftDeliverable,
+  formatGiftHandle,
+  isGiftEligibleCampaignType,
+  parseGiftDirectiveSections,
+  parseStoredGiftDeliverable,
+  type GiftApprovalMode,
+  type GiftDeliverable,
+  type GiftRatioEntry,
+  type GiftSplitMode,
+} from "@/lib/giftDeliverables";
 import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
 import { sendCreateCampaign } from "@/lib/transactions";
 
@@ -205,6 +219,7 @@ type DraftRecord = {
   socialMetadata?: {
     mentions?: string[];
   };
+  giftDeliverable?: GiftDeliverable | null;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: DraftRecordStatus;
@@ -227,6 +242,7 @@ type DraftSnapshot = {
   rewardCount: string;
   auxAmountCkb: string;
   mentions: string[];
+  giftDeliverable: GiftDeliverable;
   formsMountable?: FormsMountableConfig;
 };
 
@@ -289,6 +305,7 @@ function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
     description: snapshot.description.trim(),
     summaryDraft: snapshot.summaryDraft.trim(),
     mentions: [...snapshot.mentions],
+    giftDeliverable: snapshot.giftDeliverable,
   };
 }
 
@@ -355,6 +372,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const [giftApprovalMode, setGiftApprovalMode] = useState<GiftApprovalMode>("all");
+  const [giftApprovalThreshold, setGiftApprovalThreshold] = useState("1");
+  const [giftSplitMode, setGiftSplitMode] = useState<GiftSplitMode | null>(null);
+  const [giftRatioEntries, setGiftRatioEntries] = useState<GiftRatioEntry[]>([]);
+  const [giftResolvedAddresses, setGiftResolvedAddresses] = useState<Record<string, string | null>>({});
+  const [giftResolutionWarnings, setGiftResolutionWarnings] = useState<string[]>([]);
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [showHashtagMenu, setShowHashtagMenu] = useState(false);
@@ -443,6 +466,106 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [durationParts.hours, updateDurationFromParts]);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
   const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === "mounted");
+  const parsedGiftDirectives = useMemo(() => parseGiftDirectiveSections(trimmedModalDescription), [trimmedModalDescription]);
+  const isGiftEligibleType = isGiftEligibleCampaignType(campaignType);
+  const giftFeatureEnabled = isGiftEligibleType && parsedGiftDirectives.enabled;
+  const giftApproverUsers = useMemo(
+    () => parsedGiftDirectives.approvers.map((handle) => ({
+      handle: formatGiftHandle(handle),
+      address: giftResolvedAddresses[handle] ?? null,
+    })),
+    [giftResolvedAddresses, parsedGiftDirectives.approvers],
+  );
+  const giftClaimantUsers = useMemo(
+    () => parsedGiftDirectives.claimants.map((handle) => ({
+      handle: formatGiftHandle(handle),
+      address: giftResolvedAddresses[handle] ?? null,
+    })),
+    [giftResolvedAddresses, parsedGiftDirectives.claimants],
+  );
+  const giftReceiverUsers = useMemo(
+    () => parsedGiftDirectives.receivers.map((handle) => ({
+      handle: formatGiftHandle(handle),
+      address: giftResolvedAddresses[handle] ?? null,
+    })),
+    [giftResolvedAddresses, parsedGiftDirectives.receivers],
+  );
+  const isOpenGiftClaim = giftFeatureEnabled && giftClaimantUsers.length === 0;
+  const effectiveGiftSplitMode = giftFeatureEnabled
+    ? (isOpenGiftClaim ? "equal" : giftSplitMode)
+    : null;
+  const giftApprovalRule = useMemo(() => {
+    if (!giftFeatureEnabled || giftApproverUsers.length === 0) {
+      return null;
+    }
+
+    const parsedThreshold = Number.parseInt(giftApprovalThreshold, 10);
+
+    return {
+      mode: giftApprovalMode,
+      threshold: giftApprovalMode === "threshold" && Number.isFinite(parsedThreshold) ? parsedThreshold : null,
+    };
+  }, [giftApprovalMode, giftApprovalThreshold, giftApproverUsers.length, giftFeatureEnabled]);
+  const giftPreviewState = useMemo(() => {
+    if (!giftFeatureEnabled) {
+      return { error: null, preview: null };
+    }
+
+    return validateGiftCreateConfiguration({
+      approvalRule: giftApprovalRule,
+      claimants: giftClaimantUsers,
+      description: trimmedModalDescription,
+      maxAmountCkb,
+      openClaim: isOpenGiftClaim,
+      ratioEntries: giftRatioEntries,
+      rewardCount,
+      splitMode: effectiveGiftSplitMode,
+    });
+  }, [
+    effectiveGiftSplitMode,
+    giftApprovalRule,
+    giftClaimantUsers,
+    giftFeatureEnabled,
+    giftRatioEntries,
+    isOpenGiftClaim,
+    maxAmountCkb,
+    rewardCount,
+    trimmedModalDescription,
+  ]);
+  const giftDeliverableDraft = useMemo(() => {
+    if (!giftFeatureEnabled) {
+      return createEmptyGiftDeliverable();
+    }
+
+    return buildGiftDeliverable({
+      campaignType,
+      description: trimmedModalDescription,
+      approvalRule: giftApprovalRule,
+      resolvedAddressesByHandle: giftResolvedAddresses,
+      ratioEntries: giftRatioEntries,
+      splitMode: effectiveGiftSplitMode,
+    });
+  }, [
+    campaignType,
+    effectiveGiftSplitMode,
+    giftApprovalRule,
+    giftFeatureEnabled,
+    giftRatioEntries,
+    giftResolvedAddresses,
+    trimmedModalDescription,
+  ]);
+  const allMentions = useMemo(
+    () => Array.from(new Set([...mentions, ...buildGiftMentionList(parsedGiftDirectives)])),
+    [mentions, parsedGiftDirectives],
+  );
+  const giftTaggedHandles = useMemo(
+    () => Array.from(new Set([
+      ...parsedGiftDirectives.approvers,
+      ...parsedGiftDirectives.claimants,
+      ...parsedGiftDirectives.receivers,
+    ])),
+    [parsedGiftDirectives.approvers, parsedGiftDirectives.claimants, parsedGiftDirectives.receivers],
+  );
   const normalizedCreateParams = useMemo(() => {
     try {
       return {
@@ -484,15 +607,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     maxAmountCkb,
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
-    mentions,
+    mentions: allMentions,
+    giftDeliverable: giftDeliverableDraft,
     formsMountable,
   }), [
+    allMentions,
     campaignType,
     currentAuxAmountCkb,
     currentDraftSummary,
+    giftDeliverableDraft,
     maxAmountCkb,
     formsMountable,
-    mentions,
     rewardCount,
     taskDurationHours,
     taskStartDelayHours,
@@ -528,6 +653,125 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   useEffect(() => {
     onStepChange?.(status === "success" ? "compose" : modalStep);
   }, [modalStep, onStepChange, status]);
+
+  useEffect(() => {
+    if (!giftFeatureEnabled) {
+      if (giftSplitMode !== null) {
+        setGiftSplitMode(null);
+      }
+      if (giftRatioEntries.length > 0) {
+        setGiftRatioEntries([]);
+      }
+      if (giftResolutionWarnings.length > 0) {
+        setGiftResolutionWarnings([]);
+      }
+      if (Object.keys(giftResolvedAddresses).length > 0) {
+        setGiftResolvedAddresses({});
+      }
+      return;
+    }
+
+    if (isOpenGiftClaim && giftSplitMode !== "equal") {
+      setGiftSplitMode("equal");
+    }
+
+    if (!isOpenGiftClaim && !giftSplitMode) {
+      setGiftSplitMode("equal");
+    }
+
+    if (giftClaimantUsers.length > 0 && rewardCount !== String(giftClaimantUsers.length)) {
+      setRewardCount(String(giftClaimantUsers.length));
+    }
+
+    const ratioHandles = new Set(giftRatioEntries.map((entry) => entry.handle.toLowerCase()));
+    const missingEntries = giftClaimantUsers.filter((claimant) => !ratioHandles.has(claimant.handle.toLowerCase()));
+    if (giftSplitMode === "ratio" && missingEntries.length > 0) {
+      setGiftRatioEntries((current) => [
+        ...current,
+        ...missingEntries.map((claimant) => ({
+          handle: claimant.handle,
+          address: claimant.address ?? null,
+          units: 1,
+        })),
+      ]);
+    }
+
+    const unresolvedHandles = giftTaggedHandles.filter((handle) => !giftResolvedAddresses[handle]);
+    const nextWarnings = unresolvedHandles.map((handle) => `Could not resolve @${handle}. Publishing is allowed, but wallet-gated actions will only work once that handle maps to a profile.`);
+    const currentWarningsKey = JSON.stringify(giftResolutionWarnings);
+    const nextWarningsKey = JSON.stringify(nextWarnings);
+    if (currentWarningsKey !== nextWarningsKey) {
+      setGiftResolutionWarnings(nextWarnings);
+    }
+  }, [
+    giftClaimantUsers,
+    giftFeatureEnabled,
+    giftRatioEntries,
+    giftResolutionWarnings,
+    giftResolvedAddresses,
+    giftSplitMode,
+    giftTaggedHandles,
+    isOpenGiftClaim,
+    rewardCount,
+  ]);
+
+  useEffect(() => {
+    if (!giftFeatureEnabled) {
+      return;
+    }
+
+    const unresolvedHandles = giftTaggedHandles.filter((handle) => !(handle in giftResolvedAddresses));
+    if (unresolvedHandles.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const resolvedEntries = await Promise.all(
+          unresolvedHandles.map(async (handle) => {
+            try {
+              const response = await fetch(`/api/user-profiles?handle=${encodeURIComponent(handle)}`, {
+                cache: "no-store",
+              });
+              const payload = await response.json().catch(() => null);
+              if (!response.ok) {
+                return [handle, null] as const;
+              }
+
+              const address = typeof payload?.profile?.address === "string"
+                ? payload.profile.address.trim().toLowerCase()
+                : null;
+              return [handle, address] as const;
+            } catch {
+              return [handle, null] as const;
+            }
+          }),
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setGiftResolvedAddresses((current) => ({
+          ...current,
+          ...Object.fromEntries(resolvedEntries),
+        }));
+      } catch {
+        if (!cancelled) {
+          setGiftResolvedAddresses((current) => ({
+            ...current,
+            ...Object.fromEntries(unresolvedHandles.map((handle) => [handle, null] as const)),
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [giftFeatureEnabled, giftResolvedAddresses, giftTaggedHandles]);
 
   const filteredMentions = MOCK_USERS.filter(
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
@@ -658,6 +902,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb("1000");
     setRewardCount("1");
     setRaffleTicketPriceCkb("1");
+    setGiftApprovalMode("all");
+    setGiftApprovalThreshold("1");
+    setGiftSplitMode(null);
+    setGiftRatioEntries([]);
+    setGiftResolvedAddresses({});
+    setGiftResolutionWarnings([]);
     setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
     setModalStep("compose");
     setReviewSummary("");
@@ -1056,6 +1306,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return false;
     }
 
+    if (giftFeatureEnabled && giftPreviewState.error) {
+      setErrorMsg(giftPreviewState.error);
+      setStatus("error");
+      return false;
+    }
+
     return true;
   };
 
@@ -1105,6 +1361,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
     const nextRewardCount = record.argsDraft?.rewardCount ?? "1";
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
+    const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
 
     setModalTitle(nextTitle);
@@ -1112,6 +1369,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setSummary(nextDescription);
     setCampaignType(nextCampaignType);
     setMentions(nextMentions);
+    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
+    setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
+    setGiftResolvedAddresses(
+      Object.fromEntries(
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+          .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
+      ),
+    );
+    setGiftResolutionWarnings([]);
     setTaskStartDelayHours(nextStartDelay);
     setTaskDurationHours(nextDuration);
     setMaxAmountCkb(nextMaxAmount);
@@ -1141,6 +1409,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
       mentions: nextMentions,
+      giftDeliverable: nextGiftDeliverable,
       formsMountable: normalizeFormsMountableConfig(record.mountables?.forms),
     });
     setLastSavedSnapshot(nextSnapshot);
@@ -1229,6 +1498,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setMaxAmountCkb("1000");
         setRewardCount("1");
         setRaffleTicketPriceCkb("1");
+        setGiftApprovalMode("all");
+        setGiftApprovalThreshold("1");
+        setGiftSplitMode(null);
+        setGiftRatioEntries([]);
+        setGiftResolvedAddresses({});
+        setGiftResolutionWarnings([]);
         setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
         setLastSavedSnapshot(null);
         setDraftSaveStatus("idle");
@@ -1279,7 +1554,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           forms: formsMountable.enabled ? formsMountable : null,
         },
         socialMetadata: {
-          mentions,
+          mentions: allMentions,
           comments: [],
           likeCount: 0,
           likedByAddresses: [],
@@ -1287,6 +1562,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           reshareCount: 0,
           resharedByAddresses: [],
         },
+        giftDeliverable: giftDeliverableDraft,
         creatorAddress,
         creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
         status: draftStatus,
@@ -1297,11 +1573,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     },
     [
       activeDraftRecord,
+      allMentions,
       campaignType,
       formsMountable,
       getCreatorAddress,
+      giftDeliverableDraft,
       maxAmountCkb,
-      mentions,
       raffleTicketPriceCkb,
       rewardCount,
       shouldCollectRaffleTicketPrice,
@@ -1355,7 +1632,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
-          mentions,
+          mentions: allMentions,
+          giftDeliverable: giftDeliverableDraft,
           formsMountable,
         });
         setLastSavedSnapshot(nextSnapshot);
@@ -1381,8 +1659,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               forms: formsMountable.enabled ? formsMountable : null,
             },
             socialMetadata: {
-              mentions,
+              mentions: allMentions,
             },
+            giftDeliverable: giftDeliverableDraft,
             status: draftStatus,
             txHash: txHashValue,
             publishError,
@@ -1415,9 +1694,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [
       activeDraftRecordId,
       buildDraftPayload,
+      allMentions,
       campaignType,
+      giftDeliverableDraft,
       maxAmountCkb,
-      mentions,
       raffleTicketPriceCkb,
       rewardCount,
       shouldCollectRaffleTicketPrice,
@@ -2128,26 +2408,51 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         )}
       </div>
 
-      {!showDraftsPane && mentions.length > 0 && (
+      {!showDraftsPane && allMentions.length > 0 && (
         <div className="create-modal-mentions-row">
-          {mentions.map((mention) => (
-            <div
-              key={mention}
-              className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
-              style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
-            >
-              <span>@{mention}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveMention(mention)}
-                className="theme-fg opacity-70 hover:opacity-100 font-bold"
+          {allMentions.map((mention) => {
+            const isEditableMention = mentions.includes(mention);
+            return (
+              <div
+                key={mention}
+                className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
+                style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
               >
-                ×
-              </button>
-            </div>
-          ))}
+                <span>@{mention}</span>
+                {isEditableMention ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMention(mention)}
+                    className="theme-fg opacity-70 hover:opacity-100 font-bold"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {giftFeatureEnabled ? (
+        <div className="create-modal-gift-row">
+          <div className="create-modal-gift-card">
+            <p className="create-review-section-label">Gift roles</p>
+            <div className="create-modal-gift-groups">
+              <span>Approvers: {giftApproverUsers.length > 0 ? giftApproverUsers.map((entry) => entry.handle).join(", ") : "None"}</span>
+              <span>Claimants: {giftClaimantUsers.length > 0 ? giftClaimantUsers.map((entry) => entry.handle).join(", ") : "Open claim"}</span>
+              <span>Receive: {giftReceiverUsers.length > 0 ? giftReceiverUsers.map((entry) => entry.handle).join(", ") : "None yet"}</span>
+            </div>
+            {giftResolutionWarnings.length > 0 ? (
+              <div className="create-modal-gift-warnings">
+                {giftResolutionWarnings.map((warning) => (
+                  <p key={warning} className="create-modal-gift-warning">{warning}</p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="create-modal-constraints-row">
         <p className={`create-modal-constraints-text ${constraintsPassed && !showDraftsPane && !isDraftListLoading && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
@@ -2219,6 +2524,66 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           </div>
           {renderModalArgsInputs()}
         </div>
+
+        {giftFeatureEnabled ? (
+          <div className="create-review-args-card">
+            <div className="create-review-card-heading-row">
+              <p className="create-review-section-label">Gift delivery</p>
+              <span className="create-review-offchain-note">First-wave approvals and claims</span>
+            </div>
+            <div className="create-review-gift-grid">
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Approval</label>
+                <div className="create-review-gift-choice-row">
+                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "all" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftApprovalMode("all")} disabled={giftApproverUsers.length === 0}>All</button>
+                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "threshold" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftApprovalMode("threshold")} disabled={giftApproverUsers.length <= 1}>Threshold</button>
+                </div>
+                {giftApproverUsers.length > 1 && giftApprovalMode === "threshold" ? (
+                  <div className="create-review-gift-threshold-row">
+                    <input
+                      type="number"
+                      min="1"
+                      max={String(Math.max(1, giftApproverUsers.length - 1))}
+                      step="1"
+                      value={giftApprovalThreshold}
+                      onChange={(event) => setGiftApprovalThreshold(event.target.value)}
+                      className="create-review-arg-input"
+                    />
+                    <span className="create-review-arg-unit">of {giftApproverUsers.length}</span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Claim split</label>
+                <div className="create-review-gift-choice-row">
+                  <button type="button" className={`create-review-gift-choice ${effectiveGiftSplitMode === "equal" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftSplitMode("equal")}>Equal</button>
+                  <button type="button" className={`create-review-gift-choice ${effectiveGiftSplitMode === "ratio" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftSplitMode("ratio")} disabled={isOpenGiftClaim}>Ratio</button>
+                </div>
+                {isOpenGiftClaim ? <p className="create-review-gift-note">Open claim is equal-only in the first wave.</p> : null}
+              </div>
+            </div>
+            <div className="create-review-gift-summary">
+              <p className="create-review-preview-body">Commencement: {giftApproverUsers.length > 0 ? `after start time and ${giftApprovalMode === "threshold" ? `${giftApprovalThreshold}/${giftApproverUsers.length}` : "all"} approvals` : "after start time"}.</p>
+              <p className="create-review-preview-body">Claiming: {isOpenGiftClaim ? "Anyone can claim after commencement." : `${giftClaimantUsers.map((entry) => entry.handle).join(", ")} can claim after commencement.`}</p>
+              {giftPreviewState.preview?.allocations?.length ? (
+                <div className="create-review-gift-allocations">
+                  {giftPreviewState.preview.allocations.map((allocation) => (
+                    <div key={allocation.handle} className="create-review-gift-allocation-row">
+                      <span>{allocation.handle}</span>
+                      <span>{allocation.amountLabel}{allocation.units ? ` · ${allocation.units}u` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : giftPreviewState.preview?.perClaimAmountLabel ? (
+                <p className="create-review-preview-body">Each claim can take {giftPreviewState.preview.perClaimAmountLabel}.</p>
+              ) : null}
+              {giftPreviewState.error ? <p className="create-review-gift-warning">{giftPreviewState.error}</p> : null}
+              {giftResolutionWarnings.length > 0 ? giftResolutionWarnings.map((warning) => (
+                <p key={warning} className="create-review-gift-warning">{warning}</p>
+              )) : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="create-review-draft-status-row" aria-hidden="true" />
       </div>

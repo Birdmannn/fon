@@ -1,3 +1,13 @@
+import {
+  computeGiftPreviewAllocations,
+  parseGiftDirectiveSections,
+  validateGiftConfiguration,
+  type GiftApprovalRule,
+  type GiftRatioEntry,
+  type GiftSplitMode,
+  type GiftTaggedUser,
+} from "@/lib/giftDeliverables";
+
 const SUMMARY_MAX_BYTES = 64;
 const MAX_DURATION_SECONDS = 365n * 24n * 60n * 60n;
 const MIN_TASK_DURATION_SECONDS = 1n * 60n;
@@ -74,6 +84,63 @@ export type NormalizedCreateCampaignParams = {
   startDurationSecs: bigint;
   taskDurationSecs: bigint;
 };
+
+export type GiftCreateValidationInput = {
+  approvalRule: GiftApprovalRule | null;
+  claimants: GiftTaggedUser[];
+  description: string;
+  maxAmountCkb: string;
+  openClaim: boolean;
+  ratioEntries: GiftRatioEntry[];
+  rewardCount: string;
+  splitMode: GiftSplitMode | null;
+};
+
+export function validateGiftCreateConfiguration({
+  approvalRule,
+  claimants,
+  description,
+  maxAmountCkb,
+  openClaim,
+  ratioEntries,
+  rewardCount,
+  splitMode,
+}: GiftCreateValidationInput) {
+  const parsedDirectives = parseGiftDirectiveSections(description);
+  const giftError = validateGiftConfiguration({
+    approvalRule,
+    approvers: parsedDirectives.approvers.map((handle) => ({ handle })),
+    claimants,
+    openClaim,
+    ratioEntries,
+    splitMode,
+  });
+  if (giftError) {
+    return {
+      error: giftError,
+      preview: null,
+    };
+  }
+
+  const preview = computeGiftPreviewAllocations({
+    claimants,
+    maxAmountCkb,
+    rewardCount,
+    ratioEntries,
+    splitMode,
+  });
+  if (preview.error) {
+    return {
+      error: preview.error,
+      preview,
+    };
+  }
+
+  return {
+    error: null,
+    preview,
+  };
+}
 
 export function normalizeCreateCampaignParams({
   maxAmountCkb,

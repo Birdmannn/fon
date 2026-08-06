@@ -293,6 +293,42 @@
   align-items: center;
 }
 
+.create-modal-gift-row {
+  position: absolute;
+  left: 1rem;
+  right: 5.2rem;
+  bottom: 4.35rem;
+  z-index: 55;
+}
+
+.create-modal-gift-card {
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 0.7rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.create-modal-gift-groups,
+.create-modal-gift-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.create-modal-gift-groups span,
+.create-modal-gift-warning {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #52525b;
+}
+
+.create-modal-gift-warning {
+  color: #a16207;
+}
+
 .create-modal-error-box {
   position: absolute;
   left: 1rem;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
+import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getMongoCollection } from "@/lib/mongodb";
 
@@ -32,6 +33,7 @@ type CampaignRecordPayload = {
     reshareCount?: unknown;
     resharedByAddresses?: unknown;
   };
+  giftDeliverable?: unknown;
   creatorAddress?: unknown;
   creatorHandle?: unknown;
   status?: unknown;
@@ -247,6 +249,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
   const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
+  const giftDeliverable = parseStoredGiftDeliverable(payload.giftDeliverable);
 
   return {
     title,
@@ -280,6 +283,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         ? payload.socialMetadata.resharedByAddresses.map((value) => ensureString(value, "socialMetadata.resharedByAddresses[]").toLowerCase())
         : [],
     },
+    giftDeliverable,
     creatorAddress,
     creatorHandle,
     status,

@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 
+import { SignerSignType } from "@ckb-ccc/core";
+
+import { verifyWalletSignature } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
+
+type WalletSignaturePayload = {
+  signature?: unknown;
+  identity?: unknown;
+  signType?: unknown;
+};
 
 type ReviewParticipantPayload = {
   participantAddress?: unknown;
@@ -10,6 +19,8 @@ type ReviewParticipantPayload = {
   status?: unknown;
   reviewedByAddress?: unknown;
   reviewNote?: unknown;
+  nonce?: unknown;
+  nonceSignature?: WalletSignaturePayload | null;
 };
 
 function badRequest(message: string, status = 400) {
@@ -40,12 +51,34 @@ function normalizeAddress(value: string) {
   return value.trim().toLowerCase();
 }
 
+function parseVerifiedSignature(signaturePayload: unknown) {
+  if (!signaturePayload || typeof signaturePayload !== "object") {
+    throw new Error("nonceSignature is required");
+  }
+
+  const signature = ensureString((signaturePayload as WalletSignaturePayload).signature, "nonceSignature.signature");
+  const identity = ensureString((signaturePayload as WalletSignaturePayload).identity, "nonceSignature.identity");
+  const signTypeValue = ensureString((signaturePayload as WalletSignaturePayload).signType, "nonceSignature.signType");
+  if (!Object.values(SignerSignType).includes(signTypeValue as SignerSignType)) {
+    throw new Error("Unsupported signer sign type");
+  }
+
+  return {
+    signature,
+    identity,
+    signType: signTypeValue as SignerSignType,
+  };
+}
+
 export async function PATCH(request: Request, context: RouteContext<"/api/campaign-participants/[campaignId]/review">) {
   try {
     const { campaignId } = await context.params;
     const normalizedCampaignId = campaignId.trim().toLowerCase();
     const payload = (await request.json()) as ReviewParticipantPayload;
     const reviewedByAddress = normalizeAddress(ensureString(payload.reviewedByAddress, "reviewedByAddress"));
+    const nonce = ensureString(payload.nonce, "nonce");
+    const nonceSignature = parseVerifiedSignature(payload.nonceSignature);
+    await verifyWalletSignature({ address: reviewedByAddress, nonce, signature: nonceSignature });
     const status = ensureString(payload.status, "status").toLowerCase();
     if (status !== "verified" && status !== "rejected") {
       throw new Error("status must be verified or rejected");

@@ -11,6 +11,12 @@ import {
   deriveRaffleSettlementUiState,
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
+import {
+  computeGiftPreviewAllocations,
+  isGiftApprovalSatisfied,
+  isGiftClaimOpen,
+  parseStoredGiftDeliverable,
+} from "@/lib/giftDeliverables";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 import { copyText } from "@/lib/clipboard";
@@ -102,10 +108,24 @@ export function useCampaignCardState({
   const displayTitle = record?.title?.trim() || onchainSummary;
   const displayDescription = record?.description?.trim() || onchainSummary;
   const mentions = record?.socialMetadata?.mentions ?? [];
+  const rewardCountValue = Number(data.rewardCount);
+  const giftDeliverable = parseStoredGiftDeliverable(record?.giftDeliverable);
+  const giftPreview = computeGiftPreviewAllocations({
+    claimants: giftDeliverable.claimants,
+    maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
+    rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
+    ratioEntries: giftDeliverable.ratioEntries,
+    splitMode: giftDeliverable.splitMode,
+  });
+  const giftApprovalSatisfied = isGiftApprovalSatisfied(giftDeliverable);
+  const giftClaimOpen = isGiftClaimOpen({
+    chainCreatedAt: record?.chainCreatedAt ?? getCampaignChainCreatedAt(c),
+    taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
+    giftDeliverable,
+  });
   const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
-  const rewardCountValue = Number(data.rewardCount);
   const settlementUiState = deriveRaffleSettlementUiState({
     campaign: c,
     displayStatus,
@@ -131,6 +151,21 @@ export function useCampaignCardState({
       : []
   ), [record?.socialMetadata?.resharedByAddresses]);
   const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
+  const canGiftApprove = Boolean(
+    normalizedCurrentWalletAddress
+    && giftDeliverable.enabled
+    && !giftApprovalSatisfied
+    && giftDeliverable.approvers.some((entry) => normalizeHash(entry.address) === normalizedCurrentWalletAddress),
+  );
+  const canGiftClaim = Boolean(
+    normalizedCurrentWalletAddress
+    && giftDeliverable.enabled
+    && giftClaimOpen
+    && (
+      giftDeliverable.claimants.length === 0
+      || giftDeliverable.claimants.some((entry) => normalizeHash(entry.address) === normalizedCurrentWalletAddress)
+    ),
+  );
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [likedByAddresses, setLikedByAddresses] = useState<string[]>(initialLikedByAddresses);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
@@ -236,6 +271,7 @@ export function useCampaignCardState({
       reshareCount: nextSocialMetadata.reshareCount,
       resharedByAddresses: nextSocialMetadata.resharedByAddresses,
     },
+    giftDeliverable,
     creatorAddress: record?.creatorAddress ?? creatorAddress,
     creatorHandle: record?.creatorHandle ?? creatorHandle,
     campaignId: record?.campaignId ?? getCampaignStableId(c),
@@ -655,6 +691,98 @@ export function useCampaignCardState({
     }
   };
 
+  const handleGiftApprove = async () => {
+    if (!record?._id) {
+      showActionFeedback("like", "error", "Gift approvals are not available for this freight yet");
+      return;
+    }
+
+    try {
+      const signed = await withSignedNonce("gift-approve");
+      const response = await fetch(`/api/campaign-records/${record._id}/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(signed),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to approve gift freight");
+      }
+
+      showActionFeedback("like", "success", payload?.approvalsSatisfied ? "Gift approvals satisfied" : "Gift approved");
+    } catch (error) {
+      showActionFeedback("like", "error", error instanceof Error ? error.message : "Failed to approve gift freight");
+    }
+  };
+
+  const handleGiftClaim = async () => {
+    if (!record?._id) {
+      showActionFeedback("reshare", "error", "Gift claims are not available for this freight yet");
+      return;
+    }
+
+    try {
+      const signed = await withSignedNonce("gift-claim");
+      const response = await fetch(`/api/campaign-records/${record._id}/claim`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(signed),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to claim gift freight");
+      }
+
+      showActionFeedback("reshare", "success", payload?.claimAmountLabel ? `Claim ready: ${payload.claimAmountLabel}` : "Gift claim submitted");
+    } catch (error) {
+      showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to claim gift freight");
+    }
+  };
+
+  const handleGiftInfoClick = () => {
+    if (!giftDeliverable.enabled) {
+      return;
+    }
+
+    onSettlementInfoRequest({
+      campaignTitle: displayTitle,
+      randomnessHash: "",
+      randomnessPreimage: null,
+      evidenceItems: [
+        `Gift approvals: ${giftDeliverable.approvals.length}/${giftDeliverable.requiredApprovalCount ?? 0}`,
+        `Claim mode: ${giftDeliverable.claimants.length > 0 ? "restricted" : "open"}`,
+        `Split mode: ${giftDeliverable.splitMode ?? "equal"}`,
+      ],
+      recipients: giftPreview.allocations.map((allocation) => ({
+        address: "",
+        username: allocation.handle,
+        handle: allocation.handle,
+        amountLabel: allocation.amountLabel,
+        amountShannons: allocation.amountShannons,
+      })),
+      distributionTxHash: null,
+      errorMessage: giftPreview.error,
+      gift: {
+        approvalCount: giftDeliverable.approvals.length,
+        canApprove: giftDeliverable.approvers.length > 0 && !giftApprovalSatisfied,
+        canClaim: giftClaimOpen,
+        claimAmountLabel: giftPreview.perClaimAmountLabel,
+        claimantsLabel: giftDeliverable.claimants.length > 0
+          ? giftDeliverable.claimants.map((entry) => entry.handle).join(", ")
+          : "Anyone can claim",
+        errorMessage: giftPreview.error,
+        giftEnabled: giftDeliverable.enabled,
+        requiredApprovalCount: giftDeliverable.requiredApprovalCount,
+      },
+      _campaign: c,
+      _record: record,
+    });
+  };
+
   const handleSettlementClick = async () => {
     if (!isRaffleCampaign) {
       return;
@@ -889,10 +1017,14 @@ export function useCampaignCardState({
     depositedCkb,
     displayDescription,
     displayTitle,
+    giftDeliverable,
     handleBookmark,
     handleComment,
     handleDepositClick,
     handleDepositSubmit,
+    handleGiftApprove,
+    handleGiftClaim,
+    handleGiftInfoClick,
     handleLike,
     handleReshare,
     handleSettlementClick,
@@ -903,6 +1035,8 @@ export function useCampaignCardState({
     isCampaignInactive,
     isCommentComposerOpen,
     isConnected,
+    canGiftApprove,
+    canGiftClaim,
     isDepositing,
     isPurchaseDisabled,
     isRaffleCampaign,
