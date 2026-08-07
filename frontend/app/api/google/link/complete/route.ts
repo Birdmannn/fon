@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 
 import {
+  buildGoogleOAuthGrant,
   consumeGoogleLinkCode,
+  parseStoredGoogleOAuthGrant,
+  sanitizeGoogleOAuthGrantSummary,
   getGoogleLinkCodeCookieName,
   parseGoogleLinkCookieValue,
 } from "@/lib/googleAuth";
-import { getUserProfilesCollection } from "@/lib/mongodb";
+import { getGoogleOAuthGrantsCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
 
@@ -63,9 +66,66 @@ export async function POST(request: Request) {
       return badRequest("Google link confirmation expired", 403);
     }
 
-    const collection = await getUserProfilesCollection();
+    const profileCollection = await getUserProfilesCollection();
+    const grantsCollection = await getGoogleOAuthGrantsCollection();
     const now = new Date();
-    await collection.updateOne(
+
+    if (linkRecord.purpose === "forms_response_access") {
+      if (!linkRecord.oauthGrant) {
+        return badRequest("Google response-access grant is missing from this link session", 403);
+      }
+
+      const existingGrantDoc = await grantsCollection.findOne({
+        address,
+        grantKind: "forms_response_access",
+      });
+      const mergedGrant = buildGoogleOAuthGrant({
+        grantKind: "forms_response_access",
+        address,
+        googleAccount: linkRecord.googleAccount,
+        grantedScopes: linkRecord.oauthGrant.scopes,
+        accessToken: linkRecord.oauthGrant.accessToken,
+        accessTokenExpiresAt: linkRecord.oauthGrant.accessTokenExpiresAt,
+        refreshToken: linkRecord.oauthGrant.refreshToken,
+        tokenType: linkRecord.oauthGrant.tokenType,
+        existingGrant: parseStoredGoogleOAuthGrant(existingGrantDoc?.grant ?? null),
+      });
+
+      await grantsCollection.updateOne(
+        { address, grantKind: "forms_response_access" },
+        {
+          $set: {
+            address,
+            grantKind: "forms_response_access",
+            googleSub: mergedGrant.googleAccount.sub,
+            googleEmail: mergedGrant.googleAccount.email,
+            grant: mergedGrant,
+            updatedAt: now,
+          },
+          $setOnInsert: {
+            createdAt: now,
+          },
+        },
+        { upsert: true },
+      );
+
+      const response = NextResponse.json({
+        ok: true,
+        purpose: linkRecord.purpose,
+        googleAccount: linkRecord.googleAccount,
+        oauthGrant: sanitizeGoogleOAuthGrantSummary(mergedGrant),
+      });
+      response.cookies.set(getGoogleLinkCodeCookieName(), "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: true,
+        path: "/",
+        maxAge: 0,
+      });
+      return response;
+    }
+
+    await profileCollection.updateOne(
       { address },
       {
         $set: {
@@ -83,7 +143,9 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       ok: true,
+      purpose: linkRecord.purpose,
       googleAccount: linkRecord.googleAccount,
+      oauthGrant: null,
     });
     response.cookies.set(getGoogleLinkCodeCookieName(), "", {
       httpOnly: true,

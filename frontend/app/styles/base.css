@@ -14,7 +14,17 @@
 
 :root {
   --background: #ffffff;
+  --background-light: #ffffff;
+  --background-light-cream: #f2f0e4;
   --foreground: #171717;
+}
+
+:root[data-light-mode-primary-color="white"] {
+  --background: var(--background-light);
+}
+
+:root[data-light-mode-primary-color="cream"] {
+  --background: var(--background-light-cream);
 }
 
 @theme inline {

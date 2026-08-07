@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { getUserProfilesCollection } from "@/lib/mongodb";
+import { normalizeGoogleLinkPurpose, parseStoredGoogleOAuthGrant, sanitizeGoogleOAuthGrantSummary } from "@/lib/googleAuth";
+import { getGoogleOAuthGrantsCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,31 @@ export async function GET(request: Request) {
       return badRequest("address is required");
     }
 
+    const purpose = normalizeGoogleLinkPurpose(url.searchParams.get("purpose"));
+    const normalizedAddress = normalizeAddress(address);
+
+    if (purpose === "forms_response_access") {
+      const grantsCollection = await getGoogleOAuthGrantsCollection();
+      const grantDoc = await grantsCollection.findOne(
+        { address: normalizedAddress, grantKind: "forms_response_access" },
+        {
+          projection: {
+            _id: 0,
+            grant: 1,
+          },
+        },
+      );
+
+      return NextResponse.json({
+        purpose,
+        googleAccount: null,
+        oauthGrant: sanitizeGoogleOAuthGrantSummary(parseStoredGoogleOAuthGrant(grantDoc?.grant ?? null)),
+      });
+    }
+
     const collection = await getUserProfilesCollection();
     const profile = await collection.findOne(
-      { address: normalizeAddress(address) },
+      { address: normalizedAddress },
       {
         projection: {
           _id: 0,
@@ -32,7 +55,9 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json({
+      purpose,
       googleAccount: profile?.googleAccount ?? null,
+      oauthGrant: null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch linked Google account";

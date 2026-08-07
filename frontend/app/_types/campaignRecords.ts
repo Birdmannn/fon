@@ -1,4 +1,5 @@
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
+import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import type { GiftDeliverable } from "@/lib/giftDeliverables";
 
 export type CampaignComment = {
@@ -35,6 +36,7 @@ export type CampaignRecord = {
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
+    lock?: LockMountableConfig | null;
   };
   socialMetadata?: {
     mentions?: string[];

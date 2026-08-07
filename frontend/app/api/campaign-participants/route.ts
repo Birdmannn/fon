@@ -192,7 +192,21 @@ export async function GET(request: Request) {
       .find({ campaignId }, { sort: { joinedAt: 1 } })
       .toArray();
 
-    return NextResponse.json({ participants });
+    const sanitizedParticipants = participants.map((participant) => {
+      const {
+        googleSub: _googleSub,
+        googleEmail: _googleEmail,
+        googleEmailVerified: _googleEmailVerified,
+        responseId: _responseId,
+        responseCreateTime: _responseCreateTime,
+        responseLastSubmittedTime: _responseLastSubmittedTime,
+        matchedRespondentEmail: _matchedRespondentEmail,
+        ...rest
+      } = participant as Record<string, unknown>;
+      return rest;
+    });
+
+    return NextResponse.json({ participants: sanitizedParticipants });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch campaign participants";
     return badRequest(message, 500);

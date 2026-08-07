@@ -943,7 +943,7 @@
 .campaign-detail-card-shell {
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
-  background: #ffffff;
+  background: var(--background);
 }
 
 .campaign-detail-comments-panel {
@@ -1129,7 +1129,7 @@
 .campaign-detail-skeleton-card {
   border: 1px solid #e5e7eb;
   border-radius: 0.75rem;
-  background: #ffffff;
+  background: var(--background);
   padding: 1.25rem;
   display: flex;
   flex-direction: column;

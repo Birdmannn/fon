@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ccc } from "@ckb-ccc/connector-react";
 
+import type { LightModePrimaryColor } from "@/lib/lightModePrimaryColor";
+import {
+  normalizeLightModePrimaryColor,
+  persistLightModePrimaryColor,
+} from "@/lib/lightModePrimaryColor";
 import {
   clearWalletSeedIntent,
   finishWalletSeedAttempt,
@@ -28,6 +33,7 @@ export type UserProfile = LeaderboardEntry & {
   overallRank: number;
   weeklyRank: number;
   canEditWeeklyMarquee: boolean;
+  lightModePrimaryColor: LightModePrimaryColor;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
   weeklyMarqueeEditsUsed: number;
@@ -109,7 +115,10 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       ? payload.overallLeaderboard as LeaderboardEntry[]
       : [];
 
-    setCurrentUserProfile(payload?.profile ?? null);
+    setCurrentUserProfile(payload?.profile ? {
+      ...payload.profile,
+      lightModePrimaryColor: normalizeLightModePrimaryColor(payload.profile.lightModePrimaryColor),
+    } : null);
     setLeaderboard(nextWeeklyLeaderboard);
     setWeeklyLeaderboard(nextWeeklyLeaderboard);
     setOverallLeaderboard(nextOverallLeaderboard);
@@ -293,6 +302,14 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       });
   }, [currentUserProfile, isSeedingWalletFbars, isUserProfileLoading, seedWalletFbars, signer, targetHandle]);
 
+  useEffect(() => {
+    if (targetHandle || !currentUserProfile?.lightModePrimaryColor) {
+      return;
+    }
+
+    persistLightModePrimaryColor(currentUserProfile.lightModePrimaryColor);
+  }, [currentUserProfile?.lightModePrimaryColor, targetHandle]);
+
   const saveDisplayName = useCallback(async (displayName: string) => {
     if (!signer) {
       throw new Error("Connect a wallet first");
@@ -389,6 +406,50 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     }
   }, [applyProfilePayload, signer]);
 
+  const saveLightModePrimaryColor = useCallback(async (lightModePrimaryColor: LightModePrimaryColor) => {
+    if (!signer) {
+      throw new Error("Connect a wallet first");
+    }
+
+    const address = await signer.getRecommendedAddress();
+    if (!address) {
+      throw new Error("Unable to resolve wallet address");
+    }
+
+    setIsSavingUserProfile(true);
+    setUserProfileError("");
+
+    try {
+      const response = await fetch("/api/user-profiles", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address,
+          lightModePrimaryColor,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to update light mode primary color");
+      }
+
+      applyProfilePayload(payload);
+      const nextProfile = payload?.profile as UserProfile | null;
+      if (nextProfile?.lightModePrimaryColor) {
+        persistLightModePrimaryColor(nextProfile.lightModePrimaryColor);
+      }
+      return nextProfile;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update light mode primary color";
+      setUserProfileError(message);
+      throw error;
+    } finally {
+      setIsSavingUserProfile(false);
+    }
+  }, [applyProfilePayload, signer]);
+
   return {
     activeWeeklyMarqueeEditsRemaining,
     activeWeeklyMarqueeEditsUsed,
@@ -403,6 +464,7 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     leaderboard,
     overallLeaderboard,
     saveDisplayName,
+    saveLightModePrimaryColor,
     saveWeeklyMarqueeMessage,
     seedWalletFbars,
     setCurrentUserProfile,

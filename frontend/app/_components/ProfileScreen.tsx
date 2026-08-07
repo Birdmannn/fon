@@ -134,6 +134,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     isUserProfileLoading,
     overallLeaderboard,
     saveDisplayName,
+    saveLightModePrimaryColor,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
@@ -971,7 +972,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               </button>
             </div>
           ) : undefined}
+          canEditLightModePrimaryColor={canEditDisplayName}
+          currentLightModePrimaryColor={currentUserProfile?.lightModePrimaryColor ?? null}
           shouldHideWalletAction={shouldHideWalletAction}
+          isSavingLightModePrimaryColor={isSavingUserProfile}
+          onSaveLightModePrimaryColor={saveLightModePrimaryColor}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}

@@ -1016,7 +1016,6 @@ export default function Home() {
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
           walletActionHref={walletActionHref}
-          walletActionLabel="Introspect"
         />
 
         {signer && (

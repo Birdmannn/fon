@@ -54,9 +54,13 @@ export function useCreateCampaignFlow<TMode extends string>({
   });
   const [previewError, setPreviewError] = useState("");
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [lockMountableSelected, setLockMountableSelected] = useState(false);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
+  const [mountableLockFbars, setMountableLockFbars] = useState("");
   const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
+  const [mountableLockValidationState, setMountableLockValidationState] = useState<"idle" | "valid" | "invalid">("idle");
   const [isMountableFormFocused, setIsMountableFormFocused] = useState(false);
+  const [isMountableLockFocused, setIsMountableLockFocused] = useState(false);
   const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
   const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
@@ -88,6 +92,11 @@ export function useCreateCampaignFlow<TMode extends string>({
 
   const openMountablesModal = useCallback(() => {
     setMountableFormLinks([createModalContentRef.current?.getFormsMountableConfig().formUrl ?? ""]);
+    setMountableLockFbars(createModalContentRef.current?.getLockMountableConfig().minimumFbars ?? "");
+    setMountableFormValidationState("idle");
+    setMountableLockValidationState("idle");
+    setIsMountableFormFocused(false);
+    setIsMountableLockFocused(false);
     setMountablesPromptError("");
     showCreateInfoModal("mountables" as TMode);
   }, [showCreateInfoModal]);
@@ -291,15 +300,19 @@ export function useCreateCampaignFlow<TMode extends string>({
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleSaveDraftChoice,
     isCreateDraftListOpen,
     isCreateModalClosing,
     isMountableFormFocused,
+    isMountableLockFocused,
     isMountablesContinuing,
     mountableFormLinks,
+    mountableLockFbars,
     mountableFormValidationState,
+    mountableLockValidationState,
     mountablesPromptError,
     openCreateModal,
     openMountablesModal,
@@ -312,11 +325,15 @@ export function useCreateCampaignFlow<TMode extends string>({
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
+    setIsMountableLockFocused,
     setIsMountablesContinuing,
     setMountableFormLinks,
+    setMountableLockFbars,
     setMountableFormValidationState,
+    setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
     setSaveDraftPromptError,

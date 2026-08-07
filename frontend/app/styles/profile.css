@@ -470,7 +470,7 @@
 }
 
 .profile-tab-button-loader .campaign-feed-loading-dot {
-  background: #ffffff;
+  background: var(--background);
 }
 
 .profile-tab-button:last-child {

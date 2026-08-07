@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 
 import {
   buildGoogleLinkCookieValue,
+  buildGoogleOAuthGrant,
   consumeGoogleOAuthState,
   createGoogleLinkCode,
-  exchangeGoogleCodeForAccount,
+  exchangeGoogleCodeForLinkResult,
   getGoogleLinkCodeCookieName,
   getGoogleOAuthCookieName,
+  hasGoogleFormsResponsesScope,
   parseGoogleOAuthCookieValue,
 } from "@/lib/googleAuth";
 
@@ -36,8 +38,30 @@ export async function GET(request: Request) {
       return badRequest("Google OAuth session expired", 403);
     }
 
-    const googleAccount = await exchangeGoogleCodeForAccount(code);
-    const linkCodeRecord = createGoogleLinkCode(stateRecord.address, googleAccount);
+    const linkResult = await exchangeGoogleCodeForLinkResult(code, stateRecord.requestedScopes);
+    const oauthGrant = stateRecord.purpose === "forms_response_access"
+      ? buildGoogleOAuthGrant({
+        grantKind: "forms_response_access",
+        address: stateRecord.address,
+        googleAccount: linkResult.googleAccount,
+        grantedScopes: linkResult.grantedScopes,
+        accessToken: linkResult.accessToken,
+        accessTokenExpiresAt: linkResult.accessTokenExpiresAt,
+        refreshToken: linkResult.refreshToken,
+        tokenType: linkResult.tokenType,
+      })
+      : null;
+
+    if (stateRecord.purpose === "forms_response_access" && (!oauthGrant || !hasGoogleFormsResponsesScope(oauthGrant.scopes))) {
+      return badRequest("Google response access must include Google Forms response scope", 403);
+    }
+
+    const linkCodeRecord = createGoogleLinkCode(
+      stateRecord.address,
+      linkResult.googleAccount,
+      stateRecord.purpose,
+      oauthGrant,
+    );
     const redirectTarget = new URL(stateRecord.redirectPath || "/", url.origin);
     redirectTarget.searchParams.set("google_link_code", linkCodeRecord.code);
 

@@ -1066,7 +1066,6 @@ export default function CampaignDetailPage() {
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
           walletActionHref={walletActionHref}
-          walletActionLabel="Introspect"
         />
 
         <div className="campaign-detail-content-shell">
