@@ -28,6 +28,7 @@
   border: 2px solid var(--foreground);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
   z-index: 51;
+  overflow-x: hidden;
   overflow-y: auto;
   animation: create-campaign-modal-reveal 620ms ease forwards;
 }
