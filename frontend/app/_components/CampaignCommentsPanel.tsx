@@ -13,6 +13,8 @@ type CampaignCommentsPanelProps = {
   comments: CampaignComment[];
   emptyMessage?: string;
   fallbackAddress?: string;
+  locked?: boolean;
+  lockedMessage?: string;
   title?: string;
   variant?: "card" | "inline";
 };
@@ -21,6 +23,8 @@ export default function CampaignCommentsPanel({
   comments,
   emptyMessage = "No comments yet.",
   fallbackAddress = "0x0000000000000000000000000000000000000000",
+  locked = false,
+  lockedMessage = "Comments are locked by mounted criteria.",
   title = "Comments",
   variant = "card",
 }: CampaignCommentsPanelProps) {
@@ -28,9 +32,11 @@ export default function CampaignCommentsPanel({
     <div className={variant === "inline" ? "campaign-detail-comments-panel campaign-detail-comments-panel-inline" : "campaign-detail-comments-panel campaign-detail-card-shell campaign-detail-comments-card"}>
       <div className="campaign-detail-comments-header">
         <h2 className="campaign-detail-comments-title">{title}</h2>
-        <span className="campaign-detail-comments-count">{comments.length}</span>
+        <span className="campaign-detail-comments-count">{locked ? "—" : comments.length}</span>
       </div>
-      {comments.length > 0 ? (
+      {locked ? (
+        <p className="campaign-detail-comments-empty">{lockedMessage}</p>
+      ) : comments.length > 0 ? (
         <div className="campaign-detail-comments-list">
           {comments.map((comment, index) => (
             <article key={`${comment.createdAt ?? "comment"}-${index}`} className="campaign-detail-comment-item">

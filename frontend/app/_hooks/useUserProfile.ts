@@ -29,6 +29,15 @@ export type LeaderboardEntry = {
   lastSeenAt?: string | null;
 };
 
+export type UserProfileGoogleAccount = {
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+  picture?: string | null;
+  linkedAt?: string | null;
+  lastRefreshedAt?: string | null;
+};
+
 export type UserProfile = LeaderboardEntry & {
   overallRank: number;
   weeklyRank: number;
@@ -40,6 +49,7 @@ export type UserProfile = LeaderboardEntry & {
   weeklyMarqueeEditsRemaining: number;
   weeklyMarqueeMaxEdits: number;
   hasSeededWalletFbars: boolean;
+  googleAccount?: UserProfileGoogleAccount | null;
 };
 
 export type WeeklyMarqueeOwner = {

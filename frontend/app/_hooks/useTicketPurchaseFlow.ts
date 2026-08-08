@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
+import { canAccessLockMountable, getLockMountableBypassFbars } from "@/app/_lib/lockMountable";
 import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex } from "@/lib/encoding";
@@ -10,11 +11,12 @@ import { fetchCampaigns, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, 
 import { ccc } from "@ckb-ccc/connector-react";
 
 type UseTicketPurchaseFlowArgs = {
+  currentViewerFbars?: number | null;
   onSubmissionError: (message: string) => void;
   onTicketBuySuccess: (txHash: string) => void;
 };
 
-export function useTicketPurchaseFlow({ onSubmissionError, onTicketBuySuccess }: UseTicketPurchaseFlowArgs) {
+export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, onTicketBuySuccess }: UseTicketPurchaseFlowArgs) {
   const signer = ccc.useSigner();
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
@@ -43,6 +45,12 @@ export function useTicketPurchaseFlow({ onSubmissionError, onTicketBuySuccess }:
 
   const handleTicketPurchaseSubmit = useCallback(async () => {
     if (!signer || !ticketPurchaseCampaign) {
+      return;
+    }
+
+    if (!canAccessLockMountable(ticketPurchaseRecord?.mountables?.lock, currentViewerFbars)) {
+      const bypassFbars = getLockMountableBypassFbars(ticketPurchaseRecord?.mountables?.lock);
+      setTicketPurchaseError(bypassFbars === null ? "This raffle is locked." : `Need ${bypassFbars} FBARS to bypass this lock`);
       return;
     }
 
@@ -149,7 +157,7 @@ export function useTicketPurchaseFlow({ onSubmissionError, onTicketBuySuccess }:
       setIsPurchasingTickets(false);
       onSubmissionError(message);
     }
-  }, [onSubmissionError, onTicketBuySuccess, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
+  }, [currentViewerFbars, onSubmissionError, onTicketBuySuccess, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
 
   return {
     handleTicketPurchaseSubmit,

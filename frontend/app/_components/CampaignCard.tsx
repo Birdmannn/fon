@@ -25,6 +25,7 @@ type CampaignCardProps = {
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
   client: ccc.Client;
+  currentViewerFbars?: number | null;
   currentWalletAddress: string | null;
   nowMs: number;
   isHighlighted?: boolean;
@@ -50,6 +51,7 @@ export default function CampaignCard({
   displayStatus,
   signer,
   client,
+  currentViewerFbars,
   currentWalletAddress,
   nowMs,
   isHighlighted = false,
@@ -88,12 +90,14 @@ export default function CampaignCard({
     isCommentComposerOpen,
     isConnected,
     isDepositing,
+    isLockedForInteractions,
     isPurchaseDisabled,
     isRaffleCampaign,
     isSavingComment,
     canGiftApprove,
     canGiftClaim,
     likes,
+    lockAccessMessage,
     actionFeedback,
     maxCkb,
     remainingTickets,
@@ -115,6 +119,7 @@ export default function CampaignCard({
     displayStatus,
     signer,
     client,
+    currentViewerFbars,
     currentWalletAddress,
     onCommentDiscardRequest,
     commentDiscardDecision,
@@ -137,8 +142,8 @@ export default function CampaignCard({
         <div className="flex items-center gap-2">
           <button
             onClick={() => void handleLike()}
-            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to like" : "Like"}
+            className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected || isLockedForInteractions ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to like" : isLockedForInteractions ? lockAccessMessage : "Like"}
           >
             <Heart className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{likes}</span>
@@ -155,8 +160,8 @@ export default function CampaignCard({
 
           <button
             onClick={handleComment}
-            className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to comment" : "Comment"}
+            className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected || isLockedForInteractions ? "campaign-action-disabled" : ""}`}
+            data-tooltip={!isConnected ? "Connect wallet to comment" : isLockedForInteractions ? lockAccessMessage : "Comment"}
           >
             <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{comments}</span>
@@ -198,7 +203,7 @@ export default function CampaignCard({
                 onClick={() => onTicketPurchaseRequest(campaign, record, onTicketBought)}
                 disabled={isPurchaseDisabled}
                 className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                data-tooltip={!isConnected ? "Connect wallet to buy tickets" : "Freight unavailable"}
+                data-tooltip={!isConnected ? "Connect wallet to buy tickets" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
               >
                 <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
@@ -214,13 +219,15 @@ export default function CampaignCard({
               data-tooltip={
                 !isConnected
                   ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-                  : isCampaignInactive
-                    ? "Freight unavailable"
-                    : remainingTickets <= 0n
-                      ? "No tickets left"
-                      : hasReachedMaxAmount
-                        ? "Max amount reached"
-                        : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
+                  : isLockedForInteractions
+                    ? lockAccessMessage
+                    : isCampaignInactive
+                      ? "Freight unavailable"
+                      : remainingTickets <= 0n
+                        ? "No tickets left"
+                        : hasReachedMaxAmount
+                          ? "Max amount reached"
+                          : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
               }
             >
               {isRaffleCampaign ? (

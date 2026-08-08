@@ -30,6 +30,7 @@ type UserProfileWithGoogle = {
 export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: UserProfileWithGoogle | null) {
   const [isLinkingGoogle, setIsLinkingGoogle] = useState(false);
   const [isHydratingGoogleLink, setIsHydratingGoogleLink] = useState(false);
+  const [isRefreshingLinkedGoogleGrant, setIsRefreshingLinkedGoogleGrant] = useState(false);
   const [googleLinkError, setGoogleLinkError] = useState("");
   const [linkedGoogleAccount, setLinkedGoogleAccount] = useState<LinkedGoogleAccount | null>(currentUserProfile?.googleAccount ?? null);
   const [linkedGoogleGrant, setLinkedGoogleGrant] = useState<LinkedGoogleOAuthGrant | null>(null);
@@ -164,22 +165,37 @@ export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: Use
       return null;
     }
 
-    const response = await fetch(`/api/google/link?address=${encodeURIComponent(address)}&purpose=${encodeURIComponent(purpose)}`);
-    const payload = await response.json().catch(() => null) as {
-      error?: string;
-      oauthGrant?: LinkedGoogleOAuthGrant | null;
-      googleAccount?: LinkedGoogleAccount | null;
-    } | null;
-    if (!response.ok) {
-      throw new Error(payload?.error ?? "Failed to fetch linked Google state");
-    }
-
     if (purpose === "forms_response_access") {
-      setLinkedGoogleGrant(payload?.oauthGrant ?? null);
-      return payload?.oauthGrant ?? null;
+      setIsRefreshingLinkedGoogleGrant(true);
     }
+    setGoogleLinkError("");
 
-    return payload?.googleAccount ?? null;
+    try {
+      const response = await fetch(`/api/google/link?address=${encodeURIComponent(address)}&purpose=${encodeURIComponent(purpose)}`);
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+        oauthGrant?: LinkedGoogleOAuthGrant | null;
+        googleAccount?: LinkedGoogleAccount | null;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to fetch linked Google state");
+      }
+
+      if (purpose === "forms_response_access") {
+        setLinkedGoogleGrant(payload?.oauthGrant ?? null);
+        return payload?.oauthGrant ?? null;
+      }
+
+      return payload?.googleAccount ?? null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to fetch linked Google state";
+      setGoogleLinkError(message);
+      throw error;
+    } finally {
+      if (purpose === "forms_response_access") {
+        setIsRefreshingLinkedGoogleGrant(false);
+      }
+    }
   }, [signer]);
 
   useEffect(() => {
@@ -208,6 +224,7 @@ export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: Use
     isGoogleLinked,
     isHydratingGoogleLink,
     isLinkingGoogle,
+    isRefreshingLinkedGoogleGrant,
     linkedGoogleAccount,
     linkedGoogleGrant,
     refreshLinkedGoogleGrant,

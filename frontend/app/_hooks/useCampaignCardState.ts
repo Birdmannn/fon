@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { canAccessLockMountable, getLockMountableBypassFbars } from "@/app/_lib/lockMountable";
 import type { CampaignComment, CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import type { SettlementModalData, SettlementRecipient } from "@/app/_types/settlement";
 import {
@@ -68,6 +69,7 @@ type UseCampaignCardStateArgs = {
   displayStatus: CampaignStatus;
   signer: ccc.Signer | null;
   client: ccc.Client;
+  currentViewerFbars?: number | null;
   currentWalletAddress: string | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
@@ -88,6 +90,7 @@ export function useCampaignCardState({
   displayStatus,
   signer,
   client,
+  currentViewerFbars,
   currentWalletAddress,
   onCommentDiscardRequest,
   commentDiscardDecision,
@@ -151,6 +154,10 @@ export function useCampaignCardState({
       : []
   ), [record?.socialMetadata?.resharedByAddresses]);
   const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
+  const lockMountable = record?.mountables?.lock ?? null;
+  const lockBypassFbars = getLockMountableBypassFbars(lockMountable);
+  const isLockedForInteractions = lockBypassFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars);
+  const lockAccessMessage = lockBypassFbars === null ? "This freight is locked." : `Need ${lockBypassFbars} FBARS to bypass this lock`;
   const canGiftApprove = Boolean(
     normalizedCurrentWalletAddress
     && giftDeliverable.enabled
@@ -208,7 +215,7 @@ export function useCampaignCardState({
   };
 
   const isConnected = !!signer;
-  const isPurchaseDisabled = !isConnected || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
+  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userReshared = normalizedCurrentWalletAddress.length > 0 && resharedByAddresses.includes(normalizedCurrentWalletAddress);
@@ -351,6 +358,11 @@ export function useCampaignCardState({
       return;
     }
 
+    if (isLockedForInteractions) {
+      showActionFeedback("like", "error", lockAccessMessage);
+      return;
+    }
+
     if (!record?._id) {
       showActionFeedback("like", "error", "Likes are not available for this freight yet");
       return;
@@ -423,6 +435,11 @@ export function useCampaignCardState({
 
   const handleComment = () => {
     if (!isConnected) return;
+    if (isLockedForInteractions) {
+      setCommentError(lockAccessMessage);
+      setIsCommentComposerOpen(false);
+      return;
+    }
     setCommentError("");
     setIsCommentComposerOpen((current) => !current);
   };
@@ -469,6 +486,11 @@ export function useCampaignCardState({
 
     if (!record?._id) {
       setCommentError("Comments are not available for this campaign yet");
+      return;
+    }
+
+    if (isLockedForInteractions) {
+      setCommentError(lockAccessMessage);
       return;
     }
 
@@ -1038,7 +1060,9 @@ export function useCampaignCardState({
     canGiftApprove,
     canGiftClaim,
     isDepositing,
+    isLockedForInteractions,
     isPurchaseDisabled,
+    lockAccessMessage,
     isRaffleCampaign,
     isSavingComment,
     likes,

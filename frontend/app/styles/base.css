@@ -16,15 +16,20 @@
   --background: #ffffff;
   --background-light: #ffffff;
   --background-light-cream: #f2f0e4;
+  --tertiary-background: #f3f4f6;
+  --tertiary-background-light: #f3f4f6;
+  --tertiary-background-light-cream: #cccbc8;
   --foreground: #171717;
 }
 
 :root[data-light-mode-primary-color="white"] {
   --background: var(--background-light);
+  --tertiary-background: var(--tertiary-background-light);
 }
 
 :root[data-light-mode-primary-color="cream"] {
   --background: var(--background-light-cream);
+  --tertiary-background: var(--tertiary-background-light-cream);
 }
 
 @theme inline {
@@ -37,6 +42,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
+    --tertiary-background: var(--tertiary-background-light);
     --foreground: #ededed;
   }
 }

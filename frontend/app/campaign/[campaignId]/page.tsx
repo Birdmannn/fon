@@ -23,6 +23,7 @@ import {
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
 import { formsMountableSummary, isFormsMountableEnabled } from "@/app/_lib/formsMountable";
+import { canAccessLockMountable, getLockMountableBypassFbars, getLockMountableValidationState, isLockMountableEnabled, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
@@ -61,7 +62,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "mountables-lock" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -114,11 +115,16 @@ export default function CampaignDetailPage() {
     walletInfoLoading,
     walletUsdParts,
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
-  const { currentUserProfile } = useUserProfile(signer ?? null);
+  const {
+    currentUserProfile,
+    isSavingUserProfile,
+    saveLightModePrimaryColor,
+  } = useUserProfile(signer ?? null);
   const walletActionHref = useMemo(() => {
     const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
     return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
   }, [currentUserProfile?.username, walletAddress]);
+  const canEditLightModePrimaryColor = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
 
   const recordLookupQuery = useMemo(() => {
     const nextLookupQuery = !campaignRef
@@ -139,19 +145,19 @@ export default function CampaignDetailPage() {
     return nextLookupQuery;
   }, [campaignRef, encodedCampaignIdParam, rawCampaignIdParam]);
 
-  const clearInfoCloseTimer = () => {
+  const clearInfoCloseTimer = useCallback(() => {
     if (infoCloseTimerRef.current) {
       clearTimeout(infoCloseTimerRef.current);
       infoCloseTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const clearInfoHideTimer = () => {
+  const clearInfoHideTimer = useCallback(() => {
     if (infoHideTimerRef.current) {
       clearTimeout(infoHideTimerRef.current);
       infoHideTimerRef.current = null;
     }
-  };
+  }, []);
 
   const closeInfoModal = useCallback((onBeforeHide?: () => void) => {
     clearInfoCloseTimer();
@@ -168,7 +174,7 @@ export default function CampaignDetailPage() {
       setInfoModalInteraction("hover");
       infoHideTimerRef.current = null;
     }, INFO_MODAL_ANIMATION_MS);
-  }, [showInfoModal, isInfoModalClosing]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, isInfoModalClosing, showInfoModal]);
 
   const openInfoModalFromHover = useCallback((preventHoverOpen: boolean = false) => {
     clearInfoCloseTimer();
@@ -186,14 +192,14 @@ export default function CampaignDetailPage() {
     setInfoModalInteraction("hover");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, [infoModalInteraction, isInfoModalClosing, showInfoModal]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, infoModalInteraction, isInfoModalClosing, showInfoModal]);
 
   const keepInfoModalOpen = useCallback(() => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, []);
+  }, [clearInfoCloseTimer, clearInfoHideTimer]);
 
   const scheduleCloseInfoModal = useCallback((preventAutoClose: boolean = false, onBeforeHide?: () => void) => {
     if (preventAutoClose) {
@@ -204,7 +210,7 @@ export default function CampaignDetailPage() {
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal(onBeforeHide);
     }, 120);
-  }, [closeInfoModal]);
+  }, [clearInfoCloseTimer, closeInfoModal]);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -257,15 +263,19 @@ export default function CampaignDetailPage() {
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleSaveDraftChoice,
     isCreateDraftListOpen,
     isCreateModalClosing,
     isMountableFormFocused,
+    isMountableLockFocused,
     isMountablesContinuing,
     mountableFormLinks,
+    mountableLockFbars,
     mountableFormValidationState,
+    mountableLockValidationState,
     mountablesPromptError,
     openCreateModal,
     openMountablesModal,
@@ -278,11 +288,15 @@ export default function CampaignDetailPage() {
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
+    setIsMountableLockFocused,
     setIsMountablesContinuing,
     setMountableFormLinks,
+    setMountableLockFbars,
     setMountableFormValidationState,
+    setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
@@ -328,6 +342,7 @@ export default function CampaignDetailPage() {
 
   const preventInfoHover = infoModalMode === "save-draft-confirm"
     || infoModalMode === "mountables"
+    || infoModalMode === "mountables-lock"
     || infoModalMode === "mountables-forms"
     || infoModalMode === "submission-success";
 
@@ -459,6 +474,35 @@ export default function CampaignDetailPage() {
       window.clearTimeout(timeoutId);
     };
   }, [infoModalMode, mountableFormLinks, setIsMountableFormFocused, setMountableFormValidationState, setMountablesPromptError]);
+
+  useEffect(() => {
+    if (infoModalMode !== "mountables-lock") {
+      return;
+    }
+
+    const nextValidationState = getLockMountableValidationState(mountableLockFbars, currentUserProfile?.fbars);
+    setMountableLockValidationState(nextValidationState);
+    if (nextValidationState !== "idle") {
+      setIsMountableLockFocused(false);
+    }
+
+    const parsedLockFbars = parseLockMinimumFbars(mountableLockFbars);
+    if (nextValidationState === "invalid") {
+      if (
+        parsedLockFbars !== null
+        && typeof currentUserProfile?.fbars === "number"
+        && Number.isFinite(currentUserProfile.fbars)
+        && parsedLockFbars > Math.trunc(currentUserProfile.fbars)
+      ) {
+        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(currentUserProfile.fbars)} FBARS.`);
+      } else {
+        setMountablesPromptError("Enter a positive FBARS amount.");
+      }
+      return;
+    }
+
+    setMountablesPromptError("");
+  }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -598,6 +642,7 @@ export default function CampaignDetailPage() {
   const mountableItems = useMemo<CampaignMountableItem[]>(() => {
     const items: CampaignMountableItem[] = [];
     const formsMountable = selectedRecord?.mountables?.forms;
+    const lockMountable = selectedRecord?.mountables?.lock;
 
     if (formsMountable && isFormsMountableEnabled(formsMountable)) {
       const metadata = [
@@ -608,6 +653,7 @@ export default function CampaignDetailPage() {
       items.push({
         description: formsMountableSummary(formsMountable),
         href: formsMountable.canonicalFormUrl || formsMountable.formUrl || undefined,
+        icon: "forms",
         key: "forms",
         metadata,
         proofInstructions: formsMountable.proofInstructions?.trim() || undefined,
@@ -615,9 +661,21 @@ export default function CampaignDetailPage() {
       });
     }
 
-    return items;
-  }, [selectedRecord?.mountables?.forms]);
+    if (lockMountable && isLockMountableEnabled(lockMountable)) {
+      items.push({
+        description: lockMountableSummary(lockMountable),
+        icon: "lock",
+        key: "lock",
+        metadata: ["Criterion: FBARS"],
+        title: "Lock",
+      });
+    }
 
+    return items;
+  }, [selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
+
+  const commentsLocked = !canAccessLockMountable(selectedRecord?.mountables?.lock, currentUserProfile?.fbars);
+  const commentsLockBypassFbars = getLockMountableBypassFbars(selectedRecord?.mountables?.lock);
   const detailCampaignType = selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? 0;
   const detailTypeLabel = TYPE_LABELS[detailCampaignType] ?? `Type ${detailCampaignType}`;
   const detailUsesRaffleRandomness = detailCampaignType === 4;
@@ -737,14 +795,24 @@ export default function CampaignDetailPage() {
         </button>
         <button
           type="button"
-          className="create-mountable-option"
+          className={`create-mountable-option ${lockMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={lockMountableSelected ? "Deselect lock mountable" : "Select lock mountable"}
+          aria-pressed={lockMountableSelected}
           data-tooltip="Lock"
-          disabled
-          aria-label="Lock mountable coming soon"
+          onClick={() => {
+            const nextSelected = !lockMountableSelected;
+            createModalContentRef.current?.setLockMountableEnabled(nextSelected);
+            setLockMountableSelected(nextSelected);
+            setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
+            setMountablesPromptError("");
+          }}
         >
           <span className="create-mountable-option-icon-wrap">
             <span className="create-mountable-option-icon-bg">
               <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
             </span>
           </span>
         </button>
@@ -754,6 +822,39 @@ export default function CampaignDetailPage() {
           <span>{mountablesPromptError}</span>
         </p>
       ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config">
+        <div className="create-review-card-heading-row">
+          <p className="create-review-section-label text-gray-900">Lock criteria:</p>
+          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
+        </div>
+        <div className="create-info-forms-row flex items-center gap-2">
+          <span className="create-review-section-label text-gray-900">With:</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={mountableLockFbars}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setMountableLockFbars(nextValue);
+              createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+              setMountablesPromptError("");
+            }}
+            onFocus={() => {
+              if (mountableLockValidationState === "idle") {
+                setIsMountableLockFocused(true);
+              }
+            }}
+            onBlur={() => setIsMountableLockFocused(false)}
+            placeholder="0"
+            className={`create-info-ticket-input ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
+            aria-label="Lock FBARS threshold"
+          />
+          <span className="create-info-constraint-item text-gray-500"><span>fbars</span></span>
+        </div>
+      </div>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
     <div className="create-info-constraints-copy">
@@ -868,16 +969,59 @@ export default function CampaignDetailPage() {
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected) {
+          if (!formsMountableSelected && !lockMountableSelected) {
             setMountablesPromptError("Select a mountable to continue.");
             return;
           }
 
-          transitionMountablesModal("mountables-forms");
+          transitionMountablesModal(lockMountableSelected ? "mountables-lock" : "mountables-forms");
           setMountablesPromptError("");
         }}
       >
         Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || mountableLockValidationState !== "valid"}
+        onClick={() => {
+          void (async () => {
+            try {
+              const minimumFbars = parseLockMinimumFbars(mountableLockFbars);
+              if (minimumFbars === null) {
+                setMountablesPromptError("Enter a positive FBARS amount.");
+                return;
+              }
+
+              createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: String(minimumFbars) });
+
+              if (formsMountableSelected) {
+                transitionMountablesModal("mountables-forms");
+                setMountablesPromptError("");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+              await createModalContentRef.current?.persistCurrentDraft();
+
+              closeInfoModal(() => {
+                setInfoModalMode("about");
+                setMountablesPromptError("");
+              });
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted lock");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : "Continue"}
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
@@ -1000,7 +1144,13 @@ export default function CampaignDetailPage() {
                 record={selectedRecord}
               />
             </div>
-            <CampaignCommentsPanel comments={comments} fallbackAddress={creatorAddress} variant="inline" />
+            <CampaignCommentsPanel
+              comments={comments}
+              fallbackAddress={creatorAddress}
+              locked={commentsLocked}
+              lockedMessage={commentsLockBypassFbars === null ? "Comments are locked by mounted criteria." : `Need ${commentsLockBypassFbars} FBARS to bypass this lock and view comments.`}
+              variant="inline"
+            />
           </div>
         </section>
 
@@ -1054,6 +1204,10 @@ export default function CampaignDetailPage() {
               onSecondaryAction={handleCreateTopRightAction}
             />
           ) : undefined}
+          canEditLightModePrimaryColor={canEditLightModePrimaryColor}
+          currentLightModePrimaryColor={currentUserProfile?.lightModePrimaryColor ?? null}
+          isSavingLightModePrimaryColor={isSavingUserProfile}
+          onSaveLightModePrimaryColor={saveLightModePrimaryColor}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
@@ -1081,8 +1235,9 @@ export default function CampaignDetailPage() {
           onDraftSelectionRequest={handleDraftSelectionRequest}
           onInsufficientFbars={openInsufficientFbarsInfoModal}
           onMountableSelectionRequired={openMountablesModal}
-          onMountableSelectionStateChange={({ formsSelected }) => {
+          onMountableSelectionStateChange={({ formsSelected, lockSelected }) => {
             setFormsMountableSelected(formsSelected);
+            setLockMountableSelected(lockSelected);
           }}
           onOpenCreateModal={openCreateModal}
           onPreviewErrorChange={setPreviewError}

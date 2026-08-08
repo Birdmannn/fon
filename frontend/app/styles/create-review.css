@@ -148,7 +148,7 @@
   font-size: 0.68rem;
   line-height: 1;
   color: #52525b;
-  background: rgba(244, 244, 245, 0.82);
+  background: color-mix(in srgb, var(--tertiary-background) 82%, var(--background) 18%);
 }
 
 .create-review-summary-input {
@@ -271,7 +271,7 @@
   line-height: 1;
   font-weight: 700;
   color: #3f3f46;
-  background: #f4f4f5;
+  background: var(--tertiary-background);
 }
 
 .create-review-gift-grid {

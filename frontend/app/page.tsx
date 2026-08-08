@@ -26,6 +26,7 @@ import {
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
+import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
@@ -51,7 +52,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "mountables-lock" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
 
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 
@@ -108,11 +109,16 @@ export default function Home() {
     walletInfoLoading,
     walletUsdParts,
   } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
-  const { currentUserProfile } = useUserProfile(signer ?? null);
+  const {
+    currentUserProfile,
+    isSavingUserProfile,
+    saveLightModePrimaryColor,
+  } = useUserProfile(signer ?? null);
   const walletActionHref = useMemo(() => {
     const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
     return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
   }, [currentUserProfile?.username, walletAddress]);
+  const canEditLightModePrimaryColor = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -184,15 +190,19 @@ export default function Home() {
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleSaveDraftChoice,
     isCreateDraftListOpen,
     isCreateModalClosing,
     isMountableFormFocused,
+    isMountableLockFocused,
     isMountablesContinuing,
     mountableFormLinks,
+    mountableLockFbars,
     mountableFormValidationState,
+    mountableLockValidationState,
     mountablesPromptError,
     openCreateModal,
     openMountablesModal,
@@ -204,11 +214,15 @@ export default function Home() {
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
+    setIsMountableLockFocused,
     setIsMountablesContinuing,
     setMountableFormLinks,
+    setMountableLockFbars,
     setMountableFormValidationState,
+    setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
     setSaveDraftPromptError,
@@ -257,6 +271,7 @@ export default function Home() {
     ticketPurchaseError,
     ticketPurchaseQuantity,
   } = useTicketPurchaseFlow({
+    currentViewerFbars: currentUserProfile?.fbars,
     onSubmissionError: setSubmissionErrorMessage,
     onTicketBuySuccess: openTicketBuySuccessInfoModal,
   });
@@ -319,6 +334,35 @@ export default function Home() {
       window.clearTimeout(timeoutId);
     };
   }, [infoModalMode, mountableFormLinks, setIsMountableFormFocused, setMountableFormValidationState, setMountablesPromptError]);
+
+  useEffect(() => {
+    if (infoModalMode !== "mountables-lock") {
+      return;
+    }
+
+    const nextValidationState = getLockMountableValidationState(mountableLockFbars, currentUserProfile?.fbars);
+    setMountableLockValidationState(nextValidationState);
+    if (nextValidationState !== "idle") {
+      setIsMountableLockFocused(false);
+    }
+
+    const parsedLockFbars = parseLockMinimumFbars(mountableLockFbars);
+    if (nextValidationState === "invalid") {
+      if (
+        parsedLockFbars !== null
+        && typeof currentUserProfile?.fbars === "number"
+        && Number.isFinite(currentUserProfile.fbars)
+        && parsedLockFbars > Math.trunc(currentUserProfile.fbars)
+      ) {
+        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(currentUserProfile.fbars)} FBARS.`);
+      } else {
+        setMountablesPromptError("Enter a positive FBARS amount.");
+      }
+      return;
+    }
+
+    setMountablesPromptError("");
+  }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
 
   const handleOpenTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
     clearInfoCloseTimer();
@@ -637,14 +681,24 @@ export default function Home() {
         </button>
         <button
           type="button"
-          className="create-mountable-option"
+          className={`create-mountable-option ${lockMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={lockMountableSelected ? "Deselect lock mountable" : "Select lock mountable"}
+          aria-pressed={lockMountableSelected}
           data-tooltip="Lock"
-          disabled
-          aria-label="Lock mountable coming soon"
+          onClick={() => {
+            const nextSelected = !lockMountableSelected;
+            createModalContentRef.current?.setLockMountableEnabled(nextSelected);
+            setLockMountableSelected(nextSelected);
+            setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
+            setMountablesPromptError("");
+          }}
         >
           <span className="create-mountable-option-icon-wrap">
             <span className="create-mountable-option-icon-bg">
               <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
             </span>
           </span>
         </button>
@@ -654,6 +708,39 @@ export default function Home() {
           <span>{mountablesPromptError}</span>
         </p>
       ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config">
+        <div className="create-review-card-heading-row">
+          <p className="create-review-section-label text-gray-900">Lock criteria:</p>
+          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
+        </div>
+        <div className="create-info-forms-row flex items-center gap-2">
+          <span className="create-review-section-label text-gray-900">With:</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={mountableLockFbars}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setMountableLockFbars(nextValue);
+              createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+              setMountablesPromptError("");
+            }}
+            onFocus={() => {
+              if (mountableLockValidationState === "idle") {
+                setIsMountableLockFocused(true);
+              }
+            }}
+            onBlur={() => setIsMountableLockFocused(false)}
+            placeholder="0"
+            className={`create-info-ticket-input ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
+            aria-label="Lock FBARS threshold"
+          />
+          <span className="create-info-constraint-item text-gray-500"><span>fbars</span></span>
+        </div>
+      </div>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
     <div className="create-info-constraints-copy">
@@ -834,16 +921,59 @@ export default function Home() {
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected) {
+          if (!formsMountableSelected && !lockMountableSelected) {
             setMountablesPromptError("Select a mountable to continue.");
             return;
           }
 
-          transitionMountablesModal("mountables-forms");
+          transitionMountablesModal(lockMountableSelected ? "mountables-lock" : "mountables-forms");
           setMountablesPromptError("");
         }}
       >
         Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || mountableLockValidationState !== "valid"}
+        onClick={() => {
+          void (async () => {
+            try {
+              const minimumFbars = parseLockMinimumFbars(mountableLockFbars);
+              if (minimumFbars === null) {
+                setMountablesPromptError("Enter a positive FBARS amount.");
+                return;
+              }
+
+              createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: String(minimumFbars) });
+
+              if (formsMountableSelected) {
+                transitionMountablesModal("mountables-forms");
+                setMountablesPromptError("");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+              await createModalContentRef.current?.persistCurrentDraft();
+
+              closeInfoModal(() => {
+                setInfoModalMode("about");
+                setMountablesPromptError("");
+              });
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted lock");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : "Continue"}
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
@@ -946,7 +1076,7 @@ export default function Home() {
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -957,7 +1087,7 @@ export default function Home() {
             resetTicketPurchaseState();
           })}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(() => {
             setInfoModalMode("about");
@@ -968,7 +1098,7 @@ export default function Home() {
             setSettlementModalData(null);
             setIsLoadingSettlementModal(false);
           })}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -978,8 +1108,8 @@ export default function Home() {
             setIsLoadingSettlementModal(false);
             resetTicketPurchaseState();
           })}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
             setInfoModalMode("about");
             setSaveDraftPromptError("");
             setSubmissionSuccessTxHash("");
@@ -1003,7 +1133,11 @@ export default function Home() {
               onSecondaryAction={handleCreateTopRightAction}
             />
           ) : undefined}
+          canEditLightModePrimaryColor={canEditLightModePrimaryColor}
+          currentLightModePrimaryColor={currentUserProfile?.lightModePrimaryColor ?? null}
           shouldHideWalletAction={shouldHideWalletAction}
+          isSavingLightModePrimaryColor={isSavingUserProfile}
+          onSaveLightModePrimaryColor={saveLightModePrimaryColor}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
@@ -1026,6 +1160,7 @@ export default function Home() {
 
         <CampaignFeedSection
           client={client}
+          currentViewerFbars={currentUserProfile?.fbars}
           onCommentDiscardRequest={handleCommentDiscardRequest}
           commentDiscardDecision={commentDiscardDecision}
           onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
@@ -1050,8 +1185,9 @@ export default function Home() {
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
-        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected }) => {
+        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected, lockSelected }) => {
           setFormsMountableSelected(formsSelected);
+          setLockMountableSelected(lockSelected);
           if (!hasMountedHashtag) {
             setMountablesPromptError("");
           }

@@ -11,9 +11,12 @@ import {
   lockMountableSummary,
   normalizeLockMountableConfig,
 } from "@/app/_lib/lockMountable";
+import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import { CampaignType } from "@/lib/contract";
+import type { GoogleFormsAccessVerification } from "@/lib/googleFormsApi";
 import {
   MIN_TASK_DURATION_MINUTES,
   MINUTES_PER_HOUR,
@@ -54,6 +57,8 @@ const CREATE_MODAL_TITLE_MAX_CHARS = 30;
 const CREATE_MODAL_BODY_MAX_CHARS = 455;
 const CREATE_TOTAL_MAX_CHARS = 256;
 const SUMMARY_MAX_BYTES = 64;
+export const CREATE_MODAL_RESUME_STORAGE_KEY = "freight-create-modal-resume";
+export const CREATE_MODAL_RESUME_MAX_AGE_MS = 30 * 60 * 1000;
 const summaryEncoder = new TextEncoder();
 
 const getTextBytes = (text: string) => summaryEncoder.encode(text).length;
@@ -197,6 +202,33 @@ const buildPreviewLines = (text: string, maxChars: number) => {
   return output;
 };
 
+const normalizeEmail = (value: string | null | undefined) => value?.trim().toLowerCase() ?? "";
+
+function getCurrentPathname() {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.delete("google_link_code");
+  return `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+}
+
+function canResumeModalState(value: unknown): value is CreateModalResumeState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<CreateModalResumeState>;
+  return typeof candidate.path === "string"
+    && typeof candidate.savedAt === "number"
+    && Number.isFinite(candidate.savedAt)
+    && (candidate.modalStep === "compose" || candidate.modalStep === "review")
+    && (candidate.activeDraftRecordId === null || typeof candidate.activeDraftRecordId === "string")
+    && (candidate.lastSavedSnapshot === null || typeof candidate.lastSavedSnapshot === "object")
+    && Boolean(candidate.snapshot && typeof candidate.snapshot === "object");
+}
+
 export type CreateModalStep = "compose" | "review";
 
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
@@ -252,6 +284,15 @@ type DraftSnapshot = {
   giftDeliverable: GiftDeliverable;
   formsMountable?: FormsMountableConfig;
   lockMountable?: LockMountableConfig;
+};
+
+type CreateModalResumeState = {
+  savedAt: number;
+  path: string;
+  modalStep: CreateModalStep;
+  activeDraftRecordId: string | null;
+  snapshot: DraftSnapshot;
+  lastSavedSnapshot: DraftSnapshot | null;
 };
 
 type CampaignIdentityOverride = {
@@ -362,6 +403,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const { currentUserProfile } = useUserProfile(signer ?? null);
+  const {
+    beginGoogleLink,
+    googleLinkError,
+    hasFormsResponseAccess,
+    isHydratingGoogleLink,
+    isLinkingGoogle,
+    isRefreshingLinkedGoogleGrant,
+    linkedGoogleGrant,
+    refreshLinkedGoogleGrant,
+  } = useGoogleLink(signer ?? null, currentUserProfile);
   const pageEditorRef = useRef<HTMLDivElement>(null);
   const modalTitleRef = useRef<HTMLDivElement>(null);
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
@@ -371,6 +423,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftListRequestIdRef = useRef(0);
   const previousShowDraftsPaneRef = useRef(false);
+  const hasRestoredResumeStateRef = useRef(false);
+  const formsMountableRef = useRef<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const lockMountableRef = useRef<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -411,6 +466,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState("");
   const [pendingAdvanceToReview, setPendingAdvanceToReview] = useState(false);
+  const [isVerifyingFormsResponseAccess, setIsVerifyingFormsResponseAccess] = useState(false);
+  const [formsResponseAccessError, setFormsResponseAccessError] = useState("");
   const [pendingPublishedRecordSync, setPendingPublishedRecordSync] = useState<PendingPublishedRecordSync | null>(null);
   const activeDraftRecord = useMemo(
     () => draftRecords.find((record) => record._id === activeDraftRecordId) ?? null,
@@ -477,7 +534,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     updateDurationFromParts(String(durationParts.hours), value);
   }, [durationParts.hours, updateDurationFromParts]);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
-  const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === "mounted");
+  const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === MOUNTABLE_TRIGGER_HASHTAG);
   const parsedGiftDirectives = useMemo(() => parseGiftDirectiveSections(trimmedModalDescription), [trimmedModalDescription]);
   const isGiftEligibleType = isGiftEligibleCampaignType(campaignType);
   const giftFeatureEnabled = isGiftEligibleType && parsedGiftDirectives.enabled;
@@ -640,11 +697,50 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   ]);
   const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
   const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
+  const mountedFormUrl = formsMountable.canonicalFormUrl?.trim() || formsMountable.formUrl.trim();
+  const mountedFormId = formsMountable.formId?.trim() ?? "";
+  const hasMountedFormValidation = mountedFormId.length > 0 && mountedFormUrl.length > 0;
+  const linkedGrantDisplayEmail = linkedGoogleGrant?.email?.trim() ?? "";
+  const verifiedGrantDisplayEmail = formsMountable.responseAccessEmail?.trim() ?? "";
+  const normalizedLinkedGrantEmail = normalizeEmail(linkedGrantDisplayEmail);
+  const normalizedVerifiedGrantEmail = normalizeEmail(verifiedGrantDisplayEmail);
+  const hasVerifiedFormsResponseAccess = formsMountable.responseAccessStatus === "verified"
+    && Boolean(formsMountable.responseAccessVerifiedAt?.trim())
+    && normalizedVerifiedGrantEmail.length > 0;
+  const linkedGrantDiffersFromVerifiedAccess = normalizedLinkedGrantEmail.length > 0
+    && normalizedVerifiedGrantEmail.length > 0
+    && normalizedLinkedGrantEmail !== normalizedVerifiedGrantEmail;
+  const formsResponseAccessMismatchError = formsMountable.enabled && linkedGrantDiffersFromVerifiedAccess
+    ? "The linked Google account no longer matches the Google account verified for this form. Verify response access again before publishing."
+    : "";
+  const formsResponseAccessReady = !formsMountable.enabled
+    || (hasMountedFormValidation && hasFormsResponseAccess && hasVerifiedFormsResponseAccess && !linkedGrantDiffersFromVerifiedAccess);
+  const isFormsResponseAccessBusy =
+    isHydratingGoogleLink ||
+    isLinkingGoogle ||
+    isRefreshingLinkedGoogleGrant ||
+    isVerifyingFormsResponseAccess;
   const isPublishDisabled =
     status === "pending" ||
     draftSaveStatus === "saving" ||
+    isFormsResponseAccessBusy ||
+    !formsResponseAccessReady ||
     (!draftSaveError && normalizedCreateParams.error !== null);
   const showDraftsPane = isModal && modalStep === "compose" && isDraftListOpen;
+  const activeFormsResponseAccessError = formsResponseAccessError
+    || formsResponseAccessMismatchError
+    || (formsMountable.enabled && !hasFormsResponseAccess ? googleLinkError : "");
+  const formsResponseAccessHelperMessage = !formsMountable.enabled
+    ? ""
+    : !hasMountedFormValidation
+      ? "Validate the mounted Google Form in mountables before linking or verifying response access."
+      : !hasFormsResponseAccess
+        ? "Link the Google account that can read this form's responses. The grant stays server-side."
+        : !hasVerifiedFormsResponseAccess
+          ? "Verify that the linked Google account can read responses for this form before publishing."
+          : linkedGrantDiffersFromVerifiedAccess
+            ? "The linked Google account changed after verification. Verify this form again before publishing."
+            : "Participants will be matched against respondentEmail using this linked Google account.";
   const composeHelperMessage = showNoDraftsMessage
     ? "No saved drafts yet"
     : isDraftListLoading
@@ -654,6 +750,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         : !constraintsPassed
           ? CREATE_CONSTRAINTS_MESSAGE_PENDING
           : "";
+
+  useEffect(() => {
+    formsMountableRef.current = formsMountable;
+  }, [formsMountable]);
+
+  useEffect(() => {
+    lockMountableRef.current = lockMountable;
+  }, [lockMountable]);
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
@@ -1363,6 +1467,123 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     return creatorAddress;
   }, [signer]);
 
+  const clearCreateModalResumeState = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.removeItem(CREATE_MODAL_RESUME_STORAGE_KEY);
+  }, []);
+
+  const applyDraftSnapshot = useCallback((resumeState: CreateModalResumeState) => {
+    const nextSnapshot = buildDraftSnapshot(resumeState.snapshot);
+    const nextGiftDeliverable = parseStoredGiftDeliverable(nextSnapshot.giftDeliverable);
+    const nextCampaignType = nextSnapshot.campaignType;
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+    const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
+    const nextLockMountable = normalizeLockMountableConfig(nextSnapshot.lockMountable);
+
+    formsMountableRef.current = nextFormsMountable;
+    lockMountableRef.current = nextLockMountable;
+    setModalTitle(nextSnapshot.title);
+    setModalDescription(nextSnapshot.description);
+    setSummary(nextSnapshot.description);
+    setCampaignType(nextCampaignType);
+    setMentions(nextSnapshot.mentions);
+    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
+    setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
+    setGiftResolvedAddresses(
+      Object.fromEntries(
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+          .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
+      ),
+    );
+    setGiftResolutionWarnings([]);
+    setTaskStartDelayHours(nextSnapshot.taskStartDelayHours);
+    setTaskDurationHours(nextSnapshot.taskDurationHours);
+    setMaxAmountCkb(nextSnapshot.maxAmountCkb);
+    setRewardCount(nextSnapshot.rewardCount);
+    setRaffleTicketPriceCkb(isRaffleDraft ? nextSnapshot.auxAmountCkb : "1");
+    setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
+    setFormsMountable(nextFormsMountable);
+    setLockMountable(nextLockMountable);
+    setActiveDraftRecordId(resumeState.activeDraftRecordId);
+    setModalStep(resumeState.modalStep);
+    setIsDraftListOpen(false);
+    setDraftListError("");
+    setDraftDeleteId(null);
+    setShowNoDraftsMessage(false);
+    setPendingAdvanceToReview(false);
+    setPendingPublishedRecordSync(null);
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    setFormsResponseAccessError("");
+    setStatus("idle");
+    setErrorMsg("");
+    setLastSavedSnapshot(resumeState.lastSavedSnapshot ? buildDraftSnapshot(resumeState.lastSavedSnapshot) : null);
+    hideMenus();
+    syncEditorsFromState(nextSnapshot.title, nextSnapshot.description);
+  }, [hideMenus, syncEditorsFromState]);
+
+  const saveCreateModalResumeState = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const resumeState: CreateModalResumeState = {
+      savedAt: Date.now(),
+      path: getCurrentPathname(),
+      modalStep,
+      activeDraftRecordId,
+      snapshot: buildDraftSnapshot(currentDraftSnapshot),
+      lastSavedSnapshot: lastSavedSnapshot ? buildDraftSnapshot(lastSavedSnapshot) : null,
+    };
+    window.sessionStorage.setItem(CREATE_MODAL_RESUME_STORAGE_KEY, JSON.stringify(resumeState));
+  }, [activeDraftRecordId, currentDraftSnapshot, lastSavedSnapshot, modalStep]);
+
+  const restoreCreateModalResumeState = useCallback(() => {
+    if (typeof window === "undefined" || hasRestoredResumeStateRef.current) {
+      return false;
+    }
+
+    hasRestoredResumeStateRef.current = true;
+    const storedValue = window.sessionStorage.getItem(CREATE_MODAL_RESUME_STORAGE_KEY);
+    if (!storedValue) {
+      return false;
+    }
+
+    try {
+      const parsed = JSON.parse(storedValue) as unknown;
+      if (!canResumeModalState(parsed)) {
+        clearCreateModalResumeState();
+        return false;
+      }
+
+      const isExpired = Date.now() - parsed.savedAt > CREATE_MODAL_RESUME_MAX_AGE_MS;
+      if (isExpired || parsed.path !== getCurrentPathname()) {
+        clearCreateModalResumeState();
+        return false;
+      }
+
+      applyDraftSnapshot(parsed);
+      clearCreateModalResumeState();
+      return true;
+    } catch {
+      clearCreateModalResumeState();
+      return false;
+    }
+  }, [applyDraftSnapshot, clearCreateModalResumeState]);
+
+  useEffect(() => {
+    if (!isModal) {
+      return;
+    }
+
+    restoreCreateModalResumeState();
+  }, [isModal, restoreCreateModalResumeState]);
+
   const applyDraftRecord = useCallback((record: DraftRecord) => {
     const nextTitle = record.title?.trim() ?? "";
     const nextDescription = record.description?.trim() ?? "";
@@ -1569,8 +1790,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
         },
         mountables: {
-          forms: formsMountable.enabled ? formsMountable : null,
-          lock: lockMountable.enabled ? lockMountable : null,
+          forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
+          lock: lockMountableRef.current.enabled ? lockMountableRef.current : null,
         },
         socialMetadata: {
           mentions: allMentions,
@@ -1730,6 +1951,121 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     ]
   );
 
+  const handleBeginFormsResponseAccessLink = useCallback(async () => {
+    if (!signer) {
+      open();
+      return;
+    }
+
+    if (!mountedFormUrl || !mountedFormId) {
+      setFormsResponseAccessError("Validate the mounted Google Form before linking response access.");
+      return;
+    }
+
+    setFormsResponseAccessError("");
+
+    try {
+      await persistDraftRecord(currentDraftSummary, "draft");
+      saveCreateModalResumeState();
+      await beginGoogleLink(getCurrentPathname(), "forms_response_access");
+    } catch (error) {
+      clearCreateModalResumeState();
+      setFormsResponseAccessError(error instanceof Error ? error.message : "Failed to link Google Forms response access");
+    }
+  }, [beginGoogleLink, clearCreateModalResumeState, currentDraftSummary, mountedFormId, mountedFormUrl, open, persistDraftRecord, saveCreateModalResumeState, signer]);
+
+  const handleRefreshFormsResponseAccessGrant = useCallback(async () => {
+    if (!signer) {
+      open();
+      return;
+    }
+
+    setFormsResponseAccessError("");
+
+    try {
+      await refreshLinkedGoogleGrant();
+    } catch (error) {
+      setFormsResponseAccessError(error instanceof Error ? error.message : "Failed to refresh linked Google access");
+    }
+  }, [open, refreshLinkedGoogleGrant, signer]);
+
+  const handleVerifyFormsResponseAccess = useCallback(async () => {
+    if (!signer) {
+      open();
+      return;
+    }
+
+    if (!mountedFormId) {
+      setFormsResponseAccessError("Validate the mounted Google Form before verifying response access.");
+      return;
+    }
+
+    setIsVerifyingFormsResponseAccess(true);
+    setFormsResponseAccessError("");
+
+    try {
+      const creatorAddress = await getCreatorAddress();
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address: creatorAddress, purpose: "google-forms-access" }),
+      });
+      const noncePayload = await nonceResponse.json().catch(() => null) as {
+        error?: string;
+        nonce?: string;
+      } | null;
+      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+        throw new Error(noncePayload?.error ?? "Failed to create Google Forms access nonce");
+      }
+
+      const signature = await signer.signMessage(noncePayload.nonce);
+      const accessResponse = await fetch("/api/google-forms/access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: creatorAddress,
+          formId: mountedFormId,
+          nonce: noncePayload.nonce,
+          nonceSignature: {
+            signature: signature.signature,
+            identity: signature.identity,
+            signType: signature.signType,
+          },
+        }),
+      });
+      const accessPayload = await accessResponse.json().catch(() => null) as {
+        error?: string;
+        access?: GoogleFormsAccessVerification | null;
+      } | null;
+      if (!accessResponse.ok || !accessPayload?.access) {
+        throw new Error(accessPayload?.error ?? "Failed to verify Google Forms response access");
+      }
+
+      const verifiedAccess = accessPayload.access;
+      setFormsMountable((current) => {
+        const nextConfig = normalizeFormsMountableConfig({
+          ...current,
+          verificationMode: "google_forms_api",
+          responseAccessEmail: verifiedAccess.grantEmail,
+          responseAccessStatus: "verified",
+          responseAccessVerifiedAt: verifiedAccess.verifiedAt,
+        });
+        formsMountableRef.current = nextConfig;
+        return nextConfig;
+      });
+      await refreshLinkedGoogleGrant().catch(() => undefined);
+      await persistDraftRecord(currentDraftSummary, "draft");
+    } catch (error) {
+      setFormsResponseAccessError(error instanceof Error ? error.message : "Failed to verify Google Forms response access");
+    } finally {
+      setIsVerifyingFormsResponseAccess(false);
+    }
+  }, [currentDraftSummary, getCreatorAddress, mountedFormId, open, persistDraftRecord, refreshLinkedGoogleGrant, signer]);
+
   useEffect(() => {
     return () => {
       if (applyDraftAnimationTimerRef.current) {
@@ -1826,31 +2162,65 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [applyDraftRecord, draftRecords]);
 
   const handleSetFormsMountableEnabled = useCallback((enabled: boolean) => {
-    setFormsMountable((current) => normalizeFormsMountableConfig({
-      ...current,
-      enabled,
-    }));
+    setFormsResponseAccessError("");
+    setFormsMountable((current) => {
+      const nextConfig = normalizeFormsMountableConfig({
+        ...current,
+        enabled,
+      });
+      formsMountableRef.current = nextConfig;
+      return nextConfig;
+    });
   }, []);
 
   const handleUpdateFormsMountableConfig = useCallback((updates: Partial<FormsMountableConfig>) => {
-    setFormsMountable((current) => normalizeFormsMountableConfig({
-      ...current,
-      ...updates,
-    }));
+    setFormsResponseAccessError("");
+    setFormsMountable((current) => {
+      const nextConfig = normalizeFormsMountableConfig({
+        ...current,
+        ...updates,
+      });
+      const nextFormId = nextConfig.formId?.trim() ?? "";
+      const currentFormId = current.formId?.trim() ?? "";
+      const nextCanonicalFormUrl = nextConfig.canonicalFormUrl?.trim() ?? "";
+      const currentCanonicalFormUrl = current.canonicalFormUrl?.trim() ?? "";
+      const nextFormUrl = nextConfig.formUrl.trim();
+      const currentFormUrl = current.formUrl.trim();
+      const formIdentityChanged = nextFormId !== currentFormId
+        || nextCanonicalFormUrl !== currentCanonicalFormUrl
+        || nextFormUrl !== currentFormUrl;
+
+      if (formIdentityChanged) {
+        nextConfig.responseAccessEmail = "";
+        nextConfig.responseAccessStatus = "pending";
+        nextConfig.responseAccessVerifiedAt = "";
+      }
+
+      formsMountableRef.current = nextConfig;
+      return nextConfig;
+    });
   }, []);
 
   const handleSetLockMountableEnabled = useCallback((enabled: boolean) => {
-    setLockMountable((current) => normalizeLockMountableConfig({
-      ...current,
-      enabled,
-    }));
+    setLockMountable((current) => {
+      const nextConfig = normalizeLockMountableConfig({
+        ...current,
+        enabled,
+      });
+      lockMountableRef.current = nextConfig;
+      return nextConfig;
+    });
   }, []);
 
   const handleUpdateLockMountableConfig = useCallback((updates: Partial<LockMountableConfig>) => {
-    setLockMountable((current) => normalizeLockMountableConfig({
-      ...current,
-      ...updates,
-    }));
+    setLockMountable((current) => {
+      const nextConfig = normalizeLockMountableConfig({
+        ...current,
+        ...updates,
+      });
+      lockMountableRef.current = nextConfig;
+      return nextConfig;
+    });
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -1965,6 +2335,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
     if (normalizedCreateParams.error) {
       setErrorMsg(normalizedCreateParams.error);
+      setStatus("error");
+      return false;
+    }
+
+    if (!formsResponseAccessReady) {
+      setErrorMsg(activeFormsResponseAccessError || "Verify Google Forms response access before publishing.");
       setStatus("error");
       return false;
     }
@@ -2569,6 +2945,59 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           </div>
           {renderModalArgsInputs()}
         </div>
+
+        {formsMountable.enabled ? (
+          <div className="create-review-args-card">
+            <div className="create-review-card-heading-row">
+              <p className="create-review-section-label">Google Forms access</p>
+              <span className="create-review-offchain-note">Required before publish</span>
+            </div>
+            <div className="create-review-gift-summary">
+              <p className="create-review-preview-body">{formsResponseAccessHelperMessage}</p>
+              {mountedFormUrl ? (
+                <p className="create-review-preview-body">Mounted form: {mountedFormUrl}</p>
+              ) : null}
+              {linkedGrantDisplayEmail ? (
+                <p className="create-review-preview-body">Linked Google: {linkedGrantDisplayEmail}</p>
+              ) : null}
+              {verifiedGrantDisplayEmail ? (
+                <p className="create-review-preview-body">Verified form access: {verifiedGrantDisplayEmail}</p>
+              ) : null}
+              {formsMountable.responseAccessVerifiedAt?.trim() ? (
+                <p className="create-review-gift-note">Verified at {formsMountable.responseAccessVerifiedAt.trim()}</p>
+              ) : null}
+              {activeFormsResponseAccessError ? (
+                <p className="create-review-gift-warning">{activeFormsResponseAccessError}</p>
+              ) : null}
+            </div>
+            <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+              <button
+                type="button"
+                className="create-info-confirm-btn"
+                onClick={() => void handleBeginFormsResponseAccessLink()}
+                disabled={!hasMountedFormValidation || isFormsResponseAccessBusy}
+              >
+                {isLinkingGoogle || isHydratingGoogleLink ? "Linking..." : hasFormsResponseAccess ? "Relink Google" : "Link Google"}
+              </button>
+              <button
+                type="button"
+                className="create-info-confirm-btn"
+                onClick={() => void handleRefreshFormsResponseAccessGrant()}
+                disabled={!hasFormsResponseAccess || isFormsResponseAccessBusy}
+              >
+                {isRefreshingLinkedGoogleGrant ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                type="button"
+                className="create-info-confirm-btn create-info-confirm-btn-primary"
+                onClick={() => void handleVerifyFormsResponseAccess()}
+                disabled={!hasMountedFormValidation || !hasFormsResponseAccess || isFormsResponseAccessBusy}
+              >
+                {isVerifyingFormsResponseAccess ? "Verifying..." : formsResponseAccessReady ? "Verified" : "Verify access"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {giftFeatureEnabled ? (
           <div className="create-review-args-card">
