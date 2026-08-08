@@ -8,6 +8,7 @@ import {
   buildDefaultHandle,
   decodeCreatedByAddress,
 } from "@/lib/campaignDisplay";
+import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
@@ -39,7 +40,8 @@ export default function CampaignDetailSurface({
   const creatorHandle = record.creatorHandle?.trim() || buildDefaultHandle(creatorAddress);
   const summary = record.summaryDraft?.trim() || (campaign ? decodeSummary(campaign.data.summary) : "Untitled freight");
   const displayTitle = record.title?.trim() || summary;
-  const displayDescription = sanitizeCampaignDescription(record.description?.trim() || summary);
+  const rawDescription = record.description?.trim() || summary;
+  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
   const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
 
   return (
@@ -56,6 +58,17 @@ export default function CampaignDetailSurface({
         </div>
 
         <div className="campaign-card-content campaign-card-content-detail">
+          {record.giftDeliverable?.enabled ? (
+            <div className="campaign-gift-meta-row campaign-gift-meta-row-detail">
+              <span className="campaign-gift-pill">Gift</span>
+              <span className="campaign-gift-copy">
+                {record.giftDeliverable.claimants?.length ? `${record.giftDeliverable.claimants.length} tagged claimants` : "Open claim"}
+              </span>
+              <span className="campaign-gift-copy">
+                {record.giftDeliverable.splitMode ? `${record.giftDeliverable.splitMode} split` : "split pending"}
+              </span>
+            </div>
+          ) : null}
           <div className="campaign-card-description campaign-card-description-detail">
             <CampaignDescriptionContent lines={descriptionLines} />
           </div>

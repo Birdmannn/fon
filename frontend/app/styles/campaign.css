@@ -59,6 +59,15 @@
   opacity: 1;
 }
 
+.campaign-action-btn.action-gift,
+.campaign-action-btn.action-gift:hover,
+.campaign-action-btn.action-gift-approve,
+.campaign-action-btn.action-gift-approve:hover,
+.campaign-action-btn.action-gift-claim,
+.campaign-action-btn.action-gift-claim:hover {
+  color: #7c3aed;
+}
+
 .campaign-action-btn.action-bookmark.campaign-action-active,
 .campaign-action-btn.action-bookmark.campaign-action-active:hover {
   color: #3b82f6; /* blue */
@@ -157,6 +166,40 @@
 .campaign-detail-card-byline .campaign-card-handle-link {
   font-size: inherit;
   line-height: inherit;
+}
+
+.campaign-gift-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.campaign-gift-meta-row-detail {
+  margin-bottom: 0.85rem;
+}
+
+.campaign-gift-pill,
+.campaign-gift-copy {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.6rem;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.campaign-gift-pill {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+  font-weight: 700;
+}
+
+.campaign-gift-copy {
+  color: #6b7280;
+  background: rgba(124, 58, 237, 0.06);
 }
 
 .campaign-feed-loading {
@@ -474,7 +517,11 @@
 }
 
 .campaign-card-surface {
-  transition: border-width 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+  transition: border-width 220ms ease, border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+}
+
+.campaign-card-surface-bordered {
+  border: 1px solid var(--campaign-card-border);
 }
 
 .campaign-card-surface-interactive:hover {
@@ -519,7 +566,6 @@
 .campaign-card-surface-interactive:hover .campaign-card-created-date,
 .campaign-card-surface-interactive:hover .campaign-card-reward-count,
 .campaign-card-surface-interactive:hover .campaign-card-countdown,
-.campaign-card-surface-interactive:hover .campaign-card-footer-meta,
 .campaign-card-surface-interactive:hover .campaign-card-countdown-wrap,
 .campaign-card-surface-interactive:hover .campaign-action-icon {
   transform: scale(1.008);
@@ -534,7 +580,10 @@
 }
 
 .campaign-card-surface-detail {
-  min-height: 28rem;
+  min-height: 0;
+  height: auto;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .campaign-card-title {
@@ -554,7 +603,7 @@
 }
 
 .campaign-card-body-detail {
-  gap: 0.75rem;
+  gap: 1.125rem;
 }
 
 .campaign-card-content {
@@ -614,7 +663,7 @@
   gap: 0;
   padding: 0.3rem 0.75rem 0.3rem 0.85rem;
   border-left: 2px solid #9ca3af;
-  background: #f3f4f6;
+  background: var(--tertiary-background);
   color: #4b5563;
 }
 
@@ -895,9 +944,9 @@
 }
 
 .campaign-detail-card-shell {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--campaign-card-border);
   border-radius: 0.75rem;
-  background: #ffffff;
+  background: var(--background);
 }
 
 .campaign-detail-comments-panel {
@@ -930,7 +979,7 @@
 
 .campaign-detail-mountable-item {
   padding-bottom: 0.9rem;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--tertiary-background);
 }
 
 .campaign-detail-mountable-item:last-child {
@@ -1001,7 +1050,7 @@
   min-height: 1.6rem;
   padding: 0.1rem 0.5rem;
   border-radius: 9999px;
-  background: #f3f4f6;
+  background: var(--tertiary-background);
   color: #4b5563;
   font-size: 0.72rem;
   line-height: 1;
@@ -1039,7 +1088,7 @@
 }
 
 .campaign-detail-comment-item {
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--tertiary-background);
   padding-bottom: 0.85rem;
 }
 
@@ -1081,9 +1130,9 @@
 }
 
 .campaign-detail-skeleton-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--campaign-card-border);
   border-radius: 0.75rem;
-  background: #ffffff;
+  background: var(--background);
   padding: 1.25rem;
   display: flex;
   flex-direction: column;
@@ -1095,7 +1144,7 @@
   display: block;
   height: 0.9rem;
   border-radius: 9999px;
-  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 50%, #e5e7eb 100%);
+  background: linear-gradient(90deg, #e5e7eb 0%, var(--tertiary-background) 50%, #e5e7eb 100%);
 }
 
 .campaign-detail-skeleton-line-short {

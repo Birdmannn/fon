@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, Scroll, Ticket } from "lucide-react";
+import { Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
   decodeCreatedByAddress,
@@ -12,29 +13,9 @@ import {
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
 import { CampaignStatus } from "@/lib/contract";
+import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
-
-type CampaignRecord = {
-  title?: string;
-  description?: string;
-  creatorAddress?: string | null;
-  creatorHandle?: string | null;
-  settlementTxHash?: string | null;
-  soldTicketCount?: string | null;
-  mountables?: {
-    forms?: {
-      enabled?: boolean;
-      formUrl?: string;
-      canonicalFormUrl?: string;
-      formId?: string;
-      validatedAt?: string;
-    } | null;
-  };
-  socialMetadata?: {
-    mentions?: string[];
-  };
-};
 
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
@@ -177,10 +158,12 @@ export default function CampaignCardSurface({
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
-  const displayDescription = sanitizeCampaignDescription(record?.description?.trim() || decodeSummary(data.summary));
+  const rawDescription = record?.description?.trim() || decodeSummary(data.summary);
+  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const mentions = record?.socialMetadata?.mentions ?? [];
+  const giftDeliverable = record?.giftDeliverable;
   const rewardCountValue = Number(data.rewardCount);
   const shouldGlowSettlement = deriveRaffleSettlementUiState({
     campaign,
@@ -216,7 +199,7 @@ export default function CampaignCardSurface({
   const rootClassName = [
     "campaign-card-surface flex flex-col gap-4",
     variant === "feed"
-      ? "campaign-card-surface-feed border border-gray-200 rounded-lg p-4 campaign-card-surface-sized"
+      ? "campaign-card-surface-feed campaign-card-surface-bordered rounded-lg p-4 campaign-card-surface-sized"
       : "campaign-card-surface-detail p-4",
     onOpenDetail ? "campaign-card-surface-interactive" : "",
     isHighlighted ? "campaign-card-highlighted" : "",
@@ -299,6 +282,18 @@ export default function CampaignCardSurface({
             ))}
           </div>
         )}
+
+        {giftDeliverable?.enabled ? (
+          <div className="campaign-gift-meta-row">
+            <span className="campaign-gift-pill">Gift</span>
+            <span className="campaign-gift-copy">
+              {giftDeliverable.claimants?.length ? `${giftDeliverable.claimants.length} tagged claimants` : "Open claim"}
+            </span>
+            <span className="campaign-gift-copy">
+              {giftDeliverable.splitMode ? `${giftDeliverable.splitMode} split` : "split pending"}
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="campaign-card-footer">
@@ -306,6 +301,11 @@ export default function CampaignCardSurface({
           {record?.mountables?.forms?.enabled ? (
             <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
               <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+            </span>
+          ) : null}
+          {record?.mountables?.lock?.enabled ? (
+            <span className="campaign-card-mounted-icon" title="Lock mounted" aria-label="Lock mounted">
+              <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
             </span>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
+import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
+import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getMongoCollection } from "@/lib/mongodb";
 
@@ -22,6 +24,7 @@ type CampaignRecordPayload = {
   };
   mountables?: {
     forms?: unknown;
+    lock?: unknown;
   };
   socialMetadata?: {
     mentions?: unknown;
@@ -32,6 +35,7 @@ type CampaignRecordPayload = {
     reshareCount?: unknown;
     resharedByAddresses?: unknown;
   };
+  giftDeliverable?: unknown;
   creatorAddress?: unknown;
   creatorHandle?: unknown;
   status?: unknown;
@@ -167,6 +171,10 @@ async function ensureOptionalFormsMountable(value: unknown) {
     validatedAt?: unknown;
     payoutMode?: unknown;
     proofMode?: unknown;
+    verificationMode?: unknown;
+    responseAccessEmail?: unknown;
+    responseAccessStatus?: unknown;
+    responseAccessVerifiedAt?: unknown;
     guaranteedSlots?: unknown;
     randomWinnerCount?: unknown;
     proofInstructions?: unknown;
@@ -180,6 +188,10 @@ async function ensureOptionalFormsMountable(value: unknown) {
     validatedAt: typeof candidate.validatedAt === "string" ? candidate.validatedAt : "",
     payoutMode: candidate.payoutMode as "assured" | "random_subset" | "overflow_only" | undefined,
     proofMode: candidate.proofMode as "external_proof" | undefined,
+    verificationMode: candidate.verificationMode as "google_forms_api" | undefined,
+    responseAccessEmail: typeof candidate.responseAccessEmail === "string" ? candidate.responseAccessEmail : "",
+    responseAccessStatus: candidate.responseAccessStatus as "pending" | "verified" | undefined,
+    responseAccessVerifiedAt: typeof candidate.responseAccessVerifiedAt === "string" ? candidate.responseAccessVerifiedAt : "",
     guaranteedSlots: typeof candidate.guaranteedSlots === "string" ? candidate.guaranteedSlots : String(candidate.guaranteedSlots ?? "1"),
     randomWinnerCount: typeof candidate.randomWinnerCount === "string" ? candidate.randomWinnerCount : String(candidate.randomWinnerCount ?? "1"),
     proofInstructions: typeof candidate.proofInstructions === "string" ? candidate.proofInstructions : "",
@@ -200,6 +212,46 @@ async function ensureOptionalFormsMountable(value: unknown) {
     canonicalFormUrl: validation.canonicalFormUrl,
     formId: validation.formId,
     validatedAt: validation.validatedAt,
+  });
+}
+
+function ensureOptionalLockMountable(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (!value || typeof value !== "object") {
+    throw new Error("mountables.lock must be an object when provided");
+  }
+
+  const candidate = value as {
+    enabled?: unknown;
+    criterion?: unknown;
+    minimumFbars?: unknown;
+  };
+
+  const normalized = normalizeLockMountableConfig({
+    enabled: Boolean(candidate.enabled),
+    criterion: candidate.criterion as "fbars" | undefined,
+    minimumFbars: typeof candidate.minimumFbars === "string"
+      ? candidate.minimumFbars
+      : candidate.minimumFbars === null || candidate.minimumFbars === undefined
+        ? ""
+        : String(candidate.minimumFbars),
+  });
+
+  if (!normalized.enabled) {
+    return normalized;
+  }
+
+  const minimumFbars = parseLockMinimumFbars(normalized.minimumFbars);
+  if (minimumFbars === null || minimumFbars <= 0) {
+    throw new Error("mountables.lock.minimumFbars must be a positive integer string");
+  }
+
+  return normalizeLockMountableConfig({
+    ...normalized,
+    minimumFbars: String(minimumFbars),
   });
 }
 
@@ -247,6 +299,8 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
   const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
+  const lockMountable = ensureOptionalLockMountable(payload.mountables?.lock);
+  const giftDeliverable = parseStoredGiftDeliverable(payload.giftDeliverable);
 
   return {
     title,
@@ -266,6 +320,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     },
     mountables: {
       forms: formsMountable,
+      lock: lockMountable,
     },
     socialMetadata: {
       mentions,
@@ -280,6 +335,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         ? payload.socialMetadata.resharedByAddresses.map((value) => ensureString(value, "socialMetadata.resharedByAddresses[]").toLowerCase())
         : [],
     },
+    giftDeliverable,
     creatorAddress,
     creatorHandle,
     status,

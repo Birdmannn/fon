@@ -90,7 +90,17 @@ export async function POST(request: Request) {
       },
     ) as StoredFbarsProfile | null;
 
+    console.log("[wallet-seed] starting seed request", {
+      address,
+      currentProfile,
+    });
+
     if (typeof currentProfile?.walletFbarsSeededAt === "string" && currentProfile.walletFbarsSeededAt.trim().length > 0) {
+      console.log("[wallet-seed] profile already marked seeded", {
+        address,
+        walletFbarsSeededAt: currentProfile.walletFbarsSeededAt,
+        walletFbarsSeedBalanceShannons: currentProfile.walletFbarsSeedBalanceShannons,
+      });
       return NextResponse.json({ ok: true, alreadySeeded: true });
     }
 
@@ -99,6 +109,24 @@ export async function POST(request: Request) {
     const now = new Date();
     const weekKey = getCurrentWeekKey(now);
     const eventKey = `wallet-seed:${address}`;
+
+    console.log("[wallet-seed] computed wallet seed values", {
+      address,
+      awardedFbars,
+      balanceShannons: balanceShannons.toString(),
+      eventKey,
+      weekKey,
+    });
+
+    const existingEvent = await eventsCollection.findOne(
+      { eventKey },
+      { projection: { _id: 0, address: 1, eventKey: 1, kind: 1, delta: 1, createdAt: 1, metadata: 1 } }
+    );
+
+    console.log("[wallet-seed] existing event before award", {
+      address,
+      existingEvent,
+    });
 
     const result = await awardFbarsEvent({
       address,
@@ -114,7 +142,12 @@ export async function POST(request: Request) {
       eventsCollection,
     });
 
-    await profilesCollection.updateOne(
+    console.log("[wallet-seed] award result", {
+      address,
+      result,
+    });
+
+    const updateResult = await profilesCollection.updateOne(
       { address },
       {
         $set: {
@@ -127,6 +160,31 @@ export async function POST(request: Request) {
       },
       { upsert: true },
     );
+
+    const persistedProfile = await profilesCollection.findOne(
+      { address },
+      {
+        projection: {
+          _id: 0,
+          address: 1,
+          fbars: 1,
+          weeklyFbarsState: 1,
+          walletFbarsSeededAt: 1,
+          walletFbarsSeedBalanceShannons: 1,
+        },
+      }
+    );
+
+    console.log("[wallet-seed] persisted profile after seed", {
+      address,
+      persistedProfile,
+      updateResult: {
+        acknowledged: updateResult.acknowledged,
+        matchedCount: updateResult.matchedCount,
+        modifiedCount: updateResult.modifiedCount,
+        upsertedCount: updateResult.upsertedCount,
+      },
+    });
 
     return NextResponse.json({
       ok: true,

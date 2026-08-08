@@ -7,6 +7,7 @@ import CreateCampaignModalContent, {
   type CreateConstraintStatus,
   type CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
+import { FREIGHT_CREATION_FBARS_COST } from "@/lib/fbars";
 
 import type { RefObject } from "react";
 
@@ -18,8 +19,9 @@ type CreateCampaignLauncherProps = {
   onConstraintStatusChange: (status: CreateConstraintStatus) => void;
   onDraftListOpenChange: (isOpen: boolean) => void;
   onDraftSelectionRequest: (draftId: string) => void;
+  onInsufficientFbars?: () => void;
   onMountableSelectionRequired: () => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean }) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean }) => void;
   onOpenCreateModal: () => void;
   onPreviewErrorChange: (message: string) => void;
   onPublishSuccess: (txHash: string, randomnessPreimage: string | null) => void;
@@ -38,6 +40,7 @@ export default function CreateCampaignLauncher({
   onConstraintStatusChange,
   onDraftListOpenChange,
   onDraftSelectionRequest,
+  onInsufficientFbars,
   onMountableSelectionRequired,
   onMountableSelectionStateChange,
   onOpenCreateModal,
@@ -49,6 +52,17 @@ export default function CreateCampaignLauncher({
   isCreateModalClosing,
   availableFbars,
 }: CreateCampaignLauncherProps) {
+  const handleOpenCreateModal = () => {
+    if (typeof availableFbars === "number" && availableFbars < FREIGHT_CREATION_FBARS_COST) {
+      if (onInsufficientFbars) {
+        onInsufficientFbars();
+        return;
+      }
+    }
+
+    onOpenCreateModal();
+  };
+
   return (
     <>
       {showCreateModal ? (
@@ -90,7 +104,7 @@ export default function CreateCampaignLauncher({
         type="button"
         aria-label="Open create freight modal"
         className={fabClassName}
-        onClick={onOpenCreateModal}
+        onClick={handleOpenCreateModal}
       >
         <Plus size={48} strokeWidth={2} aria-hidden="true" />
       </button>

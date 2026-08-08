@@ -1,9 +1,14 @@
 "use client";
 
 import { Copy, Fingerprint } from "lucide-react";
-import { type MouseEventHandler, type ReactNode, type RefObject } from "react";
+import { type MouseEventHandler, type ReactNode, type RefObject, useCallback } from "react";
 
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
+import { useLightModePrimaryColor } from "@/app/providers";
+import {
+  LIGHT_MODE_PRIMARY_COLOR_OPTIONS,
+  type LightModePrimaryColor,
+} from "@/lib/lightModePrimaryColor";
 
 type WalletUsdParts = {
   whole: string;
@@ -11,7 +16,9 @@ type WalletUsdParts = {
 };
 
 type AppShellHeaderProps = {
+  canEditLightModePrimaryColor?: boolean;
   className: string;
+  currentLightModePrimaryColor?: LightModePrimaryColor | null;
   infoButtonAriaLabel: string;
   infoModalAriaLabel: string;
   infoModalBackdropAriaLabel: string;
@@ -21,6 +28,7 @@ type AppShellHeaderProps = {
   infoModalClosing: boolean;
   infoModalOpen: boolean;
   isConnected: boolean;
+  isSavingLightModePrimaryColor?: boolean;
   onConnect: () => void;
   onContainerClick?: MouseEventHandler<HTMLDivElement>;
   onCopyWalletAddress: () => void;
@@ -34,6 +42,7 @@ type AppShellHeaderProps = {
   onInfoMouseEnter: () => void;
   onInfoMouseLeave: () => void;
   onInfoWrapClick?: MouseEventHandler<HTMLDivElement>;
+  onSaveLightModePrimaryColor?: (value: LightModePrimaryColor) => Promise<unknown>;
   onWalletActionClick?: () => void;
   onRightActionsClick?: MouseEventHandler<HTMLDivElement>;
   onWalletMouseEnter: () => void;
@@ -59,7 +68,9 @@ type AppShellHeaderProps = {
 };
 
 export default function AppShellHeader({
+  canEditLightModePrimaryColor = false,
   className,
+  currentLightModePrimaryColor = null,
   infoButtonAriaLabel,
   infoModalAriaLabel,
   infoModalBackdropAriaLabel,
@@ -69,6 +80,7 @@ export default function AppShellHeader({
   infoModalClosing,
   infoModalOpen,
   isConnected,
+  isSavingLightModePrimaryColor = false,
   onConnect,
   onContainerClick,
   onCopyWalletAddress,
@@ -82,6 +94,7 @@ export default function AppShellHeader({
   onInfoMouseEnter,
   onInfoMouseLeave,
   onInfoWrapClick,
+  onSaveLightModePrimaryColor,
   onWalletActionClick,
   onRightActionsClick,
   onWalletMouseEnter,
@@ -105,10 +118,28 @@ export default function AppShellHeader({
   walletActionLabel,
   walletActionOnly = false,
 }: AppShellHeaderProps) {
+  const { lightModePrimaryColor, setLightModePrimaryColor } = useLightModePrimaryColor();
+  const activeLightModePrimaryColor = currentLightModePrimaryColor ?? lightModePrimaryColor;
+
   const handleInfoButtonClick = () => {
     onInfoModalRequestClose();
     onInfoButtonClick();
   };
+
+  const handleLightModePrimaryColorSelect = useCallback(async (nextColor: LightModePrimaryColor) => {
+    const previousColor = activeLightModePrimaryColor;
+    if (!canEditLightModePrimaryColor || !onSaveLightModePrimaryColor || nextColor === previousColor || isSavingLightModePrimaryColor) {
+      return;
+    }
+
+    setLightModePrimaryColor(nextColor);
+
+    try {
+      await onSaveLightModePrimaryColor(nextColor);
+    } catch {
+      setLightModePrimaryColor(previousColor);
+    }
+  }, [activeLightModePrimaryColor, canEditLightModePrimaryColor, isSavingLightModePrimaryColor, onSaveLightModePrimaryColor, setLightModePrimaryColor]);
 
   return (
     <div className={className} onClick={onContainerClick}>
@@ -190,15 +221,44 @@ export default function AppShellHeader({
                       {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
                     </>
                   ) : null}
-                  {walletActionHref ? (
-                    <a
-                      href={walletActionHref}
-                      className="wallet-info-introspect-btn"
-                      onClick={onWalletActionClick}
-                    >
-                      {walletActionIcon ?? <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />}
-                      <span>{walletActionLabel ?? "Introspect"}</span>
-                    </a>
+                  {canEditLightModePrimaryColor || walletActionHref ? (
+                    <div className="wallet-info-footer-row">
+                      {canEditLightModePrimaryColor ? (
+                        <div className="wallet-info-palette-group" role="group" aria-label="Select light mode primary color">
+                          {LIGHT_MODE_PRIMARY_COLOR_OPTIONS.map((option) => {
+                            const isSelected = activeLightModePrimaryColor === option.value;
+
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`wallet-info-palette ${isSelected ? "wallet-info-palette-active" : ""}`.trim()}
+                                onClick={() => void handleLightModePrimaryColorSelect(option.value)}
+                                aria-label={`Set light mode primary color to ${option.label.toLowerCase()}`}
+                                aria-pressed={isSelected}
+                                disabled={isSavingLightModePrimaryColor}
+                              >
+                                <span
+                                  className={`wallet-info-palette-swatch ${option.value === "#f2f0e4" ? "wallet-info-palette-swatch-cream" : "wallet-info-palette-swatch-white"}`.trim()}
+                                  aria-hidden="true"
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {walletActionHref ? (
+                        <a
+                          href={walletActionHref}
+                          className="wallet-info-introspect-btn"
+                          onClick={onWalletActionClick}
+                          aria-label={walletActionLabel ?? "Introspect"}
+                          title={walletActionLabel ?? "Introspect"}
+                        >
+                          {walletActionIcon ?? <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />}
+                        </a>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               ) : null}

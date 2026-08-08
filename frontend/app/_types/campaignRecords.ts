@@ -1,4 +1,6 @@
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
+import type { LockMountableConfig } from "@/app/_types/lockMountable";
+import type { GiftDeliverable } from "@/lib/giftDeliverables";
 
 export type CampaignComment = {
   text: string;
@@ -34,6 +36,7 @@ export type CampaignRecord = {
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
+    lock?: LockMountableConfig | null;
   };
   socialMetadata?: {
     mentions?: string[];
@@ -44,6 +47,7 @@ export type CampaignRecord = {
     reshareCount?: number;
     resharedByAddresses?: string[];
   };
+  giftDeliverable?: GiftDeliverable | null;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: "draft" | "published" | "publish_failed";

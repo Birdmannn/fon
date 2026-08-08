@@ -6,14 +6,37 @@ import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "luc
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
+import {
+  DEFAULT_LOCK_MOUNTABLE_CONFIG,
+  lockMountableSummary,
+  normalizeLockMountableConfig,
+} from "@/app/_lib/lockMountable";
+import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
+import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import { CampaignType } from "@/lib/contract";
+import type { GoogleFormsAccessVerification } from "@/lib/googleFormsApi";
 import {
   MIN_TASK_DURATION_MINUTES,
   MINUTES_PER_HOUR,
   normalizeCreateCampaignParams,
   TIMING_MINUTE_STEP,
+  validateGiftCreateConfiguration,
 } from "@/lib/campaignValidation";
+import {
+  buildGiftDeliverable,
+  buildGiftMentionList,
+  createEmptyGiftDeliverable,
+  formatGiftHandle,
+  isGiftEligibleCampaignType,
+  parseGiftDirectiveSections,
+  parseStoredGiftDeliverable,
+  type GiftApprovalMode,
+  type GiftDeliverable,
+  type GiftRatioEntry,
+  type GiftSplitMode,
+} from "@/lib/giftDeliverables";
 import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
 import { sendCreateCampaign } from "@/lib/transactions";
 
@@ -34,6 +57,8 @@ const CREATE_MODAL_TITLE_MAX_CHARS = 30;
 const CREATE_MODAL_BODY_MAX_CHARS = 455;
 const CREATE_TOTAL_MAX_CHARS = 256;
 const SUMMARY_MAX_BYTES = 64;
+export const CREATE_MODAL_RESUME_STORAGE_KEY = "freight-create-modal-resume";
+export const CREATE_MODAL_RESUME_MAX_AGE_MS = 30 * 60 * 1000;
 const summaryEncoder = new TextEncoder();
 
 const getTextBytes = (text: string) => summaryEncoder.encode(text).length;
@@ -177,6 +202,33 @@ const buildPreviewLines = (text: string, maxChars: number) => {
   return output;
 };
 
+const normalizeEmail = (value: string | null | undefined) => value?.trim().toLowerCase() ?? "";
+
+function getCurrentPathname() {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.delete("google_link_code");
+  return `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+}
+
+function canResumeModalState(value: unknown): value is CreateModalResumeState {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<CreateModalResumeState>;
+  return typeof candidate.path === "string"
+    && typeof candidate.savedAt === "number"
+    && Number.isFinite(candidate.savedAt)
+    && (candidate.modalStep === "compose" || candidate.modalStep === "review")
+    && (candidate.activeDraftRecordId === null || typeof candidate.activeDraftRecordId === "string")
+    && (candidate.lastSavedSnapshot === null || typeof candidate.lastSavedSnapshot === "object")
+    && Boolean(candidate.snapshot && typeof candidate.snapshot === "object");
+}
+
 export type CreateModalStep = "compose" | "review";
 
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
@@ -201,10 +253,12 @@ type DraftRecord = {
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
+    lock?: LockMountableConfig | null;
   };
   socialMetadata?: {
     mentions?: string[];
   };
+  giftDeliverable?: GiftDeliverable | null;
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: DraftRecordStatus;
@@ -227,7 +281,18 @@ type DraftSnapshot = {
   rewardCount: string;
   auxAmountCkb: string;
   mentions: string[];
+  giftDeliverable: GiftDeliverable;
   formsMountable?: FormsMountableConfig;
+  lockMountable?: LockMountableConfig;
+};
+
+type CreateModalResumeState = {
+  savedAt: number;
+  path: string;
+  modalStep: CreateModalStep;
+  activeDraftRecordId: string | null;
+  snapshot: DraftSnapshot;
+  lastSavedSnapshot: DraftSnapshot | null;
 };
 
 type CampaignIdentityOverride = {
@@ -253,8 +318,11 @@ export type CreateCampaignModalContentHandle = {
   toggleDraftList: () => Promise<boolean>;
   applyDraftSelection: (draftId: string) => void;
   getFormsMountableConfig: () => FormsMountableConfig;
+  getLockMountableConfig: () => LockMountableConfig;
   setFormsMountableEnabled: (enabled: boolean) => void;
+  setLockMountableEnabled: (enabled: boolean) => void;
   updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
+  updateLockMountableConfig: (updates: Partial<LockMountableConfig>) => void;
   persistCurrentDraft: () => Promise<void>;
   advanceToReviewAfterMountableSelection: () => Promise<void>;
 };
@@ -278,7 +346,7 @@ type CreateCampaignModalContentProps = {
   onDraftSelectionRequest?: (draftId: string) => void;
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
   onMountableSelectionRequired?: () => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean }) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean }) => void;
   availableFbars?: number;
 };
 
@@ -289,6 +357,7 @@ function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
     description: snapshot.description.trim(),
     summaryDraft: snapshot.summaryDraft.trim(),
     mentions: [...snapshot.mentions],
+    giftDeliverable: snapshot.giftDeliverable,
   };
 }
 
@@ -334,6 +403,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 }: CreateCampaignModalContentProps, ref) {
   const { open } = ccc.useCcc();
   const signer = ccc.useSigner();
+  const { currentUserProfile } = useUserProfile(signer ?? null);
+  const {
+    beginGoogleLink,
+    googleLinkError,
+    hasFormsResponseAccess,
+    isHydratingGoogleLink,
+    isLinkingGoogle,
+    isRefreshingLinkedGoogleGrant,
+    linkedGoogleGrant,
+    refreshLinkedGoogleGrant,
+  } = useGoogleLink(signer ?? null, currentUserProfile);
   const pageEditorRef = useRef<HTMLDivElement>(null);
   const modalTitleRef = useRef<HTMLDivElement>(null);
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
@@ -343,6 +423,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftListRequestIdRef = useRef(0);
   const previousShowDraftsPaneRef = useRef(false);
+  const hasRestoredResumeStateRef = useRef(false);
+  const formsMountableRef = useRef<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const lockMountableRef = useRef<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -355,6 +438,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+  const [giftApprovalMode, setGiftApprovalMode] = useState<GiftApprovalMode>("all");
+  const [giftApprovalThreshold, setGiftApprovalThreshold] = useState("1");
+  const [giftSplitMode, setGiftSplitMode] = useState<GiftSplitMode | null>(null);
+  const [giftRatioEntries, setGiftRatioEntries] = useState<GiftRatioEntry[]>([]);
+  const [giftResolvedAddresses, setGiftResolvedAddresses] = useState<Record<string, string | null>>({});
+  const [giftResolutionWarnings, setGiftResolutionWarnings] = useState<string[]>([]);
   const [status, setStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [showHashtagMenu, setShowHashtagMenu] = useState(false);
@@ -376,6 +466,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
   const [draftSaveError, setDraftSaveError] = useState("");
   const [pendingAdvanceToReview, setPendingAdvanceToReview] = useState(false);
+  const [isVerifyingFormsResponseAccess, setIsVerifyingFormsResponseAccess] = useState(false);
+  const [formsResponseAccessError, setFormsResponseAccessError] = useState("");
   const [pendingPublishedRecordSync, setPendingPublishedRecordSync] = useState<PendingPublishedRecordSync | null>(null);
   const activeDraftRecord = useMemo(
     () => draftRecords.find((record) => record._id === activeDraftRecordId) ?? null,
@@ -442,7 +534,107 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     updateDurationFromParts(String(durationParts.hours), value);
   }, [durationParts.hours, updateDurationFromParts]);
   const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
-  const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === "mounted");
+  const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === MOUNTABLE_TRIGGER_HASHTAG);
+  const parsedGiftDirectives = useMemo(() => parseGiftDirectiveSections(trimmedModalDescription), [trimmedModalDescription]);
+  const isGiftEligibleType = isGiftEligibleCampaignType(campaignType);
+  const giftFeatureEnabled = isGiftEligibleType && parsedGiftDirectives.enabled;
+  const giftApproverUsers = useMemo(
+    () => parsedGiftDirectives.approvers.map((handle) => ({
+      handle: formatGiftHandle(handle),
+      address: giftResolvedAddresses[handle] ?? null,
+    })),
+    [giftResolvedAddresses, parsedGiftDirectives.approvers],
+  );
+  const giftClaimantUsers = useMemo(
+    () => parsedGiftDirectives.claimants.map((handle) => ({
+      handle: formatGiftHandle(handle),
+      address: giftResolvedAddresses[handle] ?? null,
+    })),
+    [giftResolvedAddresses, parsedGiftDirectives.claimants],
+  );
+  const giftReceiverUsers = useMemo(
+    () => parsedGiftDirectives.receivers.map((handle) => ({
+      handle: formatGiftHandle(handle),
+      address: giftResolvedAddresses[handle] ?? null,
+    })),
+    [giftResolvedAddresses, parsedGiftDirectives.receivers],
+  );
+  const isOpenGiftClaim = giftFeatureEnabled && giftClaimantUsers.length === 0;
+  const effectiveGiftSplitMode = giftFeatureEnabled
+    ? (isOpenGiftClaim ? "equal" : giftSplitMode)
+    : null;
+  const giftApprovalRule = useMemo(() => {
+    if (!giftFeatureEnabled || giftApproverUsers.length === 0) {
+      return null;
+    }
+
+    const parsedThreshold = Number.parseInt(giftApprovalThreshold, 10);
+
+    return {
+      mode: giftApprovalMode,
+      threshold: giftApprovalMode === "threshold" && Number.isFinite(parsedThreshold) ? parsedThreshold : null,
+    };
+  }, [giftApprovalMode, giftApprovalThreshold, giftApproverUsers.length, giftFeatureEnabled]);
+  const giftPreviewState = useMemo(() => {
+    if (!giftFeatureEnabled) {
+      return { error: null, preview: null };
+    }
+
+    return validateGiftCreateConfiguration({
+      approvalRule: giftApprovalRule,
+      claimants: giftClaimantUsers,
+      description: trimmedModalDescription,
+      maxAmountCkb,
+      openClaim: isOpenGiftClaim,
+      ratioEntries: giftRatioEntries,
+      rewardCount,
+      splitMode: effectiveGiftSplitMode,
+    });
+  }, [
+    effectiveGiftSplitMode,
+    giftApprovalRule,
+    giftClaimantUsers,
+    giftFeatureEnabled,
+    giftRatioEntries,
+    isOpenGiftClaim,
+    maxAmountCkb,
+    rewardCount,
+    trimmedModalDescription,
+  ]);
+  const giftDeliverableDraft = useMemo(() => {
+    if (!giftFeatureEnabled) {
+      return createEmptyGiftDeliverable();
+    }
+
+    return buildGiftDeliverable({
+      campaignType,
+      description: trimmedModalDescription,
+      approvalRule: giftApprovalRule,
+      resolvedAddressesByHandle: giftResolvedAddresses,
+      ratioEntries: giftRatioEntries,
+      splitMode: effectiveGiftSplitMode,
+    });
+  }, [
+    campaignType,
+    effectiveGiftSplitMode,
+    giftApprovalRule,
+    giftFeatureEnabled,
+    giftRatioEntries,
+    giftResolvedAddresses,
+    trimmedModalDescription,
+  ]);
+  const allMentions = useMemo(
+    () => Array.from(new Set([...mentions, ...buildGiftMentionList(parsedGiftDirectives)])),
+    [mentions, parsedGiftDirectives],
+  );
+  const giftTaggedHandles = useMemo(
+    () => Array.from(new Set([
+      ...parsedGiftDirectives.approvers,
+      ...parsedGiftDirectives.claimants,
+      ...parsedGiftDirectives.receivers,
+    ])),
+    [parsedGiftDirectives.approvers, parsedGiftDirectives.claimants, parsedGiftDirectives.receivers],
+  );
   const normalizedCreateParams = useMemo(() => {
     try {
       return {
@@ -484,15 +676,19 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     maxAmountCkb,
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
-    mentions,
+    mentions: allMentions,
+    giftDeliverable: giftDeliverableDraft,
     formsMountable,
+    lockMountable,
   }), [
+    allMentions,
     campaignType,
     currentAuxAmountCkb,
     currentDraftSummary,
+    giftDeliverableDraft,
     maxAmountCkb,
     formsMountable,
-    mentions,
+    lockMountable,
     rewardCount,
     taskDurationHours,
     taskStartDelayHours,
@@ -501,11 +697,50 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   ]);
   const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
   const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
+  const mountedFormUrl = formsMountable.canonicalFormUrl?.trim() || formsMountable.formUrl.trim();
+  const mountedFormId = formsMountable.formId?.trim() ?? "";
+  const hasMountedFormValidation = mountedFormId.length > 0 && mountedFormUrl.length > 0;
+  const linkedGrantDisplayEmail = linkedGoogleGrant?.email?.trim() ?? "";
+  const verifiedGrantDisplayEmail = formsMountable.responseAccessEmail?.trim() ?? "";
+  const normalizedLinkedGrantEmail = normalizeEmail(linkedGrantDisplayEmail);
+  const normalizedVerifiedGrantEmail = normalizeEmail(verifiedGrantDisplayEmail);
+  const hasVerifiedFormsResponseAccess = formsMountable.responseAccessStatus === "verified"
+    && Boolean(formsMountable.responseAccessVerifiedAt?.trim())
+    && normalizedVerifiedGrantEmail.length > 0;
+  const linkedGrantDiffersFromVerifiedAccess = normalizedLinkedGrantEmail.length > 0
+    && normalizedVerifiedGrantEmail.length > 0
+    && normalizedLinkedGrantEmail !== normalizedVerifiedGrantEmail;
+  const formsResponseAccessMismatchError = formsMountable.enabled && linkedGrantDiffersFromVerifiedAccess
+    ? "The linked Google account no longer matches the Google account verified for this form. Verify response access again before publishing."
+    : "";
+  const formsResponseAccessReady = !formsMountable.enabled
+    || (hasMountedFormValidation && hasFormsResponseAccess && hasVerifiedFormsResponseAccess && !linkedGrantDiffersFromVerifiedAccess);
+  const isFormsResponseAccessBusy =
+    isHydratingGoogleLink ||
+    isLinkingGoogle ||
+    isRefreshingLinkedGoogleGrant ||
+    isVerifyingFormsResponseAccess;
   const isPublishDisabled =
     status === "pending" ||
     draftSaveStatus === "saving" ||
+    isFormsResponseAccessBusy ||
+    !formsResponseAccessReady ||
     (!draftSaveError && normalizedCreateParams.error !== null);
   const showDraftsPane = isModal && modalStep === "compose" && isDraftListOpen;
+  const activeFormsResponseAccessError = formsResponseAccessError
+    || formsResponseAccessMismatchError
+    || (formsMountable.enabled && !hasFormsResponseAccess ? googleLinkError : "");
+  const formsResponseAccessHelperMessage = !formsMountable.enabled
+    ? ""
+    : !hasMountedFormValidation
+      ? "Validate the mounted Google Form in mountables before linking or verifying response access."
+      : !hasFormsResponseAccess
+        ? "Link the Google account that can read this form's responses. The grant stays server-side."
+        : !hasVerifiedFormsResponseAccess
+          ? "Verify that the linked Google account can read responses for this form before publishing."
+          : linkedGrantDiffersFromVerifiedAccess
+            ? "The linked Google account changed after verification. Verify this form again before publishing."
+            : "Participants will be matched against respondentEmail using this linked Google account.";
   const composeHelperMessage = showNoDraftsMessage
     ? "No saved drafts yet"
     : isDraftListLoading
@@ -515,6 +750,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         : !constraintsPassed
           ? CREATE_CONSTRAINTS_MESSAGE_PENDING
           : "";
+
+  useEffect(() => {
+    formsMountableRef.current = formsMountable;
+  }, [formsMountable]);
+
+  useEffect(() => {
+    lockMountableRef.current = lockMountable;
+  }, [lockMountable]);
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
@@ -528,6 +771,125 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   useEffect(() => {
     onStepChange?.(status === "success" ? "compose" : modalStep);
   }, [modalStep, onStepChange, status]);
+
+  useEffect(() => {
+    if (!giftFeatureEnabled) {
+      if (giftSplitMode !== null) {
+        setGiftSplitMode(null);
+      }
+      if (giftRatioEntries.length > 0) {
+        setGiftRatioEntries([]);
+      }
+      if (giftResolutionWarnings.length > 0) {
+        setGiftResolutionWarnings([]);
+      }
+      if (Object.keys(giftResolvedAddresses).length > 0) {
+        setGiftResolvedAddresses({});
+      }
+      return;
+    }
+
+    if (isOpenGiftClaim && giftSplitMode !== "equal") {
+      setGiftSplitMode("equal");
+    }
+
+    if (!isOpenGiftClaim && !giftSplitMode) {
+      setGiftSplitMode("equal");
+    }
+
+    if (giftClaimantUsers.length > 0 && rewardCount !== String(giftClaimantUsers.length)) {
+      setRewardCount(String(giftClaimantUsers.length));
+    }
+
+    const ratioHandles = new Set(giftRatioEntries.map((entry) => entry.handle.toLowerCase()));
+    const missingEntries = giftClaimantUsers.filter((claimant) => !ratioHandles.has(claimant.handle.toLowerCase()));
+    if (giftSplitMode === "ratio" && missingEntries.length > 0) {
+      setGiftRatioEntries((current) => [
+        ...current,
+        ...missingEntries.map((claimant) => ({
+          handle: claimant.handle,
+          address: claimant.address ?? null,
+          units: 1,
+        })),
+      ]);
+    }
+
+    const unresolvedHandles = giftTaggedHandles.filter((handle) => !giftResolvedAddresses[handle]);
+    const nextWarnings = unresolvedHandles.map((handle) => `Could not resolve @${handle}. Publishing is allowed, but wallet-gated actions will only work once that handle maps to a profile.`);
+    const currentWarningsKey = JSON.stringify(giftResolutionWarnings);
+    const nextWarningsKey = JSON.stringify(nextWarnings);
+    if (currentWarningsKey !== nextWarningsKey) {
+      setGiftResolutionWarnings(nextWarnings);
+    }
+  }, [
+    giftClaimantUsers,
+    giftFeatureEnabled,
+    giftRatioEntries,
+    giftResolutionWarnings,
+    giftResolvedAddresses,
+    giftSplitMode,
+    giftTaggedHandles,
+    isOpenGiftClaim,
+    rewardCount,
+  ]);
+
+  useEffect(() => {
+    if (!giftFeatureEnabled) {
+      return;
+    }
+
+    const unresolvedHandles = giftTaggedHandles.filter((handle) => !(handle in giftResolvedAddresses));
+    if (unresolvedHandles.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const resolvedEntries = await Promise.all(
+          unresolvedHandles.map(async (handle) => {
+            try {
+              const response = await fetch(`/api/user-profiles?handle=${encodeURIComponent(handle)}`, {
+                cache: "no-store",
+              });
+              const payload = await response.json().catch(() => null);
+              if (!response.ok) {
+                return [handle, null] as const;
+              }
+
+              const address = typeof payload?.profile?.address === "string"
+                ? payload.profile.address.trim().toLowerCase()
+                : null;
+              return [handle, address] as const;
+            } catch {
+              return [handle, null] as const;
+            }
+          }),
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        setGiftResolvedAddresses((current) => ({
+          ...current,
+          ...Object.fromEntries(resolvedEntries),
+        }));
+      } catch {
+        if (!cancelled) {
+          setGiftResolvedAddresses((current) => ({
+            ...current,
+            ...Object.fromEntries(unresolvedHandles.map((handle) => [handle, null] as const)),
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [giftFeatureEnabled, giftResolvedAddresses, giftTaggedHandles]);
 
   const filteredMentions = MOCK_USERS.filter(
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
@@ -658,7 +1020,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb("1000");
     setRewardCount("1");
     setRaffleTicketPriceCkb("1");
+    setGiftApprovalMode("all");
+    setGiftApprovalThreshold("1");
+    setGiftSplitMode(null);
+    setGiftRatioEntries([]);
+    setGiftResolvedAddresses({});
+    setGiftResolutionWarnings([]);
     setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+    setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
     setModalStep("compose");
     setReviewSummary("");
     setActiveDraftRecordId(null);
@@ -1056,6 +1425,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return false;
     }
 
+    if (giftFeatureEnabled && giftPreviewState.error) {
+      setErrorMsg(giftPreviewState.error);
+      setStatus("error");
+      return false;
+    }
+
     return true;
   };
 
@@ -1092,6 +1467,123 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     return creatorAddress;
   }, [signer]);
 
+  const clearCreateModalResumeState = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.sessionStorage.removeItem(CREATE_MODAL_RESUME_STORAGE_KEY);
+  }, []);
+
+  const applyDraftSnapshot = useCallback((resumeState: CreateModalResumeState) => {
+    const nextSnapshot = buildDraftSnapshot(resumeState.snapshot);
+    const nextGiftDeliverable = parseStoredGiftDeliverable(nextSnapshot.giftDeliverable);
+    const nextCampaignType = nextSnapshot.campaignType;
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+    const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
+    const nextLockMountable = normalizeLockMountableConfig(nextSnapshot.lockMountable);
+
+    formsMountableRef.current = nextFormsMountable;
+    lockMountableRef.current = nextLockMountable;
+    setModalTitle(nextSnapshot.title);
+    setModalDescription(nextSnapshot.description);
+    setSummary(nextSnapshot.description);
+    setCampaignType(nextCampaignType);
+    setMentions(nextSnapshot.mentions);
+    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
+    setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
+    setGiftResolvedAddresses(
+      Object.fromEntries(
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+          .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
+      ),
+    );
+    setGiftResolutionWarnings([]);
+    setTaskStartDelayHours(nextSnapshot.taskStartDelayHours);
+    setTaskDurationHours(nextSnapshot.taskDurationHours);
+    setMaxAmountCkb(nextSnapshot.maxAmountCkb);
+    setRewardCount(nextSnapshot.rewardCount);
+    setRaffleTicketPriceCkb(isRaffleDraft ? nextSnapshot.auxAmountCkb : "1");
+    setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
+    setFormsMountable(nextFormsMountable);
+    setLockMountable(nextLockMountable);
+    setActiveDraftRecordId(resumeState.activeDraftRecordId);
+    setModalStep(resumeState.modalStep);
+    setIsDraftListOpen(false);
+    setDraftListError("");
+    setDraftDeleteId(null);
+    setShowNoDraftsMessage(false);
+    setPendingAdvanceToReview(false);
+    setPendingPublishedRecordSync(null);
+    setDraftSaveStatus("idle");
+    setDraftSaveError("");
+    setFormsResponseAccessError("");
+    setStatus("idle");
+    setErrorMsg("");
+    setLastSavedSnapshot(resumeState.lastSavedSnapshot ? buildDraftSnapshot(resumeState.lastSavedSnapshot) : null);
+    hideMenus();
+    syncEditorsFromState(nextSnapshot.title, nextSnapshot.description);
+  }, [hideMenus, syncEditorsFromState]);
+
+  const saveCreateModalResumeState = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const resumeState: CreateModalResumeState = {
+      savedAt: Date.now(),
+      path: getCurrentPathname(),
+      modalStep,
+      activeDraftRecordId,
+      snapshot: buildDraftSnapshot(currentDraftSnapshot),
+      lastSavedSnapshot: lastSavedSnapshot ? buildDraftSnapshot(lastSavedSnapshot) : null,
+    };
+    window.sessionStorage.setItem(CREATE_MODAL_RESUME_STORAGE_KEY, JSON.stringify(resumeState));
+  }, [activeDraftRecordId, currentDraftSnapshot, lastSavedSnapshot, modalStep]);
+
+  const restoreCreateModalResumeState = useCallback(() => {
+    if (typeof window === "undefined" || hasRestoredResumeStateRef.current) {
+      return false;
+    }
+
+    hasRestoredResumeStateRef.current = true;
+    const storedValue = window.sessionStorage.getItem(CREATE_MODAL_RESUME_STORAGE_KEY);
+    if (!storedValue) {
+      return false;
+    }
+
+    try {
+      const parsed = JSON.parse(storedValue) as unknown;
+      if (!canResumeModalState(parsed)) {
+        clearCreateModalResumeState();
+        return false;
+      }
+
+      const isExpired = Date.now() - parsed.savedAt > CREATE_MODAL_RESUME_MAX_AGE_MS;
+      if (isExpired || parsed.path !== getCurrentPathname()) {
+        clearCreateModalResumeState();
+        return false;
+      }
+
+      applyDraftSnapshot(parsed);
+      clearCreateModalResumeState();
+      return true;
+    } catch {
+      clearCreateModalResumeState();
+      return false;
+    }
+  }, [applyDraftSnapshot, clearCreateModalResumeState]);
+
+  useEffect(() => {
+    if (!isModal) {
+      return;
+    }
+
+    restoreCreateModalResumeState();
+  }, [isModal, restoreCreateModalResumeState]);
+
   const applyDraftRecord = useCallback((record: DraftRecord) => {
     const nextTitle = record.title?.trim() ?? "";
     const nextDescription = record.description?.trim() ?? "";
@@ -1105,6 +1597,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
     const nextRewardCount = record.argsDraft?.rewardCount ?? "1";
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
+    const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
 
     setModalTitle(nextTitle);
@@ -1112,6 +1605,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setSummary(nextDescription);
     setCampaignType(nextCampaignType);
     setMentions(nextMentions);
+    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
+    setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
+    setGiftResolvedAddresses(
+      Object.fromEntries(
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+          .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
+      ),
+    );
+    setGiftResolutionWarnings([]);
     setTaskStartDelayHours(nextStartDelay);
     setTaskDurationHours(nextDuration);
     setMaxAmountCkb(nextMaxAmount);
@@ -1119,6 +1623,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
     setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
     setFormsMountable(normalizeFormsMountableConfig(record.mountables?.forms));
+    setLockMountable(normalizeLockMountableConfig(record.mountables?.lock));
     setActiveDraftRecordId(record._id ?? null);
     setModalStep("compose");
     setIsDraftListOpen(false);
@@ -1141,7 +1646,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
       mentions: nextMentions,
+      giftDeliverable: nextGiftDeliverable,
       formsMountable: normalizeFormsMountableConfig(record.mountables?.forms),
+      lockMountable: normalizeLockMountableConfig(record.mountables?.lock),
     });
     setLastSavedSnapshot(nextSnapshot);
 
@@ -1229,7 +1736,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setMaxAmountCkb("1000");
         setRewardCount("1");
         setRaffleTicketPriceCkb("1");
+        setGiftApprovalMode("all");
+        setGiftApprovalThreshold("1");
+        setGiftSplitMode(null);
+        setGiftRatioEntries([]);
+        setGiftResolvedAddresses({});
+        setGiftResolutionWarnings([]);
         setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+        setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
         setLastSavedSnapshot(null);
         setDraftSaveStatus("idle");
         setDraftSaveError("");
@@ -1276,10 +1790,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
         },
         mountables: {
-          forms: formsMountable.enabled ? formsMountable : null,
+          forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
+          lock: lockMountableRef.current.enabled ? lockMountableRef.current : null,
         },
         socialMetadata: {
-          mentions,
+          mentions: allMentions,
           comments: [],
           likeCount: 0,
           likedByAddresses: [],
@@ -1287,6 +1802,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           reshareCount: 0,
           resharedByAddresses: [],
         },
+        giftDeliverable: giftDeliverableDraft,
         creatorAddress,
         creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
         status: draftStatus,
@@ -1297,11 +1813,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     },
     [
       activeDraftRecord,
+      allMentions,
       campaignType,
       formsMountable,
+      lockMountable,
       getCreatorAddress,
+      giftDeliverableDraft,
       maxAmountCkb,
-      mentions,
       raffleTicketPriceCkb,
       rewardCount,
       shouldCollectRaffleTicketPrice,
@@ -1355,8 +1873,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
-          mentions,
+          mentions: allMentions,
+          giftDeliverable: giftDeliverableDraft,
           formsMountable,
+          lockMountable,
         });
         setLastSavedSnapshot(nextSnapshot);
 
@@ -1379,10 +1899,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             },
             mountables: {
               forms: formsMountable.enabled ? formsMountable : null,
+              lock: lockMountable.enabled ? lockMountable : null,
             },
             socialMetadata: {
-              mentions,
+              mentions: allMentions,
             },
+            giftDeliverable: giftDeliverableDraft,
             status: draftStatus,
             txHash: txHashValue,
             publishError,
@@ -1415,9 +1937,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [
       activeDraftRecordId,
       buildDraftPayload,
+      allMentions,
       campaignType,
+      giftDeliverableDraft,
       maxAmountCkb,
-      mentions,
       raffleTicketPriceCkb,
       rewardCount,
       shouldCollectRaffleTicketPrice,
@@ -1427,6 +1950,121 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       trimmedModalTitle,
     ]
   );
+
+  const handleBeginFormsResponseAccessLink = useCallback(async () => {
+    if (!signer) {
+      open();
+      return;
+    }
+
+    if (!mountedFormUrl || !mountedFormId) {
+      setFormsResponseAccessError("Validate the mounted Google Form before linking response access.");
+      return;
+    }
+
+    setFormsResponseAccessError("");
+
+    try {
+      await persistDraftRecord(currentDraftSummary, "draft");
+      saveCreateModalResumeState();
+      await beginGoogleLink(getCurrentPathname(), "forms_response_access");
+    } catch (error) {
+      clearCreateModalResumeState();
+      setFormsResponseAccessError(error instanceof Error ? error.message : "Failed to link Google Forms response access");
+    }
+  }, [beginGoogleLink, clearCreateModalResumeState, currentDraftSummary, mountedFormId, mountedFormUrl, open, persistDraftRecord, saveCreateModalResumeState, signer]);
+
+  const handleRefreshFormsResponseAccessGrant = useCallback(async () => {
+    if (!signer) {
+      open();
+      return;
+    }
+
+    setFormsResponseAccessError("");
+
+    try {
+      await refreshLinkedGoogleGrant();
+    } catch (error) {
+      setFormsResponseAccessError(error instanceof Error ? error.message : "Failed to refresh linked Google access");
+    }
+  }, [open, refreshLinkedGoogleGrant, signer]);
+
+  const handleVerifyFormsResponseAccess = useCallback(async () => {
+    if (!signer) {
+      open();
+      return;
+    }
+
+    if (!mountedFormId) {
+      setFormsResponseAccessError("Validate the mounted Google Form before verifying response access.");
+      return;
+    }
+
+    setIsVerifyingFormsResponseAccess(true);
+    setFormsResponseAccessError("");
+
+    try {
+      const creatorAddress = await getCreatorAddress();
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ address: creatorAddress, purpose: "google-forms-access" }),
+      });
+      const noncePayload = await nonceResponse.json().catch(() => null) as {
+        error?: string;
+        nonce?: string;
+      } | null;
+      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+        throw new Error(noncePayload?.error ?? "Failed to create Google Forms access nonce");
+      }
+
+      const signature = await signer.signMessage(noncePayload.nonce);
+      const accessResponse = await fetch("/api/google-forms/access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: creatorAddress,
+          formId: mountedFormId,
+          nonce: noncePayload.nonce,
+          nonceSignature: {
+            signature: signature.signature,
+            identity: signature.identity,
+            signType: signature.signType,
+          },
+        }),
+      });
+      const accessPayload = await accessResponse.json().catch(() => null) as {
+        error?: string;
+        access?: GoogleFormsAccessVerification | null;
+      } | null;
+      if (!accessResponse.ok || !accessPayload?.access) {
+        throw new Error(accessPayload?.error ?? "Failed to verify Google Forms response access");
+      }
+
+      const verifiedAccess = accessPayload.access;
+      setFormsMountable((current) => {
+        const nextConfig = normalizeFormsMountableConfig({
+          ...current,
+          verificationMode: "google_forms_api",
+          responseAccessEmail: verifiedAccess.grantEmail,
+          responseAccessStatus: "verified",
+          responseAccessVerifiedAt: verifiedAccess.verifiedAt,
+        });
+        formsMountableRef.current = nextConfig;
+        return nextConfig;
+      });
+      await refreshLinkedGoogleGrant().catch(() => undefined);
+      await persistDraftRecord(currentDraftSummary, "draft");
+    } catch (error) {
+      setFormsResponseAccessError(error instanceof Error ? error.message : "Failed to verify Google Forms response access");
+    } finally {
+      setIsVerifyingFormsResponseAccess(false);
+    }
+  }, [currentDraftSummary, getCreatorAddress, mountedFormId, open, persistDraftRecord, refreshLinkedGoogleGrant, signer]);
 
   useEffect(() => {
     return () => {
@@ -1470,7 +2108,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch {
       setStatus("error");
     }
-  }, [formsMountable.enabled, hasMountedHashtag, hideMenus, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
+  }, [formsMountable.enabled, hasMountedHashtag, hideMenus, lockMountable.enabled, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
 
   const handleSaveDraftFromClose = useCallback(async () => {
     if (!hasDraftableChanges) {
@@ -1524,17 +2162,65 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [applyDraftRecord, draftRecords]);
 
   const handleSetFormsMountableEnabled = useCallback((enabled: boolean) => {
-    setFormsMountable((current) => normalizeFormsMountableConfig({
-      ...current,
-      enabled,
-    }));
+    setFormsResponseAccessError("");
+    setFormsMountable((current) => {
+      const nextConfig = normalizeFormsMountableConfig({
+        ...current,
+        enabled,
+      });
+      formsMountableRef.current = nextConfig;
+      return nextConfig;
+    });
   }, []);
 
   const handleUpdateFormsMountableConfig = useCallback((updates: Partial<FormsMountableConfig>) => {
-    setFormsMountable((current) => normalizeFormsMountableConfig({
-      ...current,
-      ...updates,
-    }));
+    setFormsResponseAccessError("");
+    setFormsMountable((current) => {
+      const nextConfig = normalizeFormsMountableConfig({
+        ...current,
+        ...updates,
+      });
+      const nextFormId = nextConfig.formId?.trim() ?? "";
+      const currentFormId = current.formId?.trim() ?? "";
+      const nextCanonicalFormUrl = nextConfig.canonicalFormUrl?.trim() ?? "";
+      const currentCanonicalFormUrl = current.canonicalFormUrl?.trim() ?? "";
+      const nextFormUrl = nextConfig.formUrl.trim();
+      const currentFormUrl = current.formUrl.trim();
+      const formIdentityChanged = nextFormId !== currentFormId
+        || nextCanonicalFormUrl !== currentCanonicalFormUrl
+        || nextFormUrl !== currentFormUrl;
+
+      if (formIdentityChanged) {
+        nextConfig.responseAccessEmail = "";
+        nextConfig.responseAccessStatus = "pending";
+        nextConfig.responseAccessVerifiedAt = "";
+      }
+
+      formsMountableRef.current = nextConfig;
+      return nextConfig;
+    });
+  }, []);
+
+  const handleSetLockMountableEnabled = useCallback((enabled: boolean) => {
+    setLockMountable((current) => {
+      const nextConfig = normalizeLockMountableConfig({
+        ...current,
+        enabled,
+      });
+      lockMountableRef.current = nextConfig;
+      return nextConfig;
+    });
+  }, []);
+
+  const handleUpdateLockMountableConfig = useCallback((updates: Partial<LockMountableConfig>) => {
+    setLockMountable((current) => {
+      const nextConfig = normalizeLockMountableConfig({
+        ...current,
+        ...updates,
+      });
+      lockMountableRef.current = nextConfig;
+      return nextConfig;
+    });
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -1544,14 +2230,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     toggleDraftList: handleToggleDraftList,
     applyDraftSelection: handleApplyDraftSelection,
     getFormsMountableConfig: () => formsMountable,
+    getLockMountableConfig: () => lockMountable,
     setFormsMountableEnabled: handleSetFormsMountableEnabled,
+    setLockMountableEnabled: handleSetLockMountableEnabled,
     updateFormsMountableConfig: handleUpdateFormsMountableConfig,
+    updateLockMountableConfig: handleUpdateLockMountableConfig,
     persistCurrentDraft: async () => {
       await persistDraftRecord(currentDraftSummary, "draft");
     },
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
   }), [
-    activeDraftRecordId,
     currentDraftSummary,
     formsMountable,
     handleAdvanceToReview,
@@ -1559,9 +2247,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     handleDiscardDraftSession,
     handleSaveDraftFromClose,
     handleSetFormsMountableEnabled,
+    handleSetLockMountableEnabled,
     handleToggleDraftList,
     handleUpdateFormsMountableConfig,
+    handleUpdateLockMountableConfig,
     hasDraftableChanges,
+    lockMountable,
     persistDraftRecord,
   ]);
 
@@ -1581,8 +2272,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     onMountableSelectionStateChange?.({
       hasMountedHashtag,
       formsSelected: formsMountable.enabled,
+      lockSelected: lockMountable.enabled,
     });
-  }, [formsMountable.enabled, hasMountedHashtag, isModal, onMountableSelectionStateChange]);
+  }, [formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
 
   const finalizePublishedRecordSync = useCallback(
     async (sync: PendingPublishedRecordSync) => {
@@ -1643,6 +2335,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
     if (normalizedCreateParams.error) {
       setErrorMsg(normalizedCreateParams.error);
+      setStatus("error");
+      return false;
+    }
+
+    if (!formsResponseAccessReady) {
+      setErrorMsg(activeFormsResponseAccessError || "Verify Google Forms response access before publishing.");
       setStatus("error");
       return false;
     }
@@ -2128,26 +2826,51 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         )}
       </div>
 
-      {!showDraftsPane && mentions.length > 0 && (
+      {!showDraftsPane && allMentions.length > 0 && (
         <div className="create-modal-mentions-row">
-          {mentions.map((mention) => (
-            <div
-              key={mention}
-              className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
-              style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
-            >
-              <span>@{mention}</span>
-              <button
-                type="button"
-                onClick={() => handleRemoveMention(mention)}
-                className="theme-fg opacity-70 hover:opacity-100 font-bold"
+          {allMentions.map((mention) => {
+            const isEditableMention = mentions.includes(mention);
+            return (
+              <div
+                key={mention}
+                className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
+                style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
               >
-                ×
-              </button>
-            </div>
-          ))}
+                <span>@{mention}</span>
+                {isEditableMention ? (
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMention(mention)}
+                    className="theme-fg opacity-70 hover:opacity-100 font-bold"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {giftFeatureEnabled ? (
+        <div className="create-modal-gift-row">
+          <div className="create-modal-gift-card">
+            <p className="create-review-section-label">Gift roles</p>
+            <div className="create-modal-gift-groups">
+              <span>Approvers: {giftApproverUsers.length > 0 ? giftApproverUsers.map((entry) => entry.handle).join(", ") : "None"}</span>
+              <span>Claimants: {giftClaimantUsers.length > 0 ? giftClaimantUsers.map((entry) => entry.handle).join(", ") : "Open claim"}</span>
+              <span>Receive: {giftReceiverUsers.length > 0 ? giftReceiverUsers.map((entry) => entry.handle).join(", ") : "None yet"}</span>
+            </div>
+            {giftResolutionWarnings.length > 0 ? (
+              <div className="create-modal-gift-warnings">
+                {giftResolutionWarnings.map((warning) => (
+                  <p key={warning} className="create-modal-gift-warning">{warning}</p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="create-modal-constraints-row">
         <p className={`create-modal-constraints-text ${constraintsPassed && !showDraftsPane && !isDraftListLoading && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
@@ -2165,6 +2888,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
           {formsMountable.enabled && formsMountable.formUrl.trim().length > 0 ? (
             <p className="create-review-preview-body">Mounted form: {formsMountable.formUrl.trim()}</p>
+          ) : null}
+          {lockMountable.enabled && lockMountable.minimumFbars.trim().length > 0 ? (
+            <p className="create-review-preview-body">Mounted lock: {lockMountableSummary(lockMountable)}</p>
           ) : null}
           {createPreviewLines.length > 0 ? (
             <div className="create-review-preview-content">
@@ -2219,6 +2945,119 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           </div>
           {renderModalArgsInputs()}
         </div>
+
+        {formsMountable.enabled ? (
+          <div className="create-review-args-card">
+            <div className="create-review-card-heading-row">
+              <p className="create-review-section-label">Google Forms access</p>
+              <span className="create-review-offchain-note">Required before publish</span>
+            </div>
+            <div className="create-review-gift-summary">
+              <p className="create-review-preview-body">{formsResponseAccessHelperMessage}</p>
+              {mountedFormUrl ? (
+                <p className="create-review-preview-body">Mounted form: {mountedFormUrl}</p>
+              ) : null}
+              {linkedGrantDisplayEmail ? (
+                <p className="create-review-preview-body">Linked Google: {linkedGrantDisplayEmail}</p>
+              ) : null}
+              {verifiedGrantDisplayEmail ? (
+                <p className="create-review-preview-body">Verified form access: {verifiedGrantDisplayEmail}</p>
+              ) : null}
+              {formsMountable.responseAccessVerifiedAt?.trim() ? (
+                <p className="create-review-gift-note">Verified at {formsMountable.responseAccessVerifiedAt.trim()}</p>
+              ) : null}
+              {activeFormsResponseAccessError ? (
+                <p className="create-review-gift-warning">{activeFormsResponseAccessError}</p>
+              ) : null}
+            </div>
+            <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+              <button
+                type="button"
+                className="create-info-confirm-btn"
+                onClick={() => void handleBeginFormsResponseAccessLink()}
+                disabled={!hasMountedFormValidation || isFormsResponseAccessBusy}
+              >
+                {isLinkingGoogle || isHydratingGoogleLink ? "Linking..." : hasFormsResponseAccess ? "Relink Google" : "Link Google"}
+              </button>
+              <button
+                type="button"
+                className="create-info-confirm-btn"
+                onClick={() => void handleRefreshFormsResponseAccessGrant()}
+                disabled={!hasFormsResponseAccess || isFormsResponseAccessBusy}
+              >
+                {isRefreshingLinkedGoogleGrant ? "Refreshing..." : "Refresh"}
+              </button>
+              <button
+                type="button"
+                className="create-info-confirm-btn create-info-confirm-btn-primary"
+                onClick={() => void handleVerifyFormsResponseAccess()}
+                disabled={!hasMountedFormValidation || !hasFormsResponseAccess || isFormsResponseAccessBusy}
+              >
+                {isVerifyingFormsResponseAccess ? "Verifying..." : formsResponseAccessReady ? "Verified" : "Verify access"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {giftFeatureEnabled ? (
+          <div className="create-review-args-card">
+            <div className="create-review-card-heading-row">
+              <p className="create-review-section-label">Gift delivery</p>
+              <span className="create-review-offchain-note">First-wave approvals and claims</span>
+            </div>
+            <div className="create-review-gift-grid">
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Approval</label>
+                <div className="create-review-gift-choice-row">
+                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "all" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftApprovalMode("all")} disabled={giftApproverUsers.length === 0}>All</button>
+                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "threshold" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftApprovalMode("threshold")} disabled={giftApproverUsers.length <= 1}>Threshold</button>
+                </div>
+                {giftApproverUsers.length > 1 && giftApprovalMode === "threshold" ? (
+                  <div className="create-review-gift-threshold-row">
+                    <input
+                      type="number"
+                      min="1"
+                      max={String(Math.max(1, giftApproverUsers.length - 1))}
+                      step="1"
+                      value={giftApprovalThreshold}
+                      onChange={(event) => setGiftApprovalThreshold(event.target.value)}
+                      className="create-review-arg-input"
+                    />
+                    <span className="create-review-arg-unit">of {giftApproverUsers.length}</span>
+                  </div>
+                ) : null}
+              </div>
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Claim split</label>
+                <div className="create-review-gift-choice-row">
+                  <button type="button" className={`create-review-gift-choice ${effectiveGiftSplitMode === "equal" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftSplitMode("equal")}>Equal</button>
+                  <button type="button" className={`create-review-gift-choice ${effectiveGiftSplitMode === "ratio" ? "create-review-gift-choice-active" : ""}`.trim()} onClick={() => setGiftSplitMode("ratio")} disabled={isOpenGiftClaim}>Ratio</button>
+                </div>
+                {isOpenGiftClaim ? <p className="create-review-gift-note">Open claim is equal-only in the first wave.</p> : null}
+              </div>
+            </div>
+            <div className="create-review-gift-summary">
+              <p className="create-review-preview-body">Commencement: {giftApproverUsers.length > 0 ? `after start time and ${giftApprovalMode === "threshold" ? `${giftApprovalThreshold}/${giftApproverUsers.length}` : "all"} approvals` : "after start time"}.</p>
+              <p className="create-review-preview-body">Claiming: {isOpenGiftClaim ? "Anyone can claim after commencement." : `${giftClaimantUsers.map((entry) => entry.handle).join(", ")} can claim after commencement.`}</p>
+              {giftPreviewState.preview?.allocations?.length ? (
+                <div className="create-review-gift-allocations">
+                  {giftPreviewState.preview.allocations.map((allocation) => (
+                    <div key={allocation.handle} className="create-review-gift-allocation-row">
+                      <span>{allocation.handle}</span>
+                      <span>{allocation.amountLabel}{allocation.units ? ` · ${allocation.units}u` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : giftPreviewState.preview?.perClaimAmountLabel ? (
+                <p className="create-review-preview-body">Each claim can take {giftPreviewState.preview.perClaimAmountLabel}.</p>
+              ) : null}
+              {giftPreviewState.error ? <p className="create-review-gift-warning">{giftPreviewState.error}</p> : null}
+              {giftResolutionWarnings.length > 0 ? giftResolutionWarnings.map((warning) => (
+                <p key={warning} className="create-review-gift-warning">{warning}</p>
+              )) : null}
+            </div>
+          </div>
+        ) : null}
 
         <div className="create-review-draft-status-row" aria-hidden="true" />
       </div>

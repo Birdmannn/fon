@@ -11,6 +11,12 @@ type CampaignParticipantPayload = {
   participantTxHash?: unknown;
   joinedAt?: unknown;
   status?: unknown;
+  participantKind?: unknown;
+  claimRole?: unknown;
+  claimAmountShannons?: unknown;
+  claimAmountLabel?: unknown;
+  claimUnits?: unknown;
+  claimSplitMode?: unknown;
   mountableType?: unknown;
   verificationProvider?: unknown;
   googleSub?: unknown;
@@ -58,6 +64,18 @@ function ensureOptionalBoolean(value: unknown, field: string) {
   return value;
 }
 
+function ensureOptionalNumber(value: unknown, field: string) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`${field} must be a number when provided`);
+  }
+
+  return value;
+}
+
 function normalizePayload(payload: CampaignParticipantPayload) {
   const campaignId = ensureString(payload.campaignId, "campaignId").toLowerCase();
   const createdByHash = ensureString(payload.createdByHash, "createdByHash").toLowerCase();
@@ -67,6 +85,12 @@ function normalizePayload(payload: CampaignParticipantPayload) {
   const joinedAt = ensureString(payload.joinedAt, "joinedAt");
   const status = ensureString(payload.status, "status").toLowerCase();
   const campaignType = typeof payload.campaignType === "number" ? payload.campaignType : Number(payload.campaignType);
+  const participantKind = ensureOptionalString(payload.participantKind, "participantKind")?.toLowerCase() ?? null;
+  const claimRole = ensureOptionalString(payload.claimRole, "claimRole")?.toLowerCase() ?? null;
+  const claimAmountShannons = ensureOptionalString(payload.claimAmountShannons, "claimAmountShannons");
+  const claimAmountLabel = ensureOptionalString(payload.claimAmountLabel, "claimAmountLabel");
+  const claimUnits = ensureOptionalNumber(payload.claimUnits, "claimUnits");
+  const claimSplitMode = ensureOptionalString(payload.claimSplitMode, "claimSplitMode")?.toLowerCase() ?? null;
   const mountableType = ensureOptionalString(payload.mountableType, "mountableType")?.toLowerCase() ?? null;
   const verificationProvider = ensureOptionalString(payload.verificationProvider, "verificationProvider")?.toLowerCase() ?? null;
   const googleSub = ensureOptionalString(payload.googleSub, "googleSub");
@@ -94,6 +118,12 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     participantTxHash,
     joinedAt,
     status,
+    participantKind,
+    claimRole,
+    claimAmountShannons,
+    claimAmountLabel,
+    claimUnits,
+    claimSplitMode,
     mountableType,
     verificationProvider,
     googleSub,
@@ -162,7 +192,21 @@ export async function GET(request: Request) {
       .find({ campaignId }, { sort: { joinedAt: 1 } })
       .toArray();
 
-    return NextResponse.json({ participants });
+    const sanitizedParticipants = participants.map((participant) => {
+      const {
+        googleSub: _googleSub,
+        googleEmail: _googleEmail,
+        googleEmailVerified: _googleEmailVerified,
+        responseId: _responseId,
+        responseCreateTime: _responseCreateTime,
+        responseLastSubmittedTime: _responseLastSubmittedTime,
+        matchedRespondentEmail: _matchedRespondentEmail,
+        ...rest
+      } = participant as Record<string, unknown>;
+      return rest;
+    });
+
+    return NextResponse.json({ participants: sanitizedParticipants });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch campaign participants";
     return badRequest(message, 500);

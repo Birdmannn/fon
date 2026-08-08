@@ -67,31 +67,12 @@ type ProfileTransactionsSectionProps = {
   hasLoaded: boolean;
   isRefreshing: boolean;
   loading: boolean;
-  onRefresh: () => void;
   rows: ProfileTransactionRow[];
 };
 
-export default function ProfileTransactionsSection({ coverage, error, hasLoaded, isRefreshing, loading, onRefresh, rows }: ProfileTransactionsSectionProps) {
+export default function ProfileTransactionsSection({ error, hasLoaded, loading, rows }: ProfileTransactionsSectionProps) {
   return (
     <section className="profile-tab-panel" aria-labelledby="profile-tab-transactions" role="tabpanel">
-      <div className="profile-tab-toolbar">
-        <button
-          type="button"
-          className="profile-tab-refresh-button"
-          onClick={onRefresh}
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-      {!coverage.complete && coverage.notes.length > 0 ? (
-        <div className="profile-transactions-coverage" role="note">
-          {coverage.notes.map((note) => (
-            <p key={note} className="profile-transactions-coverage-note">{note}</p>
-          ))}
-        </div>
-      ) : null}
-
       {loading ? (
         <div className="profile-tab-state profile-tab-state-loading">
           <ThreeDotLoader label="Loading transactions" inline />

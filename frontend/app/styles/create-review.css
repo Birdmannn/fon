@@ -137,7 +137,7 @@
 .create-review-secondary-tag {
   border: 1px solid rgba(23, 23, 23, 0.18);
   color: #3f3f46;
-  background: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--background) 92%, white 8%);
 }
 
 .create-review-summary-bytes {
@@ -148,7 +148,7 @@
   font-size: 0.68rem;
   line-height: 1;
   color: #52525b;
-  background: rgba(244, 244, 245, 0.82);
+  background: color-mix(in srgb, var(--tertiary-background) 82%, var(--background) 18%);
 }
 
 .create-review-summary-input {
@@ -225,7 +225,7 @@
   min-height: 2.05rem;
   border: 1px solid rgba(23, 23, 23, 0.8);
   border-radius: 0.45rem;
-  background: #fff;
+  background: var(--background);
   color: #171717;
   padding: 0.35rem 0.5rem;
   font: inherit;
@@ -271,11 +271,91 @@
   line-height: 1;
   font-weight: 700;
   color: #3f3f46;
-  background: #f4f4f5;
+  background: var(--tertiary-background);
+}
+
+.create-review-gift-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.create-review-gift-choice-row {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.create-review-gift-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.05rem;
+  border: 1px solid rgba(23, 23, 23, 0.18);
+  background: var(--background);
+  color: #3f3f46;
+  padding: 0 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.create-review-gift-choice-active {
+  background: #171717;
+  color: #fff;
+  border-color: #171717;
+}
+
+.create-review-gift-threshold-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.create-review-gift-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.create-review-gift-allocations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.create-review-gift-allocation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(23, 23, 23, 0.1);
+  background: rgba(255, 255, 255, 0.82);
+  font-size: 0.78rem;
+  color: #3f3f46;
+}
+
+.create-review-gift-note,
+.create-review-gift-warning {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.create-review-gift-note {
+  color: #52525b;
+}
+
+.create-review-gift-warning {
+  color: #a16207;
 }
 
 @media (max-width: 768px) {
-  .create-review-args-grid {
+  .create-review-args-grid,
+  .create-review-gift-grid {
     grid-template-columns: 1fr;
   }
 }

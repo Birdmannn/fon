@@ -1,4 +1,10 @@
-import type { FormsMountableConfig, FormsPayoutMode, FormsProofMode } from "@/app/_types/formsMountable";
+import type {
+  FormsMountableConfig,
+  FormsPayoutMode,
+  FormsProofMode,
+  FormsResponseAccessStatus,
+  FormsVerificationMode,
+} from "@/app/_types/formsMountable";
 
 export const DEFAULT_FORMS_MOUNTABLE_CONFIG: FormsMountableConfig = {
   enabled: false,
@@ -8,6 +14,10 @@ export const DEFAULT_FORMS_MOUNTABLE_CONFIG: FormsMountableConfig = {
   validatedAt: "",
   payoutMode: "assured",
   proofMode: "external_proof",
+  verificationMode: "google_forms_api",
+  responseAccessEmail: "",
+  responseAccessStatus: "pending",
+  responseAccessVerifiedAt: "",
   guaranteedSlots: "1",
   randomWinnerCount: "1",
   proofInstructions: "",
@@ -23,6 +33,14 @@ export function normalizeFormsProofMode(value: unknown): FormsProofMode {
   return value === "external_proof" ? value : "external_proof";
 }
 
+export function normalizeFormsVerificationMode(value: unknown): FormsVerificationMode {
+  return value === "google_forms_api" ? value : "google_forms_api";
+}
+
+export function normalizeFormsResponseAccessStatus(value: unknown): FormsResponseAccessStatus {
+  return value === "verified" ? value : "pending";
+}
+
 export function normalizeFormsMountableConfig(value: Partial<FormsMountableConfig> | null | undefined): FormsMountableConfig {
   return {
     enabled: Boolean(value?.enabled),
@@ -32,6 +50,10 @@ export function normalizeFormsMountableConfig(value: Partial<FormsMountableConfi
     validatedAt: typeof value?.validatedAt === "string" ? value.validatedAt : "",
     payoutMode: normalizeFormsPayoutMode(value?.payoutMode),
     proofMode: normalizeFormsProofMode(value?.proofMode),
+    verificationMode: normalizeFormsVerificationMode(value?.verificationMode),
+    responseAccessEmail: typeof value?.responseAccessEmail === "string" ? value.responseAccessEmail : "",
+    responseAccessStatus: normalizeFormsResponseAccessStatus(value?.responseAccessStatus),
+    responseAccessVerifiedAt: typeof value?.responseAccessVerifiedAt === "string" ? value.responseAccessVerifiedAt : "",
     guaranteedSlots: typeof value?.guaranteedSlots === "string" ? value.guaranteedSlots : "1",
     randomWinnerCount: typeof value?.randomWinnerCount === "string" ? value.randomWinnerCount : "1",
     proofInstructions: typeof value?.proofInstructions === "string" ? value.proofInstructions : "",

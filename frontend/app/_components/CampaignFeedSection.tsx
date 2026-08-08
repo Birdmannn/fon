@@ -10,6 +10,7 @@ import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignFeedSectionProps = {
   client: ccc.Client;
+  currentViewerFbars?: number | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
@@ -19,6 +20,7 @@ type CampaignFeedSectionProps = {
 
 export default function CampaignFeedSection({
   client,
+  currentViewerFbars,
   onCommentDiscardRequest,
   commentDiscardDecision,
   onTicketPurchaseRequest,
@@ -62,6 +64,7 @@ export default function CampaignFeedSection({
       <CampaignList
         campaigns={filteredCampaigns}
         client={client}
+        currentViewerFbars={currentViewerFbars}
         loading={loading}
         error={error}
         shouldScrollToNewest={shouldScrollToNewest}

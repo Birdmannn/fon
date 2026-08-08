@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type {
-  CreateCampaignModalContentHandle,
-  CreateConstraintStatus,
-  CreateModalStep,
+import {
+  CREATE_MODAL_RESUME_MAX_AGE_MS,
+  CREATE_MODAL_RESUME_STORAGE_KEY,
+  type CreateCampaignModalContentHandle,
+  type CreateConstraintStatus,
+  type CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
 
 type UseCreateCampaignFlowArgs<TMode extends string> = {
@@ -54,9 +56,13 @@ export function useCreateCampaignFlow<TMode extends string>({
   });
   const [previewError, setPreviewError] = useState("");
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [lockMountableSelected, setLockMountableSelected] = useState(false);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
+  const [mountableLockFbars, setMountableLockFbars] = useState("");
   const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
+  const [mountableLockValidationState, setMountableLockValidationState] = useState<"idle" | "valid" | "invalid">("idle");
   const [isMountableFormFocused, setIsMountableFormFocused] = useState(false);
+  const [isMountableLockFocused, setIsMountableLockFocused] = useState(false);
   const [isMountablesContinuing, setIsMountablesContinuing] = useState(false);
   const [mountablesPromptError, setMountablesPromptError] = useState("");
   const [isCreateDraftListOpen, setIsCreateDraftListOpen] = useState(false);
@@ -64,6 +70,7 @@ export function useCreateCampaignFlow<TMode extends string>({
   const [pendingCloseAfterWalletConnect, setPendingCloseAfterWalletConnect] = useState(false);
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const [submissionSuccessPreimage, setSubmissionSuccessPreimage] = useState<string | null>(null);
+  const [shouldResumeCreateModal, setShouldResumeCreateModal] = useState(false);
 
   const clearCreateHideTimer = useCallback(() => {
     if (createHideTimerRef.current) {
@@ -87,7 +94,17 @@ export function useCreateCampaignFlow<TMode extends string>({
   }, [showCreateInfoModal]);
 
   const openMountablesModal = useCallback(() => {
-    setMountableFormLinks([createModalContentRef.current?.getFormsMountableConfig().formUrl ?? ""]);
+    const nextFormsMountable = createModalContentRef.current?.getFormsMountableConfig();
+    const nextLockMountable = createModalContentRef.current?.getLockMountableConfig();
+
+    setFormsMountableSelected(Boolean(nextFormsMountable?.enabled));
+    setLockMountableSelected(Boolean(nextLockMountable?.enabled));
+    setMountableFormLinks([nextFormsMountable?.formUrl ?? ""]);
+    setMountableLockFbars(nextLockMountable?.minimumFbars ?? "");
+    setMountableFormValidationState("idle");
+    setMountableLockValidationState("idle");
+    setIsMountableFormFocused(false);
+    setIsMountableLockFocused(false);
     setMountablesPromptError("");
     showCreateInfoModal("mountables" as TMode);
   }, [showCreateInfoModal]);
@@ -142,6 +159,14 @@ export function useCreateCampaignFlow<TMode extends string>({
     setIsCreateDraftListOpen(false);
     setShowCreateModal(true);
   }, [clearCreateHideTimer]);
+
+  useEffect(() => {
+    if (!shouldResumeCreateModal || !showCreateModal) {
+      return;
+    }
+
+    setShouldResumeCreateModal(false);
+  }, [shouldResumeCreateModal, showCreateModal]);
 
   const requestCloseCreateModal = useCallback(() => {
     setPendingDraftSelectionId(null);
@@ -263,6 +288,50 @@ export function useCreateCampaignFlow<TMode extends string>({
   }, [closeInfoModal, finalizeCloseCreateModal, pendingCloseAfterWalletConnect, signer]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const hasGoogleLinkCode = Boolean(url.searchParams.get("google_link_code")?.trim());
+    if (!hasGoogleLinkCode) {
+      return;
+    }
+
+    const storedValue = window.sessionStorage.getItem(CREATE_MODAL_RESUME_STORAGE_KEY);
+    if (!storedValue) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(storedValue) as {
+        savedAt?: number;
+        path?: string;
+      };
+      const savedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : Number.NaN;
+      const path = typeof parsed.path === "string" ? parsed.path : "";
+      const sanitizedUrl = new URL(window.location.href);
+      sanitizedUrl.searchParams.delete("google_link_code");
+      const currentPath = `${sanitizedUrl.pathname}${sanitizedUrl.search}${sanitizedUrl.hash}`;
+      const isExpired = !Number.isFinite(savedAt) || Date.now() - savedAt > CREATE_MODAL_RESUME_MAX_AGE_MS;
+      if (isExpired || path !== currentPath) {
+        return;
+      }
+
+      setShouldResumeCreateModal(true);
+      clearCreateHideTimer();
+      setIsCreateModalClosing(false);
+      setCreateModalStep("compose");
+      setPreviewError("");
+      setSaveDraftPromptError("");
+      setIsCreateDraftListOpen(false);
+      setShowCreateModal(true);
+    } catch {
+      // Ignore malformed resume state; the modal can still be opened manually.
+    }
+  }, [clearCreateHideTimer]);
+
+  useEffect(() => {
     if (!showCreateModal) {
       return;
     }
@@ -291,15 +360,19 @@ export function useCreateCampaignFlow<TMode extends string>({
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleSaveDraftChoice,
     isCreateDraftListOpen,
     isCreateModalClosing,
     isMountableFormFocused,
+    isMountableLockFocused,
     isMountablesContinuing,
     mountableFormLinks,
+    mountableLockFbars,
     mountableFormValidationState,
+    mountableLockValidationState,
     mountablesPromptError,
     openCreateModal,
     openMountablesModal,
@@ -312,11 +385,15 @@ export function useCreateCampaignFlow<TMode extends string>({
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
+    setIsMountableLockFocused,
     setIsMountablesContinuing,
     setMountableFormLinks,
+    setMountableLockFbars,
     setMountableFormValidationState,
+    setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
     setSaveDraftPromptError,

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { buildGoogleNonce } from "@/lib/googleAuth";
+import { buildGoogleNonce, normalizeGoogleLinkPurpose } from "@/lib/googleAuth";
 
 export const dynamic = "force-dynamic";
 
 type GoogleLinkNoncePayload = {
   address?: unknown;
+  purpose?: unknown;
 };
 
 function badRequest(message: string, status = 400) {
@@ -24,9 +25,10 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as GoogleLinkNoncePayload;
     const address = ensureString(payload.address, "address");
+    const purpose = normalizeGoogleLinkPurpose(payload.purpose);
     return NextResponse.json({
       ok: true,
-      nonce: buildGoogleNonce(address),
+      nonce: buildGoogleNonce(address, purpose),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create Google link nonce";

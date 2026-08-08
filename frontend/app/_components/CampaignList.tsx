@@ -13,6 +13,7 @@ import CampaignCard from "./CampaignCard";
 type CampaignListProps = {
   campaigns: MergedCampaign[];
   client: ccc.Client;
+  currentViewerFbars?: number | null;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   error: string;
   loading: boolean;
@@ -36,6 +37,7 @@ type CampaignListProps = {
 export default function CampaignList({
   campaigns,
   client,
+  currentViewerFbars,
   commentDiscardDecision,
   error,
   loading,
@@ -127,6 +129,7 @@ export default function CampaignList({
             displayStatus={displayStatus}
             signer={signer ?? null}
             client={client}
+            currentViewerFbars={currentViewerFbars}
             currentWalletAddress={currentWalletAddress}
             nowMs={nowMs}
             isHighlighted={index === 99 && !!signer}

@@ -448,6 +448,7 @@
   min-height: 1.8rem;
   align-items: center;
   justify-content: center;
+  gap: 0.4rem;
   border: 0;
   border-right: 1px solid rgba(23, 23, 23, 0.08);
   border-radius: 0;
@@ -461,6 +462,15 @@
   text-align: center;
   cursor: pointer;
   transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.profile-tab-button-loader {
+  min-height: 0;
+  padding: 0;
+}
+
+.profile-tab-button-loader .campaign-feed-loading-dot {
+  background: var(--background);
 }
 
 .profile-tab-button:last-child {
@@ -559,7 +569,7 @@
   overflow-x: auto;
   border: 0;
   border-radius: 0;
-  background: rgba(248, 250, 252, 0.72);
+  background: color-mix(in srgb, var(--tertiary-background) 72%, var(--background) 28%);
   padding: 0;
   outline: none;
 }
@@ -893,7 +903,7 @@
 .profile-freight-badge,
 .profile-transaction-kind,
 .profile-freight-kind-pill {
-  background: #f3f4f6;
+  background: var(--tertiary-background);
   color: #4b5563;
 }
 

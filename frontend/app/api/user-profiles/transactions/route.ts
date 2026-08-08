@@ -317,7 +317,7 @@ export async function GET(request: Request) {
       fbarEventsCollection.find(
         {
           address: targetAddress,
-          kind: { $in: ["freight-create", "deposit"] },
+          kind: { $in: ["wallet-seed", "freight-create", "deposit"] },
         },
         {
           projection: {
@@ -392,12 +392,31 @@ export async function GET(request: Request) {
       const delta = typeof event.delta === "number" && Number.isFinite(event.delta) ? event.delta : null;
       const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata as Record<string, unknown> : {};
       const txHash = normalizeHash(asString(metadata.txHash));
-      if (!txHash) {
-        return;
-      }
-
+      const fallbackTxHash = normalizeHash(asString(event.eventKey).split(":").slice(-1)[0] ?? "");
+      const resolvedTxHash = txHash || fallbackTxHash || null;
       const campaignId = normalizeHash(asString(metadata.campaignId));
       const record = campaignId ? recordByCampaignId.get(campaignId) ?? null : null;
+
+      if (kind === "wallet-seed") {
+        fbarRows.push({
+          adsfUsdCentsDelta: null,
+          amountLabel: null,
+          campaignId: null,
+          campaignRecordId: null,
+          campaignTitle: null,
+          ckbUsdCentsDelta: null,
+          channel: "offchain",
+          fbarsDelta: delta,
+          id: buildRowId(["wallet-seed-fbars", asString(event.eventKey) || occurredAt]),
+          kind: "wallet_seed",
+          occurredAt,
+          onchainNetDeltaShannons: null,
+          role: "actor",
+          summary: "Wallet seed FBARS",
+          txHash: null,
+        });
+        return;
+      }
 
       if (kind === "freight-create") {
         fbarRows.push({
@@ -409,13 +428,13 @@ export async function GET(request: Request) {
           ckbUsdCentsDelta: null,
           channel: "offchain",
           fbarsDelta: delta,
-          id: buildRowId(["freight-create-fbars", txHash]),
+          id: buildRowId(["freight-create-fbars", (resolvedTxHash ?? asString(event.eventKey)) || occurredAt]),
           kind: "freight_create",
           occurredAt,
           onchainNetDeltaShannons: null,
           role: "actor",
           summary: "Freight create FBARS",
-          txHash,
+          txHash: resolvedTxHash,
         });
         return;
       }
@@ -430,15 +449,17 @@ export async function GET(request: Request) {
           ckbUsdCentsDelta: null,
           channel: "offchain",
           fbarsDelta: delta,
-          id: buildRowId(["campaign-deposit-fbars", txHash]),
+          id: buildRowId(["campaign-deposit-fbars", (resolvedTxHash ?? asString(event.eventKey)) || occurredAt]),
           kind: "campaign_deposit",
           occurredAt,
           onchainNetDeltaShannons: null,
           role: "actor",
           summary: "Deposit FBARS",
-          txHash,
+          txHash: resolvedTxHash,
         });
+        return;
       }
+
     });
 
     const txHashes = Array.from(new Set([

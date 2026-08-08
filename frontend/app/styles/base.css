@@ -14,7 +14,32 @@
 
 :root {
   --background: #ffffff;
+  --background-light: #ffffff;
+  --background-light-cream: #f2f0e4;
+  --tertiary-background: #f3f4f6;
+  --tertiary-background-light: #f3f4f6;
+  --tertiary-background-light-cream: #cccbc8;
+  --campaign-card-border: #e5e7eb;
+  --campaign-card-border-light: #e5e7eb;
+  --campaign-card-border-light-cream: #a7a59c;
+  --marquee-border: #e5e7eb;
+  --marquee-border-light: #e5e7eb;
+  --marquee-border-light-cream: #a7a59c;
   --foreground: #171717;
+}
+
+:root[data-light-mode-primary-color="white"] {
+  --background: var(--background-light);
+  --tertiary-background: var(--tertiary-background-light);
+  --campaign-card-border: var(--campaign-card-border-light);
+  --marquee-border: var(--marquee-border-light);
+}
+
+:root[data-light-mode-primary-color="cream"] {
+  --background: var(--background-light-cream);
+  --tertiary-background: var(--tertiary-background-light-cream);
+  --campaign-card-border: var(--campaign-card-border-light-cream);
+  --marquee-border: var(--marquee-border-light-cream);
 }
 
 @theme inline {
@@ -27,6 +52,9 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
+    --tertiary-background: var(--tertiary-background-light);
+    --campaign-card-border: var(--campaign-card-border-light);
+    --marquee-border: var(--marquee-border-light);
     --foreground: #ededed;
   }
 }

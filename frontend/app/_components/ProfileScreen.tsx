@@ -34,6 +34,7 @@ import {
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
+import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
@@ -42,6 +43,7 @@ import { useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
 import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
+import { markWalletSeedIntent } from "@/lib/walletSeed";
 
 const INFO_MODAL_ANIMATION_MS = 620;
 const PROFILE_HERO_REVEAL_STEP_MS = 110;
@@ -50,8 +52,9 @@ const PROFILE_INFO_FBARS_HEADING = "FBARS:";
 const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
+const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "save-draft-confirm" | "submission-success" | "submission-error";
+type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "mountables-lock" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
 
 const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
@@ -66,6 +69,10 @@ type ProfileScreenProps = {
 
 export default function ProfileScreen({ targetHandle = null }: ProfileScreenProps) {
   const { open, disconnect, client } = ccc.useCcc();
+  const openWalletWithSeed = useCallback(() => {
+    markWalletSeedIntent();
+    open();
+  }, [open]);
   const signer = ccc.useSigner();
   const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
@@ -103,6 +110,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsInfoModalClosing,
     setShowInfoModal,
     showInfoModal,
+    submissionSuccessTimerRef,
     keepInfoModalOpen,
   } = useInfoModalState({
     animationMs: INFO_MODAL_ANIMATION_MS,
@@ -127,6 +135,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     isUserProfileLoading,
     overallLeaderboard,
     saveDisplayName,
+    saveLightModePrimaryColor,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
@@ -149,7 +158,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileFreightRows,
   } = useProfileFreights({
     address: profileAddress,
-    enabled: activeTab === "freights",
     handle: profileAddress ? null : targetHandle,
   });
   const {
@@ -162,7 +170,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileTransactionRows,
   } = useProfileTransactions({
     address: profileAddress,
-    enabled: activeTab === "transactions",
     handle: profileAddress ? null : targetHandle,
   });
   const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
@@ -175,15 +182,19 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleSaveDraftChoice,
     isCreateDraftListOpen,
     isCreateModalClosing,
     isMountableFormFocused,
+    isMountableLockFocused,
     isMountablesContinuing,
     mountableFormLinks,
+    mountableLockFbars,
     mountableFormValidationState,
+    mountableLockValidationState,
     mountablesPromptError,
     openCreateModal,
     openMountablesModal,
@@ -196,11 +207,15 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
+    setIsMountableLockFocused,
     setIsMountablesContinuing,
     setMountableFormLinks,
+    setMountableLockFbars,
     setMountableFormValidationState,
+    setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
@@ -209,7 +224,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     initialInfoModalMode: "about",
-    openWallet: open,
+    openWallet: openWalletWithSeed,
     signer,
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -227,6 +242,29 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setDisplayNameModalError("");
     setSubmissionErrorMessage("");
   }, [resetCreateInfoModalState]);
+
+  const openInsufficientFbarsInfoModal = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer();
+    setInfoModalMode("insufficient-fbars");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    submissionSuccessTimerRef.current = setTimeout(() => {
+      closeInfoModal(resetInfoModalState);
+    }, 3000);
+  }, [
+    clearInfoCloseTimer,
+    clearInfoHideTimer,
+    clearSubmissionSuccessTimer,
+    closeInfoModal,
+    resetInfoModalState,
+    setInfoModalInteraction,
+    setIsInfoModalClosing,
+    setShowInfoModal,
+    submissionSuccessTimerRef,
+  ]);
 
   resetInfoModalStateRef.current = resetInfoModalState;
 
@@ -513,6 +551,35 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     };
   }, [infoModalMode, mountableFormLinks, setIsMountableFormFocused, setMountableFormValidationState, setMountablesPromptError]);
 
+  useEffect(() => {
+    if (infoModalMode !== "mountables-lock") {
+      return;
+    }
+
+    const nextValidationState = getLockMountableValidationState(mountableLockFbars, currentUserProfile?.fbars);
+    setMountableLockValidationState(nextValidationState);
+    if (nextValidationState !== "idle") {
+      setIsMountableLockFocused(false);
+    }
+
+    const parsedLockFbars = parseLockMinimumFbars(mountableLockFbars);
+    if (nextValidationState === "invalid") {
+      if (
+        parsedLockFbars !== null
+        && typeof currentUserProfile?.fbars === "number"
+        && Number.isFinite(currentUserProfile.fbars)
+        && parsedLockFbars > Math.trunc(currentUserProfile.fbars)
+      ) {
+        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(currentUserProfile.fbars)} FBARS.`);
+      } else {
+        setMountablesPromptError("Enter a positive FBARS amount.");
+      }
+      return;
+    }
+
+    setMountablesPromptError("");
+  }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
+
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
@@ -532,6 +599,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       <p className="mt-3 create-review-section-label text-red-500">Oops, an error occurred</p>
       <p className="create-info-constraint-item text-red-500 break-words">
         <span>{submissionErrorMessage}</span>
+      </p>
+    </div>
+  ) : infoModalMode === "insufficient-fbars" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label text-gray-900">Not enough FBARS</p>
+      <p className="create-info-constraint-item text-gray-500 break-words">
+        <span>{INSUFFICIENT_FBARS_MESSAGE}</span>
       </p>
     </div>
   ) : infoModalMode === "edit-display-name" ? (
@@ -594,14 +668,24 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         </button>
         <button
           type="button"
-          className="create-mountable-option"
+          className={`create-mountable-option ${lockMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={lockMountableSelected ? "Deselect lock mountable" : "Select lock mountable"}
+          aria-pressed={lockMountableSelected}
           data-tooltip="Lock"
-          disabled
-          aria-label="Lock mountable coming soon"
+          onClick={() => {
+            const nextSelected = !lockMountableSelected;
+            createModalContentRef.current?.setLockMountableEnabled(nextSelected);
+            setLockMountableSelected(nextSelected);
+            setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
+            setMountablesPromptError("");
+          }}
         >
           <span className="create-mountable-option-icon-wrap">
             <span className="create-mountable-option-icon-bg">
               <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
             </span>
           </span>
         </button>
@@ -611,6 +695,41 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           <span>{mountablesPromptError}</span>
         </p>
       ) : null}
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config create-info-forms-config-tight">
+        <div className="create-review-card-heading-row">
+          <p className="create-review-section-label text-gray-900">Lock criteria:</p>
+          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
+        </div>
+        <div className="create-info-forms-row flex items-center gap-2">
+          <span className="create-review-section-label text-gray-900">With:</span>
+          <div className="create-info-ticket-input-wrap">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={mountableLockFbars}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setMountableLockFbars(nextValue);
+                createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+                setMountablesPromptError("");
+              }}
+              onFocus={() => {
+                if (mountableLockValidationState === "idle") {
+                  setIsMountableLockFocused(true);
+                }
+              }}
+              onBlur={() => setIsMountableLockFocused(false)}
+              placeholder="0"
+              className={`create-info-ticket-input create-info-ticket-input-with-suffix ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
+              aria-label="Lock FBARS threshold"
+            />
+            <span className="create-info-ticket-input-suffix">FBARS</span>
+          </div>
+        </div>
+      </div>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
     <div className="create-info-constraints-copy">
@@ -795,16 +914,59 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected) {
+          if (!formsMountableSelected && !lockMountableSelected) {
             setMountablesPromptError("Select a mountable to continue.");
             return;
           }
 
-          transitionMountablesModal("mountables-forms");
+          transitionMountablesModal(lockMountableSelected ? "mountables-lock" : "mountables-forms");
           setMountablesPromptError("");
         }}
       >
         Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || mountableLockValidationState !== "valid"}
+        onClick={() => {
+          void (async () => {
+            try {
+              const minimumFbars = parseLockMinimumFbars(mountableLockFbars);
+              if (minimumFbars === null) {
+                setMountablesPromptError("Enter a positive FBARS amount.");
+                return;
+              }
+
+              createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: String(minimumFbars) });
+
+              if (formsMountableSelected) {
+                transitionMountablesModal("mountables-forms");
+                setMountablesPromptError("");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+              await createModalContentRef.current?.persistCurrentDraft();
+
+              closeInfoModal(() => {
+                setInfoModalMode("about");
+                setMountablesPromptError("");
+              });
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted lock");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : "Continue"}
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
@@ -874,7 +1036,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <AppShellHeader
           className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : showCreateModal ? "Create freight info" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -882,7 +1044,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           infoModalClosing={isInfoModalClosing}
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
-          onConnect={open}
+          onConnect={openWalletWithSeed}
           onContainerClick={showCreateModal ? (event) => {
             if (event.target === event.currentTarget) {
               requestCloseCreateModal();
@@ -890,14 +1052,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
@@ -936,7 +1098,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               </button>
             </div>
           ) : undefined}
+          canEditLightModePrimaryColor={canEditDisplayName}
+          currentLightModePrimaryColor={currentUserProfile?.lightModePrimaryColor ?? null}
           shouldHideWalletAction={shouldHideWalletAction}
+          isSavingLightModePrimaryColor={isSavingUserProfile}
+          onSaveLightModePrimaryColor={saveLightModePrimaryColor}
           walletAddress={walletAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
@@ -995,7 +1161,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
                     <div className="profile-usd-balance" aria-live="polite">
-                      <span>{adsfUsdParts?.whole ?? "--"}</span>
+                      <span>{adsfUsdParts?.whole ?? "--"} </span>
                       <span className="profile-usd-suffix">USD</span>
                     </div>
                   </div>
@@ -1032,6 +1198,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-tab-bar" role="tablist" aria-label="Profile views">
                     {PROFILE_TABS.map((tab) => {
                       const isSelected = activeTab === tab.key;
+                      const isRefreshingActiveTab = (tab.key === "freights" && isProfileFreightsRefreshing)
+                        || (tab.key === "transactions" && isProfileTransactionsRefreshing);
+
                       return (
                         <button
                           key={tab.key}
@@ -1041,9 +1210,27 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                           aria-selected={isSelected}
                           id={`profile-tab-${tab.key}`}
                           className={`profile-tab-button ${isSelected ? "profile-tab-button-active" : ""}`.trim()}
-                          onClick={() => setActiveTab(tab.key)}
+                          onClick={() => {
+                            if (isSelected) {
+                              if (tab.key === "freights") {
+                                refreshProfileFreights();
+                                return;
+                              }
+
+                              if (tab.key === "transactions") {
+                                refreshProfileTransactions();
+                                return;
+                              }
+                            }
+
+                            setActiveTab(tab.key);
+                          }}
                         >
-                          {tab.label}
+                          {isRefreshingActiveTab ? (
+                            <ThreeDotLoader className="profile-tab-button-loader" label={`Refreshing ${tab.label}`} />
+                          ) : (
+                            tab.label
+                          )}
                         </button>
                       );
                     })}
@@ -1066,7 +1253,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                       hasLoaded={hasLoadedProfileFreights}
                       isRefreshing={isProfileFreightsRefreshing}
                       loading={isProfileFreightsLoading}
-                      onRefresh={refreshProfileFreights}
                       rows={profileFreightRows}
                     />
                   </div>
@@ -1079,7 +1265,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                       hasLoaded={hasLoadedProfileTransactions}
                       isRefreshing={isProfileTransactionsRefreshing}
                       loading={isProfileTransactionsLoading}
-                      onRefresh={refreshProfileTransactions}
                       rows={profileTransactionRows}
                     />
                   </div>
@@ -1152,9 +1337,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onConstraintStatusChange={setConstraintStatus}
         onDraftListOpenChange={setIsCreateDraftListOpen}
         onDraftSelectionRequest={handleDraftSelectionRequest}
+        onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
-        onMountableSelectionStateChange={({ formsSelected }) => {
+        onMountableSelectionStateChange={({ formsSelected, lockSelected }) => {
           setFormsMountableSelected(formsSelected);
+          setLockMountableSelected(lockSelected);
         }}
         onOpenCreateModal={openCreateModal}
         onPreviewErrorChange={setPreviewError}

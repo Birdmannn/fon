@@ -110,6 +110,14 @@ export function useProfileFreights({ address, enabled = true, handle }: UseProfi
     setIsRefreshing(false);
   }, [fetchRows, query]);
 
+  useEffect(() => {
+    if (!query || profileFreightsCache.has(query)) {
+      return;
+    }
+
+    void fetchRows(false);
+  }, [fetchRows, query]);
+
   const refresh = useCallback(() => {
     void fetchRows(true);
   }, [fetchRows]);

@@ -1,10 +1,11 @@
 "use client";
 
-import { Scroll } from "lucide-react";
+import { LockKeyhole, Scroll } from "lucide-react";
 
 export type CampaignMountableItem = {
   description: string;
   href?: string;
+  icon?: "forms" | "lock";
   key: string;
   metadata?: string[];
   proofInstructions?: string;
@@ -34,7 +35,11 @@ export default function CampaignMountablesPanel({
             <article key={item.key} className="campaign-detail-mountable-item">
               <div className="campaign-detail-mountable-heading-row">
                 <span className="campaign-card-mounted-icon" title={`${item.title} mounted`} aria-label={`${item.title} mounted`}>
-                  <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+                  {item.icon === "lock" ? (
+                    <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+                  )}
                 </span>
                 <div className="campaign-detail-mountable-copy">
                   <div className="campaign-detail-mountable-title-row">

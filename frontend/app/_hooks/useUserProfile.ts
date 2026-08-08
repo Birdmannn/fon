@@ -4,6 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ccc } from "@ckb-ccc/connector-react";
 
+import type { LightModePrimaryColor } from "@/lib/lightModePrimaryColor";
+import {
+  normalizeLightModePrimaryColor,
+  persistLightModePrimaryColor,
+} from "@/lib/lightModePrimaryColor";
+import {
+  clearWalletSeedIntent,
+  finishWalletSeedAttempt,
+  hasWalletSeedIntent,
+  startWalletSeedAttempt,
+} from "@/lib/walletSeed";
+
 export type LeaderboardEntry = {
   address: string;
   username: string;
@@ -17,16 +29,27 @@ export type LeaderboardEntry = {
   lastSeenAt?: string | null;
 };
 
+export type UserProfileGoogleAccount = {
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+  picture?: string | null;
+  linkedAt?: string | null;
+  lastRefreshedAt?: string | null;
+};
+
 export type UserProfile = LeaderboardEntry & {
   overallRank: number;
   weeklyRank: number;
   canEditWeeklyMarquee: boolean;
+  lightModePrimaryColor: LightModePrimaryColor;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
   weeklyMarqueeEditsUsed: number;
   weeklyMarqueeEditsRemaining: number;
   weeklyMarqueeMaxEdits: number;
   hasSeededWalletFbars: boolean;
+  googleAccount?: UserProfileGoogleAccount | null;
 };
 
 export type WeeklyMarqueeOwner = {
@@ -102,7 +125,10 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       ? payload.overallLeaderboard as LeaderboardEntry[]
       : [];
 
-    setCurrentUserProfile(payload?.profile ?? null);
+    setCurrentUserProfile(payload?.profile ? {
+      ...payload.profile,
+      lightModePrimaryColor: normalizeLightModePrimaryColor(payload.profile.lightModePrimaryColor),
+    } : null);
     setLeaderboard(nextWeeklyLeaderboard);
     setWeeklyLeaderboard(nextWeeklyLeaderboard);
     setOverallLeaderboard(nextOverallLeaderboard);
@@ -198,11 +224,26 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
         body: JSON.stringify({ address, purpose: "wallet-seed" }),
       });
       const noncePayload = await nonceResponse.json().catch(() => null);
+      console.log("[wallet-seed] client nonce response", {
+        address,
+        noncePayload,
+        ok: nonceResponse.ok,
+        status: nonceResponse.status,
+      });
       if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
         throw new Error(noncePayload?.error ?? "Failed to create wallet seed nonce");
       }
 
       const signature = await signer.signMessage(noncePayload.nonce);
+      console.log("[wallet-seed] client signMessage result", {
+        address,
+        nonce: noncePayload.nonce,
+        signature: {
+          identity: signature.identity,
+          signType: signature.signType,
+          signaturePreview: `${signature.signature.slice(0, 14)}…${signature.signature.slice(-10)}`,
+        },
+      });
       const response = await fetch("/api/user-profiles/seed", {
         method: "POST",
         headers: {
@@ -219,6 +260,12 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
         }),
       });
       const payload = await response.json().catch(() => null);
+      console.log("[wallet-seed] client seed response", {
+        address,
+        ok: response.ok,
+        payload,
+        status: response.status,
+      });
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to seed wallet FBARS");
       }
@@ -229,6 +276,49 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       setIsSeedingWalletFbars(false);
     }
   }, [loadProfile, signer, targetHandle]);
+
+  useEffect(() => {
+    if (!signer || targetHandle || isUserProfileLoading || isSeedingWalletFbars) {
+      return;
+    }
+
+    if (!currentUserProfile) {
+      return;
+    }
+
+    const address = currentUserProfile.address;
+
+    if (currentUserProfile.hasSeededWalletFbars) {
+      clearWalletSeedIntent();
+      finishWalletSeedAttempt(address);
+      return;
+    }
+
+    if (!hasWalletSeedIntent()) {
+      return;
+    }
+
+    if (!startWalletSeedAttempt(address)) {
+      return;
+    }
+
+    clearWalletSeedIntent();
+    void seedWalletFbars()
+      .catch((error) => {
+        setUserProfileError(error instanceof Error ? error.message : "Failed to seed wallet FBARS");
+      })
+      .finally(() => {
+        finishWalletSeedAttempt(address);
+      });
+  }, [currentUserProfile, isSeedingWalletFbars, isUserProfileLoading, seedWalletFbars, signer, targetHandle]);
+
+  useEffect(() => {
+    if (targetHandle || !currentUserProfile?.lightModePrimaryColor) {
+      return;
+    }
+
+    persistLightModePrimaryColor(currentUserProfile.lightModePrimaryColor);
+  }, [currentUserProfile?.lightModePrimaryColor, targetHandle]);
 
   const saveDisplayName = useCallback(async (displayName: string) => {
     if (!signer) {
@@ -326,6 +416,50 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     }
   }, [applyProfilePayload, signer]);
 
+  const saveLightModePrimaryColor = useCallback(async (lightModePrimaryColor: LightModePrimaryColor) => {
+    if (!signer) {
+      throw new Error("Connect a wallet first");
+    }
+
+    const address = await signer.getRecommendedAddress();
+    if (!address) {
+      throw new Error("Unable to resolve wallet address");
+    }
+
+    setIsSavingUserProfile(true);
+    setUserProfileError("");
+
+    try {
+      const response = await fetch("/api/user-profiles", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address,
+          lightModePrimaryColor,
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to update light mode primary color");
+      }
+
+      applyProfilePayload(payload);
+      const nextProfile = payload?.profile as UserProfile | null;
+      if (nextProfile?.lightModePrimaryColor) {
+        persistLightModePrimaryColor(nextProfile.lightModePrimaryColor);
+      }
+      return nextProfile;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update light mode primary color";
+      setUserProfileError(message);
+      throw error;
+    } finally {
+      setIsSavingUserProfile(false);
+    }
+  }, [applyProfilePayload, signer]);
+
   return {
     activeWeeklyMarqueeEditsRemaining,
     activeWeeklyMarqueeEditsUsed,
@@ -340,6 +474,7 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     leaderboard,
     overallLeaderboard,
     saveDisplayName,
+    saveLightModePrimaryColor,
     saveWeeklyMarqueeMessage,
     seedWalletFbars,
     setCurrentUserProfile,

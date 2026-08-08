@@ -38,6 +38,7 @@ export const CAMPAIGN_PARTICIPANTS_COLLECTION = "campaignParticipants";
 export const CAMPAIGN_DEPOSITS_COLLECTION = "campaignDeposits";
 export const USER_PROFILES_COLLECTION = "userProfiles";
 export const GOOGLE_LINK_CODES_COLLECTION = "googleLinkCodes";
+export const GOOGLE_OAUTH_GRANTS_COLLECTION = "googleOAuthGrants";
 export const FBAR_EVENTS_COLLECTION = "fbarEvents";
 
 export async function getMongoCollection() {
@@ -58,6 +59,11 @@ export async function getCampaignDepositsCollection() {
 export async function getUserProfilesCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(USER_PROFILES_COLLECTION);
+}
+
+export async function getGoogleOAuthGrantsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(GOOGLE_OAUTH_GRANTS_COLLECTION);
 }
 
 export async function getFbarEventsCollection() {

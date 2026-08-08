@@ -48,7 +48,7 @@
   outline: none;
   cursor: pointer;
   color: #111827;
-  background: #ffffff;
+  background: var(--background);
 }
 
 .rainbow-preview-button-dark {

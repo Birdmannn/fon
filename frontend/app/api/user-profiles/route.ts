@@ -12,6 +12,10 @@ import {
   type StoredFbarsProfile,
 } from "@/lib/fbars";
 import { verifyWalletSignature } from "@/lib/googleAuth";
+import {
+  DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
+  normalizeLightModePrimaryColor,
+} from "@/lib/lightModePrimaryColor";
 import { getUserProfilesCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +37,7 @@ const BASE_PROFILE_PROJECTION = {
   weeklyMarqueeMessage: 1,
   weeklyMarqueeWeekKey: 1,
   weeklyMarqueeUpdatedAt: 1,
+  lightModePrimaryColor: 1,
 } as const;
 
 type WalletSignaturePayload = {
@@ -46,6 +51,7 @@ type UserProfilePayload = {
   username?: unknown;
   displayName?: unknown;
   adsfUsdCents?: unknown;
+  lightModePrimaryColor?: unknown;
   weeklyMarqueeMessage?: unknown;
   nonce?: unknown;
   signature?: WalletSignaturePayload | null;
@@ -92,6 +98,7 @@ type StoredProfileRecord = StoredFbarsProfile & {
   updatedAt?: string | null;
   lastSeenAt?: string | null;
   googleAccount?: unknown;
+  lightModePrimaryColor?: unknown;
   weeklyMarqueeMessage?: unknown;
   weeklyMarqueeWeekKey?: unknown;
   weeklyMarqueeUpdatedAt?: unknown;
@@ -101,6 +108,7 @@ type UserProfileResponse = LeaderboardEntry & {
   overallRank: number;
   weeklyRank: number;
   canEditWeeklyMarquee: boolean;
+  lightModePrimaryColor: string;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
   weeklyMarqueeEditsUsed: number;
@@ -180,6 +188,10 @@ function sanitizeWeeklyMarqueeMessage(value: string) {
   }
 
   return normalized;
+}
+
+function sanitizeLightModePrimaryColor(value: unknown) {
+  return normalizeLightModePrimaryColor(value);
 }
 
 function parseFbars(value: unknown) {
@@ -339,6 +351,7 @@ function buildFallbackUserProfileResponse(address: string, bundle: LeaderboardBu
     weeklyRank: bundle.weeklyLeaderboard.length + 1,
     overallRank: bundle.overallLeaderboard.length + 1,
     canEditWeeklyMarquee: false,
+    lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
     weeklyMarqueeMessage: null,
     weeklyMarqueeWeekKey: null,
     weeklyMarqueeEditsUsed: 0,
@@ -377,6 +390,7 @@ function buildUserProfileResponse(
     weeklyRank: weeklyEntry?.rank ?? 0,
     overallRank: overallEntry?.rank ?? 0,
     canEditWeeklyMarquee: bundle.weeklyWinnerAddress === baseEntry.address && weeklyMarqueeEditsRemaining > 0,
+    lightModePrimaryColor: sanitizeLightModePrimaryColor(rawProfile?.lightModePrimaryColor),
     weeklyMarqueeMessage,
     weeklyMarqueeWeekKey,
     weeklyMarqueeEditsUsed: weeklyState.marqueeEditCount,
@@ -530,6 +544,7 @@ export async function GET(request: Request) {
           weeklyRank: bundle.weeklyLeaderboard.find((weeklyEntry) => weeklyEntry.address === entry.address)?.rank ?? 0,
           overallRank: entry.rank,
           canEditWeeklyMarquee: false,
+          lightModePrimaryColor: sanitizeLightModePrimaryColor(profilesByAddress.get(entry.address)?.lightModePrimaryColor),
           weeklyMarqueeMessage: null,
           weeklyMarqueeWeekKey: null,
           weeklyMarqueeEditsUsed: parseWeeklyFbarsState(profilesByAddress.get(entry.address), bundle.weekKey).marqueeEditCount,
@@ -568,6 +583,7 @@ export async function POST(request: Request) {
           displayName: buildDefaultDisplayName(existingUserCount),
           fbars: 0,
           adsfUsdCents: 0,
+          lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
           createdAt: now,
         },
       },
@@ -610,6 +626,10 @@ export async function PATCH(request: Request) {
       updatedAt: now,
       lastSeenAt: now,
     };
+    const nextSetOnInsert: Record<string, unknown> = {
+      createdAt: now,
+      fbars: 0,
+    };
 
     if (typeof payload.displayName === "string") {
       nextSet.displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
@@ -617,6 +637,14 @@ export async function PATCH(request: Request) {
 
     if (typeof payload.adsfUsdCents === "number" && Number.isInteger(payload.adsfUsdCents) && payload.adsfUsdCents >= 0) {
       nextSet.adsfUsdCents = payload.adsfUsdCents;
+    } else {
+      nextSetOnInsert.adsfUsdCents = 0;
+    }
+
+    if (payload.lightModePrimaryColor !== undefined) {
+      nextSet.lightModePrimaryColor = sanitizeLightModePrimaryColor(payload.lightModePrimaryColor);
+    } else {
+      nextSetOnInsert.lightModePrimaryColor = DEFAULT_LIGHT_MODE_PRIMARY_COLOR;
     }
 
     if (payload.weeklyMarqueeMessage !== undefined) {
@@ -666,11 +694,7 @@ export async function PATCH(request: Request) {
       { address },
       {
         $set: nextSet,
-        $setOnInsert: {
-          createdAt: now,
-          fbars: 0,
-          adsfUsdCents: 0,
-        },
+        $setOnInsert: nextSetOnInsert,
       },
       { upsert: true }
     );
