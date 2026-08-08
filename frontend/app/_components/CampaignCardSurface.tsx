@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Copy, Scroll, Ticket } from "lucide-react";
+import { Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
@@ -199,7 +199,7 @@ export default function CampaignCardSurface({
   const rootClassName = [
     "campaign-card-surface flex flex-col gap-4",
     variant === "feed"
-      ? "campaign-card-surface-feed border border-gray-200 rounded-lg p-4 campaign-card-surface-sized"
+      ? "campaign-card-surface-feed campaign-card-surface-bordered rounded-lg p-4 campaign-card-surface-sized"
       : "campaign-card-surface-detail p-4",
     onOpenDetail ? "campaign-card-surface-interactive" : "",
     isHighlighted ? "campaign-card-highlighted" : "",
@@ -301,6 +301,11 @@ export default function CampaignCardSurface({
           {record?.mountables?.forms?.enabled ? (
             <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
               <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+            </span>
+          ) : null}
+          {record?.mountables?.lock?.enabled ? (
+            <span className="campaign-card-mounted-icon" title="Lock mounted" aria-label="Lock mounted">
+              <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
             </span>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">

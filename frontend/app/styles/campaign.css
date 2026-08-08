@@ -517,7 +517,11 @@
 }
 
 .campaign-card-surface {
-  transition: border-width 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+  transition: border-width 220ms ease, border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+}
+
+.campaign-card-surface-bordered {
+  border: 1px solid var(--campaign-card-border);
 }
 
 .campaign-card-surface-interactive:hover {
@@ -562,7 +566,6 @@
 .campaign-card-surface-interactive:hover .campaign-card-created-date,
 .campaign-card-surface-interactive:hover .campaign-card-reward-count,
 .campaign-card-surface-interactive:hover .campaign-card-countdown,
-.campaign-card-surface-interactive:hover .campaign-card-footer-meta,
 .campaign-card-surface-interactive:hover .campaign-card-countdown-wrap,
 .campaign-card-surface-interactive:hover .campaign-action-icon {
   transform: scale(1.008);
@@ -941,7 +944,7 @@
 }
 
 .campaign-detail-card-shell {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--campaign-card-border);
   border-radius: 0.75rem;
   background: var(--background);
 }
@@ -1127,7 +1130,7 @@
 }
 
 .campaign-detail-skeleton-card {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--campaign-card-border);
   border-radius: 0.75rem;
   background: var(--background);
   padding: 1.25rem;

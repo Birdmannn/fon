@@ -1154,7 +1154,7 @@ export default function Home() {
         />
 
         {signer && (
-          <div className="retro-mountables-panel p-3 rounded-lg border border-gray-200">
+          <div className="retro-mountables-panel retro-mountables-panel-bordered p-3 rounded-lg">
             <MountablesPanel />
           </div>
         )}
