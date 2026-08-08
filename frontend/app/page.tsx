@@ -711,13 +711,12 @@ export default function Home() {
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config">
+      <div className="create-info-forms-config create-info-forms-config-tight">
         <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Lock criteria:</p>
+          <p className="create-review-section-label text-gray-900">Lock with:</p>
           {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
         </div>
         <div className="create-info-forms-row flex items-center gap-2">
-          <span className="create-review-section-label text-gray-900">With:</span>
           <input
             type="text"
             inputMode="numeric"

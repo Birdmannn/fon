@@ -634,6 +634,10 @@
   gap: 0;
 }
 
+.create-info-forms-config-tight {
+  margin-top: 0;
+}
+
 .create-info-forms-inline-error {
   margin: 0;
   text-align: right;
