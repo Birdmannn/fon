@@ -705,27 +705,29 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         </div>
         <div className="create-info-forms-row flex items-center gap-2">
           <span className="create-review-section-label text-gray-900">With:</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={mountableLockFbars}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setMountableLockFbars(nextValue);
-              createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
-              setMountablesPromptError("");
-            }}
-            onFocus={() => {
-              if (mountableLockValidationState === "idle") {
-                setIsMountableLockFocused(true);
-              }
-            }}
-            onBlur={() => setIsMountableLockFocused(false)}
-            placeholder="0"
-            className={`create-info-ticket-input ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-            aria-label="Lock FBARS threshold"
-          />
-          <span className="create-info-constraint-item text-gray-500"><span>fbars</span></span>
+          <div className="create-info-ticket-input-wrap">
+            <input
+              type="text"
+              inputMode="numeric"
+              value={mountableLockFbars}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setMountableLockFbars(nextValue);
+                createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+                setMountablesPromptError("");
+              }}
+              onFocus={() => {
+                if (mountableLockValidationState === "idle") {
+                  setIsMountableLockFocused(true);
+                }
+              }}
+              onBlur={() => setIsMountableLockFocused(false)}
+              placeholder="0"
+              className={`create-info-ticket-input create-info-ticket-input-with-suffix ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
+              aria-label="Lock FBARS threshold"
+            />
+            <span className="create-info-ticket-input-suffix">FBARS</span>
+          </div>
         </div>
       </div>
     </div>

@@ -627,6 +627,30 @@
   outline: none;
 }
 
+.create-info-ticket-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.create-info-ticket-input-with-suffix {
+  padding-right: 4.8rem;
+}
+
+.create-info-ticket-input-suffix {
+  position: absolute;
+  top: 50%;
+  right: 0.9rem;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  font-size: 0.74rem;
+  line-height: 1;
+  font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .create-info-forms-config {
   margin-top: 0.5rem;
   display: flex;
