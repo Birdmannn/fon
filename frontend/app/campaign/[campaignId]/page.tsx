@@ -22,12 +22,14 @@ import {
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
-import { formsMountableSummary, isFormsMountableEnabled } from "@/app/_lib/formsMountable";
+import { formsMountableSummary, isFormsMountableEnabled, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { canAccessLockMountable, getLockMountableBypassFbars, getLockMountableValidationState, isLockMountableEnabled, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
+import { useGoogleLink, type GoogleLinkPurpose } from "@/app/_hooks/useGoogleLink";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
+import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
@@ -52,6 +54,91 @@ function splitCampaignId(campaignId: string) {
   }
 
   return { campaignId: null, txHash, index };
+}
+
+function truncateAddress(address: string) {
+  if (address.length <= 16) {
+    return address;
+  }
+
+  return `${address.slice(0, 8)}…${address.slice(-6)}`;
+}
+
+function normalizeAddress(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function normalizeEmail(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function getCurrentPathname() {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.delete("google_link_code");
+  return `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+}
+
+function formatFormsClaimStatusLabel(status: string) {
+  switch (status) {
+    case "verified":
+      return "Verified";
+    case "rejected":
+      return "Rejected";
+    default:
+      return "Pending";
+  }
+}
+
+type FormsClaimParticipant = {
+  mountableType: string | null;
+  participantAddress: string;
+  participantKind: string | null;
+  reviewNote: string | null;
+  reviewedAt: string | null;
+  status: "pending" | "verified" | "rejected";
+  submittedAt: string | null;
+  updatedAt: string | null;
+};
+
+function parseFormsClaimParticipant(value: unknown): FormsClaimParticipant | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as {
+    mountableType?: unknown;
+    participantAddress?: unknown;
+    participantKind?: unknown;
+    reviewNote?: unknown;
+    reviewedAt?: unknown;
+    status?: unknown;
+    submittedAt?: unknown;
+    updatedAt?: unknown;
+  };
+  const status = typeof candidate.status === "string" ? candidate.status.trim().toLowerCase() : "";
+  if (status !== "pending" && status !== "verified" && status !== "rejected") {
+    return null;
+  }
+
+  const participantAddress = typeof candidate.participantAddress === "string" ? candidate.participantAddress.trim() : "";
+  if (!participantAddress) {
+    return null;
+  }
+
+  return {
+    mountableType: typeof candidate.mountableType === "string" ? candidate.mountableType.trim().toLowerCase() : null,
+    participantAddress,
+    participantKind: typeof candidate.participantKind === "string" ? candidate.participantKind.trim().toLowerCase() : null,
+    reviewNote: typeof candidate.reviewNote === "string" ? candidate.reviewNote.trim() : null,
+    reviewedAt: typeof candidate.reviewedAt === "string" ? candidate.reviewedAt : null,
+    status,
+    submittedAt: typeof candidate.submittedAt === "string" ? candidate.submittedAt : null,
+    updatedAt: typeof candidate.updatedAt === "string" ? candidate.updatedAt : null,
+  };
 }
 
 const DETAIL_EXPANDING_FLAG = "freight:detail-expanding";
@@ -120,11 +207,55 @@ export default function CampaignDetailPage() {
     isSavingUserProfile,
     saveLightModePrimaryColor,
   } = useUserProfile(signer ?? null);
+  const {
+    beginGoogleLink,
+    googleLinkError,
+    hasFormsResponseAccess,
+    isGoogleLinked,
+    isHydratingGoogleLink,
+    isLinkingGoogle,
+    isRefreshingLinkedGoogleGrant,
+    linkedGoogleAccount,
+    linkedGoogleGrant,
+    refreshLinkedGoogleGrant,
+  } = useGoogleLink(signer ?? null, currentUserProfile);
+  const [formsClaims, setFormsClaims] = useState<FormsClaimParticipant[]>([]);
+  const [formsClaimsError, setFormsClaimsError] = useState("");
+  const [isFormsClaimsLoading, setIsFormsClaimsLoading] = useState(false);
+  const [isSubmittingFormsClaim, setIsSubmittingFormsClaim] = useState(false);
+  const [isSyncingFormsClaims, setIsSyncingFormsClaims] = useState(false);
+  const [isVerifyingFormsAccess, setIsVerifyingFormsAccess] = useState(false);
+  const [participantFormsActionError, setParticipantFormsActionError] = useState("");
+  const [participantFormsActionNotice, setParticipantFormsActionNotice] = useState("");
+  const [creatorFormsActionError, setCreatorFormsActionError] = useState("");
+  const [creatorFormsActionNotice, setCreatorFormsActionNotice] = useState("");
+  const [activeFormsReviewAddress, setActiveFormsReviewAddress] = useState<string | null>(null);
   const walletActionHref = useMemo(() => {
     const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
     return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
   }, [currentUserProfile?.username, walletAddress]);
   const canEditLightModePrimaryColor = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
+  const formsMountableConfig = useMemo<FormsMountableConfig>(
+    () => normalizeFormsMountableConfig(selectedRecord?.mountables?.forms ?? null),
+    [selectedRecord?.mountables?.forms],
+  );
+  const mountedFormsUrl = formsMountableConfig.canonicalFormUrl?.trim() || formsMountableConfig.formUrl.trim();
+  const mountedFormsId = formsMountableConfig.formId?.trim() ?? "";
+  const normalizedWalletAddress = normalizeAddress(walletAddress);
+  const normalizedCreatorAddress = normalizeAddress(selectedRecord?.creatorAddress ?? (selectedCampaign ? decodeCreatedByAddress(selectedCampaign) : ""));
+  const isCampaignCreator = normalizedWalletAddress.length > 0
+    && normalizedCreatorAddress.length > 0
+    && normalizedWalletAddress === normalizedCreatorAddress;
+  const linkedIdentityEmail = linkedGoogleAccount?.email?.trim() ?? "";
+  const linkedGrantDisplayEmail = linkedGoogleGrant?.email?.trim() ?? "";
+  const normalizedLinkedGrantEmail = normalizeEmail(linkedGoogleGrant?.email ?? null);
+  const normalizedVerifiedGrantEmail = normalizeEmail(formsMountableConfig.responseAccessEmail ?? null);
+  const hasVerifiedFormsResponseAccess = formsMountableConfig.responseAccessStatus === "verified"
+    && Boolean(formsMountableConfig.responseAccessVerifiedAt?.trim())
+    && normalizedVerifiedGrantEmail.length > 0;
+  const linkedGrantDiffersFromVerifiedAccess = normalizedLinkedGrantEmail.length > 0
+    && normalizedVerifiedGrantEmail.length > 0
+    && normalizedLinkedGrantEmail !== normalizedVerifiedGrantEmail;
 
   const recordLookupQuery = useMemo(() => {
     const nextLookupQuery = !campaignRef
@@ -631,6 +762,390 @@ export default function CampaignDetailPage() {
     };
   }, [client, selectedRecord]);
 
+  const createSignedWalletAction = useCallback(async (purpose: string) => {
+    if (!signer) {
+      openWalletWithSeed();
+      throw new Error("Connect a wallet first");
+    }
+
+    const address = await signer.getRecommendedAddress();
+    if (!address) {
+      throw new Error("Unable to resolve wallet address");
+    }
+
+    const nonceResponse = await fetch("/api/wallet/nonce", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ address, purpose }),
+    });
+    const noncePayload = await nonceResponse.json().catch(() => null) as {
+      error?: string;
+      nonce?: string;
+    } | null;
+    if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
+      throw new Error(noncePayload?.error ?? `Failed to create ${purpose} nonce`);
+    }
+
+    const signature = await signer.signMessage(noncePayload.nonce);
+    return {
+      address,
+      nonce: noncePayload.nonce,
+      nonceSignature: {
+        signature: signature.signature,
+        identity: signature.identity,
+        signType: signature.signType,
+      },
+    };
+  }, [openWalletWithSeed, signer]);
+
+  const loadFormsClaims = useCallback(async () => {
+    const campaignId = selectedRecord?.campaignId?.trim().toLowerCase() ?? "";
+    if (!formsMountableConfig.enabled || !campaignId) {
+      setFormsClaims([]);
+      setFormsClaimsError("");
+      setIsFormsClaimsLoading(false);
+      return;
+    }
+
+    setIsFormsClaimsLoading(true);
+    setFormsClaimsError("");
+
+    try {
+      const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(campaignId)}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+        participants?: unknown[];
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to fetch forms claims");
+      }
+
+      const nextClaims = Array.isArray(payload?.participants)
+        ? payload.participants
+            .map(parseFormsClaimParticipant)
+            .filter((claim): claim is FormsClaimParticipant => Boolean(claim && claim.mountableType === "forms" && claim.participantKind === "forms_claim"))
+        : [];
+      setFormsClaims(nextClaims);
+    } catch (loadError) {
+      setFormsClaims([]);
+      setFormsClaimsError(loadError instanceof Error ? loadError.message : "Failed to fetch forms claims");
+    } finally {
+      setIsFormsClaimsLoading(false);
+    }
+  }, [formsMountableConfig.enabled, selectedRecord?.campaignId]);
+
+  useEffect(() => {
+    if (!formsMountableConfig.enabled) {
+      setFormsClaims([]);
+      setFormsClaimsError("");
+      setIsFormsClaimsLoading(false);
+      return;
+    }
+
+    void loadFormsClaims();
+  }, [formsMountableConfig.enabled, loadFormsClaims]);
+
+  const currentWalletFormsClaim = useMemo(
+    () => formsClaims.find((claim) => normalizeAddress(claim.participantAddress) === normalizedWalletAddress) ?? null,
+    [formsClaims, normalizedWalletAddress],
+  );
+  const pendingFormsClaims = useMemo(
+    () => formsClaims.filter((claim) => claim.status === "pending"),
+    [formsClaims],
+  );
+  const verifiedFormsClaims = useMemo(
+    () => formsClaims.filter((claim) => claim.status === "verified"),
+    [formsClaims],
+  );
+  const isGoogleLinkBusy = isHydratingGoogleLink || isLinkingGoogle;
+  const isFormsGrantBusy = isGoogleLinkBusy || isRefreshingLinkedGoogleGrant || isVerifyingFormsAccess;
+
+  const handleBeginGoogleAccountLink = useCallback(async (purpose: GoogleLinkPurpose) => {
+    if (!signer) {
+      openWalletWithSeed();
+      return;
+    }
+
+    if (purpose === "forms_response_access" && !mountedFormsId) {
+      setCreatorFormsActionError("Mounted Google Form is missing a valid form id.");
+      return;
+    }
+
+    if (purpose === "forms_response_access") {
+      setCreatorFormsActionError("");
+      setCreatorFormsActionNotice("");
+    } else {
+      setParticipantFormsActionError("");
+      setParticipantFormsActionNotice("");
+    }
+
+    try {
+      await beginGoogleLink(getCurrentPathname(), purpose);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to link Google";
+      if (purpose === "forms_response_access") {
+        setCreatorFormsActionError(message);
+      } else {
+        setParticipantFormsActionError(message);
+      }
+    }
+  }, [beginGoogleLink, mountedFormsId, openWalletWithSeed, signer]);
+
+  const handleRefreshFormsGrant = useCallback(async () => {
+    if (!signer) {
+      openWalletWithSeed();
+      return;
+    }
+
+    setCreatorFormsActionError("");
+    setCreatorFormsActionNotice("");
+
+    try {
+      await refreshLinkedGoogleGrant();
+      setCreatorFormsActionNotice("Google response-access grant refreshed.");
+    } catch (error) {
+      setCreatorFormsActionError(error instanceof Error ? error.message : "Failed to refresh linked Google access");
+    }
+  }, [openWalletWithSeed, refreshLinkedGoogleGrant, signer]);
+
+  const handleVerifyFormsResponseAccess = useCallback(async () => {
+    if (!signer) {
+      openWalletWithSeed();
+      return;
+    }
+
+    if (!mountedFormsId) {
+      setCreatorFormsActionError("Mounted Google Form is missing a valid form id.");
+      return;
+    }
+
+    setIsVerifyingFormsAccess(true);
+    setCreatorFormsActionError("");
+    setCreatorFormsActionNotice("");
+
+    try {
+      const signed = await createSignedWalletAction("google-forms-access");
+      const accessResponse = await fetch("/api/google-forms/access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: signed.address,
+          formId: mountedFormsId,
+          nonce: signed.nonce,
+          nonceSignature: signed.nonceSignature,
+        }),
+      });
+      const accessPayload = await accessResponse.json().catch(() => null) as {
+        access?: {
+          grantEmail?: string;
+          verifiedAt?: string;
+        } | null;
+        error?: string;
+      } | null;
+      if (!accessResponse.ok || !accessPayload?.access) {
+        throw new Error(accessPayload?.error ?? "Failed to verify Google Forms response access");
+      }
+
+      setSelectedRecord((current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          mountables: {
+            ...current.mountables,
+            forms: normalizeFormsMountableConfig({
+              ...(current.mountables?.forms ?? formsMountableConfig),
+              verificationMode: "google_forms_api",
+              responseAccessEmail: accessPayload.access?.grantEmail ?? "",
+              responseAccessStatus: "verified",
+              responseAccessVerifiedAt: accessPayload.access?.verifiedAt ?? "",
+            }),
+          },
+        };
+      });
+      await refreshLinkedGoogleGrant().catch(() => undefined);
+      setCreatorFormsActionNotice(accessPayload.access?.grantEmail
+        ? `Verified response access with ${accessPayload.access.grantEmail}.`
+        : "Verified Google Forms response access.");
+    } catch (error) {
+      setCreatorFormsActionError(error instanceof Error ? error.message : "Failed to verify Google Forms response access");
+    } finally {
+      setIsVerifyingFormsAccess(false);
+    }
+  }, [createSignedWalletAction, formsMountableConfig, mountedFormsId, openWalletWithSeed, refreshLinkedGoogleGrant, signer]);
+
+  const handleSubmitFormsClaim = useCallback(async () => {
+    if (!signer) {
+      openWalletWithSeed();
+      return;
+    }
+
+    if (!selectedRecord?._id) {
+      setParticipantFormsActionError("This freight is missing a record id for forms verification.");
+      return;
+    }
+
+    setIsSubmittingFormsClaim(true);
+    setParticipantFormsActionError("");
+    setParticipantFormsActionNotice("");
+
+    try {
+      const signed = await createSignedWalletAction("forms-claim");
+      const response = await fetch(`/api/campaign-records/${selectedRecord._id}/forms/claim`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: signed.address,
+          nonce: signed.nonce,
+          nonceSignature: signed.nonceSignature,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+        googleEmail?: string;
+        matchFound?: boolean;
+        status?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to verify forms claim");
+      }
+
+      await loadFormsClaims();
+      if (payload?.status === "verified") {
+        setParticipantFormsActionNotice(payload.googleEmail
+          ? `Verified submission for ${payload.googleEmail}.`
+          : "Verified your Google Forms submission.");
+      } else if (payload?.matchFound) {
+        setParticipantFormsActionNotice("A matching response was found for this form.");
+      } else {
+        setParticipantFormsActionNotice(linkedIdentityEmail
+          ? `No matching response yet. Submit the form with ${linkedIdentityEmail} and try again.`
+          : "No matching response yet. Submit the form with your linked Google account and try again.");
+      }
+    } catch (error) {
+      setParticipantFormsActionError(error instanceof Error ? error.message : "Failed to verify forms claim");
+    } finally {
+      setIsSubmittingFormsClaim(false);
+    }
+  }, [createSignedWalletAction, linkedIdentityEmail, loadFormsClaims, openWalletWithSeed, selectedRecord?._id, signer]);
+
+  const handleSyncFormsClaims = useCallback(async () => {
+    if (!signer) {
+      openWalletWithSeed();
+      return;
+    }
+
+    if (!selectedRecord?._id) {
+      setCreatorFormsActionError("This freight is missing a record id for forms verification.");
+      return;
+    }
+
+    setIsSyncingFormsClaims(true);
+    setCreatorFormsActionError("");
+    setCreatorFormsActionNotice("");
+
+    try {
+      const signed = await createSignedWalletAction("forms-sync");
+      const response = await fetch(`/api/campaign-records/${selectedRecord._id}/forms/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: signed.address,
+          nonce: signed.nonce,
+          nonceSignature: signed.nonceSignature,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        checkedCount?: number;
+        error?: string;
+        verifiedCount?: number;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to sync forms claims");
+      }
+
+      await loadFormsClaims();
+      const checkedCount = typeof payload?.checkedCount === "number" ? payload.checkedCount : 0;
+      const verifiedCount = typeof payload?.verifiedCount === "number" ? payload.verifiedCount : 0;
+      setCreatorFormsActionNotice(
+        checkedCount === 0
+          ? "No pending forms claims to sync."
+          : verifiedCount > 0
+            ? `Checked ${checkedCount} pending claim(s); verified ${verifiedCount}.`
+            : `Checked ${checkedCount} pending claim(s); no new matches yet.`
+      );
+    } catch (error) {
+      setCreatorFormsActionError(error instanceof Error ? error.message : "Failed to sync forms claims");
+    } finally {
+      setIsSyncingFormsClaims(false);
+    }
+  }, [createSignedWalletAction, loadFormsClaims, openWalletWithSeed, selectedRecord?._id, signer]);
+
+  const handleReviewFormsClaim = useCallback(async (participantAddress: string, status: "verified" | "rejected") => {
+    if (!signer) {
+      openWalletWithSeed();
+      return;
+    }
+
+    const campaignId = selectedRecord?.campaignId?.trim();
+    if (!campaignId) {
+      setCreatorFormsActionError("This freight is missing a stable campaign id for review.");
+      return;
+    }
+
+    const normalizedParticipantAddress = normalizeAddress(participantAddress);
+    if (!normalizedParticipantAddress) {
+      setCreatorFormsActionError("Participant address is required for review.");
+      return;
+    }
+
+    setActiveFormsReviewAddress(normalizedParticipantAddress);
+    setCreatorFormsActionError("");
+    setCreatorFormsActionNotice("");
+
+    try {
+      const signed = await createSignedWalletAction("forms-review");
+      const response = await fetch(`/api/campaign-participants/${encodeURIComponent(campaignId)}/review`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          participantAddress: normalizedParticipantAddress,
+          reviewedByAddress: signed.address,
+          status,
+          nonce: signed.nonce,
+          nonceSignature: signed.nonceSignature,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to review forms claim");
+      }
+
+      await loadFormsClaims();
+      setCreatorFormsActionNotice(`${status === "verified" ? "Marked" : "Rejected"} claim for ${truncateAddress(normalizedParticipantAddress)}.`);
+    } catch (error) {
+      setCreatorFormsActionError(error instanceof Error ? error.message : "Failed to review forms claim");
+    } finally {
+      setActiveFormsReviewAddress(null);
+    }
+  }, [createSignedWalletAction, loadFormsClaims, openWalletWithSeed, selectedRecord?.campaignId, signer]);
+
   const comments = useMemo(() => (
     Array.isArray(selectedRecord?.socialMetadata?.comments)
       ? selectedRecord.socialMetadata.comments.filter((value): value is { text: string; creatorAddress?: string | null; creatorHandle?: string | null; createdAt?: string } => (
@@ -638,6 +1153,265 @@ export default function CampaignDetailPage() {
       ))
       : []
   ), [selectedRecord?.socialMetadata?.comments]);
+
+  const formsMountableActions = useMemo(() => {
+    if (!formsMountableConfig.enabled) {
+      return null;
+    }
+
+    const participantErrorMessage = participantFormsActionError || (!isCampaignCreator ? googleLinkError : "");
+    const creatorErrorMessage = creatorFormsActionError || (isCampaignCreator ? googleLinkError : "");
+    const currentClaimUpdatedAt = currentWalletFormsClaim?.updatedAt ?? currentWalletFormsClaim?.submittedAt ?? null;
+    const creatorReady = hasVerifiedFormsResponseAccess && !linkedGrantDiffersFromVerifiedAccess;
+
+    if (!signer) {
+      return (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-gray-600">
+            Connect a wallet to link Google and verify this mounted form.
+          </p>
+          <p className="text-xs text-gray-500">
+            {mountedFormsUrl
+              ? "After connecting, open the Google Form, submit it, then return here to verify your response."
+              : "After connecting, link Google first, then verify your response here."}
+          </p>
+        </div>
+      );
+    }
+
+    if (isCampaignCreator) {
+      return (
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-gray-600">
+            {creatorReady
+              ? "Automatic verification is ready. Participant responses will be matched against respondentEmail."
+              : !hasFormsResponseAccess
+                ? "Link the Google account that can read this form's responses."
+                : !hasVerifiedFormsResponseAccess
+                  ? "Verify that the linked Google account can read this form before syncing claims."
+                  : "The linked Google account changed after verification. Verify access again before syncing claims."}
+          </p>
+          {linkedGrantDisplayEmail ? (
+            <p className="text-xs text-gray-500">Linked Google: {linkedGrantDisplayEmail}</p>
+          ) : null}
+          {formsMountableConfig.responseAccessVerifiedAt?.trim() ? (
+            <p className="text-xs text-gray-500">
+              Verified at {new Date(formsMountableConfig.responseAccessVerifiedAt.trim()).toLocaleString()}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>{pendingFormsClaims.length} pending</span>
+            <span>{verifiedFormsClaims.length} verified</span>
+          </div>
+          {creatorFormsActionNotice ? (
+            <p className="text-xs text-green-600">{creatorFormsActionNotice}</p>
+          ) : null}
+          {creatorErrorMessage ? (
+            <p className="text-xs text-red-500">{creatorErrorMessage}</p>
+          ) : null}
+          {formsClaimsError ? (
+            <p className="text-xs text-red-500">{formsClaimsError}</p>
+          ) : null}
+          <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+            <button
+              type="button"
+              className="create-info-confirm-btn"
+              onClick={() => void handleBeginGoogleAccountLink("forms_response_access")}
+              disabled={isFormsGrantBusy || !mountedFormsId}
+            >
+              {isGoogleLinkBusy ? "Linking..." : hasFormsResponseAccess ? "Relink Google" : "Link Google"}
+            </button>
+            <button
+              type="button"
+              className="create-info-confirm-btn"
+              onClick={() => void handleRefreshFormsGrant()}
+              disabled={!hasFormsResponseAccess || isFormsGrantBusy}
+            >
+              {isRefreshingLinkedGoogleGrant ? "Refreshing..." : "Refresh"}
+            </button>
+            <button
+              type="button"
+              className="create-info-confirm-btn create-info-confirm-btn-primary"
+              onClick={() => void handleVerifyFormsResponseAccess()}
+              disabled={!hasFormsResponseAccess || !mountedFormsId || isFormsGrantBusy}
+            >
+              {isVerifyingFormsAccess ? "Verifying..." : creatorReady ? "Verified" : "Verify access"}
+            </button>
+          </div>
+          <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+            <button
+              type="button"
+              className="create-info-confirm-btn"
+              onClick={() => void loadFormsClaims()}
+              disabled={isFormsClaimsLoading}
+            >
+              {isFormsClaimsLoading ? "Loading..." : "Reload claims"}
+            </button>
+            <button
+              type="button"
+              className="create-info-confirm-btn create-info-confirm-btn-primary"
+              onClick={() => void handleSyncFormsClaims()}
+              disabled={!creatorReady || !selectedRecord?._id || isSyncingFormsClaims}
+            >
+              {isSyncingFormsClaims ? "Syncing..." : pendingFormsClaims.length > 0 ? "Sync pending" : "Sync claims"}
+            </button>
+          </div>
+          {formsClaims.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {formsClaims.map((claim) => {
+                const claimAddress = normalizeAddress(claim.participantAddress);
+                const isReviewingThisClaim = activeFormsReviewAddress === claimAddress;
+                const statusToneClassName = claim.status === "verified"
+                  ? "text-green-600 border-green-200 bg-green-50"
+                  : claim.status === "rejected"
+                    ? "text-red-500 border-red-200 bg-red-50"
+                    : "text-amber-700 border-amber-200 bg-amber-50";
+
+                return (
+                  <div key={`${claimAddress}-${claim.submittedAt ?? claim.updatedAt ?? claim.status}`} className="rounded border border-gray-200 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono text-xs text-gray-600">{truncateAddress(claim.participantAddress)}</span>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusToneClassName}`.trim()}>
+                        {formatFormsClaimStatusLabel(claim.status)}
+                      </span>
+                    </div>
+                    {claim.submittedAt ? (
+                      <p className="mt-1 text-[11px] text-gray-500">Submitted {new Date(claim.submittedAt).toLocaleString()}</p>
+                    ) : null}
+                    {claim.reviewedAt ? (
+                      <p className="mt-1 text-[11px] text-gray-500">Reviewed {new Date(claim.reviewedAt).toLocaleString()}</p>
+                    ) : null}
+                    {claim.reviewNote ? (
+                      <p className="mt-1 text-[11px] text-gray-500">Review note: {claim.reviewNote}</p>
+                    ) : null}
+                    {claim.status === "pending" ? (
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          type="button"
+                          className="create-info-confirm-btn create-info-confirm-btn-primary"
+                          onClick={() => void handleReviewFormsClaim(claim.participantAddress, "verified")}
+                          disabled={Boolean(activeFormsReviewAddress) || isReviewingThisClaim}
+                        >
+                          {isReviewingThisClaim ? "Working..." : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          className="create-info-confirm-btn"
+                          onClick={() => void handleReviewFormsClaim(claim.participantAddress, "rejected")}
+                          disabled={Boolean(activeFormsReviewAddress) || isReviewingThisClaim}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              {isFormsClaimsLoading ? "Loading forms claims..." : "No forms claims yet."}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-gray-600">
+          {!isGoogleLinked
+            ? "Link your Google account once, then submit the form with that same email."
+            : currentWalletFormsClaim?.status === "verified"
+              ? "Your submission has already been verified automatically."
+              : currentWalletFormsClaim?.status === "rejected"
+                ? "This claim was rejected. Re-submit if needed, then verify again."
+                : currentWalletFormsClaim?.status === "pending"
+                  ? "Your claim is pending. Re-check after submitting the form or after the creator syncs new responses."
+                  : linkedIdentityEmail
+                    ? `Submit the form with ${linkedIdentityEmail}, then verify your submission here.`
+                    : "Submit the form with your linked Google account, then verify your submission here."}
+        </p>
+        {linkedIdentityEmail ? (
+          <p className="text-xs text-gray-500">Linked Google: {linkedIdentityEmail}</p>
+        ) : null}
+        {currentWalletFormsClaim ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+            <span className="font-medium text-gray-700">Status: {formatFormsClaimStatusLabel(currentWalletFormsClaim.status)}</span>
+            {currentClaimUpdatedAt ? <span>Updated {new Date(currentClaimUpdatedAt).toLocaleString()}</span> : null}
+          </div>
+        ) : null}
+        {currentWalletFormsClaim?.reviewNote ? (
+          <p className="text-xs text-gray-500">Review note: {currentWalletFormsClaim.reviewNote}</p>
+        ) : null}
+        {participantFormsActionNotice ? (
+          <p className="text-xs text-green-600">{participantFormsActionNotice}</p>
+        ) : null}
+        {participantErrorMessage ? (
+          <p className="text-xs text-red-500">{participantErrorMessage}</p>
+        ) : null}
+        {formsClaimsError ? (
+          <p className="text-xs text-red-500">{formsClaimsError}</p>
+        ) : null}
+        <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+          <button
+            type="button"
+            className="create-info-confirm-btn"
+            onClick={() => void handleBeginGoogleAccountLink("identity_link")}
+            disabled={isGoogleLinkBusy}
+          >
+            {isGoogleLinkBusy ? "Linking..." : isGoogleLinked ? "Relink Google" : "Link Google"}
+          </button>
+          <button
+            type="button"
+            className="create-info-confirm-btn create-info-confirm-btn-primary"
+            onClick={() => void handleSubmitFormsClaim()}
+            disabled={!isGoogleLinked || !selectedRecord?._id || !mountedFormsId || isSubmittingFormsClaim}
+          >
+            {isSubmittingFormsClaim ? "Checking..." : currentWalletFormsClaim?.status === "verified" ? "Verified" : currentWalletFormsClaim?.status === "pending" ? "Recheck submission" : "Verify submission"}
+          </button>
+        </div>
+      </div>
+    );
+  }, [
+    activeFormsReviewAddress,
+    creatorFormsActionError,
+    creatorFormsActionNotice,
+    currentWalletFormsClaim,
+    formsClaims,
+    formsClaimsError,
+    formsMountableConfig,
+    googleLinkError,
+    handleBeginGoogleAccountLink,
+    handleRefreshFormsGrant,
+    handleReviewFormsClaim,
+    handleSubmitFormsClaim,
+    handleSyncFormsClaims,
+    handleVerifyFormsResponseAccess,
+    hasFormsResponseAccess,
+    hasVerifiedFormsResponseAccess,
+    isCampaignCreator,
+    isFormsClaimsLoading,
+    isFormsGrantBusy,
+    isGoogleLinkBusy,
+    isGoogleLinked,
+    isRefreshingLinkedGoogleGrant,
+    isSubmittingFormsClaim,
+    isSyncingFormsClaims,
+    isVerifyingFormsAccess,
+    linkedGrantDiffersFromVerifiedAccess,
+    linkedGrantDisplayEmail,
+    linkedIdentityEmail,
+    loadFormsClaims,
+    mountedFormsId,
+    mountedFormsUrl,
+    participantFormsActionError,
+    participantFormsActionNotice,
+    pendingFormsClaims.length,
+    selectedRecord?._id,
+    signer,
+    verifiedFormsClaims.length,
+  ]);
 
   const mountableItems = useMemo<CampaignMountableItem[]>(() => {
     const items: CampaignMountableItem[] = [];
@@ -651,6 +1425,7 @@ export default function CampaignDetailPage() {
       ].filter(Boolean);
 
       items.push({
+        actions: formsMountableActions,
         description: formsMountableSummary(formsMountable),
         href: formsMountable.canonicalFormUrl || formsMountable.formUrl || undefined,
         icon: "forms",

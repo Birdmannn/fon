@@ -1,8 +1,10 @@
 "use client";
 
 import { LockKeyhole, Scroll } from "lucide-react";
+import type { ReactNode } from "react";
 
 export type CampaignMountableItem = {
+  actions?: ReactNode;
   description: string;
   href?: string;
   icon?: "forms" | "lock";
@@ -65,6 +67,11 @@ export default function CampaignMountablesPanel({
                   ) : null}
                   {item.proofInstructions ? (
                     <p className="campaign-detail-mountable-proof">{item.proofInstructions}</p>
+                  ) : null}
+                  {item.actions ? (
+                    <div className="campaign-detail-mountable-actions">
+                      {item.actions}
+                    </div>
                   ) : null}
                 </div>
               </div>
