@@ -8,6 +8,8 @@ type CampaignDepositPayload = {
   campaignRecordId?: unknown;
   depositedAt?: unknown;
   depositorAddress?: unknown;
+  kind?: unknown;
+  supportMode?: unknown;
   txHash?: unknown;
 };
 
@@ -35,6 +37,12 @@ export async function POST(request: Request) {
     const campaignRecordId = typeof payload.campaignRecordId === "string" && payload.campaignRecordId.trim()
       ? payload.campaignRecordId.trim()
       : null;
+    const kind = typeof payload.kind === "string" && payload.kind.trim()
+      ? payload.kind.trim()
+      : "campaign_deposit";
+    const supportMode = typeof payload.supportMode === "string" && payload.supportMode.trim()
+      ? payload.supportMode.trim()
+      : "campaign_escrow";
     const depositedAt = typeof payload.depositedAt === "string" && payload.depositedAt.trim()
       ? payload.depositedAt.trim()
       : new Date().toISOString();
@@ -49,6 +57,8 @@ export async function POST(request: Request) {
           campaignRecordId,
           depositedAt,
           depositorAddress,
+          kind,
+          supportMode,
           txHash,
           updatedAt: new Date(),
         },

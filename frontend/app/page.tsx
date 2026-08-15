@@ -364,11 +364,17 @@ export default function Home() {
     setMountablesPromptError("");
   }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
 
-  const handleOpenTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
+  const handleOpenTicketPurchaseInfoModal = useCallback((
+    campaign: CampaignCell,
+    record: CampaignRecord | null,
+    liveSoldTickets: bigint,
+    remainingTickets: bigint,
+    onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void,
+  ) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
-    openTicketPurchaseInfoModal(campaign, record, onTicketBought);
+    openTicketPurchaseInfoModal(campaign, record, { liveSoldTickets, remainingTickets }, onTicketBought);
     setInfoModalMode("ticket-purchase");
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);

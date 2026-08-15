@@ -25,6 +25,8 @@ type DepositPayload = {
   recordId?: unknown;
   txHash?: unknown;
   amountCkb?: unknown;
+  kind?: unknown;
+  supportMode?: unknown;
 };
 
 type CampaignRecordShape = {
@@ -94,6 +96,12 @@ export async function POST(request: Request) {
     const txHash = ensureString(payload.txHash, "txHash").toLowerCase();
     const amountCkb = ensureFinitePositiveNumber(payload.amountCkb, "amountCkb");
     const amountShannons = BigInt(Math.floor(amountCkb * 100_000_000));
+    const depositKind = typeof payload.kind === "string" && payload.kind.trim()
+      ? payload.kind.trim()
+      : "campaign_deposit";
+    const supportMode = typeof payload.supportMode === "string" && payload.supportMode.trim()
+      ? payload.supportMode.trim()
+      : "campaign_escrow";
 
     const client = getPublicCkbClient();
     const tx = await client.getTransaction(txHash);
@@ -135,7 +143,9 @@ export async function POST(request: Request) {
       metadata: {
         amountCkb,
         amountShannons: amountShannons.toString(),
+        kind: depositKind,
         recordId,
+        supportMode,
         txHash,
       },
       profilesCollection,
@@ -151,7 +161,9 @@ export async function POST(request: Request) {
       metadata: {
         amountCkb,
         amountShannons: amountShannons.toString(),
+        kind: depositKind,
         recordId,
+        supportMode,
         txHash,
       },
       profilesCollection,
@@ -170,7 +182,9 @@ export async function POST(request: Request) {
           actorAddress: address,
           amountCkb,
           amountShannons: amountShannons.toString(),
+          kind: depositKind,
           recordId,
+          supportMode,
           txHash,
           campaignType,
         },

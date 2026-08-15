@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::prelude::Entity;
 use ckb_std::debug;
-use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_input};
+use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_cell_lock, load_cell_type, load_input};
 
 #[derive(Clone)]
 pub struct ParticipantEntry {
@@ -186,6 +186,36 @@ pub fn validate_deposit_transfer(deposit_amount: u64) -> Result<(), Error> {
         .ok_or(Error::AmountMismatch)?;
 
     if campaign_output_capacity != expected_campaign_output {
+        return Err(Error::AmountMismatch);
+    }
+
+    Ok(())
+}
+
+pub fn validate_creator_tip_transfer(deposit_amount: u64, creator_address: &[u8; 20]) -> Result<(), Error> {
+    let campaign_input_capacity =
+        load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+    let campaign_output_capacity =
+        load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
+
+    if campaign_output_capacity != campaign_input_capacity {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_tip_type = load_cell_type(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_tip_type.is_some() {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_tip_lock = load_cell_lock(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    let creator_tip_lock_args = creator_tip_lock.args().raw_data();
+    if creator_tip_lock_args.len() < 20 || &creator_tip_lock_args[0..20] != creator_address {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_tip_capacity =
+        load_cell_capacity(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_tip_capacity != deposit_amount {
         return Err(Error::AmountMismatch);
     }
 

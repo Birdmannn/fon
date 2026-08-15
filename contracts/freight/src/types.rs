@@ -120,8 +120,9 @@ pub const CAMPAIGN_DATA_LEN: usize = 174;
 
 impl Campaign {
     pub fn accepts_deposits(&self) -> bool {
-        // Raffle and deposit-backed campaigns accept deposits before they start.
-        self.status == CampaignStatus::Created && self.campaign_type != CampaignType::SimpleTask
+        // All campaign types may accept support/funding while still in Created.
+        // SimpleTask tips are creator-directed, while other campaign types remain escrow-backed.
+        self.status == CampaignStatus::Created
     }
 
     pub fn is_raffle(&self) -> bool {

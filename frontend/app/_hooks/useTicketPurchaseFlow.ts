@@ -16,11 +16,17 @@ type UseTicketPurchaseFlowArgs = {
   onTicketBuySuccess: (txHash: string) => void;
 };
 
+export type TicketPurchaseAvailability = {
+  liveSoldTickets: bigint;
+  remainingTickets: bigint;
+};
+
 export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, onTicketBuySuccess }: UseTicketPurchaseFlowArgs) {
   const signer = ccc.useSigner();
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
-  const ticketBoughtCallbackRef = useRef<((campaignId: string, ticketPrice: bigint) => void) | null>(null);
+  const [ticketPurchaseAvailability, setTicketPurchaseAvailability] = useState<TicketPurchaseAvailability | null>(null);
+  const ticketBoughtCallbackRef = useRef<((campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
   const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
@@ -28,15 +34,22 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
   const resetTicketPurchaseState = useCallback(() => {
     setTicketPurchaseCampaign(null);
     setTicketPurchaseRecord(null);
+    setTicketPurchaseAvailability(null);
     ticketBoughtCallbackRef.current = null;
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
   }, []);
 
-  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
+  const openTicketPurchaseInfoModal = useCallback((
+    campaign: CampaignCell,
+    record: CampaignRecord | null,
+    availability: TicketPurchaseAvailability,
+    onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void,
+  ) => {
     setTicketPurchaseCampaign(campaign);
     setTicketPurchaseRecord(record);
+    setTicketPurchaseAvailability(availability);
     ticketBoughtCallbackRef.current = onTicketBought;
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
@@ -72,13 +85,8 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       return;
     }
 
-    const remainingCapacity = ticketPurchaseCampaign.data.maximumAmount > ticketPurchaseCampaign.data.currentDeposits
-      ? ticketPurchaseCampaign.data.maximumAmount - ticketPurchaseCampaign.data.currentDeposits
-      : 0n;
-    const remainingTickets = ticketPurchaseCampaign.data.auxAmount > 0n
-      ? remainingCapacity / ticketPurchaseCampaign.data.auxAmount
-      : 0n;
-    if (remainingTickets <= 0n || totalCostShannons > remainingCapacity) {
+    const remainingTickets = ticketPurchaseAvailability?.remainingTickets ?? 0n;
+    if (remainingTickets <= 0n) {
       setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
       return;
     }
@@ -149,7 +157,8 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       }).catch(() => {
         // Non-fatal — settlement can still fall back to on-chain discovery
       });
-      ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount);
+      const nextSoldTickets = (ticketPurchaseAvailability?.liveSoldTickets ?? 0n) + requestedTickets;
+      ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount, nextSoldTickets);
       onTicketBuySuccess(txHash);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to buy tickets";
@@ -157,7 +166,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       setIsPurchasingTickets(false);
       onSubmissionError(message);
     }
-  }, [currentViewerFbars, onSubmissionError, onTicketBuySuccess, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
+  }, [currentViewerFbars, onSubmissionError, onTicketBuySuccess, signer, ticketPurchaseAvailability, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
 
   return {
     handleTicketPurchaseSubmit,

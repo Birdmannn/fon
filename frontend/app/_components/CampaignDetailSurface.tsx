@@ -8,6 +8,7 @@ import {
   buildDefaultHandle,
   decodeCreatedByAddress,
 } from "@/lib/campaignDisplay";
+import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
@@ -23,12 +24,7 @@ type CampaignDetailSurfaceProps = {
 };
 
 function sanitizeCampaignDescription(text: string) {
-  return text
-    .replace(/(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|mounted)\b/gi, "$1")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return stripCampaignControlTags(text);
 }
 
 export default function CampaignDetailSurface({

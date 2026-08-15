@@ -208,12 +208,77 @@ export async function sendDepositShannons(
   return signer.sendTransaction(tx);
 }
 
+export const SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS = 61n * 100_000_000n;
+
 export async function sendDeposit(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
   amountCkb: bigint // in CKB (not shannons)
 ): Promise<string> {
   return sendDepositShannons(signer, campaignCell, amountCkb * 100_000_000n);
+}
+
+export async function sendCreatorTipShannons(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  amountShannons: bigint
+): Promise<string> {
+  if (amountShannons < SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS) {
+    throw new Error(`SimpleTask tips must be at least ${Number(SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS / 100_000_000n)} CKB so the creator can receive a standalone CKB cell.`);
+  }
+
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  const actionArgsHex = bytesToHex(encodeDepositArgs(amountShannons)) as `0x${string}`;
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+  };
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  tx.addOutput({
+    capacity: amountShannons,
+    lock: campaignCell.lock,
+  }, "0x");
+
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = actionArgsHex;
+  tx.setWitnessArgsAt(0, witness);
+
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
+export async function sendCreatorTip(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  amountCkb: bigint
+): Promise<string> {
+  return sendCreatorTipShannons(signer, campaignCell, amountCkb * 100_000_000n);
 }
 
 export async function sendVerifyParticipantRaffle(

@@ -61,6 +61,7 @@ export type CampaignRecord = {
   settledAt?: string | null;
   settledByAddress?: string | null;
   soldTicketCount?: string | null;
+  liveSoldTicketCount?: string | null;
   settledParticipantCount?: string | null;
   settledRecipients?: CampaignSettledRecipient[] | null;
 };

@@ -32,8 +32,8 @@ type CampaignCardProps = {
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onOpenDetail: () => void;
-  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
-  onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
+  onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
   onSettlementCompleted: (
     campaignId: string,
     settlementTxHash: string,
@@ -92,8 +92,10 @@ export default function CampaignCard({
     isDepositing,
     isLockedForInteractions,
     isPurchaseDisabled,
+    isSupportDisabled,
     isRaffleCampaign,
     isSavingComment,
+    supportState,
     canGiftApprove,
     canGiftClaim,
     likes,
@@ -179,9 +181,24 @@ export default function CampaignCard({
           {hasNotStartedRaffle && (
             <button
               type="button"
-              disabled
-              className="campaign-action-btn ml-auto campaign-action-disabled"
-              data-tooltip="Funding coming soon"
+              onClick={handleDepositClick}
+              disabled={isSupportDisabled}
+              className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
+              data-tooltip={
+                !isConnected
+                  ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
+                  : isLockedForInteractions
+                    ? lockAccessMessage
+                    : !supportState.supportEnabled
+                      ? "Support disabled for this freight"
+                      : isCampaignInactive
+                        ? "Freight unavailable"
+                        : hasReachedMaxAmount
+                          ? "Max amount reached"
+                          : supportState.supportMode === "direct_creator"
+                            ? "Tip creator"
+                            : "Deposit CKB"
+              }
             >
               <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
               <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
@@ -200,7 +217,7 @@ export default function CampaignCard({
                 <span className="campaign-action-count">{String(soldTickets)}</span>
               </button>
               <button
-                onClick={() => onTicketPurchaseRequest(campaign, record, onTicketBought)}
+                onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                 disabled={isPurchaseDisabled}
                 className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
                 data-tooltip={!isConnected ? "Connect wallet to buy tickets" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
@@ -212,36 +229,75 @@ export default function CampaignCard({
           )}
 
           {!showSettlementAction && !hasNotStartedRaffle && (
-            <button
-              onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(campaign, record, onTicketBought) : handleDepositClick}
-              disabled={isPurchaseDisabled}
-              className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-              data-tooltip={
-                !isConnected
-                  ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-                  : isLockedForInteractions
-                    ? lockAccessMessage
-                    : isCampaignInactive
-                      ? "Freight unavailable"
-                      : remainingTickets <= 0n
-                        ? "No tickets left"
-                        : hasReachedMaxAmount
-                          ? "Max amount reached"
-                          : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
-              }
-            >
-              {isRaffleCampaign ? (
-                <>
-                  <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
-                </>
-              ) : (
-                <>
+            isRaffleCampaign ? (
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDepositClick}
+                  disabled={isSupportDisabled}
+                  className={`campaign-action-btn ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                  data-tooltip={
+                    !isConnected
+                      ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
+                      : isLockedForInteractions
+                        ? lockAccessMessage
+                        : !supportState.supportEnabled
+                          ? "Support disabled for this freight"
+                          : isCampaignInactive
+                            ? "Freight unavailable"
+                            : hasReachedMaxAmount
+                              ? "Max amount reached"
+                              : supportState.supportMode === "direct_creator"
+                                ? "Tip creator"
+                                : "Deposit CKB"
+                  }
+                >
                   <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
                   <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
-                </>
-              )}
-            </button>
+                </button>
+                <button
+                  onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
+                  disabled={isPurchaseDisabled}
+                  className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                  data-tooltip={
+                    !isConnected
+                      ? "Connect wallet to buy tickets"
+                      : isLockedForInteractions
+                        ? lockAccessMessage
+                        : isCampaignInactive
+                          ? "Freight unavailable"
+                          : hasNotStartedRaffle
+                            ? "Raffle has not started"
+                            : remainingTickets <= 0n
+                              ? "No tickets left"
+                              : "Buy tickets"
+                  }
+                >
+                  <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleDepositClick}
+                disabled={isSupportDisabled}
+                className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                data-tooltip={
+                  !isConnected
+                    ? "Connect wallet to deposit"
+                    : isLockedForInteractions
+                      ? lockAccessMessage
+                      : isCampaignInactive
+                        ? "Freight unavailable"
+                        : hasReachedMaxAmount
+                          ? "Max amount reached"
+                          : "Deposit CKB"
+                }
+              >
+                <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+              </button>
+            )
           )}
 
           {giftDeliverable.enabled ? (
@@ -334,7 +390,7 @@ export default function CampaignCard({
       {showDepositModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4">
-            <h3 className="text-lg font-semibold mb-4">Deposit CKB</h3>
+            <h3 className="text-lg font-semibold mb-4">{supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"}</h3>
             <form onSubmit={handleDepositSubmit} className="flex flex-col gap-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Amount (CKB)</label>
@@ -347,11 +403,14 @@ export default function CampaignCard({
                   onChange={(e) => setDepositAmount(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="0.00"
-                  disabled={isDepositing || isPurchaseDisabled}
+                  disabled={isDepositing || isSupportDisabled}
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Max available: {(Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8).toFixed(2)} CKB
                 </p>
+                {supportState.supportMode === "direct_creator" ? (
+                  <p className="text-xs text-gray-500 mt-1">SimpleTask tips go straight to the creator address.</p>
+                ) : null}
               </div>
               <div className="flex gap-3">
                 <button
@@ -367,10 +426,10 @@ export default function CampaignCard({
                 </button>
                 <button
                   type="submit"
-                  disabled={isDepositing || !depositAmount || isPurchaseDisabled}
+                  disabled={isDepositing || !depositAmount || isSupportDisabled}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {isDepositing ? "Processing..." : "Deposit"}
+                  {isDepositing ? "Processing..." : supportState.supportMode === "direct_creator" ? "Send tip" : "Deposit"}
                 </button>
               </div>
             </form>

@@ -54,6 +54,8 @@ type CampaignDepositTransaction = {
   campaignRecordId?: unknown;
   depositedAt?: unknown;
   depositorAddress?: unknown;
+  kind?: unknown;
+  supportMode?: unknown;
   txHash?: unknown;
 };
 
@@ -310,6 +312,8 @@ export async function GET(request: Request) {
             campaignId: 1,
             campaignRecordId: 1,
             depositedAt: 1,
+            kind: 1,
+            supportMode: 1,
             txHash: 1,
           },
         }
@@ -440,6 +444,7 @@ export async function GET(request: Request) {
       }
 
       if (kind === "deposit") {
+        const depositKind = asString(metadata.kind) === "simple_task_tip" ? "simple_task_tip" : "campaign_deposit";
         fbarRows.push({
           adsfUsdCentsDelta: null,
           amountLabel: null,
@@ -450,11 +455,11 @@ export async function GET(request: Request) {
           channel: "offchain",
           fbarsDelta: delta,
           id: buildRowId(["campaign-deposit-fbars", (resolvedTxHash ?? asString(event.eventKey)) || occurredAt]),
-          kind: "campaign_deposit",
+          kind: depositKind,
           occurredAt,
           onchainNetDeltaShannons: null,
           role: "actor",
-          summary: "Deposit FBARS",
+          summary: depositKind === "simple_task_tip" ? "Tip FBARS" : "Deposit FBARS",
           txHash: resolvedTxHash,
         });
         return;
@@ -564,6 +569,7 @@ export async function GET(request: Request) {
 
       const record = recordByCampaignId.get(campaignId);
       const amountShannons = asString(row.amountShannons);
+      const depositKind = asString(row.kind) === "simple_task_tip" ? "simple_task_tip" : "campaign_deposit";
       rows.push({
         adsfUsdCentsDelta: null,
         amountLabel: amountLabelFromShannons(amountShannons),
@@ -574,11 +580,11 @@ export async function GET(request: Request) {
         channel: "onchain",
         fbarsDelta: null,
         id: buildRowId(["campaign-deposit", txHash]),
-        kind: "campaign_deposit",
+        kind: depositKind,
         occurredAt,
         onchainNetDeltaShannons: deltaByTxHash[txHash] ?? null,
         role: "actor",
-        summary: "Deposited into freight",
+        summary: depositKind === "simple_task_tip" ? "Tipped freight creator" : "Deposited into freight",
         txHash,
       });
     });

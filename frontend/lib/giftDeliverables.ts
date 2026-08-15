@@ -192,7 +192,7 @@ export function createEmptyGiftDeliverable(): GiftDeliverable {
 }
 
 export function isGiftEligibleCampaignType(campaignType: number) {
-  return campaignType === CampaignType.SimpleTask || campaignType === CampaignType.TimedChallenge;
+  return campaignType === CampaignType.FundedTask;
 }
 
 export function normalizeGiftHandle(value: string) {

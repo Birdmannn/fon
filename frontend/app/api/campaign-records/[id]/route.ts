@@ -50,6 +50,7 @@ type CampaignRecordPayload = {
   settledAt?: unknown;
   settledByAddress?: unknown;
   soldTicketCount?: unknown;
+  liveSoldTicketCount?: unknown;
   settledParticipantCount?: unknown;
   settledRecipients?: unknown;
 };
@@ -278,6 +279,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const settledAt = ensureOptionalString(payload.settledAt, "settledAt");
   const settledByAddress = ensureOptionalString(payload.settledByAddress, "settledByAddress");
   const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
+  const liveSoldTicketCount = ensureOptionalString(payload.liveSoldTicketCount, "liveSoldTicketCount");
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
   const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
@@ -331,6 +333,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     settledAt,
     settledByAddress,
     soldTicketCount,
+    liveSoldTicketCount,
     settledParticipantCount,
     settledRecipients,
   };

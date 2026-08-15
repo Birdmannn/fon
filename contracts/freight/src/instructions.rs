@@ -116,7 +116,11 @@ pub fn deposit(args: &[u8]) -> Result<(), Error> {
         .ok_or(Error::DepositNotCompleted)?;
     let actual_deposit = if requested_deposit > remaining { remaining } else { requested_deposit };
 
-    validate_deposit_transfer(actual_deposit)?;
+    if campaign.campaign_type == CampaignType::SimpleTask {
+        validate_creator_tip_transfer(actual_deposit, &campaign.created_by)?;
+    } else {
+        validate_deposit_transfer(actual_deposit)?;
+    }
 
     campaign.current_deposits = campaign
         .current_deposits

@@ -22,14 +22,33 @@ import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 import { copyText } from "@/lib/clipboard";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
+import { deriveCampaignSupportState } from "@/lib/campaignTipping";
 import {
   fetchParticipants,
   previewDeterministicWinners,
   sendBatchDeliver,
-  sendDeposit,
+  sendCreatorTipShannons,
+  sendDepositShannons,
   type CampaignCell,
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
+
+function parseOptionalBigInt(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    return BigInt(normalized);
+  } catch {
+    return null;
+  }
+}
 
 async function hasSettlementCreatorPermission(
   signer: ccc.Signer | null,
@@ -110,6 +129,11 @@ export function useCampaignCardState({
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const displayTitle = record?.title?.trim() || onchainSummary;
   const displayDescription = record?.description?.trim() || onchainSummary;
+  const supportState = deriveCampaignSupportState({
+    campaignType: data.campaignType,
+    currentDeposits: data.currentDeposits,
+    description: record?.description?.trim() || onchainSummary,
+  });
   const mentions = record?.socialMetadata?.mentions ?? [];
   const rewardCountValue = Number(data.rewardCount);
   const giftDeliverable = parseStoredGiftDeliverable(record?.giftDeliverable);
@@ -129,11 +153,13 @@ export function useCampaignCardState({
   const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
+  const liveSoldTickets = parseOptionalBigInt(record?.liveSoldTicketCount);
   const settlementUiState = deriveRaffleSettlementUiState({
     campaign: c,
     displayStatus,
     settlementTxHash: record?.settlementTxHash ?? null,
     soldTicketCount: record?.soldTicketCount ?? null,
+    liveSoldTickets,
   });
   const soldTickets = settlementUiState.soldTickets;
   const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
@@ -215,7 +241,8 @@ export function useCampaignCardState({
   };
 
   const isConnected = !!signer;
-  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
+  const isSupportDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasReachedMaxAmount || !supportState.supportEnabled;
+  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets;
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userReshared = normalizedCurrentWalletAddress.length > 0 && resharedByAddresses.includes(normalizedCurrentWalletAddress);
@@ -295,6 +322,7 @@ export function useCampaignCardState({
     settledAt: record?.settledAt ?? null,
     settledByAddress: record?.settledByAddress ?? null,
     soldTicketCount: record?.soldTicketCount ?? null,
+    liveSoldTicketCount: record?.liveSoldTicketCount ?? null,
     settledParticipantCount: record?.settledParticipantCount ?? null,
     settledRecipients: record?.settledRecipients ?? null,
     mountables: record?.mountables,
@@ -638,13 +666,17 @@ export function useCampaignCardState({
   };
 
   const handleDepositClick = () => {
-    if (isPurchaseDisabled) return;
+    if (!isConnected || isLockedForInteractions || isCampaignInactive || hasReachedMaxAmount || !supportState.supportEnabled) {
+      return;
+    }
     setShowDepositModal(true);
   };
 
   const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    if (!signer || !depositAmount || isPurchaseDisabled) return;
+    if (!signer || !depositAmount || isLockedForInteractions || isCampaignInactive || hasReachedMaxAmount || !supportState.supportEnabled) {
+      return;
+    }
 
     const parsedDepositAmount = Number.parseFloat(depositAmount);
     if (!Number.isFinite(parsedDepositAmount) || parsedDepositAmount <= 0) {
@@ -653,9 +685,8 @@ export function useCampaignCardState({
     }
 
     const amountShannons = BigInt(Math.floor(parsedDepositAmount * 100_000_000));
-    const amountCkb = amountShannons / 100_000_000n;
-    if (amountCkb <= 0n) {
-      alert("Please enter at least 1 CKB");
+    if (amountShannons <= 0n) {
+      alert("Please enter at least 0.01 CKB");
       return;
     }
 
@@ -667,7 +698,9 @@ export function useCampaignCardState({
 
     setIsDepositing(true);
     try {
-      const txHash = await sendDeposit(signer, c, amountCkb);
+      const txHash = supportState.supportMode === "direct_creator"
+        ? await sendCreatorTipShannons(signer, c, amountShannons)
+        : await sendDepositShannons(signer, c, amountShannons);
       await fetch("/api/campaign-deposits", {
         method: "POST",
         headers: {
@@ -679,6 +712,8 @@ export function useCampaignCardState({
           campaignRecordId: record?._id ?? null,
           depositedAt: new Date().toISOString(),
           depositorAddress: await signer.getRecommendedAddress(),
+          kind: supportState.depositKind,
+          supportMode: supportState.supportMode,
           txHash,
         }),
       }).catch(() => {
@@ -695,7 +730,9 @@ export function useCampaignCardState({
           ...signed,
           recordId: record?._id,
           txHash,
-          amountCkb: Number(amountCkb),
+          amountCkb: Number(amountShannons) / 1e8,
+          kind: supportState.depositKind,
+          supportMode: supportState.supportMode,
         }),
       });
       const depositPayload = await depositResponse.json().catch(() => null);
@@ -703,11 +740,11 @@ export function useCampaignCardState({
         throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
       }
 
-      alert(`Deposit sent! Tx: ${txHash}`);
+      alert(`${supportState.supportMode === "direct_creator" ? "Tip" : "Deposit"} sent! Tx: ${txHash}`);
       setShowDepositModal(false);
       setDepositAmount("");
     } catch (error) {
-      alert(`Deposit failed: ${error instanceof Error ? error.message : String(error)}`);
+      alert(`${supportState.supportMode === "direct_creator" ? "Tip" : "Deposit"} failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsDepositing(false);
     }
@@ -1062,8 +1099,10 @@ export function useCampaignCardState({
     isDepositing,
     isLockedForInteractions,
     isPurchaseDisabled,
+    isSupportDisabled,
     lockAccessMessage,
     isRaffleCampaign,
+    supportState,
     isSavingComment,
     likes,
     maxCkb,

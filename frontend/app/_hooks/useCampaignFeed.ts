@@ -28,6 +28,34 @@ const EMPTY_CAMPAIGN_RECORD_INDEXES: CampaignRecordIndexes<CampaignRecord> = {
   byLegacyKey: {},
 };
 
+function withLiveRaffleTicketCounts(campaigns: CampaignCell[], records: CampaignRecord[], participantCounts: Record<string, number>) {
+  return records.map((record) => {
+    const explicitCampaignId = typeof record.campaignId === "string" ? record.campaignId.trim().toLowerCase() : "";
+    const matchedCampaign = explicitCampaignId
+      ? campaigns.find((campaign) => getCampaignStableId(campaign) === explicitCampaignId)
+      : null;
+    const isRaffleCampaign = matchedCampaign?.data.campaignType === 4 || record.campaignType === 4;
+    if (!isRaffleCampaign) {
+      return record;
+    }
+
+    const campaignId = explicitCampaignId || (matchedCampaign ? getCampaignStableId(matchedCampaign) : "");
+    if (!campaignId) {
+      return record;
+    }
+
+    const participantCount = participantCounts[campaignId];
+    if (!Number.isInteger(participantCount) || participantCount < 0) {
+      return record;
+    }
+
+    return {
+      ...record,
+      liveSoldTicketCount: String(participantCount),
+    };
+  });
+}
+
 function formatCompactCampaignCount(count: number) {
   return new Intl.NumberFormat(undefined, {
     notation: "compact",
@@ -56,7 +84,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const campaignsRef = useRef<CampaignCell[]>(campaigns);
 
-  const handleTicketBought = useCallback((campaignId: string, ticketPrice: bigint) => {
+  const handleTicketBought = useCallback((campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => {
     setCampaigns((prev) =>
       prev.map((c) =>
         getCampaignStableId(c) === campaignId
@@ -64,6 +92,37 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
           : c
       )
     );
+
+    const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
+      const matchedRecord = prev.byCampaignId[campaignId]
+        ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
+        ?? Object.values(prev.byLegacyKey).find((record) => getRecordStableId(record) === campaignId);
+
+      if (!matchedRecord) {
+        return prev;
+      }
+
+      const nextRecord: CampaignRecord = {
+        ...matchedRecord,
+        liveSoldTicketCount: String(nextSoldTickets),
+      };
+      const shouldReplace = (record: CampaignRecord) => (
+        record === matchedRecord
+        || (!!record._id && !!matchedRecord._id && record._id === matchedRecord._id)
+      );
+      const replaceBucket = (bucket: Record<string, CampaignRecord>) => Object.fromEntries(
+        Object.entries(bucket).map(([key, value]) => [key, shouldReplace(value) ? nextRecord : value])
+      ) as Record<string, CampaignRecord>;
+
+      return {
+        byCampaignId: replaceBucket(prev.byCampaignId),
+        byTxHash: replaceBucket(prev.byTxHash),
+        byLegacyKey: replaceBucket(prev.byLegacyKey),
+      };
+    };
+
+    setRecordIndexes(updateIndexes);
+    setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
   }, []);
 
   const handleSettlementCompleted = useCallback((
@@ -168,8 +227,25 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
         return Array.isArray(data?.records) ? (data.records as CampaignRecord[]) : [];
       }),
     ])
-      .then(([chainCampaigns, records]) => {
-        const nextRecordIndexes = buildRecordIndexes(records);
+      .then(async ([chainCampaigns, records]) => {
+        const raffleCampaignIds = chainCampaigns
+          .filter((campaign) => campaign.data.campaignType === 4)
+          .map((campaign) => getCampaignStableId(campaign));
+        const participantCounts = raffleCampaignIds.length > 0
+          ? Object.fromEntries(await Promise.all(
+              raffleCampaignIds.map(async (campaignId) => {
+                try {
+                  const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(campaignId)}`, { cache: "no-store" });
+                  const data = await response.json().catch(() => null);
+                  const participants = response.ok && Array.isArray(data?.participants) ? data.participants : [];
+                  return [campaignId, participants.length] as const;
+                } catch {
+                  return [campaignId, 0] as const;
+                }
+              })
+            ))
+          : {};
+        const nextRecordIndexes = buildRecordIndexes(withLiveRaffleTicketCounts(chainCampaigns, records, participantCounts));
 
         // console.log("[campaign-records] fetched campaigns and records", {
         //   chainCampaigns: chainCampaigns.map((campaign) => ({

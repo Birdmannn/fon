@@ -20,6 +20,7 @@ export type ProfileTransactionKind =
   | "campaign_activate"
   | "campaign_participation"
   | "campaign_deposit"
+  | "simple_task_tip"
   | "campaign_settlement"
   | "campaign_reward";
 

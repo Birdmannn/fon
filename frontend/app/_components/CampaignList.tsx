@@ -29,8 +29,8 @@ type CampaignListProps = {
     settledRecipients?: CampaignRecord["settledRecipients"]
   ) => void;
   onStartDetailTransition: (href: string) => void;
-  onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
-  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
+  onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   shouldScrollToNewest: boolean;
 };
 

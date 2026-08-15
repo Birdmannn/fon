@@ -48,6 +48,8 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
   [CampaignType.Raffle]: "Raffle",
 };
 
+const GIFT_FUNDED_TASK_NOTICE = "Gift directives use FundedTask escrow behavior.";
+
 const MOUNTABLE_TRIGGER_HASHTAG = "mounted";
 
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];

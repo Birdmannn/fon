@@ -52,11 +52,12 @@ export function deriveRaffleSettlementUiState(args: {
   displayStatus: CampaignStatus;
   settlementTxHash?: string | null;
   soldTicketCount?: string | null;
+  liveSoldTickets?: bigint | null;
 }) {
-  const { campaign, displayStatus, settlementTxHash, soldTicketCount } = args;
+  const { campaign, displayStatus, settlementTxHash, soldTicketCount, liveSoldTickets: liveSoldTicketsOverride } = args;
   const isRaffleCampaign = campaign.data.campaignType === 4;
   const ticketPriceShannons = campaign.data.auxAmount > 0n ? campaign.data.auxAmount : 0n;
-  const liveSoldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n;
+  const liveSoldTickets = liveSoldTicketsOverride ?? (isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n);
   const hasSettlementRecord = typeof settlementTxHash === "string" && settlementTxHash.trim().length > 0;
   const snapshotSoldTickets = typeof soldTicketCount === "string" && soldTicketCount.trim().length > 0
     ? BigInt(soldTicketCount.trim())
