@@ -57,6 +57,7 @@ export function useCreateCampaignFlow<TMode extends string>({
   const [previewError, setPreviewError] = useState("");
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
   const [lockMountableSelected, setLockMountableSelected] = useState(false);
+  const [appMountablesSelected, setAppMountablesSelected] = useState(0);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
   const [mountableLockFbars, setMountableLockFbars] = useState("");
   const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
@@ -96,9 +97,11 @@ export function useCreateCampaignFlow<TMode extends string>({
   const openMountablesModal = useCallback(() => {
     const nextFormsMountable = createModalContentRef.current?.getFormsMountableConfig();
     const nextLockMountable = createModalContentRef.current?.getLockMountableConfig();
+    const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
 
     setFormsMountableSelected(Boolean(nextFormsMountable?.enabled));
     setLockMountableSelected(Boolean(nextLockMountable?.enabled));
+    setAppMountablesSelected(nextAppMountables.filter((entry) => entry.enabled).length);
     setMountableFormLinks([nextFormsMountable?.formUrl ?? ""]);
     setMountableLockFbars(nextLockMountable?.minimumFbars ?? "");
     setMountableFormValidationState("idle");
@@ -361,6 +364,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     finalizeCloseCreateModal,
     formsMountableSelected,
     lockMountableSelected,
+    appMountablesSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleSaveDraftChoice,
@@ -386,6 +390,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     setCreateModalStep,
     setFormsMountableSelected,
     setLockMountableSelected,
+    setAppMountablesSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
     setIsMountableLockFocused,

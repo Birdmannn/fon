@@ -1,6 +1,8 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
 import CampaignFeedHeaderBar from "@/app/_components/CampaignFeedHeaderBar";
 import CampaignList from "@/app/_components/CampaignList";
@@ -27,7 +29,9 @@ export default function CampaignFeedSection({
   onErrorChange,
   onSettlementInfoRequest,
 }: CampaignFeedSectionProps) {
+  const router = useRouter();
   const {
+    ensureLoaded,
     error,
     filteredCampaigns,
     handleRefresh,
@@ -42,9 +46,21 @@ export default function CampaignFeedSection({
     searchQuery,
     setSearchQuery,
     shouldScrollToNewest,
-    setShouldScrollToNewest,
+    clearShouldScrollToNewest,
     unseenCampaignBadgeLabel,
-  } = useCampaignFeed({ client, onErrorChange });
+  } = useCampaignFeed();
+
+  useEffect(() => {
+    ensureLoaded();
+  }, [ensureLoaded]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+
+    onErrorChange(error);
+  }, [error, onErrorChange]);
 
   return (
     <>
@@ -68,12 +84,12 @@ export default function CampaignFeedSection({
         loading={loading}
         error={error}
         shouldScrollToNewest={shouldScrollToNewest}
-        onScrolledToNewest={() => setShouldScrollToNewest(false)}
+        onScrolledToNewest={clearShouldScrollToNewest}
         onCommentDiscardRequest={onCommentDiscardRequest}
         commentDiscardDecision={commentDiscardDecision}
         onStartDetailTransition={(href) => {
           sessionStorage.setItem("freight:detail-expanding", "1");
-          window.location.href = href;
+          router.push(href);
         }}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
         onTicketBought={handleTicketBought}

@@ -2,7 +2,7 @@
 
 import { ccc } from "@ckb-ccc/connector-react";
 import { Check, CheckCircle, DollarSign, LockKeyhole, Scroll } from "lucide-react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
@@ -22,10 +22,15 @@ import {
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
+import {
+  appMountableSummary,
+  isAppMountableEnabled,
+  normalizeAppMountableConfigs,
+} from "@/app/_lib/appMountable";
 import { formsMountableSummary, isFormsMountableEnabled, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { canAccessLockMountable, getLockMountableBypassFbars, getLockMountableValidationState, isLockMountableEnabled, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
-import { useGoogleLink, type GoogleLinkPurpose } from "@/app/_hooks/useGoogleLink";
+import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
@@ -149,7 +154,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "mountables-lock" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
+type InfoModalMode = "about" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -158,6 +163,7 @@ export default function CampaignDetailPage() {
     open();
   }, [open]);
   const signer = ccc.useSigner();
+  const router = useRouter();
   const params = useParams<{ campaignId: string }>();
   const encodedCampaignIdParam = Array.isArray(params.campaignId) ? (params.campaignId[0] ?? "") : (params.campaignId ?? "");
   const rawCampaignIdParam = useMemo(() => {
@@ -505,9 +511,10 @@ export default function CampaignDetailPage() {
     sessionStorage.setItem(DETAIL_CONTRACTING_FLAG, "1");
     setShellWidthClass("campaign-shell-width");
     returnToFeedTimerRef.current = window.setTimeout(() => {
-      window.location.href = "/";
+      router.push("/");
+      returnToFeedTimerRef.current = null;
     }, SHELL_TRANSITION_MS);
-  }, []);
+  }, [router]);
 
 
   useEffect(() => {
@@ -864,7 +871,7 @@ export default function CampaignDetailPage() {
   const isGoogleLinkBusy = isHydratingGoogleLink || isLinkingGoogle;
   const isFormsGrantBusy = isGoogleLinkBusy || isRefreshingLinkedGoogleGrant || isVerifyingFormsAccess;
 
-  const handleBeginGoogleAccountLink = useCallback(async (purpose: GoogleLinkPurpose) => {
+  const handleBeginGoogleAccountLink = useCallback(async (purpose: "identity_link" | "forms_response_access") => {
     if (!signer) {
       openWalletWithSeed();
       return;
@@ -952,6 +959,14 @@ export default function CampaignDetailPage() {
         throw new Error(accessPayload?.error ?? "Failed to verify Google Forms response access");
       }
 
+      const nextFormsMountable = normalizeFormsMountableConfig({
+        ...formsMountableConfig,
+        verificationMode: "google_forms_api",
+        responseAccessEmail: accessPayload.access?.grantEmail ?? "",
+        responseAccessStatus: "verified",
+        responseAccessVerifiedAt: accessPayload.access?.verifiedAt ?? "",
+      });
+
       setSelectedRecord((current) => {
         if (!current) {
           return current;
@@ -961,16 +976,63 @@ export default function CampaignDetailPage() {
           ...current,
           mountables: {
             ...current.mountables,
-            forms: normalizeFormsMountableConfig({
-              ...(current.mountables?.forms ?? formsMountableConfig),
-              verificationMode: "google_forms_api",
-              responseAccessEmail: accessPayload.access?.grantEmail ?? "",
-              responseAccessStatus: "verified",
-              responseAccessVerifiedAt: accessPayload.access?.verifiedAt ?? "",
-            }),
+            forms: nextFormsMountable,
           },
         };
       });
+
+      if (selectedRecord?._id) {
+        const persistResponse = await fetch(`/api/campaign-records/${selectedRecord._id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title: selectedRecord.title ?? "",
+            description: selectedRecord.description ?? "",
+            campaignId: selectedRecord.campaignId ?? null,
+            createdByHash: selectedRecord.createdByHash ?? null,
+            chainCreatedAt: selectedRecord.chainCreatedAt ?? null,
+            campaignType: selectedRecord.campaignType ?? 0,
+            summaryDraft: selectedRecord.summaryDraft ?? "",
+            argsDraft: {
+              taskStartDelayHours: selectedRecord.argsDraft?.taskStartDelayHours ?? "0",
+              taskDurationHours: selectedRecord.argsDraft?.taskDurationHours ?? "0",
+              maxAmountCkb: selectedRecord.argsDraft?.maxAmountCkb ?? "0",
+              auxAmountCkb: selectedRecord.argsDraft?.auxAmountCkb ?? "0",
+              rewardCount: selectedRecord.argsDraft?.rewardCount ?? "0",
+            },
+            mountables: {
+              ...selectedRecord.mountables,
+              forms: nextFormsMountable,
+            },
+            socialMetadata: selectedRecord.socialMetadata ?? {},
+            giftDeliverable: selectedRecord.giftDeliverable ?? null,
+            creatorAddress: selectedRecord.creatorAddress ?? null,
+            creatorHandle: selectedRecord.creatorHandle ?? null,
+            status: selectedRecord.status ?? "published",
+            txHash: selectedRecord.txHash ?? null,
+            publishError: selectedRecord.publishError ?? null,
+            randomnessPreimage: selectedRecord.randomnessPreimage ?? null,
+            activatedTxHash: selectedRecord.activatedTxHash ?? null,
+            activatedAt: selectedRecord.activatedAt ?? null,
+            activatedByAddress: selectedRecord.activatedByAddress ?? null,
+            settlementTxHash: selectedRecord.settlementTxHash ?? null,
+            settledAt: selectedRecord.settledAt ?? null,
+            settledByAddress: selectedRecord.settledByAddress ?? null,
+            soldTicketCount: selectedRecord.soldTicketCount ?? null,
+            settledParticipantCount: selectedRecord.settledParticipantCount ?? null,
+            settledRecipients: selectedRecord.settledRecipients ?? null,
+          }),
+        });
+        const persistPayload = await persistResponse.json().catch(() => null) as {
+          error?: string;
+        } | null;
+        if (!persistResponse.ok) {
+          throw new Error(persistPayload?.error ?? "Failed to save Google Forms access state");
+        }
+      }
+
       await refreshLinkedGoogleGrant().catch(() => undefined);
       setCreatorFormsActionNotice(accessPayload.access?.grantEmail
         ? `Verified response access with ${accessPayload.access.grantEmail}.`
@@ -1422,6 +1484,9 @@ export default function CampaignDetailPage() {
       const metadata = [
         formsMountable.formId ? `Form ID ${formsMountable.formId}` : "",
         formsMountable.validatedAt ? `Validated ${new Date(formsMountable.validatedAt).toLocaleDateString()}` : "",
+        formsMountable.responseAccessStatus === "verified" && formsMountable.responseAccessVerifiedAt
+          ? `Access verified ${new Date(formsMountable.responseAccessVerifiedAt).toLocaleDateString()}`
+          : "",
       ].filter(Boolean);
 
       items.push({
@@ -1447,7 +1512,7 @@ export default function CampaignDetailPage() {
     }
 
     return items;
-  }, [selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
+  }, [formsMountableActions, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
   const commentsLocked = !canAccessLockMountable(selectedRecord?.mountables?.lock, currentUserProfile?.fbars);
   const commentsLockBypassFbars = getLockMountableBypassFbars(selectedRecord?.mountables?.lock);

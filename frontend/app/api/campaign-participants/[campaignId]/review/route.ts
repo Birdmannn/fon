@@ -87,7 +87,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
     const recordCollection = await getMongoCollection();
     const campaignRecord = await recordCollection.findOne({ campaignId: normalizedCampaignId }, { projection: { creatorAddress: 1 } });
     if (!campaignRecord?.creatorAddress || normalizeAddress(campaignRecord.creatorAddress) !== reviewedByAddress) {
-      return badRequest("Only the campaign creator can review forms claims", 403);
+      return badRequest("Only the campaign creator can review mounted participant claims", 403);
     }
 
     const googleSub = ensureOptionalString(payload.googleSub, "googleSub");

@@ -1,3 +1,4 @@
+import type { AppMountableConfig } from "@/app/_types/appMountable";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import type { GiftDeliverable } from "@/lib/giftDeliverables";
@@ -37,6 +38,7 @@ export type CampaignRecord = {
   mountables?: {
     forms?: FormsMountableConfig | null;
     lock?: LockMountableConfig | null;
+    apps?: AppMountableConfig[];
   };
   socialMetadata?: {
     mentions?: string[];

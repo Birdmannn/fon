@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getCampaignParticipantsCollection } from "@/lib/mongodb";
+import { getCampaignParticipantsCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
 
 type CampaignParticipantPayload = {
   campaignId?: unknown;
@@ -18,6 +18,8 @@ type CampaignParticipantPayload = {
   claimUnits?: unknown;
   claimSplitMode?: unknown;
   mountableType?: unknown;
+  mountableInstanceId?: unknown;
+  mountableKey?: unknown;
   verificationProvider?: unknown;
   googleSub?: unknown;
   googleEmail?: unknown;
@@ -26,6 +28,12 @@ type CampaignParticipantPayload = {
   reviewedAt?: unknown;
   reviewedByAddress?: unknown;
   reviewNote?: unknown;
+  effectiveAt?: unknown;
+  sourceUpdatedAt?: unknown;
+  childSatisfied?: unknown;
+  parentSatisfied?: unknown;
+  criteriaState?: unknown;
+  statusMessage?: unknown;
 };
 
 function badRequest(message: string, status = 400) {
@@ -76,6 +84,18 @@ function ensureOptionalNumber(value: unknown, field: string) {
   return value;
 }
 
+function ensureOptionalArray(value: unknown, field: string) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`${field} must be an array when provided`);
+  }
+
+  return value;
+}
+
 function normalizePayload(payload: CampaignParticipantPayload) {
   const campaignId = ensureString(payload.campaignId, "campaignId").toLowerCase();
   const createdByHash = ensureString(payload.createdByHash, "createdByHash").toLowerCase();
@@ -92,6 +112,8 @@ function normalizePayload(payload: CampaignParticipantPayload) {
   const claimUnits = ensureOptionalNumber(payload.claimUnits, "claimUnits");
   const claimSplitMode = ensureOptionalString(payload.claimSplitMode, "claimSplitMode")?.toLowerCase() ?? null;
   const mountableType = ensureOptionalString(payload.mountableType, "mountableType")?.toLowerCase() ?? null;
+  const mountableInstanceId = ensureOptionalString(payload.mountableInstanceId, "mountableInstanceId");
+  const mountableKey = ensureOptionalString(payload.mountableKey, "mountableKey");
   const verificationProvider = ensureOptionalString(payload.verificationProvider, "verificationProvider")?.toLowerCase() ?? null;
   const googleSub = ensureOptionalString(payload.googleSub, "googleSub");
   const googleEmail = ensureOptionalString(payload.googleEmail, "googleEmail")?.toLowerCase() ?? null;
@@ -100,6 +122,12 @@ function normalizePayload(payload: CampaignParticipantPayload) {
   const reviewedAt = ensureOptionalString(payload.reviewedAt, "reviewedAt");
   const reviewedByAddress = ensureOptionalString(payload.reviewedByAddress, "reviewedByAddress")?.toLowerCase() ?? null;
   const reviewNote = ensureOptionalString(payload.reviewNote, "reviewNote");
+  const effectiveAt = ensureOptionalString(payload.effectiveAt, "effectiveAt");
+  const sourceUpdatedAt = ensureOptionalString(payload.sourceUpdatedAt, "sourceUpdatedAt");
+  const childSatisfied = ensureOptionalBoolean(payload.childSatisfied, "childSatisfied");
+  const parentSatisfied = ensureOptionalBoolean(payload.parentSatisfied, "parentSatisfied");
+  const criteriaState = ensureOptionalArray(payload.criteriaState, "criteriaState");
+  const statusMessage = ensureOptionalString(payload.statusMessage, "statusMessage");
 
   if (!Number.isInteger(campaignType)) {
     throw new Error("campaignType must be an integer");
@@ -125,6 +153,8 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     claimUnits,
     claimSplitMode,
     mountableType,
+    mountableInstanceId,
+    mountableKey,
     verificationProvider,
     googleSub,
     googleEmail,
@@ -133,6 +163,12 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     reviewedAt,
     reviewedByAddress,
     reviewNote,
+    effectiveAt,
+    sourceUpdatedAt,
+    childSatisfied,
+    parentSatisfied,
+    criteriaState,
+    statusMessage,
   };
 }
 
@@ -187,9 +223,68 @@ export async function GET(request: Request) {
       return badRequest("campaignId is required");
     }
 
+    const participantAddress = url.searchParams.get("participantAddress")?.trim().toLowerCase();
+    const mountableType = url.searchParams.get("mountableType")?.trim().toLowerCase();
+    const mountableInstanceId = url.searchParams.get("mountableInstanceId")?.trim();
+    const at = url.searchParams.get("at")?.trim();
+
+    if (at && mountableType !== "app") {
+      return badRequest("as-of queries currently require mountableType=app");
+    }
+
+    if (at) {
+      const historyCollection = await getMountableAppUpdatesCollection();
+      const historyQuery: Record<string, unknown> = {
+        campaignId,
+        effectiveAt: { $lte: at },
+      };
+      if (participantAddress) {
+        historyQuery.participantAddress = participantAddress;
+      }
+      if (mountableInstanceId) {
+        historyQuery.mountableInstanceId = mountableInstanceId;
+      }
+
+      const history = await historyCollection
+        .find(historyQuery, {
+          sort: {
+            participantAddress: 1,
+            mountableInstanceId: 1,
+            effectiveAt: -1,
+            createdAt: -1,
+          },
+        })
+        .toArray();
+
+      const latestByKey = new Map<string, Record<string, unknown>>();
+      for (const entry of history) {
+        const candidate = entry as Record<string, unknown>;
+        const addressKey = typeof candidate.participantAddress === "string" ? candidate.participantAddress.trim().toLowerCase() : "";
+        const instanceKey = typeof candidate.mountableInstanceId === "string" ? candidate.mountableInstanceId.trim() : "";
+        const dedupeKey = `${addressKey}:${instanceKey}`;
+        if (!addressKey || !instanceKey || latestByKey.has(dedupeKey)) {
+          continue;
+        }
+        latestByKey.set(dedupeKey, candidate);
+      }
+
+      return NextResponse.json({ participants: Array.from(latestByKey.values()) });
+    }
+
     const collection = await getCampaignParticipantsCollection();
+    const query: Record<string, unknown> = { campaignId };
+    if (participantAddress) {
+      query.participantAddress = participantAddress;
+    }
+    if (mountableType) {
+      query.mountableType = mountableType;
+    }
+    if (mountableInstanceId) {
+      query.mountableInstanceId = mountableInstanceId;
+    }
+
     const participants = await collection
-      .find({ campaignId }, { sort: { joinedAt: 1 } })
+      .find(query, { sort: { joinedAt: 1 } })
       .toArray();
 
     const sanitizedParticipants = participants.map((participant) => {

@@ -40,6 +40,8 @@ export const USER_PROFILES_COLLECTION = "userProfiles";
 export const GOOGLE_LINK_CODES_COLLECTION = "googleLinkCodes";
 export const GOOGLE_OAUTH_GRANTS_COLLECTION = "googleOAuthGrants";
 export const FBAR_EVENTS_COLLECTION = "fbarEvents";
+export const MOUNTABLE_APPS_COLLECTION = "mountableApps";
+export const MOUNTABLE_APP_UPDATES_COLLECTION = "mountableAppUpdates";
 
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();
@@ -69,4 +71,14 @@ export async function getGoogleOAuthGrantsCollection() {
 export async function getFbarEventsCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(FBAR_EVENTS_COLLECTION);
+}
+
+export async function getMountableAppsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APPS_COLLECTION);
+}
+
+export async function getMountableAppUpdatesCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APP_UPDATES_COLLECTION);
 }

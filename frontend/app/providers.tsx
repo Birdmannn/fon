@@ -3,6 +3,7 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
+import { CampaignFeedProvider } from "@/app/_hooks/useCampaignFeed";
 import type { LightModePrimaryColor } from "@/lib/lightModePrimaryColor";
 import {
   applyLightModePrimaryColorToDocument,
@@ -76,10 +77,12 @@ export function useLightModePrimaryColor() {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ccc.Provider defaultClient={defaultClient}>
-      <LightModePrimaryColorController>
-        <BlinkController />
-        {children}
-      </LightModePrimaryColorController>
+      <CampaignFeedProvider>
+        <LightModePrimaryColorController>
+          <BlinkController />
+          {children}
+        </LightModePrimaryColorController>
+      </CampaignFeedProvider>
     </ccc.Provider>
   );
 }

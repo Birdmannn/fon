@@ -1,13 +1,13 @@
 "use client";
 
-import { LockKeyhole, Scroll } from "lucide-react";
+import { Blocks, LockKeyhole, Scroll } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type CampaignMountableItem = {
   actions?: ReactNode;
   description: string;
   href?: string;
-  icon?: "forms" | "lock";
+  icon?: "app" | "forms" | "lock";
   key: string;
   metadata?: string[];
   proofInstructions?: string;
@@ -39,6 +39,8 @@ export default function CampaignMountablesPanel({
                 <span className="campaign-card-mounted-icon" title={`${item.title} mounted`} aria-label={`${item.title} mounted`}>
                   {item.icon === "lock" ? (
                     <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : item.icon === "app" ? (
+                    <Blocks size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <Scroll size={22} strokeWidth={2} aria-hidden="true" />
                   )}

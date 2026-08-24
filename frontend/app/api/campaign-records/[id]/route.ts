@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
+import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
@@ -26,6 +27,7 @@ type CampaignRecordPayload = {
   mountables?: {
     forms?: unknown;
     lock?: unknown;
+    apps?: unknown;
   };
   socialMetadata?: {
     mentions?: unknown;
@@ -284,6 +286,11 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
   const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
   const lockMountable = ensureOptionalLockMountable(payload.mountables?.lock);
+  const appMountables = ensureOptionalAppMountables(payload.mountables?.apps, {
+    baseTimestamp: chainCreatedAt,
+    taskStartDelayHours,
+    taskDurationHours,
+  });
   const giftDeliverable = parseStoredGiftDeliverable(payload.giftDeliverable);
 
   return {
@@ -305,6 +312,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     mountables: {
       forms: formsMountable,
       lock: lockMountable,
+      apps: appMountables,
     },
     socialMetadata: {
       mentions,

@@ -5,6 +5,10 @@ import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "luc
 
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  appMountableSummary,
+  normalizeAppMountableConfigs,
+} from "@/app/_lib/appMountable";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import {
   DEFAULT_LOCK_MOUNTABLE_CONFIG,
@@ -13,9 +17,11 @@ import {
 } from "@/app/_lib/lockMountable";
 import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import type { AppMountableConfig } from "@/app/_types/appMountable";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import { CampaignType } from "@/lib/contract";
+import type { VerifyMountableAppCampaignContext } from "@/lib/fonMountablesSdk";
 import type { GoogleFormsAccessVerification } from "@/lib/googleFormsApi";
 import {
   MIN_TASK_DURATION_MINUTES,
@@ -256,6 +262,7 @@ type DraftRecord = {
   mountables?: {
     forms?: FormsMountableConfig | null;
     lock?: LockMountableConfig | null;
+    apps?: AppMountableConfig[] | null;
   };
   socialMetadata?: {
     mentions?: string[];
@@ -286,6 +293,7 @@ type DraftSnapshot = {
   giftDeliverable: GiftDeliverable;
   formsMountable?: FormsMountableConfig;
   lockMountable?: LockMountableConfig;
+  appMountables?: AppMountableConfig[];
 };
 
 type CreateModalResumeState = {
@@ -321,8 +329,11 @@ export type CreateCampaignModalContentHandle = {
   applyDraftSelection: (draftId: string) => void;
   getFormsMountableConfig: () => FormsMountableConfig;
   getLockMountableConfig: () => LockMountableConfig;
+  getAppMountableConfigs: () => AppMountableConfig[];
+  getAppMountableCampaignContext: () => VerifyMountableAppCampaignContext;
   setFormsMountableEnabled: (enabled: boolean) => void;
   setLockMountableEnabled: (enabled: boolean) => void;
+  setAppMountableConfigs: (mountables: AppMountableConfig[]) => void;
   updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
   updateLockMountableConfig: (updates: Partial<LockMountableConfig>) => void;
   persistCurrentDraft: () => Promise<void>;
@@ -348,7 +359,7 @@ type CreateCampaignModalContentProps = {
   onDraftSelectionRequest?: (draftId: string) => void;
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
   onMountableSelectionRequired?: () => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean }) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
   availableFbars?: number;
 };
 
@@ -360,6 +371,7 @@ function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
     summaryDraft: snapshot.summaryDraft.trim(),
     mentions: [...snapshot.mentions],
     giftDeliverable: snapshot.giftDeliverable,
+    appMountables: normalizeAppMountableConfigs(snapshot.appMountables),
   };
 }
 
@@ -428,6 +440,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const hasRestoredResumeStateRef = useRef(false);
   const formsMountableRef = useRef<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
   const lockMountableRef = useRef<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+  const appMountablesRef = useRef<AppMountableConfig[]>([]);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -441,6 +454,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+  const [appMountables, setAppMountables] = useState<AppMountableConfig[]>([]);
   const [giftApprovalMode, setGiftApprovalMode] = useState<GiftApprovalMode>("all");
   const [giftApprovalThreshold, setGiftApprovalThreshold] = useState("1");
   const [giftSplitMode, setGiftSplitMode] = useState<GiftSplitMode | null>(null);
@@ -682,8 +696,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftDeliverable: giftDeliverableDraft,
     formsMountable,
     lockMountable,
+    appMountables,
   }), [
     allMentions,
+    appMountables,
     campaignType,
     currentAuxAmountCkb,
     currentDraftSummary,
@@ -697,6 +713,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     trimmedModalDescription,
     trimmedModalTitle,
   ]);
+  const currentAppMountableCampaignContext = useMemo<VerifyMountableAppCampaignContext>(() => ({
+    campaignId: activeDraftRecord?.campaignId ?? null,
+    createdByHash: activeDraftRecord?.createdByHash ?? null,
+    chainCreatedAt: activeDraftRecord?.chainCreatedAt ?? new Date().toISOString(),
+    campaignType,
+    taskStartDelayHours,
+    taskDurationHours,
+    startsAt: null,
+    endsAt: null,
+  }), [activeDraftRecord?.campaignId, activeDraftRecord?.chainCreatedAt, activeDraftRecord?.createdByHash, campaignType, taskDurationHours, taskStartDelayHours]);
   const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
   const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
   const mountedFormUrl = formsMountable.canonicalFormUrl?.trim() || formsMountable.formUrl.trim();
@@ -760,6 +786,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   useEffect(() => {
     lockMountableRef.current = lockMountable;
   }, [lockMountable]);
+
+  useEffect(() => {
+    appMountablesRef.current = appMountables;
+  }, [appMountables]);
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
@@ -1028,8 +1058,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setGiftRatioEntries([]);
     setGiftResolvedAddresses({});
     setGiftResolutionWarnings([]);
+    formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
+    lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
+    appMountablesRef.current = [];
     setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
     setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+    setAppMountables([]);
     setModalStep("compose");
     setReviewSummary("");
     setActiveDraftRecordId(null);
@@ -1484,9 +1518,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
     const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
     const nextLockMountable = normalizeLockMountableConfig(nextSnapshot.lockMountable);
+    const nextAppMountables = normalizeAppMountableConfigs(nextSnapshot.appMountables);
 
     formsMountableRef.current = nextFormsMountable;
     lockMountableRef.current = nextLockMountable;
+    appMountablesRef.current = nextAppMountables;
     setModalTitle(nextSnapshot.title);
     setModalDescription(nextSnapshot.description);
     setSummary(nextSnapshot.description);
@@ -1511,6 +1547,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
     setFormsMountable(nextFormsMountable);
     setLockMountable(nextLockMountable);
+    setAppMountables(nextAppMountables);
     setActiveDraftRecordId(resumeState.activeDraftRecordId);
     setModalStep(resumeState.modalStep);
     setIsDraftListOpen(false);
@@ -1623,9 +1660,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb(nextMaxAmount);
     setRewardCount(nextRewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
+    const nextFormsMountable = normalizeFormsMountableConfig(record.mountables?.forms);
+    const nextLockMountable = normalizeLockMountableConfig(record.mountables?.lock);
+    const nextAppMountables = normalizeAppMountableConfigs(record.mountables?.apps);
+
+    formsMountableRef.current = nextFormsMountable;
+    lockMountableRef.current = nextLockMountable;
+    appMountablesRef.current = nextAppMountables;
+
     setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
-    setFormsMountable(normalizeFormsMountableConfig(record.mountables?.forms));
-    setLockMountable(normalizeLockMountableConfig(record.mountables?.lock));
+    setFormsMountable(nextFormsMountable);
+    setLockMountable(nextLockMountable);
+    setAppMountables(nextAppMountables);
     setActiveDraftRecordId(record._id ?? null);
     setModalStep("compose");
     setIsDraftListOpen(false);
@@ -1649,8 +1695,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       auxAmountCkb: nextAuxAmount,
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
-      formsMountable: normalizeFormsMountableConfig(record.mountables?.forms),
-      lockMountable: normalizeLockMountableConfig(record.mountables?.lock),
+      formsMountable: nextFormsMountable,
+      lockMountable: nextLockMountable,
+      appMountables: nextAppMountables,
     });
     setLastSavedSnapshot(nextSnapshot);
 
@@ -1794,6 +1841,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         mountables: {
           forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
           lock: lockMountableRef.current.enabled ? lockMountableRef.current : null,
+          apps: appMountablesRef.current.filter((entry) => entry.enabled),
         },
         socialMetadata: {
           mentions: allMentions,
@@ -1816,6 +1864,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [
       activeDraftRecord,
       allMentions,
+      appMountables,
       campaignType,
       formsMountable,
       lockMountable,
@@ -1879,6 +1928,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           giftDeliverable: giftDeliverableDraft,
           formsMountable,
           lockMountable,
+          appMountables,
         });
         setLastSavedSnapshot(nextSnapshot);
 
@@ -1902,6 +1952,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             mountables: {
               forms: formsMountable.enabled ? formsMountable : null,
               lock: lockMountable.enabled ? lockMountable : null,
+              apps: appMountables.filter((entry) => entry.enabled),
             },
             socialMetadata: {
               mentions: allMentions,
@@ -1937,9 +1988,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
     },
     [
+      activeDraftRecord,
       activeDraftRecordId,
-      buildDraftPayload,
       allMentions,
+      appMountables,
+      buildDraftPayload,
       campaignType,
       giftDeliverableDraft,
       maxAmountCkb,
@@ -2225,6 +2278,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     });
   }, []);
 
+  const handleSetAppMountableConfigs = useCallback((mountables: AppMountableConfig[]) => {
+    const nextConfigs = normalizeAppMountableConfigs(mountables);
+    appMountablesRef.current = nextConfigs;
+    setAppMountables(nextConfigs);
+  }, []);
+
   useImperativeHandle(ref, () => ({
     hasDraftableChanges: () => hasDraftableChanges,
     saveDraftFromClose: handleSaveDraftFromClose,
@@ -2233,8 +2292,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     applyDraftSelection: handleApplyDraftSelection,
     getFormsMountableConfig: () => formsMountable,
     getLockMountableConfig: () => lockMountable,
+    getAppMountableConfigs: () => appMountables,
+    getAppMountableCampaignContext: () => currentAppMountableCampaignContext,
     setFormsMountableEnabled: handleSetFormsMountableEnabled,
     setLockMountableEnabled: handleSetLockMountableEnabled,
+    setAppMountableConfigs: handleSetAppMountableConfigs,
     updateFormsMountableConfig: handleUpdateFormsMountableConfig,
     updateLockMountableConfig: handleUpdateLockMountableConfig,
     persistCurrentDraft: async () => {
@@ -2242,12 +2304,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     },
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
   }), [
+    appMountables,
+    currentAppMountableCampaignContext,
     currentDraftSummary,
     formsMountable,
     handleAdvanceToReview,
     handleApplyDraftSelection,
     handleDiscardDraftSession,
     handleSaveDraftFromClose,
+    handleSetAppMountableConfigs,
     handleSetFormsMountableEnabled,
     handleSetLockMountableEnabled,
     handleToggleDraftList,
@@ -2275,8 +2340,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       hasMountedHashtag,
       formsSelected: formsMountable.enabled,
       lockSelected: lockMountable.enabled,
+      appMountablesSelected: appMountables.filter((entry) => entry.enabled).length,
     });
-  }, [formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
+  }, [appMountables, formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
 
   const finalizePublishedRecordSync = useCallback(
     async (sync: PendingPublishedRecordSync) => {
@@ -2894,6 +2960,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           {lockMountable.enabled && lockMountable.minimumFbars.trim().length > 0 ? (
             <p className="create-review-preview-body">Mounted lock: {lockMountableSummary(lockMountable)}</p>
           ) : null}
+          {appMountables.filter((entry) => entry.enabled).map((mountable) => (
+            <p key={mountable.mountableInstanceId || mountable.appId} className="create-review-preview-body">
+              Mounted app: {appMountableSummary(mountable)}
+            </p>
+          ))}
           {createPreviewLines.length > 0 ? (
             <div className="create-review-preview-content">
               {createPreviewLines.map((line, index) => {

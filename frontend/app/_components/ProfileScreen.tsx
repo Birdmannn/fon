@@ -54,7 +54,7 @@ const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "mountables-lock" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
+type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
 
 const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
