@@ -85,6 +85,7 @@ fn dispatch_instruction(instruction: u8, instruction_args: &[u8]) -> Result<(), 
         5 => submit_randomness_hash(instruction_args),
         6 => cancel_campaign(instruction_args),
         7 => refund(instruction_args),
+        8 => creator_withdraw(instruction_args),
         _ => {
             debug!("Invalid instruction selector: {}", instruction);
             Err(Error::UnknownScriptArgs)

@@ -15,7 +15,7 @@ import {
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { CampaignStatus } from "@/lib/contract";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
-import { decodeSummary } from "@/lib/encoding";
+import { decodeSummary, hasSplitSupportAccounting } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
@@ -161,6 +161,11 @@ export default function CampaignCardSurface({
   const mentions = record?.socialMetadata?.mentions ?? [];
   const giftDeliverable = record?.giftDeliverable;
   const rewardCountValue = Number(data.rewardCount);
+  const supportPoolPercent = Number.parseInt(
+    record?.argsDraft?.raffleSupportPoolPercent
+      ?? (hasSplitSupportAccounting(data) ? String(Number(data.supportPoolBps / 100n)) : "0"),
+    10
+  );
   const shouldGlowSettlement = deriveRaffleSettlementUiState({
     campaign,
     displayStatus,
@@ -244,6 +249,12 @@ export default function CampaignCardSurface({
                 <>
                   <span className="font-medium text-gray-800">then:</span>
                   <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`}>take {String(rewardCountValue)}</span>
+                  {supportPoolPercent > 0 ? (
+                    <>
+                      <span className="font-medium text-gray-800">with:</span>
+                      <span className="campaign-card-ticket-price">{supportPoolPercent}%</span>
+                    </>
+                  ) : null}
                 </>
               )}
             </>

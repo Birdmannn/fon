@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Blocks,
   Check,
   CheckCircle,
   DollarSign,
@@ -15,6 +16,7 @@ import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountablesPanel from "@/app/_components/MountablesPanel";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
@@ -30,6 +32,9 @@ import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_l
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
+import { markProfileFreightsDirty } from "@/app/_hooks/useProfileFreights";
+import { markProfileTransactionsDirty } from "@/app/_hooks/useProfileTransactions";
 import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
@@ -79,17 +84,20 @@ export default function Home() {
   useLayoutEffect(() => {
     const shouldContractFromDetail = sessionStorage.getItem(DETAIL_CONTRACTING_FLAG) === "1";
 
-    if (shouldContractFromDetail) {
-      sessionStorage.removeItem(DETAIL_CONTRACTING_FLAG);
-      setShellWidthClass("campaign-shell-width-md");
-      const frameId = window.requestAnimationFrame(() => {
-        setShellWidthClass("campaign-shell-width");
-      });
-
-      return () => {
-        window.cancelAnimationFrame(frameId);
-      };
+    if (!shouldContractFromDetail) {
+      setShellWidthClass("campaign-shell-width");
+      return;
     }
+
+    sessionStorage.removeItem(DETAIL_CONTRACTING_FLAG);
+    setShellWidthClass("campaign-shell-width-md");
+    const timeoutId = window.setTimeout(() => {
+      setShellWidthClass("campaign-shell-width");
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
   }, []);
 
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
@@ -119,6 +127,18 @@ export default function Home() {
     return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
   }, [currentUserProfile?.username, walletAddress]);
   const canEditLightModePrimaryColor = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
+  const markCurrentProfileDataDirty = useCallback(() => {
+    const nextAddress = currentUserProfile?.address ?? walletAddress ?? null;
+    const nextHandle = currentUserProfile?.username ?? null;
+    const dirtyArgs = {
+      address: nextAddress,
+      handle: nextAddress ? null : nextHandle,
+    };
+
+    markProfileAnalyticsDirty(dirtyArgs);
+    markProfileFreightsDirty(dirtyArgs);
+    markProfileTransactionsDirty(dirtyArgs);
+  }, [currentUserProfile?.address, currentUserProfile?.username, walletAddress]);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -183,6 +203,8 @@ export default function Home() {
   });
 
   const {
+    appsMountableSelected,
+    appMountablesSelected,
     constraintStatus,
     createModalContentRef,
     createModalStep,
@@ -190,15 +212,24 @@ export default function Home() {
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
-    lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
+    handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
+    handleSelectMountableAppId,
+    handleToggleSelectedMountablePrinciple,
+    handleVerifySelectedMountableApp,
     isCreateDraftListOpen,
     isCreateModalClosing,
+    isMountableAppsLoading,
     isMountableFormFocused,
     isMountableLockFocused,
     isMountablesContinuing,
+    isVerifyingMountableApp,
+    lockMountableSelected,
+    mountedAppConfigs,
+    mountableAppInstallToken,
+    mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
     mountableFormValidationState,
@@ -208,25 +239,31 @@ export default function Home() {
     openMountablesModal,
     openSubmissionSuccessInfoModal,
     previewError,
+    registeredMountableApps,
     requestCloseCreateModal,
+    resetCreateInfoModalState,
     resetCreateModal,
     saveDraftPromptError,
+    selectedMountableAppId,
+    selectedMountablePrincipleIds,
+    setAppMountablesSelected,
+    setAppsMountableSelected,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
-    setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
     setIsMountableLockFocused,
     setIsMountablesContinuing,
+    setLockMountableSelected,
+    setMountedAppConfigs,
+    setMountableAppInstallToken,
     setMountableFormLinks,
     setMountableLockFbars,
     setMountableFormValidationState,
     setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
-    setSaveDraftPromptError,
-    setSubmissionSuccessPreimage,
     setSubmissionSuccessTxHash,
     showCreateModal,
     submissionSuccessTxHash,
@@ -247,6 +284,7 @@ export default function Home() {
   });
 
   const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
+    markCurrentProfileDataDirty();
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
@@ -259,7 +297,7 @@ export default function Home() {
     submissionSuccessTimerRef.current = setTimeout(() => {
       closeInfoModal();
     }, 3000);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, setSubmissionSuccessTxHash, submissionSuccessTimerRef]);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, markCurrentProfileDataDirty, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, setSubmissionSuccessTxHash, submissionSuccessTimerRef]);
 
   const {
     handleTicketPurchaseSubmit,
@@ -400,6 +438,14 @@ export default function Home() {
     setShowInfoModal(true);
   }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
 
+  const resetHomeInfoModalState = useCallback(() => {
+    resetCreateInfoModalState();
+    setSubmissionErrorMessage("");
+    setSettlementModalData(null);
+    setIsLoadingSettlementModal(false);
+    resetTicketPurchaseState();
+  }, [resetCreateInfoModalState, resetTicketPurchaseState]);
+
   const openInsufficientFbarsInfoModal = useCallback(() => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
@@ -409,32 +455,17 @@ export default function Home() {
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
     submissionSuccessTimerRef.current = setTimeout(() => {
-      closeInfoModal(() => {
-        setInfoModalMode("about");
-        setSaveDraftPromptError("");
-        setSubmissionSuccessTxHash("");
-        setSubmissionSuccessPreimage(null);
-        setSubmissionErrorMessage("");
-        setSettlementModalData(null);
-        setIsLoadingSettlementModal(false);
-        resetTicketPurchaseState();
-      });
+      closeInfoModal(resetHomeInfoModalState);
     }, 3000);
   }, [
     clearInfoCloseTimer,
     clearInfoHideTimer,
     clearSubmissionSuccessTimer,
     closeInfoModal,
-    resetTicketPurchaseState,
+    resetHomeInfoModalState,
     setInfoModalInteraction,
     setIsInfoModalClosing,
-    setIsLoadingSettlementModal,
-    setSaveDraftPromptError,
-    setSettlementModalData,
     setShowInfoModal,
-    setSubmissionErrorMessage,
-    setSubmissionSuccessPreimage,
-    setSubmissionSuccessTxHash,
     submissionSuccessTimerRef,
   ]);
 
@@ -708,6 +739,26 @@ export default function Home() {
             </span>
           </span>
         </button>
+        <button
+          type="button"
+          className={`create-mountable-option ${appsMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={appsMountableSelected ? `Manage ${appMountablesSelected} app mountable${appMountablesSelected === 1 ? "" : "s"}` : "Open app mountables"}
+          aria-pressed={appsMountableSelected}
+          data-tooltip={appMountablesSelected > 0 ? `Apps (${appMountablesSelected})` : "Apps"}
+          onClick={() => {
+            transitionMountablesModal("mountables-apps");
+            setMountablesPromptError("");
+          }}
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <Blocks size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+            </span>
+          </span>
+        </button>
       </div>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
@@ -782,6 +833,25 @@ export default function Home() {
         ))}
       </div>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-apps" ? (
+    <MountableAppsConfigurator
+      errorMessage={mountableAppsError || mountablesPromptError}
+      isMountableAppsLoading={isMountableAppsLoading}
+      isVerifyingMountableApp={isVerifyingMountableApp}
+      mountedAppConfigs={mountedAppConfigs}
+      mountableAppInstallToken={mountableAppInstallToken}
+      onInstallTokenChange={(value) => {
+        setMountableAppInstallToken(value);
+        setMountablesPromptError("");
+      }}
+      onRemoveMountedAppConfig={handleRemoveMountedAppConfig}
+      onSelectMountableAppId={handleSelectMountableAppId}
+      onToggleSelectedMountablePrinciple={handleToggleSelectedMountablePrinciple}
+      onVerifySelectedMountableApp={handleVerifySelectedMountableApp}
+      registeredMountableApps={registeredMountableApps}
+      selectedMountableAppId={selectedMountableAppId}
+      selectedMountablePrincipleIds={selectedMountablePrincipleIds}
+    />
   ) : showCreateModal && isCreateDraftListOpen ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Drafts:</p>
@@ -928,12 +998,24 @@ export default function Home() {
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected && !lockMountableSelected) {
+          if (!formsMountableSelected && !lockMountableSelected && appMountablesSelected === 0) {
             setMountablesPromptError("Select a mountable to continue.");
             return;
           }
 
-          transitionMountablesModal(lockMountableSelected ? "mountables-lock" : "mountables-forms");
+          if (lockMountableSelected) {
+            transitionMountablesModal("mountables-lock");
+            setMountablesPromptError("");
+            return;
+          }
+
+          if (formsMountableSelected) {
+            transitionMountablesModal("mountables-forms");
+            setMountablesPromptError("");
+            return;
+          }
+
+          transitionMountablesModal("mountables-apps");
           setMountablesPromptError("");
         }}
       >
@@ -963,14 +1045,17 @@ export default function Home() {
                 return;
               }
 
+              if (appMountablesSelected > 0) {
+                transitionMountablesModal("mountables-apps");
+                setMountablesPromptError("");
+                return;
+              }
+
               setIsMountablesContinuing(true);
               setMountablesPromptError("");
               await createModalContentRef.current?.persistCurrentDraft();
 
-              closeInfoModal(() => {
-                setInfoModalMode("about");
-                setMountablesPromptError("");
-              });
+              closeInfoModal(resetHomeInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
               setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted lock");
@@ -1024,12 +1109,16 @@ export default function Home() {
                 validatedAt,
               });
               setMountableFormLinks([canonicalFormUrl]);
+
+              if (appMountablesSelected > 0) {
+                transitionMountablesModal("mountables-apps");
+                setMountablesPromptError("");
+                return;
+              }
+
               await createModalContentRef.current?.persistCurrentDraft();
 
-              closeInfoModal(() => {
-                setInfoModalMode("about");
-                setMountablesPromptError("");
-              });
+              closeInfoModal(resetHomeInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
               setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted Google Form");
@@ -1040,6 +1129,44 @@ export default function Home() {
         }}
       >
         {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-apps" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn"
+        onClick={() => transitionMountablesModal(formsMountableSelected ? "mountables-forms" : lockMountableSelected ? "mountables-lock" : "mountables")}
+        disabled={isMountablesContinuing || isVerifyingMountableApp}
+      >
+        Back
+      </button>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || isVerifyingMountableApp}
+        onClick={() => {
+          void (async () => {
+            try {
+              if (mountedAppConfigs.length === 0) {
+                setMountablesPromptError("Verify at least one app before continuing.");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+              await createModalContentRef.current?.persistCurrentDraft();
+              closeInfoModal(resetHomeInfoModalState);
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save mounted apps");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : "Continue"}
       </button>
     </div>
   ) : infoModalMode === "discard-comment-confirm" ? (
@@ -1083,49 +1210,14 @@ export default function Home() {
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
-            setInfoModalMode("about");
-            setSaveDraftPromptError("");
-            setSubmissionSuccessTxHash("");
-            setSubmissionSuccessPreimage(null);
-            setSubmissionErrorMessage("");
-            setSettlementModalData(null);
-            setIsLoadingSettlementModal(false);
-            resetTicketPurchaseState();
-          })}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
-          onInfoModalRequestClose={() => closeInfoModal(() => {
-            setInfoModalMode("about");
-            setSaveDraftPromptError("");
-            setSubmissionSuccessTxHash("");
-            setSubmissionSuccessPreimage(null);
-            setSubmissionErrorMessage("");
-            setSettlementModalData(null);
-            setIsLoadingSettlementModal(false);
-          })}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
-            setInfoModalMode("about");
-            setSaveDraftPromptError("");
-            setSubmissionSuccessTxHash("");
-            setSubmissionSuccessPreimage(null);
-            setSubmissionErrorMessage("");
-            setSettlementModalData(null);
-            setIsLoadingSettlementModal(false);
-            resetTicketPurchaseState();
-          })}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), () => {
-            setInfoModalMode("about");
-            setSaveDraftPromptError("");
-            setSubmissionSuccessTxHash("");
-            setSubmissionSuccessPreimage(null);
-            setSubmissionErrorMessage("");
-            setSettlementModalData(null);
-            setIsLoadingSettlementModal(false);
-            resetTicketPurchaseState();
-          })}
+          onInfoModalRequestClose={() => closeInfoModal(resetHomeInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
@@ -1172,6 +1264,7 @@ export default function Home() {
           commentDiscardDecision={commentDiscardDecision}
           onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
           onErrorChange={handleFreightsLoadError}
+          onProfileDataChanged={markCurrentProfileDataDirty}
           onSettlementInfoRequest={(data) => {
             setSettlementModalData(data);
             setIsLoadingSettlementModal(false);
@@ -1192,10 +1285,15 @@ export default function Home() {
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
-        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected, lockSelected }) => {
+        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected, lockSelected, appMountablesSelected: nextAppMountablesSelected }) => {
+          const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
+          const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
           setFormsMountableSelected(formsSelected);
           setLockMountableSelected(lockSelected);
-          if (!hasMountedHashtag) {
+          setAppsMountableSelected(nextAppMountablesSelected > 0);
+          setAppMountablesSelected(nextAppMountablesSelected);
+          setMountedAppConfigs(nextEnabledAppMountables);
+          if (!hasMountedHashtag && nextAppMountablesSelected === 0) {
             setMountablesPromptError("");
           }
         }}
@@ -1203,6 +1301,7 @@ export default function Home() {
         onPreviewErrorChange={setPreviewError}
         onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
+          markCurrentProfileDataDirty();
           openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Copy, Fingerprint } from "lucide-react";
+import Link from "next/link";
 import { type MouseEventHandler, type ReactNode, type RefObject, useCallback } from "react";
 
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
@@ -248,15 +249,16 @@ export default function AppShellHeader({
                         </div>
                       ) : null}
                       {walletActionHref ? (
-                        <a
+                        <Link
                           href={walletActionHref}
                           className="wallet-info-introspect-btn"
                           onClick={onWalletActionClick}
                           aria-label={walletActionLabel ?? "Introspect"}
                           title={walletActionLabel ?? "Introspect"}
+                          scroll={false}
                         >
                           {walletActionIcon ?? <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />}
-                        </a>
+                        </Link>
                       ) : null}
                     </div>
                   ) : null}

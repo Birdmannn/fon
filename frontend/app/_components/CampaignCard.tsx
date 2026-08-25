@@ -42,6 +42,13 @@ type CampaignCardProps = {
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"]
   ) => void;
+  onWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -61,6 +68,7 @@ export default function CampaignCard({
   onTicketPurchaseRequest,
   onTicketBought,
   onSettlementCompleted,
+  onWithdrawalCompleted,
   onSettlementInfoRequest,
 }: CampaignCardProps) {
   const {
@@ -71,7 +79,6 @@ export default function CampaignCard({
     commentInputRef,
     comments,
     depositAmount,
-    depositedCkb,
     giftDeliverable,
     handleBookmark,
     handleComment,
@@ -84,13 +91,14 @@ export default function CampaignCard({
     handleReshare,
     handleSettlementClick,
     handleSubmitComment,
+    handleWithdrawClick,
     hasNotStartedRaffle,
-    hasReachedMaxAmount,
     isCampaignInactive,
     isCommentComposerOpen,
     isConnected,
     isDepositing,
     isLockedForInteractions,
+    isWithdrawing,
     isPurchaseDisabled,
     isSupportDisabled,
     isRaffleCampaign,
@@ -101,13 +109,15 @@ export default function CampaignCard({
     likes,
     lockAccessMessage,
     actionFeedback,
-    maxCkb,
     remainingTickets,
     reshares,
     setCommentDraft,
     setDepositAmount,
     setShowDepositModal,
     shouldGlowSettlement,
+    showCreatorWithdrawAction,
+    creatorWithdrawAmountCkb,
+    supportDisplayCkb,
     showDepositModal,
     showSettlementAction,
     soldTickets,
@@ -126,6 +136,7 @@ export default function CampaignCard({
     onCommentDiscardRequest,
     commentDiscardDecision,
     onSettlementCompleted,
+    onWithdrawalCompleted,
     onSettlementInfoRequest,
   });
 
@@ -193,15 +204,13 @@ export default function CampaignCard({
                       ? "Support disabled for this freight"
                       : isCampaignInactive
                         ? "Freight unavailable"
-                        : hasReachedMaxAmount
-                          ? "Max amount reached"
-                          : supportState.supportMode === "direct_creator"
-                            ? "Tip creator"
-                            : "Deposit CKB"
+                        : supportState.supportMode === "direct_creator"
+                          ? "Tip creator"
+                          : "Deposit CKB"
               }
             >
               <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
+              <span className="campaign-action-count font-mono">{supportDisplayCkb} CKB</span>
             </button>
           )}
 
@@ -216,6 +225,18 @@ export default function CampaignCard({
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count">{String(soldTickets)}</span>
               </button>
+              {showCreatorWithdrawAction ? (
+                <button
+                  type="button"
+                  onClick={() => void handleWithdrawClick()}
+                  disabled={isWithdrawing}
+                  className={`campaign-action-btn ${isWithdrawing ? "campaign-action-disabled" : ""}`.trim()}
+                  data-tooltip={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
+                >
+                  <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count font-mono">{isWithdrawing ? "..." : `${creatorWithdrawAmountCkb} CKB`}</span>
+                </button>
+              ) : null}
               <button
                 onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                 disabled={isPurchaseDisabled}
@@ -245,16 +266,26 @@ export default function CampaignCard({
                           ? "Support disabled for this freight"
                           : isCampaignInactive
                             ? "Freight unavailable"
-                            : hasReachedMaxAmount
-                              ? "Max amount reached"
-                              : supportState.supportMode === "direct_creator"
-                                ? "Tip creator"
-                                : "Deposit CKB"
+                            : supportState.supportMode === "direct_creator"
+                              ? "Tip creator"
+                              : "Deposit CKB"
                   }
                 >
                   <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+                  <span className="campaign-action-count font-mono">{supportDisplayCkb} CKB</span>
                 </button>
+                {showCreatorWithdrawAction ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleWithdrawClick()}
+                    disabled={isWithdrawing}
+                    className={`campaign-action-btn ${isWithdrawing ? "campaign-action-disabled" : ""}`.trim()}
+                    data-tooltip={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
+                  >
+                    <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                    <span className="campaign-action-count font-mono">{isWithdrawing ? "..." : `${creatorWithdrawAmountCkb} CKB`}</span>
+                  </button>
+                ) : null}
                 <button
                   onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                   disabled={isPurchaseDisabled}
@@ -289,13 +320,11 @@ export default function CampaignCard({
                       ? lockAccessMessage
                       : isCampaignInactive
                         ? "Freight unavailable"
-                        : hasReachedMaxAmount
-                          ? "Max amount reached"
-                          : "Deposit CKB"
+                        : "Deposit CKB"
                 }
               >
                 <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
+                <span className="campaign-action-count font-mono">{supportDisplayCkb} CKB</span>
               </button>
             )
           )}
@@ -398,16 +427,12 @@ export default function CampaignCard({
                   type="number"
                   step="0.01"
                   min="0"
-                  max={Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8}
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="0.00"
                   disabled={isDepositing || isSupportDisabled}
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Max available: {(Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8).toFixed(2)} CKB
-                </p>
                 {supportState.supportMode === "direct_creator" ? (
                   <p className="text-xs text-gray-500 mt-1">SimpleTask tips go straight to the creator address.</p>
                 ) : null}

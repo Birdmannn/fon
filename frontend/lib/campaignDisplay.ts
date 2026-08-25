@@ -1,7 +1,7 @@
 import { ccc } from "@ckb-ccc/connector-react";
 
 import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex } from "@/lib/encoding";
+import { bytesToHex, computeCreatorWithdrawableAmount, computeRaffleRewardPool } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
@@ -27,6 +27,10 @@ export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date
 
 export function formatCkbAmount(value: bigint) {
   return (Number(value) / 1e8).toFixed(2);
+}
+
+export function formatWholeCkbAmount(value: bigint) {
+  return (value / 100_000_000n).toString();
 }
 
 export function buildDefaultUsername(addressHex: string) {
@@ -56,16 +60,15 @@ export function deriveRaffleSettlementUiState(args: {
 }) {
   const { campaign, displayStatus, settlementTxHash, soldTicketCount, liveSoldTickets: liveSoldTicketsOverride } = args;
   const isRaffleCampaign = campaign.data.campaignType === 4;
-  const ticketPriceShannons = campaign.data.auxAmount > 0n ? campaign.data.auxAmount : 0n;
-  const liveSoldTickets = liveSoldTicketsOverride ?? (isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n);
   const hasSettlementRecord = typeof settlementTxHash === "string" && settlementTxHash.trim().length > 0;
   const snapshotSoldTickets = typeof soldTicketCount === "string" && soldTicketCount.trim().length > 0
     ? BigInt(soldTicketCount.trim())
     : null;
+  const liveSoldTickets = liveSoldTicketsOverride ?? 0n;
   const soldTickets = hasSettlementRecord && snapshotSoldTickets !== null ? snapshotSoldTickets : liveSoldTickets;
   const hasSettledRewards = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
-    && (campaign.data.currentDeposits === 0n || hasSettlementRecord);
+    && (computeRaffleRewardPool(campaign.data) === 0n || hasSettlementRecord);
   const shouldGlowSettlement = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
     && campaign.data.rewardCount > 0n
@@ -79,6 +82,25 @@ export function deriveRaffleSettlementUiState(args: {
     showSettlementAction,
     shouldGlowSettlement,
     soldTickets,
+  };
+}
+
+export function deriveCreatorWithdrawUiState(args: {
+  campaign: CampaignCell;
+  displayStatus: CampaignStatus;
+  withdrawalTxHash?: string | null;
+}) {
+  const { campaign, displayStatus, withdrawalTxHash } = args;
+  const hasWithdrawalRecord = typeof withdrawalTxHash === "string" && withdrawalTxHash.trim().length > 0;
+  const withdrawableAmount = hasWithdrawalRecord ? 0n : computeCreatorWithdrawableAmount(campaign.data);
+  const completedWithdrawalReady = displayStatus === CampaignStatus.Completed && campaign.data.supportPoolBps === 0n;
+  const cancelledWithdrawalReady = displayStatus === CampaignStatus.Cancelled;
+  const canWithdraw = withdrawableAmount > 0n && (completedWithdrawalReady || cancelledWithdrawalReady);
+
+  return {
+    canWithdraw,
+    hasWithdrawalRecord,
+    withdrawableAmount,
   };
 }
 

@@ -78,6 +78,13 @@ type CampaignFeedContextValue = {
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"],
   ) => void;
+  handleWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
   handleShowPendingCampaigns: () => void;
   handleTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
   isRefreshing: boolean;
@@ -151,7 +158,7 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
         ? Object.fromEntries(await Promise.all(
             raffleCampaignIds.map(async (campaignId) => {
               try {
-                const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(campaignId)}`, { cache: "no-store" });
+                const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(campaignId)}&participantKind=raffle_ticket`, { cache: "no-store" });
                 const data = await response.json().catch(() => null);
                 const participants = response.ok && Array.isArray(data?.participants) ? data.participants : [];
                 return [campaignId, participants.length] as const;
@@ -309,6 +316,62 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
     setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
   }, []);
 
+  const handleWithdrawalCompleted = useCallback((
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => {
+    setCampaigns((prev) => prev.map((campaign) => (
+      getCampaignStableId(campaign) === campaignId
+        ? {
+            ...campaign,
+            data: {
+              ...campaign.data,
+              currentDeposits: 0n,
+              creatorSupportTotal: 0n,
+              supportPoolBps: 0n,
+            },
+          }
+        : campaign
+    )));
+
+    const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
+      const matchedRecord = prev.byCampaignId[campaignId]
+        ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
+        ?? Object.values(prev.byLegacyKey).find((record) => getRecordStableId(record) === campaignId);
+
+      if (!matchedRecord) {
+        return prev;
+      }
+
+      const nextRecord: CampaignRecord = {
+        ...matchedRecord,
+        withdrawalTxHash,
+        withdrawnAt,
+        withdrawnByAddress,
+        withdrawnAmountShannons,
+      };
+      const shouldReplace = (record: CampaignRecord) => (
+        record === matchedRecord
+        || (!!record._id && !!matchedRecord._id && record._id === matchedRecord._id)
+      );
+      const replaceBucket = (bucket: Record<string, CampaignRecord>) => Object.fromEntries(
+        Object.entries(bucket).map(([key, value]) => [key, shouldReplace(value) ? nextRecord : value])
+      ) as Record<string, CampaignRecord>;
+
+      return {
+        byCampaignId: replaceBucket(prev.byCampaignId),
+        byTxHash: replaceBucket(prev.byTxHash),
+        byLegacyKey: replaceBucket(prev.byLegacyKey),
+      };
+    };
+
+    setRecordIndexes(updateIndexes);
+    setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
+  }, []);
+
   const handleRefresh = useCallback(() => {
     void refreshCampaigns(campaigns.length > 0, campaigns);
   }, [campaigns, refreshCampaigns]);
@@ -344,6 +407,7 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
     handleRefresh,
     handleSearchClick,
     handleSettlementCompleted,
+    handleWithdrawalCompleted,
     handleShowPendingCampaigns,
     handleTicketBought,
     isRefreshing,
@@ -362,6 +426,7 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
     handleRefresh,
     handleSearchClick,
     handleSettlementCompleted,
+    handleWithdrawalCompleted,
     handleShowPendingCampaigns,
     handleTicketBought,
     isRefreshing,

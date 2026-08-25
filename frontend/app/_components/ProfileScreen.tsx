@@ -2,6 +2,7 @@
 
 import {
   ArrowUp,
+  Blocks,
   Check,
   CheckCircle,
   Copy,
@@ -20,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
 import ProfileFreightsSection from "@/app/_components/ProfileFreightsSection";
 import ProfileTransactionsSection from "@/app/_components/ProfileTransactionsSection";
@@ -37,10 +39,10 @@ import {
 import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
-import { useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
-import { useProfileFreights } from "@/app/_hooks/useProfileFreights";
-import { useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
-import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
+import { markProfileAnalyticsDirty, useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
+import { markProfileFreightsDirty, useProfileFreights } from "@/app/_hooks/useProfileFreights";
+import { markProfileTransactionsDirty, useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
+import { formatAdsfUsdParts, useProfileViewState, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import { formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
@@ -88,7 +90,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
   const [leaderboardScope, setLeaderboardScope] = useState<"weekly" | "overall">("weekly");
-  const [activeTab, setActiveTab] = useState<ProfileTabKey>("activity");
   const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalStateRef = useRef<() => void>(() => undefined);
@@ -133,20 +134,27 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     currentUserProfile,
     isSavingUserProfile,
     isUserProfileLoading,
+    markUserProfileDirty,
     overallLeaderboard,
+    profileCacheKey,
     saveDisplayName,
     saveLightModePrimaryColor,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
+  const { activeTab, setActiveTab } = useProfileViewState(signer ?? null, targetHandle);
   const profileAddress = currentUserProfile?.address ?? (targetHandle ? null : (walletAddress || null));
 
   const {
     analytics: profileAnalytics,
     error: profileAnalyticsError,
     isLoading: isProfileAnalyticsLoading,
+    isRefreshing: isProfileAnalyticsRefreshing,
+    refresh: refreshProfileAnalytics,
   } = useProfileAnalytics({
     address: profileAddress,
+    cacheKey: profileCacheKey,
+    enabled: activeTab === "activity",
     handle: profileAddress ? null : targetHandle,
   });
   const {
@@ -158,6 +166,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileFreightRows,
   } = useProfileFreights({
     address: profileAddress,
+    cacheKey: profileCacheKey,
+    enabled: activeTab === "freights",
     handle: profileAddress ? null : targetHandle,
   });
   const {
@@ -170,11 +180,33 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileTransactionRows,
   } = useProfileTransactions({
     address: profileAddress,
+    cacheKey: profileCacheKey,
+    enabled: activeTab === "transactions",
     handle: profileAddress ? null : targetHandle,
   });
   const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
 
+  const markProfileRouteDataDirty = useCallback((overrideArgs?: { address?: string | null; handle?: string | null }) => {
+    const nextAddress = overrideArgs?.address ?? currentUserProfile?.address ?? null;
+    const nextHandle = overrideArgs?.handle ?? currentUserProfile?.username ?? targetHandle ?? null;
+    const dirtyArgs = {
+      address: nextAddress,
+      cacheKey: profileCacheKey,
+      handle: nextAddress ? null : nextHandle,
+    };
+
+    markUserProfileDirty({
+      address: nextAddress,
+      handle: nextAddress ? null : nextHandle,
+    });
+    markProfileAnalyticsDirty(dirtyArgs);
+    markProfileFreightsDirty(dirtyArgs);
+    markProfileTransactionsDirty(dirtyArgs);
+  }, [currentUserProfile?.address, currentUserProfile?.username, markUserProfileDirty, profileCacheKey, targetHandle]);
+
   const {
+    appsMountableSelected,
+    appMountablesSelected,
     constraintStatus,
     createModalContentRef,
     createModalStep,
@@ -185,12 +217,21 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
+    handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
+    handleSelectMountableAppId,
+    handleToggleSelectedMountablePrinciple,
+    handleVerifySelectedMountableApp,
     isCreateDraftListOpen,
     isCreateModalClosing,
+    isMountableAppsLoading,
     isMountableFormFocused,
     isMountableLockFocused,
     isMountablesContinuing,
+    isVerifyingMountableApp,
+    mountableAppInstallToken,
+    mountedAppConfigs,
+    mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
     mountableFormValidationState,
@@ -200,10 +241,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     openMountablesModal,
     openSubmissionSuccessInfoModal,
     previewError,
+    registeredMountableApps,
     requestCloseCreateModal,
     resetCreateInfoModalState,
     resetCreateModal,
     saveDraftPromptError,
+    selectedMountableAppId,
+    selectedMountablePrincipleIds,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
@@ -212,6 +256,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsMountableFormFocused,
     setIsMountableLockFocused,
     setIsMountablesContinuing,
+    setAppMountablesSelected,
+    setAppsMountableSelected,
+    setMountableAppInstallToken,
+    setMountedAppConfigs,
     setMountableFormLinks,
     setMountableLockFbars,
     setMountableFormValidationState,
@@ -689,6 +737,26 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             </span>
           </span>
         </button>
+        <button
+          type="button"
+          className={`create-mountable-option ${appsMountableSelected ? "create-mountable-option-selected" : ""}`}
+          aria-label={appsMountableSelected ? `Manage ${appMountablesSelected} app mountable${appMountablesSelected === 1 ? "" : "s"}` : "Open app mountables"}
+          aria-pressed={appsMountableSelected}
+          data-tooltip={appMountablesSelected > 0 ? `Apps (${appMountablesSelected})` : "Apps"}
+          onClick={() => {
+            transitionMountablesModal("mountables-apps");
+            setMountablesPromptError("");
+          }}
+        >
+          <span className="create-mountable-option-icon-wrap">
+            <span className="create-mountable-option-icon-bg">
+              <Blocks size={18} strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="create-mountable-option-check" aria-hidden="true">
+              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+            </span>
+          </span>
+        </button>
       </div>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
@@ -764,6 +832,25 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         ))}
       </div>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-apps" ? (
+    <MountableAppsConfigurator
+      errorMessage={mountableAppsError || mountablesPromptError}
+      isMountableAppsLoading={isMountableAppsLoading}
+      isVerifyingMountableApp={isVerifyingMountableApp}
+      mountedAppConfigs={mountedAppConfigs}
+      mountableAppInstallToken={mountableAppInstallToken}
+      onInstallTokenChange={(value) => {
+        setMountableAppInstallToken(value);
+        setMountablesPromptError("");
+      }}
+      onRemoveMountedAppConfig={handleRemoveMountedAppConfig}
+      onSelectMountableAppId={handleSelectMountableAppId}
+      onToggleSelectedMountablePrinciple={handleToggleSelectedMountablePrinciple}
+      onVerifySelectedMountableApp={handleVerifySelectedMountableApp}
+      registeredMountableApps={registeredMountableApps}
+      selectedMountableAppId={selectedMountableAppId}
+      selectedMountablePrincipleIds={selectedMountablePrincipleIds}
+    />
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
       {createModalStep === "review" ? (
@@ -914,12 +1001,24 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected && !lockMountableSelected) {
+          if (!formsMountableSelected && !lockMountableSelected && appMountablesSelected === 0) {
             setMountablesPromptError("Select a mountable to continue.");
             return;
           }
 
-          transitionMountablesModal(lockMountableSelected ? "mountables-lock" : "mountables-forms");
+          if (lockMountableSelected) {
+            transitionMountablesModal("mountables-lock");
+            setMountablesPromptError("");
+            return;
+          }
+
+          if (formsMountableSelected) {
+            transitionMountablesModal("mountables-forms");
+            setMountablesPromptError("");
+            return;
+          }
+
+          transitionMountablesModal("mountables-apps");
           setMountablesPromptError("");
         }}
       >
@@ -949,14 +1048,17 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                 return;
               }
 
+              if (appMountablesSelected > 0) {
+                transitionMountablesModal("mountables-apps");
+                setMountablesPromptError("");
+                return;
+              }
+
               setIsMountablesContinuing(true);
               setMountablesPromptError("");
               await createModalContentRef.current?.persistCurrentDraft();
 
-              closeInfoModal(() => {
-                setInfoModalMode("about");
-                setMountablesPromptError("");
-              });
+              closeInfoModal(resetInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
               setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted lock");
@@ -1010,12 +1112,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                 validatedAt,
               });
               setMountableFormLinks([canonicalFormUrl]);
+
+              if (appMountablesSelected > 0) {
+                transitionMountablesModal("mountables-apps");
+                setMountablesPromptError("");
+                return;
+              }
+
               await createModalContentRef.current?.persistCurrentDraft();
 
-              closeInfoModal(() => {
-                setInfoModalMode("about");
-                setMountablesPromptError("");
-              });
+              closeInfoModal(resetInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
               setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted Google Form");
@@ -1026,6 +1132,44 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
       >
         {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-apps" ? (
+    <div className="create-info-confirm-actions">
+      <button
+        type="button"
+        className="create-info-confirm-btn"
+        onClick={() => transitionMountablesModal(formsMountableSelected ? "mountables-forms" : lockMountableSelected ? "mountables-lock" : "mountables")}
+        disabled={isMountablesContinuing || isVerifyingMountableApp}
+      >
+        Back
+      </button>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-primary"
+        disabled={isMountablesContinuing || isVerifyingMountableApp}
+        onClick={() => {
+          void (async () => {
+            try {
+              if (mountedAppConfigs.length === 0) {
+                setMountablesPromptError("Verify at least one app before continuing.");
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+              await createModalContentRef.current?.persistCurrentDraft();
+              closeInfoModal(resetInfoModalState);
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save mounted apps");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        {isMountablesContinuing ? "Hold..." : "Continue"}
       </button>
     </div>
   ) : undefined;
@@ -1052,14 +1196,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
@@ -1198,7 +1342,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-tab-bar" role="tablist" aria-label="Profile views">
                     {PROFILE_TABS.map((tab) => {
                       const isSelected = activeTab === tab.key;
-                      const isRefreshingActiveTab = (tab.key === "freights" && isProfileFreightsRefreshing)
+                      const isRefreshingActiveTab = (tab.key === "activity" && isProfileAnalyticsRefreshing)
+                        || (tab.key === "freights" && isProfileFreightsRefreshing)
                         || (tab.key === "transactions" && isProfileTransactionsRefreshing);
 
                       return (
@@ -1212,6 +1357,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                           className={`profile-tab-button ${isSelected ? "profile-tab-button-active" : ""}`.trim()}
                           onClick={() => {
                             if (isSelected) {
+                              if (tab.key === "activity") {
+                                refreshProfileAnalytics();
+                                return;
+                              }
+
                               if (tab.key === "freights") {
                                 refreshProfileFreights();
                                 return;
@@ -1339,14 +1489,23 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
-        onMountableSelectionStateChange={({ formsSelected, lockSelected }) => {
+        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected, lockSelected, appMountablesSelected: nextAppMountablesSelected }) => {
+          const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
+          const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
           setFormsMountableSelected(formsSelected);
           setLockMountableSelected(lockSelected);
+          setAppsMountableSelected(nextAppMountablesSelected > 0);
+          setAppMountablesSelected(nextAppMountablesSelected);
+          setMountedAppConfigs(nextEnabledAppMountables);
+          if (!hasMountedHashtag && nextAppMountablesSelected === 0) {
+            setMountablesPromptError("");
+          }
         }}
         onOpenCreateModal={openCreateModal}
         onPreviewErrorChange={setPreviewError}
         onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
+          markProfileRouteDataDirty();
           openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}

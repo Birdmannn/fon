@@ -258,6 +258,7 @@ type DraftRecord = {
     maxAmountCkb?: string;
     auxAmountCkb?: string;
     rewardCount?: string;
+    raffleSupportPoolPercent?: string;
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
@@ -289,13 +290,13 @@ type DraftSnapshot = {
   maxAmountCkb: string;
   rewardCount: string;
   auxAmountCkb: string;
+  raffleSupportPoolPercent: string;
   mentions: string[];
   giftDeliverable: GiftDeliverable;
   formsMountable?: FormsMountableConfig;
   lockMountable?: LockMountableConfig;
   appMountables?: AppMountableConfig[];
 };
-
 type CreateModalResumeState = {
   savedAt: number;
   path: string;
@@ -452,6 +453,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
   const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
+  const [raffleSupportPoolPercent, setRaffleSupportPoolPercent] = useState("0");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
   const [appMountables, setAppMountables] = useState<AppMountableConfig[]>([]);
@@ -656,6 +658,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return {
         value: normalizeCreateCampaignParams({
           maxAmountCkb,
+          raffleSupportPoolPercent,
           raffleTicketPriceCkb,
           rewardCount,
           shouldCollectRaffleTicketPrice,
@@ -692,6 +695,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     maxAmountCkb,
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
+    raffleSupportPoolPercent,
     mentions: allMentions,
     giftDeliverable: giftDeliverableDraft,
     formsMountable,
@@ -1052,6 +1056,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb("1000");
     setRewardCount("1");
     setRaffleTicketPriceCkb("1");
+    setRaffleSupportPoolPercent("0");
     setGiftApprovalMode("all");
     setGiftApprovalThreshold("1");
     setGiftSplitMode(null);
@@ -1544,6 +1549,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb(nextSnapshot.maxAmountCkb);
     setRewardCount(nextSnapshot.rewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextSnapshot.auxAmountCkb : "1");
+    setRaffleSupportPoolPercent(isRaffleDraft ? nextSnapshot.raffleSupportPoolPercent : "0");
     setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
     setFormsMountable(nextFormsMountable);
     setLockMountable(nextLockMountable);
@@ -1636,6 +1642,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
     const nextRewardCount = record.argsDraft?.rewardCount ?? "1";
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
+    const nextRaffleSupportPoolPercent = record.argsDraft?.raffleSupportPoolPercent ?? "0";
     const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
 
@@ -1660,6 +1667,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb(nextMaxAmount);
     setRewardCount(nextRewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
+    setRaffleSupportPoolPercent(isRaffleDraft ? nextRaffleSupportPoolPercent : "0");
     const nextFormsMountable = normalizeFormsMountableConfig(record.mountables?.forms);
     const nextLockMountable = normalizeLockMountableConfig(record.mountables?.lock);
     const nextAppMountables = normalizeAppMountableConfigs(record.mountables?.apps);
@@ -1693,6 +1701,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       maxAmountCkb: nextMaxAmount,
       rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
+      raffleSupportPoolPercent: nextRaffleSupportPoolPercent,
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
       formsMountable: nextFormsMountable,
@@ -1785,14 +1794,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setMaxAmountCkb("1000");
         setRewardCount("1");
         setRaffleTicketPriceCkb("1");
+        setRaffleSupportPoolPercent("0");
         setGiftApprovalMode("all");
         setGiftApprovalThreshold("1");
         setGiftSplitMode(null);
         setGiftRatioEntries([]);
         setGiftResolvedAddresses({});
         setGiftResolutionWarnings([]);
+        appMountablesRef.current = [];
         setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
         setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+        setAppMountables([]);
         setLastSavedSnapshot(null);
         setDraftSaveStatus("idle");
         setDraftSaveError("");
@@ -1837,6 +1849,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+          raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
         },
         mountables: {
           forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
@@ -1924,6 +1937,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+          raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
           formsMountable,
@@ -1948,6 +1962,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               maxAmountCkb,
               rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+              raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
             },
             mountables: {
               forms: formsMountable.enabled ? formsMountable : null,
@@ -2482,6 +2497,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         maximumAmountCkb: normalizedParams.maximumAmountCkb,
         auxAmountCkb: normalizedParams.auxAmountCkb,
         rewardCount: normalizedParams.rewardCount,
+        supportPoolBps: normalizedParams.supportPoolBps,
         summary: summaryToPublish,
         randomnessHash,
       });
@@ -2663,20 +2679,37 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       </div>
 
       {shouldCollectRaffleTicketPrice ? (
-        <div className="create-review-arg-field">
-          <label className="create-review-arg-label">Ticket price</label>
-          <div className="create-review-arg-control">
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={raffleTicketPriceCkb}
-              onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
-              className="create-review-arg-input"
-            />
-            <span className="create-review-arg-unit">CKB</span>
+        <>
+          <div className="create-review-arg-field">
+            <label className="create-review-arg-label">Ticket price</label>
+            <div className="create-review-arg-control">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={raffleTicketPriceCkb}
+                onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
+                className="create-review-arg-input"
+              />
+              <span className="create-review-arg-unit">CKB</span>
+            </div>
           </div>
-        </div>
+          <div className="create-review-arg-field">
+            <label className="create-review-arg-label">Support to pool</label>
+            <div className="create-review-arg-control">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={raffleSupportPoolPercent}
+                onChange={(event) => setRaffleSupportPoolPercent(event.target.value)}
+                className="create-review-arg-input"
+              />
+              <span className="create-review-arg-unit">%</span>
+            </div>
+          </div>
+        </>
       ) : (
         <div className="create-review-arg-field">
           <label className="create-review-arg-label">Social</label>
@@ -3479,14 +3512,32 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold theme-fg">💬 Social</label>
-                      <div className="flex items-center justify-center gap-1 theme-bg border-2 theme-border rounded-lg px-2 py-1">
-                        <span className="text-red-500 font-bold text-sm">❤️</span>
-                        <span className="text-green-500 font-bold text-sm">💬</span>
-                        <span className="text-orange-500 font-bold text-sm">🔄</span>
+                    {shouldCollectRaffleTicketPrice ? (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold theme-fg">🫶 Support to Pool</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={raffleSupportPoolPercent}
+                            onChange={(event) => setRaffleSupportPoolPercent(event.target.value)}
+                            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-sky-500"
+                          />
+                          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">%</span>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold theme-fg">💬 Social</label>
+                        <div className="flex items-center justify-center gap-1 theme-bg border-2 theme-border rounded-lg px-2 py-1">
+                          <span className="text-red-500 font-bold text-sm">❤️</span>
+                          <span className="text-green-500 font-bold text-sm">💬</span>
+                          <span className="text-orange-500 font-bold text-sm">🔄</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

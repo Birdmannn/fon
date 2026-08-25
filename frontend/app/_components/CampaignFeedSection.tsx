@@ -17,6 +17,7 @@ type CampaignFeedSectionProps = {
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onErrorChange: (message: string) => void;
+  onProfileDataChanged?: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -27,6 +28,7 @@ export default function CampaignFeedSection({
   commentDiscardDecision,
   onTicketPurchaseRequest,
   onErrorChange,
+  onProfileDataChanged,
   onSettlementInfoRequest,
 }: CampaignFeedSectionProps) {
   const router = useRouter();
@@ -39,6 +41,7 @@ export default function CampaignFeedSection({
     handleSettlementCompleted,
     handleShowPendingCampaigns,
     handleTicketBought,
+    handleWithdrawalCompleted,
     isRefreshing,
     isSearchOpen,
     loading,
@@ -92,8 +95,18 @@ export default function CampaignFeedSection({
           router.push(href);
         }}
         onTicketPurchaseRequest={onTicketPurchaseRequest}
-        onTicketBought={handleTicketBought}
-        onSettlementCompleted={handleSettlementCompleted}
+        onTicketBought={(campaignId, ticketPrice, nextSoldTickets) => {
+          handleTicketBought(campaignId, ticketPrice, nextSoldTickets);
+          onProfileDataChanged?.();
+        }}
+        onSettlementCompleted={(campaignId, settlementTxHash, settledAt, soldTicketCount, settledParticipantCount, settledRecipients) => {
+          handleSettlementCompleted(campaignId, settlementTxHash, settledAt, soldTicketCount, settledParticipantCount, settledRecipients);
+          onProfileDataChanged?.();
+        }}
+        onWithdrawalCompleted={(campaignId, withdrawalTxHash, withdrawnAt, withdrawnByAddress, withdrawnAmountShannons) => {
+          handleWithdrawalCompleted(campaignId, withdrawalTxHash, withdrawnAt, withdrawnByAddress, withdrawnAmountShannons);
+          onProfileDataChanged?.();
+        }}
         onSettlementInfoRequest={onSettlementInfoRequest}
       />
     </>

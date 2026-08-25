@@ -9,8 +9,10 @@ import {
   buildDefaultHandle,
   buildDefaultUsername,
   decodeCreatedByAddress,
+  deriveCreatorWithdrawUiState,
   deriveRaffleSettlementUiState,
   formatCkbAmount,
+  formatWholeCkbAmount,
 } from "@/lib/campaignDisplay";
 import {
   computeGiftPreviewAllocations,
@@ -19,7 +21,15 @@ import {
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
 import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
+import {
+  bytesToHex,
+  computeRaffleRewardPool,
+  computeRaffleSupportPoolContribution,
+  decodeSummary,
+  hasSplitSupportAccounting,
+  hexToBytes,
+  lockScriptToAddressBytes,
+} from "@/lib/encoding";
 import { copyText } from "@/lib/clipboard";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
 import { deriveCampaignSupportState } from "@/lib/campaignTipping";
@@ -28,6 +38,7 @@ import {
   previewDeterministicWinners,
   sendBatchDeliver,
   sendCreatorTipShannons,
+  sendCreatorWithdraw,
   sendDepositShannons,
   type CampaignCell,
 } from "@/lib/transactions";
@@ -100,6 +111,13 @@ type UseCampaignCardStateArgs = {
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"]
   ) => void;
+  onWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
 
@@ -114,16 +132,14 @@ export function useCampaignCardState({
   onCommentDiscardRequest,
   commentDiscardDecision,
   onSettlementCompleted,
+  onWithdrawalCompleted,
   onSettlementInfoRequest,
 }: UseCampaignCardStateArgs) {
   const { data, outPoint } = c;
   const cardId = getCampaignStableId(c);
-  const maxCkb = formatCkbAmount(data.maximumAmount);
-  const depositedCkb = formatCkbAmount(data.currentDeposits);
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const totalTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : 0n;
-  const remainingDepositCapacity = data.maximumAmount > data.currentDeposits ? data.maximumAmount - data.currentDeposits : 0n;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
@@ -150,7 +166,6 @@ export function useCampaignCardState({
     taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
     giftDeliverable,
   });
-  const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const liveSoldTickets = parseOptionalBigInt(record?.liveSoldTicketCount);
@@ -161,7 +176,23 @@ export function useCampaignCardState({
     soldTicketCount: record?.soldTicketCount ?? null,
     liveSoldTickets,
   });
+  const creatorWithdrawUiState = deriveCreatorWithdrawUiState({
+    campaign: c,
+    displayStatus,
+    withdrawalTxHash: record?.withdrawalTxHash ?? null,
+  });
   const soldTickets = settlementUiState.soldTickets;
+  const hasSplitSupport = hasSplitSupportAccounting(data);
+  const raffleTicketPoolShannons = isRaffleCampaign
+    ? soldTickets * ticketPriceShannons
+    : 0n;
+  const supportDisplayShannons = isRaffleCampaign
+    ? (hasSplitSupport
+        ? data.creatorSupportTotal
+        : (data.currentDeposits > raffleTicketPoolShannons ? data.currentDeposits - raffleTicketPoolShannons : 0n))
+    : data.currentDeposits;
+  const supportDisplayCkb = formatWholeCkbAmount(supportDisplayShannons);
+  const supportPoolPercent = record?.argsDraft?.raffleSupportPoolPercent ?? (hasSplitSupport ? String(Number(data.supportPoolBps / 100n)) : "0");
   const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
   const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
   const initialComments = useMemo<CampaignComment[]>(() => (
@@ -180,6 +211,8 @@ export function useCampaignCardState({
       : []
   ), [record?.socialMetadata?.resharedByAddresses]);
   const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
+  const isCreatorViewer = normalizedCurrentWalletAddress.length > 0
+    && normalizeHash(creatorAddress) === normalizedCurrentWalletAddress;
   const lockMountable = record?.mountables?.lock ?? null;
   const lockBypassFbars = getLockMountableBypassFbars(lockMountable);
   const isLockedForInteractions = lockBypassFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars);
@@ -213,7 +246,7 @@ export function useCampaignCardState({
   const [isSavingReshare, setIsSavingReshare] = useState(false);
   const [commentError, setCommentError] = useState("");
   const [actionFeedback, setActionFeedback] = useState<{
-    source: "like" | "reshare";
+    source: "like" | "reshare" | "withdraw";
     tone: "success" | "error";
     message: string;
   } | null>(null);
@@ -223,9 +256,10 @@ export function useCampaignCardState({
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositing, setIsDepositing] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   const showActionFeedback = (
-    source: "like" | "reshare",
+    source: "like" | "reshare" | "withdraw",
     tone: "success" | "error",
     message: string
   ) => {
@@ -241,7 +275,7 @@ export function useCampaignCardState({
   };
 
   const isConnected = !!signer;
-  const isSupportDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasReachedMaxAmount || !supportState.supportEnabled;
+  const isSupportDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || !supportState.supportEnabled;
   const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets;
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
@@ -251,6 +285,8 @@ export function useCampaignCardState({
   const hasSettledRewards = settlementUiState.hasSettledRewards;
   const shouldGlowSettlement = settlementUiState.shouldGlowSettlement;
   const showSettlementAction = settlementUiState.showSettlementAction;
+  const showCreatorWithdrawAction = creatorWithdrawUiState.canWithdraw && isCreatorViewer;
+  const creatorWithdrawAmountCkb = formatWholeCkbAmount(creatorWithdrawUiState.withdrawableAmount);
 
   useEffect(() => {
     setLikes(record?.socialMetadata?.likeCount ?? 0);
@@ -295,6 +331,7 @@ export function useCampaignCardState({
       maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
       auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
       rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
+      raffleSupportPoolPercent: supportPoolPercent,
     },
     socialMetadata: {
       mentions,
@@ -325,6 +362,10 @@ export function useCampaignCardState({
     liveSoldTicketCount: record?.liveSoldTicketCount ?? null,
     settledParticipantCount: record?.settledParticipantCount ?? null,
     settledRecipients: record?.settledRecipients ?? null,
+    withdrawalTxHash: record?.withdrawalTxHash ?? null,
+    withdrawnAt: record?.withdrawnAt ?? null,
+    withdrawnByAddress: record?.withdrawnByAddress ?? null,
+    withdrawnAmountShannons: record?.withdrawnAmountShannons ?? null,
     mountables: record?.mountables,
   });
 
@@ -666,7 +707,7 @@ export function useCampaignCardState({
   };
 
   const handleDepositClick = () => {
-    if (!isConnected || isLockedForInteractions || isCampaignInactive || hasReachedMaxAmount || !supportState.supportEnabled) {
+    if (!isConnected || isLockedForInteractions || isCampaignInactive || !supportState.supportEnabled) {
       return;
     }
     setShowDepositModal(true);
@@ -674,7 +715,7 @@ export function useCampaignCardState({
 
   const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    if (!signer || !depositAmount || isLockedForInteractions || isCampaignInactive || hasReachedMaxAmount || !supportState.supportEnabled) {
+    if (!signer || !depositAmount || isLockedForInteractions || isCampaignInactive || !supportState.supportEnabled) {
       return;
     }
 
@@ -687,12 +728,6 @@ export function useCampaignCardState({
     const amountShannons = BigInt(Math.floor(parsedDepositAmount * 100_000_000));
     if (amountShannons <= 0n) {
       alert("Please enter at least 0.01 CKB");
-      return;
-    }
-
-    const maxAmount = data.maximumAmount - data.currentDeposits;
-    if (amountShannons > maxAmount) {
-      alert(`Maximum deposit available: ${(Number(maxAmount) / 1e8).toFixed(2)} CKB`);
       return;
     }
 
@@ -842,6 +877,81 @@ export function useCampaignCardState({
     });
   };
 
+  const handleWithdrawClick = async () => {
+    if (!signer || isWithdrawing) {
+      return;
+    }
+
+    if (!creatorWithdrawUiState.canWithdraw) {
+      showActionFeedback("withdraw", "error", "No creator-withdrawable escrow is available for this freight.");
+      return;
+    }
+
+    const userHasPermission = await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record);
+    if (!userHasPermission) {
+      showActionFeedback("withdraw", "error", "Only the freight creator can withdraw remaining creator support.");
+      return;
+    }
+
+    setIsWithdrawing(true);
+    setActionFeedback(null);
+
+    try {
+      const { txHash, withdrawnAmountShannons } = await sendCreatorWithdraw(signer, c);
+      let withdrawnAt = new Date().toISOString();
+      let withdrawnByAddress = currentWalletAddress ?? await signer.getRecommendedAddress() ?? creatorAddress;
+
+      if (record?._id) {
+        try {
+          const signed = await withSignedNonce("creator-withdraw");
+          const withdrawResponse = await fetch(`/api/campaign-records/${record._id}/withdraw`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ...signed,
+              withdrawalTxHash: txHash,
+              withdrawnAt,
+              withdrawnAmountShannons: withdrawnAmountShannons.toString(),
+            }),
+          });
+          const withdrawPayload = await withdrawResponse.json().catch(() => null) as {
+            error?: string;
+            withdrawnAt?: string;
+            withdrawnByAddress?: string;
+            withdrawnAmountShannons?: string;
+            withdrawalTxHash?: string;
+          } | null;
+          if (!withdrawResponse.ok) {
+            throw new Error(withdrawPayload?.error ?? "Failed to record creator withdraw metadata");
+          }
+          withdrawnAt = typeof withdrawPayload?.withdrawnAt === "string" && withdrawPayload.withdrawnAt.trim()
+            ? withdrawPayload.withdrawnAt.trim()
+            : withdrawnAt;
+          withdrawnByAddress = typeof withdrawPayload?.withdrawnByAddress === "string" && withdrawPayload.withdrawnByAddress.trim()
+            ? withdrawPayload.withdrawnByAddress.trim()
+            : withdrawnByAddress;
+        } catch {
+          // Non-fatal — the on-chain withdraw still succeeded, so keep the local UI in sync.
+        }
+      }
+
+      onWithdrawalCompleted(
+        getCampaignStableId(c),
+        txHash,
+        withdrawnAt,
+        withdrawnByAddress,
+        withdrawnAmountShannons.toString(),
+      );
+      showActionFeedback("withdraw", "success", `Withdrew ${formatCkbAmount(withdrawnAmountShannons)} CKB creator support.`);
+    } catch (error) {
+      showActionFeedback("withdraw", "error", error instanceof Error ? error.message : "Failed to withdraw creator support");
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
+
   const handleSettlementClick = async () => {
     if (!isRaffleCampaign) {
       return;
@@ -851,6 +961,13 @@ export function useCampaignCardState({
     const randomnessPreimage = record?.randomnessPreimage ?? null;
 
     if (record?.settlementTxHash && Array.isArray(record.settledRecipients) && record.settledRecipients.length > 0) {
+      const storedDistributedPool = record.settledRecipients.reduce<bigint>((total, recipient) => {
+        try {
+          return total + BigInt(recipient.amountShannons);
+        } catch {
+          return total;
+        }
+      }, 0n);
       onSettlementInfoRequest({
         campaignTitle: displayTitle,
         randomnessHash,
@@ -859,6 +976,8 @@ export function useCampaignCardState({
           `Stored randomness hash: ${randomnessHash}`,
           `Verified participant count used: ${record.settledParticipantCount ?? "0"}`,
           `Reward count: ${String(data.rewardCount)}`,
+          `Support to pool: ${supportPoolPercent}%`,
+          `Distributed reward pool: ${formatCkbAmount(storedDistributedPool)} CKB`,
           "Winner ordering: deterministic by join time, participant address, then outpoint.",
         ],
         recipients: record.settledRecipients,
@@ -883,7 +1002,7 @@ export function useCampaignCardState({
     });
 
     try {
-      const participantIndexResponse = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(getCampaignStableId(c))}`, {
+      const participantIndexResponse = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(getCampaignStableId(c))}&participantKind=raffle_ticket`, {
         cache: "no-store",
       });
       const participantIndexPayload = await participantIndexResponse.json().catch(() => null);
@@ -955,7 +1074,9 @@ export function useCampaignCardState({
       const effectiveWinnerCount = data.rewardCount === 0n
         ? BigInt(participants.length)
         : BigInt(Math.min(Number(data.rewardCount), participants.length));
-      const rewardPerWinner = effectiveWinnerCount > 0n ? data.currentDeposits / effectiveWinnerCount : 0n;
+      const supportPoolContribution = computeRaffleSupportPoolContribution(data);
+      const rewardPool = computeRaffleRewardPool(data);
+      const rewardPerWinner = effectiveWinnerCount > 0n ? rewardPool / effectiveWinnerCount : 0n;
       const recipientAmountLabel = `${formatCkbAmount(rewardPerWinner)} CKB`;
       const recipientAmountShannons = rewardPerWinner.toString();
       const recipients: SettlementRecipient[] = winnerAddresses.map((address) => {
@@ -974,6 +1095,10 @@ export function useCampaignCardState({
         `Stored randomness hash: ${randomnessHash}`,
         `Verified participant count used: ${participantCountText}`,
         `Reward count: ${String(data.rewardCount)}`,
+        `Support to pool: ${supportPoolPercent}%`,
+        `Support contribution: ${formatCkbAmount(supportPoolContribution)} CKB`,
+        `Reward pool: ${formatCkbAmount(rewardPool)} CKB`,
+        `Distributed per winner: ${recipientAmountLabel}`,
         "Winner ordering: deterministic by join time, participant address, then outpoint.",
       ];
 
@@ -1063,6 +1188,8 @@ export function useCampaignCardState({
     }
   };
 
+  const supportToPoolPercent = supportPoolPercent;
+
   return {
     bookmarks,
     commentComposerRef,
@@ -1073,7 +1200,6 @@ export function useCampaignCardState({
     creatorAddress,
     creatorHandle,
     depositAmount,
-    depositedCkb,
     displayDescription,
     displayTitle,
     giftDeliverable,
@@ -1088,8 +1214,8 @@ export function useCampaignCardState({
     handleReshare,
     handleSettlementClick,
     handleSubmitComment,
+    handleWithdrawClick,
     hasNotStartedRaffle,
-    hasReachedMaxAmount,
     hasSettledRewards,
     isCampaignInactive,
     isCommentComposerOpen,
@@ -1100,12 +1226,12 @@ export function useCampaignCardState({
     isLockedForInteractions,
     isPurchaseDisabled,
     isSupportDisabled,
+    isWithdrawing,
     lockAccessMessage,
     isRaffleCampaign,
     supportState,
     isSavingComment,
     likes,
-    maxCkb,
     remainingTickets,
     reshares,
     rewardCountValue,
@@ -1115,6 +1241,10 @@ export function useCampaignCardState({
     setShowDepositModal,
     showDepositModal,
     shouldGlowSettlement,
+    showCreatorWithdrawAction,
+    creatorWithdrawAmountCkb,
+    supportDisplayCkb,
+    supportToPoolPercent,
     showSettlementAction,
     soldTickets,
     ticketPriceShannons,

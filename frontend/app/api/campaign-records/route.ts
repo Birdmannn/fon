@@ -22,6 +22,7 @@ type CampaignRecordPayload = {
     maxAmountCkb?: unknown;
     auxAmountCkb?: unknown;
     rewardCount?: unknown;
+    raffleSupportPoolPercent?: unknown;
   };
   mountables?: {
     forms?: unknown;
@@ -54,6 +55,10 @@ type CampaignRecordPayload = {
   liveSoldTicketCount?: unknown;
   settledParticipantCount?: unknown;
   settledRecipients?: unknown;
+  withdrawalTxHash?: unknown;
+  withdrawnAt?: unknown;
+  withdrawnByAddress?: unknown;
+  withdrawnAmountShannons?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -269,6 +274,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const maxAmountCkb = ensureNumberString(payload.argsDraft?.maxAmountCkb, "argsDraft.maxAmountCkb");
   const auxAmountCkb = ensureNumberString(payload.argsDraft?.auxAmountCkb, "argsDraft.auxAmountCkb");
   const rewardCount = ensureNumberString(payload.argsDraft?.rewardCount, "argsDraft.rewardCount");
+  const raffleSupportPoolPercent = ensureNumberString(payload.argsDraft?.raffleSupportPoolPercent, "argsDraft.raffleSupportPoolPercent");
 
   const mentions = Array.isArray(payload.socialMetadata?.mentions)
     ? payload.socialMetadata?.mentions.map((value) => ensureString(value, "socialMetadata.mentions[]"))
@@ -302,6 +308,10 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const liveSoldTicketCount = ensureOptionalString(payload.liveSoldTicketCount, "liveSoldTicketCount");
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
+  const withdrawalTxHash = ensureOptionalString(payload.withdrawalTxHash, "withdrawalTxHash");
+  const withdrawnAt = ensureOptionalString(payload.withdrawnAt, "withdrawnAt");
+  const withdrawnByAddress = ensureOptionalString(payload.withdrawnByAddress, "withdrawnByAddress");
+  const withdrawnAmountShannons = ensureOptionalString(payload.withdrawnAmountShannons, "withdrawnAmountShannons");
   const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
   const lockMountable = ensureOptionalLockMountable(payload.mountables?.lock);
   const appMountables = ensureOptionalAppMountables(payload.mountables?.apps, {
@@ -326,6 +336,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
       maxAmountCkb,
       auxAmountCkb,
       rewardCount,
+      raffleSupportPoolPercent,
     },
     mountables: {
       forms: formsMountable,
@@ -362,6 +373,10 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     liveSoldTicketCount,
     settledParticipantCount,
     settledRecipients,
+    withdrawalTxHash,
+    withdrawnAt,
+    withdrawnByAddress,
+    withdrawnAmountShannons,
   };
 }
 

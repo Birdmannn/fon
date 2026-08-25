@@ -23,6 +23,7 @@ export enum Selector {
   SubmitRandomnessHash = 5,
   CancelCampaign = 6,
   Refund = 7,
+  CreatorWithdraw = 8,
 }
 
 // ─── On-chain enums ───────────────────────────────────────────────────────────
@@ -49,5 +50,6 @@ export enum ParticipantStatus {
 }
 
 // ─── Cell data sizes (must match Rust constants) ──────────────────────────────
-export const CAMPAIGN_DATA_LEN = 174;
-export const PARTICIPANT_DATA_LEN = 73;
+export const LEGACY_CAMPAIGN_DATA_LEN = 174;
+export const CAMPAIGN_DATA_LEN = 198;
+export const PARTICIPANT_DATA_LEN = 66;

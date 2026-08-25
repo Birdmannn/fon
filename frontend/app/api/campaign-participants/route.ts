@@ -224,6 +224,7 @@ export async function GET(request: Request) {
     }
 
     const participantAddress = url.searchParams.get("participantAddress")?.trim().toLowerCase();
+    const participantKind = url.searchParams.get("participantKind")?.trim().toLowerCase();
     const mountableType = url.searchParams.get("mountableType")?.trim().toLowerCase();
     const mountableInstanceId = url.searchParams.get("mountableInstanceId")?.trim();
     const at = url.searchParams.get("at")?.trim();
@@ -275,6 +276,14 @@ export async function GET(request: Request) {
     const query: Record<string, unknown> = { campaignId };
     if (participantAddress) {
       query.participantAddress = participantAddress;
+    }
+    if (participantKind === "raffle_ticket") {
+      query.$or = [
+        { participantKind: "raffle_ticket" },
+        { participantKind: null, mountableType: null, status: "verified" },
+      ];
+    } else if (participantKind) {
+      query.participantKind = participantKind;
     }
     if (mountableType) {
       query.mountableType = mountableType;

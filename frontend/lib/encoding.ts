@@ -1,5 +1,12 @@
 import type { ccc } from "@ckb-ccc/connector-react";
-import { CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
+import {
+  CAMPAIGN_DATA_LEN,
+  CampaignStatus,
+  CampaignType,
+  LEGACY_CAMPAIGN_DATA_LEN,
+  ParticipantStatus,
+  Selector,
+} from "./contract";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,7 +64,7 @@ export function lockScriptToAddressBytes(lock: ccc.ScriptLike): Uint8Array {
 // ─── Script args encoding ─────────────────────────────────────────────────────
 
 /** args for selector 0 – create_campaign
- *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
+ *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)][support_pool_bps(8)]
  */
 export function encodeCreateCampaignArgs(
   startDurationSecs: bigint,
@@ -66,7 +73,8 @@ export function encodeCreateCampaignArgs(
   maximumAmount: bigint,
   auxAmount: bigint,
   randomnessHash: Uint8Array,
-  rewardCount: bigint
+  rewardCount: bigint,
+  supportPoolBps: bigint,
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
@@ -77,7 +85,8 @@ export function encodeCreateCampaignArgs(
     u64LE(maximumAmount),
     u64LE(auxAmount),
     randomnessHash,
-    u64LE(rewardCount)
+    u64LE(rewardCount),
+    u64LE(supportPoolBps),
   );
 }
 
@@ -105,7 +114,7 @@ export function encodeBatchDeliverArgs(preimage?: Uint8Array): Uint8Array {
  */
 export function encodeVerifyParticipantArgs(
   adminAddress: Uint8Array,
-  adminPubkey: Uint8Array
+  adminPubkey: Uint8Array,
 ): Uint8Array {
   if (adminAddress.length !== 20) throw new Error("adminAddress must be 20 bytes");
   if (adminPubkey.length !== 33) throw new Error("adminPubkey must be 33 bytes (compressed)");
@@ -117,17 +126,19 @@ export function encodeVerifyParticipantArgs(
  */
 export function encodeSubmitRandomnessHashArgs(
   rewardCount: bigint,
-  randomnessHash: Uint8Array
+  randomnessHash: Uint8Array,
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
     new Uint8Array([Selector.SubmitRandomnessHash]),
     u64LE(rewardCount),
-    randomnessHash
+    randomnessHash,
   );
 }
 
-// ─── Campaign cell data (166 bytes) ──────────────────────────────────────────
+export type CampaignDataLayout = "legacy" | "split-support";
+
+// ─── Campaign cell data (174 or 198 bytes) ───────────────────────────────────
 
 export interface CampaignData {
   createdAt: bigint;
@@ -140,8 +151,51 @@ export interface CampaignData {
   status: CampaignStatus;
   rewardCount: bigint;
   randomnessHash: Uint8Array; // 32 bytes
-  summary: Uint8Array;        // 64 bytes, UTF-8 zero-padded
-  auxAmount: bigint;          // ticket_price for Raffle, 0 otherwise
+  summary: Uint8Array; // 64 bytes, UTF-8 zero-padded
+  auxAmount: bigint; // ticket_price for Raffle, 0 otherwise
+  ticketSalesTotal: bigint;
+  creatorSupportTotal: bigint;
+  supportPoolBps: bigint;
+  dataLayout: CampaignDataLayout;
+}
+
+export function hasSplitSupportAccounting(campaign: CampaignData) {
+  return campaign.dataLayout === "split-support";
+}
+
+export function computeRaffleSupportPoolContribution(campaign: CampaignData) {
+  if (
+    campaign.campaignType !== CampaignType.Raffle
+    || !hasSplitSupportAccounting(campaign)
+    || campaign.creatorSupportTotal <= 0n
+    || campaign.supportPoolBps <= 0n
+  ) {
+    return 0n;
+  }
+
+  return (campaign.creatorSupportTotal * campaign.supportPoolBps) / 10_000n;
+}
+
+export function computeRaffleRewardPool(campaign: CampaignData) {
+  if (campaign.campaignType !== CampaignType.Raffle || !hasSplitSupportAccounting(campaign)) {
+    return campaign.currentDeposits;
+  }
+
+  return campaign.ticketSalesTotal + computeRaffleSupportPoolContribution(campaign);
+}
+
+export function computeCreatorWithdrawableAmount(campaign: CampaignData) {
+  if (
+    campaign.campaignType !== CampaignType.Raffle
+    || !hasSplitSupportAccounting(campaign)
+    || campaign.currentDeposits <= 0n
+    || campaign.ticketSalesTotal !== 0n
+    || campaign.creatorSupportTotal !== campaign.currentDeposits
+  ) {
+    return 0n;
+  }
+
+  return campaign.creatorSupportTotal;
 }
 
 export function encodeSummary(text: string): Uint8Array {
@@ -158,7 +212,7 @@ export function decodeSummary(bytes: Uint8Array): string {
 }
 
 export function encodeCampaignData(c: CampaignData): Uint8Array {
-  return concat(
+  const base = concat(
     u64LE(c.createdAt),
     u64LE(c.startDurationSecs),
     u64LE(c.taskDurationSecs),
@@ -170,14 +224,26 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     u64LE(c.rewardCount),
     c.randomnessHash,
     c.summary,
-    u64LE(c.auxAmount)
+    u64LE(c.auxAmount),
+  );
+
+  if (c.dataLayout === "legacy") {
+    return base;
+  }
+
+  return concat(
+    base,
+    u64LE(c.ticketSalesTotal),
+    u64LE(c.creatorSupportTotal),
+    u64LE(c.supportPoolBps),
   );
 }
 
 export function decodeCampaignData(data: Uint8Array): CampaignData {
-  if (data.length < 174) throw new Error("campaign data too short");
+  if (data.length < LEGACY_CAMPAIGN_DATA_LEN) throw new Error("campaign data too short");
+
   const view = new DataView(data.buffer, data.byteOffset);
-  return {
+  const base = {
     createdAt: view.getBigUint64(0, true),
     startDurationSecs: view.getBigUint64(8, true),
     taskDurationSecs: view.getBigUint64(16, true),
@@ -191,6 +257,24 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     summary: data.slice(102, 166),
     auxAmount: view.getBigUint64(166, true),
   };
+
+  if (data.length < CAMPAIGN_DATA_LEN) {
+    return {
+      ...base,
+      ticketSalesTotal: 0n,
+      creatorSupportTotal: 0n,
+      supportPoolBps: 0n,
+      dataLayout: "legacy",
+    };
+  }
+
+  return {
+    ...base,
+    ticketSalesTotal: view.getBigUint64(174, true),
+    creatorSupportTotal: view.getBigUint64(182, true),
+    supportPoolBps: view.getBigUint64(190, true),
+    dataLayout: "split-support",
+  };
 }
 
 // ─── Participant cell data (66 bytes) ─────────────────────────────────────────
@@ -202,7 +286,7 @@ export interface ParticipantData {
   participantAddress: Uint8Array; // 20 bytes
   joinedAt: bigint;
   status: ParticipantStatus;
-  depositedAmount: bigint;        // shannons deposited by this participant
+  depositedAmount: bigint; // shannons deposited by this participant
 }
 
 export function encodeParticipantData(p: ParticipantData): Uint8Array {
@@ -213,7 +297,7 @@ export function encodeParticipantData(p: ParticipantData): Uint8Array {
     p.participantAddress,
     u64LE(p.joinedAt),
     new Uint8Array([p.status]),
-    u64LE(p.depositedAmount)
+    u64LE(p.depositedAmount),
   );
 }
 
@@ -230,3 +314,5 @@ export function decodeParticipantData(data: Uint8Array): ParticipantData {
     depositedAmount: view.getBigUint64(58, true),
   };
 }
+
+export { u32LE };

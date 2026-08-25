@@ -222,6 +222,39 @@ pub fn validate_creator_tip_transfer(deposit_amount: u64, creator_address: &[u8;
     Ok(())
 }
 
+pub fn validate_creator_withdraw_transfer(withdraw_amount: u64, creator_address: &[u8; 20]) -> Result<(), Error> {
+    let campaign_input_capacity =
+        load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+    let campaign_output_capacity =
+        load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
+
+    let expected_campaign_output = campaign_input_capacity
+        .checked_sub(withdraw_amount)
+        .ok_or(Error::AmountMismatch)?;
+    if campaign_output_capacity != expected_campaign_output {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_withdraw_type = load_cell_type(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_withdraw_type.is_some() {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_withdraw_lock = load_cell_lock(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    let creator_withdraw_lock_args = creator_withdraw_lock.args().raw_data();
+    if creator_withdraw_lock_args.len() < 20 || &creator_withdraw_lock_args[0..20] != creator_address {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_withdraw_capacity =
+        load_cell_capacity(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_withdraw_capacity != withdraw_amount {
+        return Err(Error::AmountMismatch);
+    }
+
+    Ok(())
+}
+
 pub fn validate_participant_added(
     participant_address: &[u8; 20],
     campaign_created_by: &[u8; 20],

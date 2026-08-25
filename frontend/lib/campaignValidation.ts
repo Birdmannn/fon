@@ -27,6 +27,15 @@ function parseWholeNumberString(value: string, field: string) {
   return BigInt(trimmed);
 }
 
+function parseWholePercentString(value: string, field: string) {
+  const parsed = parseWholeNumberString(value, field);
+  if (parsed > 100n) {
+    throw new Error(`${field} must be between 0 and 100`);
+  }
+
+  return parsed;
+}
+
 export function clampTimingMinutes(totalMinutes: number, minimumMinutes: number) {
   const clamped = Math.max(minimumMinutes, totalMinutes);
   return Math.round(clamped / TIMING_MINUTE_STEP) * TIMING_MINUTE_STEP;
@@ -69,6 +78,7 @@ export function buildTimingHoursFromParts(hoursPart: string, minutesPart: string
 
 export type NormalizeCreateCampaignParamsInput = {
   maxAmountCkb: string;
+  raffleSupportPoolPercent: string;
   raffleTicketPriceCkb: string;
   rewardCount: string;
   shouldCollectRaffleTicketPrice: boolean;
@@ -82,6 +92,7 @@ export type NormalizedCreateCampaignParams = {
   maximumAmountCkb: bigint;
   rewardCount: bigint;
   startDurationSecs: bigint;
+  supportPoolBps: bigint;
   taskDurationSecs: bigint;
 };
 
@@ -144,6 +155,7 @@ export function validateGiftCreateConfiguration({
 
 export function normalizeCreateCampaignParams({
   maxAmountCkb,
+  raffleSupportPoolPercent,
   raffleTicketPriceCkb,
   rewardCount,
   shouldCollectRaffleTicketPrice,
@@ -185,6 +197,7 @@ export function normalizeCreateCampaignParams({
   if (shouldCollectRaffleTicketPrice) {
     const ticketCount = parseWholeNumberString(maxAmountCkb, "Number of tickets");
     const ticketPrice = parseWholeNumberString(raffleTicketPriceCkb, "Raffle ticket price");
+    const supportPoolPercent = parseWholePercentString(raffleSupportPoolPercent, "Raffle support pool percentage");
 
     if (ticketCount <= 0n) {
       throw new Error("Please enter a valid number of tickets greater than 0");
@@ -204,6 +217,7 @@ export function normalizeCreateCampaignParams({
       maximumAmountCkb: maximumAmount,
       rewardCount: parsedRewardCount,
       startDurationSecs,
+      supportPoolBps: supportPoolPercent * 100n,
       taskDurationSecs,
     };
   }
@@ -218,6 +232,7 @@ export function normalizeCreateCampaignParams({
     maximumAmountCkb: maximumAmount,
     rewardCount: parsedRewardCount,
     startDurationSecs,
+    supportPoolBps: 0n,
     taskDurationSecs,
   };
 }

@@ -1,6 +1,6 @@
 import { ccc } from "@ckb-ccc/connector-react";
 import { blake2b } from "@nervosnetwork/ckb-sdk-utils";
-import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus } from "./contract";
+import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
 import {
   encodeBatchDeliverArgs,
   encodeCreateCampaignArgs,
@@ -13,6 +13,9 @@ import {
   bytesToHex,
   hexToBytes,
   lockScriptToAddressBytes,
+  computeCreatorWithdrawableAmount,
+  computeRaffleRewardPool,
+  hasSplitSupportAccounting,
   CampaignData,
   ParticipantData,
 } from "./encoding";
@@ -78,11 +81,12 @@ export async function sendCreateCampaign(
     maximumAmountCkb: bigint;
     auxAmountCkb: bigint; // ticket_price for Raffle (in CKB), 0 otherwise
     rewardCount: bigint;
+    supportPoolBps: bigint;
     summary: string;
     randomnessHash: Uint8Array;
   }
 ): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
-  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, summary, randomnessHash } = opts;
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, supportPoolBps, summary, randomnessHash } = opts;
   const maximumAmount = maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
 
@@ -107,7 +111,8 @@ export async function sendCreateCampaign(
     maximumAmount,
     auxAmount,
     randomnessHash,
-    rewardCount
+    rewardCount,
+    supportPoolBps
   );
 
   // Campaign cell data (174 bytes).
@@ -124,6 +129,10 @@ export async function sendCreateCampaign(
     randomnessHash,
     summary: encodeSummary(summary),
     auxAmount,
+    ticketSalesTotal: 0n,
+    creatorSupportTotal: 0n,
+    supportPoolBps: campaignType === CampaignType.Raffle ? supportPoolBps : 0n,
+    dataLayout: "split-support",
   });
 
   // Output: campaign cell.
@@ -170,10 +179,16 @@ export async function sendDepositShannons(
   const actionArgsHex = bytesToHex(encodeDepositArgs(amountShannons)) as `0x${string}`;
 
   // Update campaign data with new deposits
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits + amountShannons,
-  };
+  const updatedCampaignData = campaignCell.data.campaignType === CampaignType.Raffle && hasSplitSupportAccounting(campaignCell.data)
+    ? {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+        creatorSupportTotal: campaignCell.data.creatorSupportTotal + amountShannons,
+      }
+    : {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+      };
 
   // Add the campaign cell as input (GroupInput[0])
   // Provide full cell data so ccc can resolve capacity without an extra RPC call.
@@ -314,10 +329,16 @@ export async function sendVerifyParticipantRaffle(
   });
 
   // Output[0]: updated campaign cell with ticket price added to capacity + deposits
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
-  };
+  const updatedCampaignData = hasSplitSupportAccounting(campaignCell.data)
+    ? {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
+        ticketSalesTotal: campaignCell.data.ticketSalesTotal + ticketPrice,
+      }
+    : {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
+      };
   tx.addOutput(
     {
       capacity: campaignCell.capacityShannons + ticketPrice,
@@ -459,15 +480,25 @@ export async function sendBatchDeliver(
   if (rewardCount <= 0n) {
     throw new Error("No eligible winners are available for settlement.");
   }
-  const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits - rewardPerWinner * BigInt(winners.length),
-  };
+  const rewardPool = computeRaffleRewardPool(campaignCell.data);
+  const rewardPerWinner = rewardPool / rewardCount;
+  const totalPayout = rewardPerWinner * BigInt(winners.length);
+  const updatedCampaignData = campaignCell.data.campaignType === CampaignType.Raffle && hasSplitSupportAccounting(campaignCell.data)
+    ? {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits - totalPayout,
+        ticketSalesTotal: 0n,
+        creatorSupportTotal: campaignCell.data.currentDeposits - totalPayout,
+        supportPoolBps: 0n,
+      }
+    : {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits - totalPayout,
+      };
 
   tx.addOutput(
     {
-      capacity: campaignCell.capacityShannons - rewardPerWinner * BigInt(winners.length),
+      capacity: campaignCell.capacityShannons - totalPayout,
       lock: campaignCell.lock,
       type: campaignCell.type,
     },
@@ -495,6 +526,66 @@ export async function sendBatchDeliver(
   tx.setWitnessArgsAt(0, witness);
 
   return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
+export async function sendCreatorWithdraw(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell
+): Promise<{ txHash: string; withdrawnAmountShannons: bigint }> {
+  const withdrawAmount = computeCreatorWithdrawableAmount(campaignCell.data);
+  if (withdrawAmount <= 0n) {
+    throw new Error("No creator-withdrawable escrow is available for this freight.");
+  }
+
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits - withdrawAmount,
+    creatorSupportTotal: campaignCell.data.creatorSupportTotal - withdrawAmount,
+    supportPoolBps: 0n,
+  };
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons - withdrawAmount,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  tx.addOutput({
+    capacity: withdrawAmount,
+    lock: campaignCell.lock,
+  }, "0x");
+
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([Selector.CreatorWithdraw])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  const txHash = await withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return {
+    txHash,
+    withdrawnAmountShannons: withdrawAmount,
+  };
 }
 
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────
@@ -534,8 +625,8 @@ export async function fetchCampaigns(
     try {
       const rawData = hexToBytes(cell.outputData);
       const typeScript = cell.cellOutput.type;
-      // Campaign cells are exactly 174 bytes; participant cells are 73 bytes.
-      if (rawData.length !== 174 || !typeScript) continue;
+      // Campaign cells use either the legacy 174-byte layout or the split-support 198-byte layout.
+      if ((rawData.length !== 174 && rawData.length !== 198) || !typeScript) continue;
       results.push({
         outPoint: {
           txHash: cell.outPoint.txHash,

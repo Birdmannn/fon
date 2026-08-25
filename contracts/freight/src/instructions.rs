@@ -1,5 +1,5 @@
 use crate::errors::Error;
-use crate::types::{AddressKey, Campaign, CampaignStatus, CampaignType};
+use crate::types::{AddressKey, Campaign, CampaignStatus, CampaignType, CAMPAIGN_DATA_LEN};
 use crate::utils::*;
 use crate::validations::*;
 use ckb_hash::blake2b_256;
@@ -17,9 +17,9 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         }
     };
 
-    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)]
+    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)][support_pool_bps(8)]
     debug!("create_campaign args len={}", args.len());
-    if args.len() < 73 {
+    if args.len() < 81 {
         return Err(Error::InvalidCampaignArgs);
     }
 
@@ -31,6 +31,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     let mut randomness_hash = [0u8; 32];
     randomness_hash.copy_from_slice(&args[33..65]);
     let reward_count = u64::from_le_bytes(args[65..73].try_into().unwrap());
+    let support_pool_bps = u64::from_le_bytes(args[73..81].try_into().unwrap());
 
     if !is_campaign_creation()? {
         debug!("create_campaign rejected because group input exists");
@@ -45,20 +46,21 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     }
 
     let campaign_type: CampaignType = campaign_type_byte.try_into().unwrap();
-    debug!("create_campaign params start={} task={} type={:?} max={} aux={} reward={}", start_duration_in_seconds, task_duration_in_seconds, campaign_type, maximum_amount, aux_amount, reward_count);
+    debug!("create_campaign params start={} task={} type={:?} max={} aux={} reward={} support_pool_bps={}", start_duration_in_seconds, task_duration_in_seconds, campaign_type, maximum_amount, aux_amount, reward_count, support_pool_bps);
     validate_campaign_params(
         start_duration_in_seconds,
         task_duration_in_seconds,
         campaign_type,
         maximum_amount,
         aux_amount,
+        support_pool_bps,
     )?;
 
     let created_at = get_current_timestamp()?;
 
     // Read summary from the output cell data (bytes 102..166)
     let output_data = load_cell_data(0, Source::Output)?;
-    if output_data.len() < 174 {
+    if output_data.len() < CAMPAIGN_DATA_LEN {
         return Err(Error::InvalidCampaignArgs);
     }
     let mut summary = [0u8; 64];
@@ -80,6 +82,9 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         randomness_hash,
         summary,
         aux_amount,
+        ticket_sales_total: 0,
+        creator_support_total: 0,
+        support_pool_bps,
     };
 
     if !verify_campaign_tx(&output_data, &campaign)? {
@@ -95,37 +100,24 @@ pub fn deposit(args: &[u8]) -> Result<(), Error> {
     }
 
     let requested_deposit = u64::from_le_bytes(args[0..8].try_into().unwrap());
-    let current_timestamp = get_current_timestamp()?;
-
     let campaign_cell_data = load_cell_data(0, Source::GroupInput)?;
     let mut campaign = parse_campaign_data(&campaign_cell_data)?;
 
-    if current_timestamp > campaign.created_at + campaign.start_duration_in_seconds * 1_000 {
-        return Err(Error::DepositNotCompleted);
-    }
-    if campaign.status != CampaignStatus::Created {
-        return Err(Error::DepositNotCompleted);
-    }
     if !campaign.accepts_deposits() {
         return Err(Error::DepositNotCompleted);
     }
 
-    let remaining = campaign
-        .maximum_amount
-        .checked_sub(campaign.current_deposits)
-        .ok_or(Error::DepositNotCompleted)?;
-    let actual_deposit = if requested_deposit > remaining { remaining } else { requested_deposit };
-
     if campaign.campaign_type == CampaignType::SimpleTask {
-        validate_creator_tip_transfer(actual_deposit, &campaign.created_by)?;
+        validate_creator_tip_transfer(requested_deposit, &campaign.created_by)?;
+        campaign.current_deposits = campaign
+            .current_deposits
+            .checked_add(requested_deposit)
+            .ok_or(Error::AmountMismatch)?;
+    } else if campaign.is_raffle() {
+        apply_creator_support_deposit(&mut campaign, requested_deposit)?;
     } else {
-        validate_deposit_transfer(actual_deposit)?;
+        apply_deposit(&mut campaign, requested_deposit)?;
     }
-
-    campaign.current_deposits = campaign
-        .current_deposits
-        .checked_add(actual_deposit)
-        .ok_or(Error::AmountMismatch)?;
 
     let output_campaign_data =
         load_cell_data(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
@@ -182,7 +174,7 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
         }
 
         // Validate capacity transition: campaign cell gains exactly ticket_price.
-        apply_deposit(&mut campaign, ticket_price)?;
+        apply_ticket_sale_deposit(&mut campaign, ticket_price)?;
 
         // Verify output campaign cell data.
         let output_campaign_data =
@@ -313,6 +305,58 @@ pub fn refund(_args: &[u8]) -> Result<(), Error> {
         .current_deposits
         .checked_sub(total_refunded)
         .ok_or(Error::AmountMismatch)?;
+    if campaign.is_raffle() {
+        campaign.ticket_sales_total = campaign
+            .ticket_sales_total
+            .checked_sub(total_refunded)
+            .ok_or(Error::AmountMismatch)?;
+    }
+
+    let output_data = load_cell_data(0, Source::GroupOutput)
+        .map_err(|_| Error::InvalidCellData)?;
+    if !verify_campaign_tx(&output_data, &campaign)? {
+        return Err(Error::InvalidCellData);
+    }
+
+    Ok(())
+}
+
+pub fn creator_withdraw(_args: &[u8]) -> Result<(), Error> {
+    let caller_address = extract_caller_address(AddressKey::Depositor)?;
+
+    let campaign_data = load_cell_data(0, Source::GroupInput)?;
+    let mut campaign = parse_campaign_data(&campaign_data)?;
+
+    if campaign.created_by != caller_address {
+        return Err(Error::Unauthorized);
+    }
+
+    let timestamp = get_current_timestamp()?;
+    let can_withdraw = campaign
+        .can_creator_withdraw(timestamp)
+        .ok_or(Error::InvalidOperation)?;
+    if !can_withdraw {
+        return Err(Error::InvalidOperation);
+    }
+
+    let withdraw_amount = campaign
+        .creator_withdrawable_amount()
+        .ok_or(Error::AmountMismatch)?;
+    if withdraw_amount == 0 {
+        return Err(Error::InvalidOperation);
+    }
+
+    validate_creator_withdraw_transfer(withdraw_amount, &campaign.created_by)?;
+
+    campaign.current_deposits = campaign
+        .current_deposits
+        .checked_sub(withdraw_amount)
+        .ok_or(Error::AmountMismatch)?;
+    campaign.creator_support_total = campaign
+        .creator_support_total
+        .checked_sub(withdraw_amount)
+        .ok_or(Error::AmountMismatch)?;
+    campaign.support_pool_bps = 0;
 
     let output_data = load_cell_data(0, Source::GroupOutput)
         .map_err(|_| Error::InvalidCellData)?;
@@ -429,7 +473,10 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     }
 
     let winners = &participants[..winner_count];
-    let reward_per_participant = campaign.current_deposits
+    let reward_pool_amount = campaign
+        .reward_pool_amount()
+        .ok_or(Error::AmountMismatch)?;
+    let reward_per_participant = reward_pool_amount
         .checked_div(winner_count as u64)
         .ok_or(Error::InvalidOperation)?;
 
@@ -441,6 +488,11 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     campaign.current_deposits = campaign.current_deposits
         .checked_sub(total_payout)
         .ok_or(Error::AmountMismatch)?;
+    if campaign.is_raffle() {
+        campaign.ticket_sales_total = 0;
+        campaign.creator_support_total = campaign.current_deposits;
+        campaign.support_pool_bps = 0;
+    }
 
     let output_data = load_cell_data(0, Source::GroupOutput)
         .map_err(|_| Error::InvalidCellData)?;

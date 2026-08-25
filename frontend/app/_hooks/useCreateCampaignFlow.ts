@@ -9,6 +9,8 @@ import {
   type CreateConstraintStatus,
   type CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
+import { normalizeAppMountableConfig } from "@/app/_lib/appMountable";
+import type { AppMountableConfig, RegisteredMountableApp } from "@/app/_types/appMountable";
 
 type UseCreateCampaignFlowArgs<TMode extends string> = {
   animationMs: number;
@@ -57,7 +59,16 @@ export function useCreateCampaignFlow<TMode extends string>({
   const [previewError, setPreviewError] = useState("");
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
   const [lockMountableSelected, setLockMountableSelected] = useState(false);
+  const [appsMountableSelected, setAppsMountableSelected] = useState(false);
   const [appMountablesSelected, setAppMountablesSelected] = useState(0);
+  const [mountedAppConfigs, setMountedAppConfigs] = useState<AppMountableConfig[]>([]);
+  const [registeredMountableApps, setRegisteredMountableApps] = useState<RegisteredMountableApp[]>([]);
+  const [isMountableAppsLoading, setIsMountableAppsLoading] = useState(false);
+  const [mountableAppsError, setMountableAppsError] = useState("");
+  const [selectedMountableAppId, setSelectedMountableAppId] = useState("");
+  const [mountableAppInstallToken, setMountableAppInstallToken] = useState("");
+  const [selectedMountablePrincipleIds, setSelectedMountablePrincipleIds] = useState<string[]>([]);
+  const [isVerifyingMountableApp, setIsVerifyingMountableApp] = useState(false);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
   const [mountableLockFbars, setMountableLockFbars] = useState("");
   const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
@@ -94,14 +105,49 @@ export function useCreateCampaignFlow<TMode extends string>({
     showCreateInfoModal("save-draft-confirm" as TMode);
   }, [showCreateInfoModal]);
 
+  const loadRegisteredMountableApps = useCallback(async () => {
+    setIsMountableAppsLoading(true);
+    setMountableAppsError("");
+
+    try {
+      const response = await fetch("/api/mountables/apps", {
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null) as {
+        error?: string;
+        apps?: RegisteredMountableApp[];
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to load mountable apps");
+      }
+
+      const nextApps = Array.isArray(payload?.apps) ? payload.apps : [];
+      setRegisteredMountableApps(nextApps);
+      return nextApps;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load mountable apps";
+      setRegisteredMountableApps([]);
+      setMountableAppsError(message);
+      return [] as RegisteredMountableApp[];
+    } finally {
+      setIsMountableAppsLoading(false);
+    }
+  }, []);
+
   const openMountablesModal = useCallback(() => {
     const nextFormsMountable = createModalContentRef.current?.getFormsMountableConfig();
     const nextLockMountable = createModalContentRef.current?.getLockMountableConfig();
     const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
+    const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
 
     setFormsMountableSelected(Boolean(nextFormsMountable?.enabled));
     setLockMountableSelected(Boolean(nextLockMountable?.enabled));
-    setAppMountablesSelected(nextAppMountables.filter((entry) => entry.enabled).length);
+    setAppsMountableSelected(nextEnabledAppMountables.length > 0);
+    setAppMountablesSelected(nextEnabledAppMountables.length);
+    setMountedAppConfigs(nextEnabledAppMountables);
+    setSelectedMountableAppId("");
+    setMountableAppInstallToken("");
+    setSelectedMountablePrincipleIds([]);
     setMountableFormLinks([nextFormsMountable?.formUrl ?? ""]);
     setMountableLockFbars(nextLockMountable?.minimumFbars ?? "");
     setMountableFormValidationState("idle");
@@ -109,8 +155,113 @@ export function useCreateCampaignFlow<TMode extends string>({
     setIsMountableFormFocused(false);
     setIsMountableLockFocused(false);
     setMountablesPromptError("");
+    setMountableAppsError("");
+    void loadRegisteredMountableApps();
     showCreateInfoModal("mountables" as TMode);
-  }, [showCreateInfoModal]);
+  }, [loadRegisteredMountableApps, showCreateInfoModal]);
+
+  const handleSelectMountableAppId = useCallback((appId: string) => {
+    setSelectedMountableAppId(appId);
+    const selectedApp = registeredMountableApps.find((entry) => entry.appId === appId);
+    setSelectedMountablePrincipleIds(selectedApp?.principles?.map((principle) => principle.principleId) ?? []);
+    setMountableAppInstallToken("");
+    setMountableAppsError("");
+    setMountablesPromptError("");
+  }, [registeredMountableApps]);
+
+  const handleToggleSelectedMountablePrinciple = useCallback((principleId: string) => {
+    setSelectedMountablePrincipleIds((current) => current.includes(principleId)
+      ? current.filter((entry) => entry !== principleId)
+      : [...current, principleId]);
+    setMountablesPromptError("");
+  }, []);
+
+  const handleRemoveMountedAppConfig = useCallback((mountableInstanceId: string) => {
+    const nextConfigs = (createModalContentRef.current?.getAppMountableConfigs() ?? [])
+      .filter((entry) => entry.mountableInstanceId !== mountableInstanceId);
+    const nextEnabledConfigs = nextConfigs.filter((entry) => entry.enabled);
+
+    createModalContentRef.current?.setAppMountableConfigs(nextConfigs);
+    setMountedAppConfigs(nextEnabledConfigs);
+    setAppsMountableSelected(nextEnabledConfigs.length > 0);
+    setAppMountablesSelected(nextEnabledConfigs.length);
+    setMountablesPromptError("");
+  }, []);
+
+  const handleVerifySelectedMountableApp = useCallback(async () => {
+    if (!selectedMountableAppId) {
+      throw new Error("Choose an app to mount.");
+    }
+
+    if (!mountableAppInstallToken.trim()) {
+      throw new Error("Enter the install token for this app.");
+    }
+
+    if (selectedMountablePrincipleIds.length === 0) {
+      throw new Error("Select at least one principle for this app.");
+    }
+
+    const selectedApp = registeredMountableApps.find((entry) => entry.appId === selectedMountableAppId);
+    if (!selectedApp) {
+      throw new Error("Selected app is no longer available. Refresh the mountables list.");
+    }
+
+    setIsVerifyingMountableApp(true);
+    setMountableAppsError("");
+    setMountablesPromptError("");
+
+    try {
+      const response = await fetch("/api/mountables/apps/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          appId: selectedMountableAppId,
+          installToken: mountableAppInstallToken,
+          selectedPrincipleIds: selectedMountablePrincipleIds,
+          config: selectedApp.configDefaults,
+          campaign: createModalContentRef.current?.getAppMountableCampaignContext() ?? null,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        appMountable?: AppMountableConfig;
+        error?: string;
+      } | null;
+      if (!response.ok || !payload?.appMountable) {
+        throw new Error(payload?.error ?? "Failed to verify mountable app");
+      }
+
+      const verifiedMountable = normalizeAppMountableConfig(payload.appMountable);
+      if (!verifiedMountable.enabled || !verifiedMountable.appId) {
+        throw new Error("Verified mountable app payload was incomplete");
+      }
+
+      const currentConfigs = createModalContentRef.current?.getAppMountableConfigs() ?? [];
+      const nextConfigs = [
+        ...currentConfigs.filter((entry) => entry.mountableInstanceId !== verifiedMountable.mountableInstanceId),
+        verifiedMountable,
+      ];
+      const nextEnabledConfigs = nextConfigs.filter((entry) => entry.enabled);
+
+      createModalContentRef.current?.setAppMountableConfigs(nextConfigs);
+      setMountedAppConfigs(nextEnabledConfigs);
+      setAppsMountableSelected(nextEnabledConfigs.length > 0);
+      setAppMountablesSelected(nextEnabledConfigs.length);
+      setSelectedMountableAppId("");
+      setMountableAppInstallToken("");
+      setSelectedMountablePrincipleIds([]);
+      setMountablesPromptError("");
+      setMountableAppsError("");
+      return verifiedMountable;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to verify mountable app";
+      setMountablesPromptError(message);
+      throw error;
+    } finally {
+      setIsVerifyingMountableApp(false);
+    }
+  }, [mountableAppInstallToken, registeredMountableApps, selectedMountableAppId, selectedMountablePrincipleIds]);
 
   const transitionMountablesModal = useCallback((nextMode: Extract<TMode, string>) => {
     clearInfoCloseTimer();
@@ -353,9 +504,16 @@ export function useCreateCampaignFlow<TMode extends string>({
     setSubmissionSuccessTxHash("");
     setSubmissionSuccessPreimage(null);
     setMountablesPromptError("");
+    setMountableAppsError("");
+    setSelectedMountableAppId("");
+    setMountableAppInstallToken("");
+    setSelectedMountablePrincipleIds([]);
+    setIsVerifyingMountableApp(false);
   }, [initialInfoModalMode, setInfoModalMode]);
 
   return {
+    appsMountableSelected,
+    appMountablesSelected,
     constraintStatus,
     createModalContentRef,
     createModalStep,
@@ -363,16 +521,24 @@ export function useCreateCampaignFlow<TMode extends string>({
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
-    lockMountableSelected,
-    appMountablesSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
+    handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
+    handleSelectMountableAppId,
+    handleToggleSelectedMountablePrinciple,
+    handleVerifySelectedMountableApp,
     isCreateDraftListOpen,
     isCreateModalClosing,
+    isMountableAppsLoading,
     isMountableFormFocused,
     isMountableLockFocused,
     isMountablesContinuing,
+    isVerifyingMountableApp,
+    lockMountableSelected,
+    mountedAppConfigs,
+    mountableAppInstallToken,
+    mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
     mountableFormValidationState,
@@ -382,19 +548,26 @@ export function useCreateCampaignFlow<TMode extends string>({
     openMountablesModal,
     openSubmissionSuccessInfoModal,
     previewError,
+    registeredMountableApps,
     requestCloseCreateModal,
     resetCreateInfoModalState,
     resetCreateModal,
     saveDraftPromptError,
+    selectedMountableAppId,
+    selectedMountablePrincipleIds,
+    setAppMountablesSelected,
+    setAppsMountableSelected,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
-    setLockMountableSelected,
-    setAppMountablesSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
     setIsMountableLockFocused,
     setIsMountablesContinuing,
+    setLockMountableSelected,
+    setMountedAppConfigs,
+    setMountableAppInstallToken,
+    setMountableAppsError,
     setMountableFormLinks,
     setMountableLockFbars,
     setMountableFormValidationState,
@@ -402,6 +575,8 @@ export function useCreateCampaignFlow<TMode extends string>({
     setMountablesPromptError,
     setPreviewError,
     setSaveDraftPromptError,
+    setSelectedMountableAppId,
+    setSelectedMountablePrincipleIds,
     setSubmissionSuccessPreimage,
     setSubmissionSuccessTxHash,
     showCreateModal,

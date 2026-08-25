@@ -150,6 +150,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
           chainCreatedAt: getCampaignChainCreatedAt(campaignForPurchase),
           campaignType: campaignForPurchase.data.campaignType,
           participantAddress: await signer.getRecommendedAddress(),
+          participantKind: "raffle_ticket",
           participantTxHash: txHash,
           joinedAt: String(Date.now()),
           status: "verified",

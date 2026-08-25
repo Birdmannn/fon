@@ -34,6 +34,7 @@ export type CampaignRecord = {
     maxAmountCkb?: string;
     auxAmountCkb?: string;
     rewardCount?: string;
+    raffleSupportPoolPercent?: string;
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
@@ -66,4 +67,8 @@ export type CampaignRecord = {
   liveSoldTicketCount?: string | null;
   settledParticipantCount?: string | null;
   settledRecipients?: CampaignSettledRecipient[] | null;
+  withdrawalTxHash?: string | null;
+  withdrawnAt?: string | null;
+  withdrawnByAddress?: string | null;
+  withdrawnAmountShannons?: string | null;
 };

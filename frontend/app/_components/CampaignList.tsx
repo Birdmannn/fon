@@ -28,6 +28,13 @@ type CampaignListProps = {
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"]
   ) => void;
+  onWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
   onStartDetailTransition: (href: string) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
@@ -46,6 +53,7 @@ export default function CampaignList({
   onSettlementCompleted,
   onSettlementInfoRequest,
   onStartDetailTransition,
+  onWithdrawalCompleted,
   onTicketBought,
   onTicketPurchaseRequest,
   shouldScrollToNewest,
@@ -139,6 +147,7 @@ export default function CampaignList({
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
             onSettlementCompleted={onSettlementCompleted}
+            onWithdrawalCompleted={onWithdrawalCompleted}
             onSettlementInfoRequest={onSettlementInfoRequest}
           />
         </div>
