@@ -1,0 +1,380 @@
+:root {
+  color-scheme: light;
+  --ink: #17201c;
+  --muted: #63706a;
+  --line: #d8dfdc;
+  --panel: #ffffff;
+  --canvas: #f4f7f2;
+  --accent: #0f8b6f;
+  --accent-strong: #0a6f59;
+  --accent-soft: #dff4ee;
+  --warn: #a45f12;
+  --warn-soft: #fff1d9;
+  --shadow: 0 18px 50px rgba(35, 52, 45, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(120deg, rgba(15, 139, 111, 0.10), rgba(164, 95, 18, 0.08)),
+    var(--canvas);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.demo-shell {
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.demo-topbar,
+.workbench {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.demo-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0 26px;
+}
+
+.brand-lockup,
+.login-row,
+.section-heading,
+.manifest-link,
+.session-strip,
+.checkbox-card,
+.principle-row,
+.status-pill {
+  display: flex;
+  align-items: center;
+}
+
+.brand-lockup {
+  gap: 12px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: clamp(1.6rem, 4vw, 2.5rem);
+}
+
+h2 {
+  font-size: 1.08rem;
+}
+
+.manifest-link {
+  min-height: 40px;
+  gap: 4px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.workbench {
+  display: grid;
+  gap: 18px;
+}
+
+.login-panel,
+.task-surface,
+.principle-surface {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: var(--shadow);
+}
+
+.login-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 18px;
+}
+
+.login-panel label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.login-row {
+  gap: 10px;
+}
+
+.login-row input {
+  min-width: 0;
+  width: min(420px, 100%);
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+button {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.login-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+}
+
+.session-strip {
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 280px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+code {
+  max-width: 220px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #f9fbfa;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+  gap: 18px;
+}
+
+.task-surface,
+.principle-surface {
+  padding: 18px;
+}
+
+.section-heading {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.icon-button {
+  display: grid;
+  width: 40px;
+  min-height: 40px;
+  place-items: center;
+  padding: 0;
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+.checkbox-list,
+.principle-list {
+  display: grid;
+  gap: 10px;
+}
+
+.checkbox-card {
+  position: relative;
+  gap: 12px;
+  min-height: 78px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.checkbox-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.visual-box {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #fff;
+}
+
+.checkbox-card input:checked + .visual-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.checkbox-card strong,
+.principle-row strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.96rem;
+}
+
+.checkbox-card small,
+.principle-row small {
+  display: block;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.status-pill {
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 10px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.status-pill.fulfilled {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.principle-row {
+  gap: 12px;
+  min-height: 74px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.result-dot {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.result-dot.fulfilled {
+  background: var(--accent);
+}
+
+.empty-state {
+  min-height: 158px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.message-line {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.spin {
+  animation: spin 0.85s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 820px) {
+  .demo-shell {
+    padding: 18px;
+  }
+
+  .demo-topbar,
+  .login-panel,
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .demo-topbar,
+  .login-panel {
+    align-items: stretch;
+  }
+
+  .demo-topbar {
+    display: grid;
+  }
+
+  .session-strip,
+  .manifest-link {
+    justify-content: flex-start;
+  }
+
+  .login-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .login-row input,
+  .login-row button {
+    width: 100%;
+  }
+}

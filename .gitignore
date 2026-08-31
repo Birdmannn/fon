@@ -3,3 +3,7 @@
 /tests/failed_txs
 
 .builder/config/data.json
+
+examples/checkbox-demo/.next/
+examples/checkbox-demo/node_modules/
+examples/checkbox-demo/tsconfig.tsbuildinfo
