@@ -42,6 +42,8 @@ export const GOOGLE_OAUTH_GRANTS_COLLECTION = "googleOAuthGrants";
 export const FBAR_EVENTS_COLLECTION = "fbarEvents";
 export const MOUNTABLE_APPS_COLLECTION = "mountableApps";
 export const MOUNTABLE_APP_UPDATES_COLLECTION = "mountableAppUpdates";
+export const MOUNTABLE_APP_DELIVERIES_COLLECTION = "mountableAppDeliveries";
+export const CAMPAIGN_PARTICIPANT_FINALIZATIONS_COLLECTION = "campaignParticipantFinalizations";
 
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();
@@ -81,4 +83,14 @@ export async function getMountableAppsCollection() {
 export async function getMountableAppUpdatesCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APP_UPDATES_COLLECTION);
+}
+
+export async function getMountableAppDeliveriesCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APP_DELIVERIES_COLLECTION);
+}
+
+export async function getCampaignParticipantFinalizationsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(CAMPAIGN_PARTICIPANT_FINALIZATIONS_COLLECTION);
 }

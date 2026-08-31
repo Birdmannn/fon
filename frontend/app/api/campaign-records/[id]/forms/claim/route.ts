@@ -4,6 +4,7 @@ import { SignerSignType } from "@ckb-ccc/core";
 
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { findGoogleFormResponseByEmail } from "@/lib/googleFormsApi";
+import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
 import { verifyWalletSignature, walletActionNonceMatchesPurpose } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
@@ -133,7 +134,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
           mountables: 1,
         },
       },
-    );
+    ) as ({ creatorAddress?: unknown } & CampaignRecordMountableRuntime) | null;
 
     if (!record) {
       return badRequest("Campaign record not found", 404);
@@ -234,10 +235,20 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       { upsert: true },
     );
 
+    const canonicalVerification = await finalizeCampaignParticipant({ campaignId, participantAddress: address, record });
+    await dispatchMountedAppRequestsForParticipant({
+      campaignId,
+      participantAddress: address,
+      record,
+      canonicalVerification,
+      source: "forms-claim",
+    });
+
     return NextResponse.json({
       ok: true,
       status,
       matchFound: Boolean(responseMatch),
+      canonicalVerification,
       googleEmail: linkedGoogleAccount.email,
       responseId: responseMatch?.responseId ?? normalizeOptionalString(existingClaim?.responseId),
       responseLastSubmittedTime: responseMatch?.lastSubmittedTime ?? normalizeOptionalString(existingClaim?.responseLastSubmittedTime),

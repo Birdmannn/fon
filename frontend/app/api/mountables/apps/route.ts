@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableJsonObject, normalizeMountableUrl } from "@/lib/fonMountablesSdk";
+import {
+  normalizeMountableAppId,
+  normalizeMountableAppPrinciples,
+  normalizeMountableAppSyncMode,
+  normalizeMountableJsonObject,
+  normalizeMountablePositiveInteger,
+  normalizeMountableUrl,
+} from "@/lib/fonMountablesSdk";
 import { getMountableAppsCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -18,10 +25,15 @@ function sanitizeManifest(value: Record<string, unknown>) {
     appUrl: normalizeMountableUrl(typeof value.appUrl === "string" ? value.appUrl : ""),
     iconUrl: normalizeMountableUrl(typeof value.iconUrl === "string" ? value.iconUrl : ""),
     verifyInstallUrl: normalizeMountableUrl(typeof value.verifyInstallUrl === "string" ? value.verifyInstallUrl : ""),
+    activityWebhookUrl: normalizeMountableUrl(typeof value.activityWebhookUrl === "string" ? value.activityWebhookUrl : ""),
+    pollUpdatesUrl: normalizeMountableUrl(typeof value.pollUpdatesUrl === "string" ? value.pollUpdatesUrl : ""),
+    syncMode: normalizeMountableAppSyncMode(value.syncMode),
+    pollIntervalSeconds: normalizeMountablePositiveInteger(value.pollIntervalSeconds),
     supportsTimestampQuery: value.supportsTimestampQuery === true,
     principles: normalizeMountableAppPrinciples(value.principles),
     configSchema: normalizeMountableJsonObject(value.configSchema),
     configDefaults: normalizeMountableJsonObject(value.configDefaults),
+    registrationSecretIssuedAt: typeof value.registrationSecretIssuedAt === "string" ? value.registrationSecretIssuedAt : "",
     createdAt: value.createdAt instanceof Date ? value.createdAt.toISOString() : typeof value.createdAt === "string" ? value.createdAt : "",
     updatedAt: value.updatedAt instanceof Date ? value.updatedAt.toISOString() : typeof value.updatedAt === "string" ? value.updatedAt : "",
   };
@@ -42,10 +54,15 @@ export async function GET() {
           appUrl: 1,
           iconUrl: 1,
           verifyInstallUrl: 1,
+          activityWebhookUrl: 1,
+          pollUpdatesUrl: 1,
+          syncMode: 1,
+          pollIntervalSeconds: 1,
           supportsTimestampQuery: 1,
           principles: 1,
           configSchema: 1,
           configDefaults: 1,
+          registrationSecretIssuedAt: 1,
           createdAt: 1,
           updatedAt: 1,
         },

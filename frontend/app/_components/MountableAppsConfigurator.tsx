@@ -59,6 +59,7 @@ export default function MountableAppsConfigurator({
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
                     {config.installationLabel ? <span>{config.installationLabel}</span> : null}
                     {config.selectedPrinciples.length > 0 ? <span>{config.selectedPrinciples.length} principle{config.selectedPrinciples.length === 1 ? "" : "s"} selected</span> : null}
+                    {config.selectedPrinciples.length > 0 ? <span>{config.selectedPrinciples.map((principle) => principle.displayLabel || principle.title || principle.principleId).join(" • ")}</span> : null}
                     {config.supportsTimestampQuery ? <span>As-of queries supported</span> : null}
                     {config.lastSyncAt ? <span>Last sync {new Date(config.lastSyncAt).toLocaleString()}</span> : null}
                   </div>
@@ -152,6 +153,7 @@ export default function MountableAppsConfigurator({
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-gray-900">{principle.title || principle.principleId}</p>
                       <p className="text-sm text-gray-500">{principle.description?.trim() || "No description yet."}</p>
+                      {principle.exampleReadableText ? <p className="text-xs text-gray-400">{principle.exampleReadableText}</p> : null}
                     </div>
                     {isSelected ? <Check size={16} strokeWidth={2.6} className="shrink-0 text-[#961cac]" aria-hidden="true" /> : null}
                   </div>

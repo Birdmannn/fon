@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { normalizeAppMountableConfig, normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
-import { hashMountableSecret, normalizeIsoTimestamp, normalizeMountableAppId, normalizeMountableAppPrinciples, type MountedAppUpdatePayload } from "@/lib/fonMountablesSdk";
+import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
+import type { AppMountableConfig } from "@/app/_types/appMountable";
+import { hashMountableSecret, normalizeIsoTimestamp, normalizeMountableAppId, normalizeMountedAppPrincipleStates, type MountedAppUpdatePayload, type MountedAppPrincipleState } from "@/lib/fonMountablesSdk";
+import { dispatchMountableAppEvaluationRequest, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 import { getCampaignParticipantsCollection, getMountableAppUpdatesCollection, getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -27,31 +29,14 @@ function normalizeAddress(value: string) {
   return value.trim().toLowerCase();
 }
 
-function normalizePrincipleStates(value: unknown) {
-  const definitions = normalizeMountableAppPrinciples(value);
-  const items = Array.isArray(value) ? value : [];
-
-  return definitions.map((definition, index) => {
-    const raw = items[index];
-    const candidate = raw && typeof raw === "object" ? raw as {
-      fulfilled?: unknown;
-      detail?: unknown;
-      updatedAt?: unknown;
-    } : null;
-
-    return {
-      principleId: definition.principleId,
-      title: definition.title,
-      description: definition.description,
-      supportsTimestampQuery: definition.supportsTimestampQuery,
-      fulfilled: candidate?.fulfilled === true,
-      detail: typeof candidate?.detail === "string" ? candidate.detail.trim() : "",
-      updatedAt: normalizeIsoTimestamp(candidate?.updatedAt),
-    };
-  });
+function normalizePrincipleStates(value: unknown, selectedPrinciples: AppMountableConfig["selectedPrinciples"]): MountedAppPrincipleState[] {
+  return normalizeMountedAppPrincipleStates(value, selectedPrinciples).map((state) => ({
+    ...state,
+    updatedAt: normalizeIsoTimestamp(state.updatedAt),
+  }));
 }
 
-function computeChildSatisfied(selectedPrincipleIds: string[], principleStates: ReturnType<typeof normalizePrincipleStates>) {
+function computeChildSatisfied(selectedPrincipleIds: string[], principleStates: MountedAppPrincipleState[]) {
   if (selectedPrincipleIds.length === 0) {
     return false;
   }
@@ -128,7 +113,7 @@ export async function POST(request: Request, context: RouteContext<"/api/mountab
       return badRequest("Invalid installation secret", 403);
     }
 
-    const principleStates = normalizePrincipleStates(payload.principleStates);
+    const principleStates = normalizePrincipleStates(payload.principleStates, mountedApp.selectedPrinciples);
     const selectedPrincipleIds = mountedApp.selectedPrinciples.map((principle) => principle.principleId);
     const childSatisfied = computeChildSatisfied(selectedPrincipleIds, principleStates);
 
@@ -250,6 +235,35 @@ export async function POST(request: Request, context: RouteContext<"/api/mountab
       },
     );
 
+    const canonicalVerification = await finalizeCampaignParticipant({
+      campaignId,
+      participantAddress,
+      record,
+    });
+
+    if (canonicalVerification) {
+      await dispatchMountableAppEvaluationRequest({
+        record,
+        mountedApp,
+        participant: {
+          participantAddress,
+          participantKind: "app_update",
+          status,
+          mountableType: "app",
+          mountableInstanceId: normalizedMountableInstanceId,
+          childSatisfied,
+          parentSatisfied,
+          statusMessage,
+          effectiveAt,
+          sourceUpdatedAt,
+          criteriaState: principleStates,
+        },
+        canonicalVerification,
+        eventType: canonicalVerification.status === "verified" ? "participant.finalized" : "participant.updated",
+        source: "app-update-ingest",
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       childSatisfied,
@@ -257,6 +271,7 @@ export async function POST(request: Request, context: RouteContext<"/api/mountab
       status,
       effectiveAt,
       sourceUpdatedAt,
+      canonicalVerification,
     }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to ingest mountable app update";

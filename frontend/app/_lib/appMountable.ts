@@ -4,12 +4,14 @@ import type {
   MountableAppStatus,
 } from "@/app/_types/appMountable";
 import {
+  formatMountableAppPrincipleSelection,
   normalizeIsoTimestamp,
   normalizeMountableAppId,
   normalizeMountableAppPrinciples,
+  normalizeMountableAppPrincipleSelections,
   normalizeMountableJsonObject,
   normalizeMountableUrl,
-  selectMountableAppPrinciples,
+  resolveSelectedMountableAppPrinciples,
 } from "@/lib/fonMountablesSdk";
 
 export const DEFAULT_APP_MOUNTABLE_CONFIG: AppMountableConfig = {
@@ -28,6 +30,11 @@ export const DEFAULT_APP_MOUNTABLE_CONFIG: AppMountableConfig = {
   status: "pending",
   verifiedAt: "",
   supportsTimestampQuery: false,
+  activityWebhookUrl: "",
+  pollUpdatesUrl: "",
+  syncMode: "webhook",
+  pollIntervalSeconds: null,
+  registrationSecretIssuedAt: "",
   startsAt: "",
   endsAt: "",
   principles: [],
@@ -48,24 +55,33 @@ function normalizeSelectedPrinciples(
   principles: AppMountableConfig["principles"],
   selectedValue: unknown,
 ): AppMountableSelectedPrinciple[] {
-  const normalizedSelected = normalizeMountableAppPrinciples(selectedValue).map((principle) => ({
-    ...principle,
-    required: true,
-  }));
+  const normalizedSelected = normalizeMountableAppPrincipleSelections(selectedValue);
 
   if (principles.length === 0) {
-    return normalizedSelected;
+    return normalizedSelected.map((principle) => ({
+      principleId: principle.principleId,
+      title: principle.displayLabel?.trim() || principle.principleId,
+      description: "",
+      supportsTimestampQuery: false,
+      paramsSchema: [],
+      paramsDefaults: {},
+      readableFormat: "",
+      exampleReadableText: principle.displayLabel?.trim() || principle.principleId,
+      params: normalizeMountableJsonObject(principle.params),
+      displayLabel: principle.displayLabel?.trim() || principle.principleId,
+      required: principle.required !== false,
+    }));
   }
 
-  const selectedPrincipleIds = normalizedSelected.map((principle) => principle.principleId);
-  const selectedFromPrinciples = selectMountableAppPrinciples(principles, selectedPrincipleIds);
+  const selectedFromPrinciples = resolveSelectedMountableAppPrinciples(principles, normalizedSelected);
   if (selectedFromPrinciples.length === 0) {
     return [];
   }
 
   return selectedFromPrinciples.map((principle) => ({
     ...principle,
-    required: true,
+    displayLabel: principle.displayLabel || formatMountableAppPrincipleSelection(principle, principle.params),
+    required: principle.required !== false,
   }));
 }
 
@@ -89,6 +105,11 @@ export function normalizeAppMountableConfig(value: Partial<AppMountableConfig> |
     status: normalizeAppMountableStatus(value?.status),
     verifiedAt: normalizeIsoTimestamp(value?.verifiedAt),
     supportsTimestampQuery: value?.supportsTimestampQuery === true,
+    activityWebhookUrl: normalizeMountableUrl(typeof value?.activityWebhookUrl === "string" ? value.activityWebhookUrl : ""),
+    pollUpdatesUrl: normalizeMountableUrl(typeof value?.pollUpdatesUrl === "string" ? value.pollUpdatesUrl : ""),
+    syncMode: value?.syncMode === "poll" || value?.syncMode === "both" ? value.syncMode : "webhook",
+    pollIntervalSeconds: typeof value?.pollIntervalSeconds === "number" && Number.isFinite(value.pollIntervalSeconds) ? value.pollIntervalSeconds : null,
+    registrationSecretIssuedAt: normalizeIsoTimestamp(value?.registrationSecretIssuedAt),
     startsAt: normalizeIsoTimestamp(value?.startsAt),
     endsAt: normalizeIsoTimestamp(value?.endsAt),
     principles,

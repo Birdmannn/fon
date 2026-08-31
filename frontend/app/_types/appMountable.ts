@@ -1,12 +1,14 @@
 import type {
   MountableAppPrincipleDefinition,
+  MountableAppPrincipleSelection,
+  MountableAppSyncMode,
   MountableJsonObject,
   RegisteredMountableAppManifest,
 } from "@/lib/fonMountablesSdk";
 
 export type MountableAppStatus = "pending" | "verified" | "syncing";
 
-export type AppMountableSelectedPrinciple = MountableAppPrincipleDefinition & {
+export type AppMountableSelectedPrinciple = MountableAppPrincipleSelection & MountableAppPrincipleDefinition & {
   required: boolean;
 };
 
@@ -26,6 +28,11 @@ export type AppMountableConfig = {
   status: MountableAppStatus;
   verifiedAt: string;
   supportsTimestampQuery: boolean;
+  activityWebhookUrl: string;
+  pollUpdatesUrl: string;
+  syncMode: MountableAppSyncMode;
+  pollIntervalSeconds: number | null;
+  registrationSecretIssuedAt?: string;
   startsAt: string;
   endsAt: string;
   principles: MountableAppPrincipleDefinition[];

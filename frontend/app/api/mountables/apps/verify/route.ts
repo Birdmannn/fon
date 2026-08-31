@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { maskInstallToken, hashMountableSecret, normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableJsonObject, normalizeMountableUrl, selectMountableAppPrinciples, type VerifyMountableAppRequest, type VerifyMountableAppResult } from "@/lib/fonMountablesSdk";
+import { maskInstallToken, hashMountableSecret, normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableAppPrincipleSelections, normalizeMountableJsonObject, normalizeMountableUrl, resolveSelectedMountableAppPrinciples, type VerifyMountableAppRequest, type VerifyMountableAppResult } from "@/lib/fonMountablesSdk";
 import { deriveMountableWindow } from "@/lib/mountableTiming";
 import { getMountableAppsCollection } from "@/lib/mongodb";
 
@@ -66,6 +66,11 @@ export async function POST(request: Request) {
         appUrl: 1,
         iconUrl: 1,
         verifyInstallUrl: 1,
+        activityWebhookUrl: 1,
+        pollUpdatesUrl: 1,
+        syncMode: 1,
+        pollIntervalSeconds: 1,
+        registrationSecretIssuedAt: 1,
         supportsTimestampQuery: 1,
         principles: 1,
         configSchema: 1,
@@ -90,10 +95,18 @@ export async function POST(request: Request) {
       baseTimestamp: payload.campaign?.chainCreatedAt ?? null,
     });
 
+    const normalizedSelectedPrinciples = normalizeMountableAppPrincipleSelections(
+      payload.selectedPrinciples
+      ?? (Array.isArray(payload.selectedPrincipleIds)
+        ? payload.selectedPrincipleIds.map((principleId) => ({ principleId, required: true }))
+        : []),
+    );
+
     const forwardedPayload: VerifyMountableAppRequest = {
       appId,
       installToken,
-      selectedPrincipleIds: Array.isArray(payload.selectedPrincipleIds) ? payload.selectedPrincipleIds : [],
+      selectedPrincipleIds: normalizedSelectedPrinciples.map((entry) => entry.principleId),
+      selectedPrinciples: normalizedSelectedPrinciples,
       config: normalizeMountableJsonObject(payload.config),
       campaign: {
         campaignId: payload.campaign?.campaignId ?? null,
@@ -129,8 +142,12 @@ export async function POST(request: Request) {
     const manifestPrinciples = normalizeMountableAppPrinciples(manifest.principles);
     const returnedPrinciples = normalizeMountableAppPrinciples(result?.principles);
     const resolvedPrinciples = returnedPrinciples.length > 0 ? returnedPrinciples : manifestPrinciples;
-    const selectedPrincipleIds = Array.isArray(payload.selectedPrincipleIds) ? payload.selectedPrincipleIds : [];
-    const selectedPrinciples = selectMountableAppPrinciples(resolvedPrinciples, selectedPrincipleIds);
+    const selectedPrinciples = resolveSelectedMountableAppPrinciples(
+      resolvedPrinciples,
+      result?.selectedPrinciples && Array.isArray(result.selectedPrinciples) && result.selectedPrinciples.length > 0
+        ? result.selectedPrinciples
+        : normalizedSelectedPrinciples,
+    );
 
     if (selectedPrinciples.length === 0) {
       throw new Error("Select at least one principle before verifying the mountable app");
@@ -168,13 +185,15 @@ export async function POST(request: Request) {
         status: "verified",
         verifiedAt,
         supportsTimestampQuery: result?.supportsTimestampQuery === true || manifest.supportsTimestampQuery === true,
+        activityWebhookUrl: typeof manifest.activityWebhookUrl === "string" ? normalizeMountableUrl(manifest.activityWebhookUrl) : "",
+        pollUpdatesUrl: typeof manifest.pollUpdatesUrl === "string" ? normalizeMountableUrl(manifest.pollUpdatesUrl) : "",
+        syncMode: manifest.syncMode === "poll" || manifest.syncMode === "both" ? manifest.syncMode : "webhook",
+        pollIntervalSeconds: typeof manifest.pollIntervalSeconds === "number" ? manifest.pollIntervalSeconds : null,
+        registrationSecretIssuedAt: typeof manifest.registrationSecretIssuedAt === "string" ? manifest.registrationSecretIssuedAt : "",
         startsAt: forwardedPayload.campaign?.startsAt ?? "",
         endsAt: forwardedPayload.campaign?.endsAt ?? "",
         principles: resolvedPrinciples,
-        selectedPrinciples: selectedPrinciples.map((principle) => ({
-          ...principle,
-          required: true,
-        })),
+        selectedPrinciples: selectedPrinciples,
         config: normalizeMountableJsonObject(result?.config ?? payload.config ?? manifest.configDefaults),
         adminNotice: typeof result?.adminNotice === "string" ? result.adminNotice.trim() : "",
         installationSecretHash,
