@@ -18,17 +18,21 @@ export function ensureOptionalAppMountables(value: unknown, args: EnsureAppMount
   const seenInstanceIds = new Set<string>();
 
   return normalizedApps.map((entry, index) => {
+    const hasCanonicalBaseTimestamp = args.baseTimestamp !== null
+      && args.baseTimestamp !== undefined
+      && String(args.baseTimestamp).trim().length > 0;
     const derivedWindow = deriveMountableWindow({
-      startsAt: entry.startsAt,
-      endsAt: entry.endsAt,
+      startsAt: hasCanonicalBaseTimestamp ? null : entry.startsAt,
+      endsAt: hasCanonicalBaseTimestamp ? null : entry.endsAt,
       taskStartDelayHours: args.taskStartDelayHours,
       taskDurationHours: args.taskDurationHours,
       baseTimestamp: args.baseTimestamp,
     });
     const normalized = normalizeAppMountableConfig({
       ...entry,
-      startsAt: entry.startsAt || derivedWindow.startsAt,
-      endsAt: entry.endsAt || derivedWindow.endsAt,
+      startsAt: hasCanonicalBaseTimestamp ? derivedWindow.startsAt : entry.startsAt || derivedWindow.startsAt,
+      endsAt: hasCanonicalBaseTimestamp ? derivedWindow.endsAt : entry.endsAt || derivedWindow.endsAt,
+      webhookSecretExpiresAt: hasCanonicalBaseTimestamp ? derivedWindow.endsAt : entry.webhookSecretExpiresAt,
     });
 
     if (!normalized.enabled) {
@@ -41,6 +45,10 @@ export function ensureOptionalAppMountables(value: unknown, args: EnsureAppMount
 
     if (!normalized.appName) {
       throw new Error(`mountables.apps[${index}].appName is required`);
+    }
+
+    if (!normalized.logoUrl) {
+      throw new Error(`mountables.apps[${index}].logoUrl is required`);
     }
 
     if (!normalized.mountableInstanceId) {

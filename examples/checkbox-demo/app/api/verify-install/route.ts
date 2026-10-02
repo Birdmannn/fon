@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { buildManifest, defaultSelectedPrinciples, parseSelectedPrinciples } from "@/lib/checkboxDemoApp";
+import { appId, buildManifest, defaultSelectedPrinciples, parseSelectedPrinciples } from "@/lib/checkboxDemoApp";
 
 export async function POST(request: Request) {
   try {
@@ -13,9 +13,10 @@ export async function POST(request: Request) {
     const origin = process.env.NEXT_PUBLIC_APP_BASE_URL?.trim() || new URL(request.url).origin;
     const selectedPrinciples = parseSelectedPrinciples(payload.selectedPrinciples);
     const manifest = buildManifest(origin);
+    const installationId = `checkbox-demo-${installToken.slice(-8) || crypto.randomUUID()}`;
 
     return NextResponse.json({
-      installationId: `checkbox-demo-${installToken.slice(-8) || crypto.randomUUID()}`,
+      installationId,
       installationLabel: "Checkbox Demo Install",
       appUrl: manifest.appUrl,
       iconUrl: manifest.iconUrl,
@@ -26,8 +27,7 @@ export async function POST(request: Request) {
       config: {
         allowSelfReportedCheckboxes: true,
       },
-      sharedSecret: installToken,
-      adminNotice: "Demo install verified. Checkbox state is stored in memory while the dev server runs.",
+      adminNotice: "Demo mount configuration verified. The event grant will arrive through the registered activity webhook after the freight is published.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to verify install";

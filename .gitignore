@@ -7,3 +7,4 @@
 examples/checkbox-demo/.next/
 examples/checkbox-demo/node_modules/
 examples/checkbox-demo/tsconfig.tsbuildinfo
+examples/checkbox-demo/.fon/

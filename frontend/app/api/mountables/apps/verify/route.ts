@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { maskInstallToken, hashMountableSecret, normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableAppPrincipleSelections, normalizeMountableJsonObject, normalizeMountableUrl, resolveSelectedMountableAppPrinciples, type VerifyMountableAppRequest, type VerifyMountableAppResult } from "@/lib/fonMountablesSdk";
-import { deriveMountableWindow } from "@/lib/mountableTiming";
+import { maskInstallToken, normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableAppPrincipleSelections, normalizeMountableJsonObject, normalizeMountableUrl, resolveSelectedMountableAppPrinciples, type VerifyMountableAppRequest, type VerifyMountableAppResult } from "@/lib/fonMountablesSdk";
+import { deriveMountableWindow, mountableWindowDurationSeconds } from "@/lib/mountableTiming";
 import { getMountableAppsCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,7 @@ export async function POST(request: Request) {
         description: 1,
         sdkVersion: 1,
         appUrl: 1,
+        logoUrl: 1,
         iconUrl: 1,
         verifyInstallUrl: 1,
         activityWebhookUrl: 1,
@@ -101,6 +102,18 @@ export async function POST(request: Request) {
         ? payload.selectedPrincipleIds.map((principleId) => ({ principleId, required: true }))
         : []),
     );
+    if (normalizedSelectedPrinciples.length === 0) {
+      throw new Error("Select at least one principle before verifying the mountable app");
+    }
+
+    const startsAt = startsAtWindow.startsAt || (payload.campaign?.startsAt ?? null);
+    const endsAt = startsAtWindow.endsAt || (payload.campaign?.endsAt ?? null);
+    const timeframeSeconds = mountableWindowDurationSeconds(startsAt, endsAt);
+    if (!startsAt || !endsAt || timeframeSeconds === null) {
+      throw new Error("Mounted apps require a valid freight start time and positive task duration");
+    }
+    const mountableInstanceId = buildMountableInstanceId(appId, crypto.randomUUID());
+    const updateWebhookUrl = new URL(`/api/mountables/apps/${encodeURIComponent(mountableInstanceId)}/updates`, request.url).toString();
 
     const forwardedPayload: VerifyMountableAppRequest = {
       appId,
@@ -109,14 +122,16 @@ export async function POST(request: Request) {
       selectedPrinciples: normalizedSelectedPrinciples,
       config: normalizeMountableJsonObject(payload.config),
       campaign: {
+        freightId: payload.campaign?.freightId ?? payload.campaign?.campaignId ?? null,
         campaignId: payload.campaign?.campaignId ?? null,
         createdByHash: payload.campaign?.createdByHash ?? null,
         chainCreatedAt: payload.campaign?.chainCreatedAt ?? null,
         campaignType: typeof payload.campaign?.campaignType === "number" ? payload.campaign.campaignType : null,
         taskStartDelayHours: payload.campaign?.taskStartDelayHours ?? null,
         taskDurationHours: payload.campaign?.taskDurationHours ?? null,
-        startsAt: startsAtWindow.startsAt || (payload.campaign?.startsAt ?? null),
-        endsAt: startsAtWindow.endsAt || (payload.campaign?.endsAt ?? null),
+        startsAt,
+        endsAt,
+        timeframeSeconds,
       },
     };
 
@@ -156,11 +171,6 @@ export async function POST(request: Request) {
     const installationId = typeof result?.installationId === "string" && result.installationId.trim()
       ? result.installationId.trim()
       : crypto.randomUUID();
-    const sharedSecret = typeof result?.sharedSecret === "string" && result.sharedSecret.trim()
-      ? result.sharedSecret.trim()
-      : installToken;
-    const installationSecretHash = await hashMountableSecret(sharedSecret);
-    const mountableInstanceId = buildMountableInstanceId(appId, installationId);
     const verifiedAt = new Date().toISOString();
 
     return NextResponse.json({
@@ -176,6 +186,7 @@ export async function POST(request: Request) {
             : "",
         sdkVersion: typeof manifest.sdkVersion === "string" ? manifest.sdkVersion.trim() : "",
         appUrl: normalizeMountableUrl(typeof result?.appUrl === "string" ? result.appUrl : typeof manifest.appUrl === "string" ? manifest.appUrl : ""),
+        logoUrl: normalizeMountableUrl(typeof manifest.logoUrl === "string" ? manifest.logoUrl : ""),
         iconUrl: normalizeMountableUrl(typeof result?.iconUrl === "string" ? result.iconUrl : typeof manifest.iconUrl === "string" ? manifest.iconUrl : ""),
         mountableInstanceId,
         installationId,
@@ -186,6 +197,7 @@ export async function POST(request: Request) {
         verifiedAt,
         supportsTimestampQuery: result?.supportsTimestampQuery === true || manifest.supportsTimestampQuery === true,
         activityWebhookUrl: typeof manifest.activityWebhookUrl === "string" ? normalizeMountableUrl(manifest.activityWebhookUrl) : "",
+        updateWebhookUrl,
         pollUpdatesUrl: typeof manifest.pollUpdatesUrl === "string" ? normalizeMountableUrl(manifest.pollUpdatesUrl) : "",
         syncMode: manifest.syncMode === "poll" || manifest.syncMode === "both" ? manifest.syncMode : "webhook",
         pollIntervalSeconds: typeof manifest.pollIntervalSeconds === "number" ? manifest.pollIntervalSeconds : null,
@@ -196,8 +208,12 @@ export async function POST(request: Request) {
         selectedPrinciples: selectedPrinciples,
         config: normalizeMountableJsonObject(result?.config ?? payload.config ?? manifest.configDefaults),
         adminNotice: typeof result?.adminNotice === "string" ? result.adminNotice.trim() : "",
-        installationSecretHash,
+        installationSecretHash: "",
+        webhookSecretExpiresAt: endsAt,
+        webhookSecretRevokedAt: "",
+        webhookActivatedAt: "",
         lastSyncAt: "",
+        lastPollAt: "",
       },
     });
   } catch (error) {

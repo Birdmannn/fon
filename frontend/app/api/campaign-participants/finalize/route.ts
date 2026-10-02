@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
+import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 
 type FinalizeParticipantPayload = {
   campaignId?: unknown;
@@ -31,6 +31,13 @@ export async function POST(request: Request) {
     if (!snapshot) {
       return badRequest("Participant or campaign record not found", 404);
     }
+    await dispatchMountedAppRequestsForParticipant({
+      campaignId,
+      participantAddress,
+      canonicalVerification: snapshot,
+      eventType: snapshot.status === "verified" ? "participant.finalized" : "participant.updated",
+      source: "manual-finalize",
+    });
 
     return NextResponse.json({ ok: true, canonicalVerification: snapshot });
   } catch (error) {

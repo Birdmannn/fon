@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
-import { type PollMountableAppResult, normalizeMountableAppId, normalizeMountableUrl } from "@/lib/fonMountablesSdk";
-import { dispatchMountableAppEvaluationRequest, finalizeCampaignParticipant, type CampaignParticipantRuntimeRow, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
-import { getCampaignParticipantsCollection, getMongoCollection, getMountableAppsCollection } from "@/lib/mongodb";
+import { normalizeMountableAppId } from "@/lib/fonMountablesSdk";
+import { dispatchMountableAppEvaluationRequest, finalizeCampaignParticipant, pollMountedApps, type CampaignParticipantRuntimeRow, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
+import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
 
@@ -134,34 +134,8 @@ export async function GET(request: Request) {
       return badRequest("appId is required");
     }
 
-    const collection = await getMountableAppsCollection();
-    const manifest = await collection.findOne(
-      { appId },
-      {
-        projection: {
-          _id: 0,
-          pollUpdatesUrl: 1,
-          syncMode: 1,
-          appId: 1,
-        },
-      },
-    ) as { appId?: unknown; pollUpdatesUrl?: unknown; syncMode?: unknown } | null;
-    if (!manifest) {
-      return badRequest("Mountable app not found", 404);
-    }
-
-    const pollUpdatesUrl = typeof manifest.pollUpdatesUrl === "string" ? normalizeMountableUrl(manifest.pollUpdatesUrl) : "";
-    if (!pollUpdatesUrl) {
-      return badRequest("Registered mountable app is missing a pollUpdatesUrl", 409);
-    }
-
-    const response = await fetch(pollUpdatesUrl, { cache: "no-store" });
-    const payload = await response.json().catch(() => null) as PollMountableAppResult | { error?: string } | null;
-    if (!response.ok) {
-      throw new Error(payload && typeof payload === "object" && "error" in payload ? payload.error ?? "Mountable app poll failed" : "Mountable app poll failed");
-    }
-
-    return NextResponse.json({ ok: true, result: payload ?? { updates: [] } });
+    const results = await pollMountedApps({ appId, force: true });
+    return NextResponse.json({ ok: true, processed: results.length, results });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to poll mountable app";
     return badRequest(message);

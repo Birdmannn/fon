@@ -64,3 +64,12 @@ export function deriveMountableWindow(args: {
     endsAt: endsAt.toISOString(),
   };
 }
+
+export function mountableWindowDurationSeconds(startsAt: string | null | undefined, endsAt: string | null | undefined) {
+  const startMs = new Date(startsAt ?? "").getTime();
+  const endMs = new Date(endsAt ?? "").getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return null;
+  }
+  return Math.floor((endMs - startMs) / 1000);
+}

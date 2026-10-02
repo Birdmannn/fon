@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getMongoCollection } from "@/lib/mongodb";
+import { activateMountedAppsForCampaignRecord } from "@/lib/mountableAppRuntime";
 
 export const dynamic = "force-dynamic";
 
@@ -390,6 +391,9 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     });
+    if (payload.status === "published" && payload.campaignId) {
+      after(() => activateMountedAppsForCampaignRecord(payload));
+    }
 
     return NextResponse.json({ id: result.insertedId.toString() }, { status: 201 });
   } catch (error) {

@@ -9,6 +9,7 @@ import {
   Scroll,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
 
@@ -759,6 +760,33 @@ export default function Home() {
             </span>
           </span>
         </button>
+        {registeredMountableApps.map((app) => {
+          const isMounted = mountedAppConfigs.some((config) => config.appId === app.appId);
+          return (
+            <button
+              key={app.appId}
+              type="button"
+              className={`create-mountable-option ${isMounted ? "create-mountable-option-selected" : ""}`}
+              aria-label={`Configure ${app.appName || app.appId}`}
+              aria-pressed={isMounted}
+              data-tooltip={app.appName || app.appId}
+              onClick={() => {
+                handleSelectMountableAppId(app.appId);
+                transitionMountablesModal("mountables-apps");
+                setMountablesPromptError("");
+              }}
+            >
+              <span className="create-mountable-option-icon-wrap">
+                <span className="create-mountable-option-icon-bg create-mountable-option-logo-bg">
+                  <Image src={app.logoUrl} alt="" width={38} height={38} unoptimized />
+                </span>
+                <span className="create-mountable-option-check" aria-hidden="true">
+                  <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
@@ -1313,4 +1341,3 @@ export default function Home() {
     </main>
   );
 }
-

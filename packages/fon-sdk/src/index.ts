@@ -15,6 +15,7 @@ export type {
   MountedAppCanonicalVerificationSnapshot,
   MountedAppPrincipleState,
   MountedAppUpdatePayload,
+  MountableAppEventWebhookGrant,
   PollMountableAppRequest,
   PollMountableAppResult,
   RegisterMountableAppRequest,
@@ -42,6 +43,12 @@ function buildSecretHeaders(secret: string) {
     authorization: `Bearer ${trimmed}`,
     "x-fon-installation-secret": trimmed,
   };
+}
+
+function assertServerOnly(operation: string) {
+  if (typeof window !== "undefined") {
+    throw new Error(`${operation} must run on a trusted backend, deployment script, or CLI`);
+  }
 }
 
 export function createHostedAppSdk(): FonMountableHostedAppSdk {
@@ -82,13 +89,23 @@ export function createHostedAppSdk(): FonMountableHostedAppSdk {
   };
 }
 
-export async function registerWithFon(baseUrl: string, request: Omit<import("../../../frontend/lib/fonMountablesSdk").RegisterMountableAppRequest, "principles"> & {
-  principles: MountableAppPrincipleDefinition[];
-}) {
+export async function registerWithFon(
+  baseUrl: string,
+  request: Omit<import("../../../frontend/lib/fonMountablesSdk").RegisterMountableAppRequest, "principles"> & {
+    principles: MountableAppPrincipleDefinition[];
+  },
+  registrationSecret?: string,
+) {
+  assertServerOnly("registerWithFon");
+  const secret = registrationSecret?.trim() ?? "";
   const response = await fetch(new URL("/api/mountables/apps/register", baseUrl), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(secret ? {
+        authorization: `Bearer ${secret}`,
+        "x-fon-registration-secret": secret,
+      } : {}),
     },
     body: JSON.stringify(request),
   });
@@ -101,6 +118,7 @@ export async function registerWithFon(baseUrl: string, request: Omit<import("../
 }
 
 export async function verifyInstall(verifyInstallUrl: string, request: import("../../../frontend/lib/fonMountablesSdk").VerifyMountableAppRequest) {
+  assertServerOnly("verifyInstall");
   const response = await fetch(verifyInstallUrl, {
     method: "POST",
     headers: {
@@ -117,7 +135,17 @@ export async function verifyInstall(verifyInstallUrl: string, request: import(".
 }
 
 export async function sendParticipantUpdate(baseUrl: string, mountableInstanceId: string, payload: MountedAppUpdatePayload, secret: string) {
-  const response = await fetch(new URL(`/api/mountables/apps/${encodeURIComponent(mountableInstanceId)}/updates`, baseUrl), {
+  assertServerOnly("sendParticipantUpdate");
+  return sendParticipantUpdateToUrl(
+    new URL(`/api/mountables/apps/${encodeURIComponent(mountableInstanceId)}/updates`, baseUrl).toString(),
+    payload,
+    secret,
+  );
+}
+
+export async function sendParticipantUpdateToUrl(updateWebhookUrl: string, payload: MountedAppUpdatePayload, secret: string) {
+  assertServerOnly("sendParticipantUpdateToUrl");
+  const response = await fetch(updateWebhookUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

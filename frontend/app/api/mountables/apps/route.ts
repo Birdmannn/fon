@@ -23,6 +23,7 @@ function sanitizeManifest(value: Record<string, unknown>) {
     description: typeof value.description === "string" ? value.description.trim() : "",
     sdkVersion: typeof value.sdkVersion === "string" ? value.sdkVersion.trim() : "",
     appUrl: normalizeMountableUrl(typeof value.appUrl === "string" ? value.appUrl : ""),
+    logoUrl: normalizeMountableUrl(typeof value.logoUrl === "string" ? value.logoUrl : ""),
     iconUrl: normalizeMountableUrl(typeof value.iconUrl === "string" ? value.iconUrl : ""),
     verifyInstallUrl: normalizeMountableUrl(typeof value.verifyInstallUrl === "string" ? value.verifyInstallUrl : ""),
     activityWebhookUrl: normalizeMountableUrl(typeof value.activityWebhookUrl === "string" ? value.activityWebhookUrl : ""),
@@ -52,6 +53,7 @@ export async function GET() {
           description: 1,
           sdkVersion: 1,
           appUrl: 1,
+          logoUrl: 1,
           iconUrl: 1,
           verifyInstallUrl: 1,
           activityWebhookUrl: 1,
@@ -70,7 +72,7 @@ export async function GET() {
       .toArray();
 
     return NextResponse.json({
-      apps: manifests.map((entry) => sanitizeManifest(entry as Record<string, unknown>)).filter((entry) => entry.appId && entry.appName),
+      apps: manifests.map((entry) => sanitizeManifest(entry as Record<string, unknown>)).filter((entry) => entry.appId && entry.appName && entry.logoUrl),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch mountable apps";

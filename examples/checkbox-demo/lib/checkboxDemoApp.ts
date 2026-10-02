@@ -1,3 +1,6 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
 import {
   buildSelectedPrinciple,
   createHostedAppSdk,
@@ -16,6 +19,18 @@ export type DemoParticipantState = {
   participantAddress: string;
   checked: DemoCheckboxId[];
   updatedAt: string;
+};
+
+export type DemoInstallation = {
+  installationId: string;
+  mountableInstanceId: string;
+  campaignId: string;
+  sharedSecret: string;
+  updateWebhookUrl: string;
+  validFrom: string;
+  validUntil: string;
+  timeframeSeconds: number;
+  selectedPrinciples: MountableAppPrincipleSelection[];
 };
 
 export const appId = "fon-checkbox-demo";
@@ -143,10 +158,98 @@ const principleDefinitions: MountableAppPrincipleDefinition[] = [
 
 declare global {
   var __fonCheckboxDemoParticipantStates: Map<string, DemoParticipantState> | undefined;
+  var __fonCheckboxDemoInstallations: Map<string, DemoInstallation> | undefined;
+  var __fonCheckboxDemoRegistrationSecret: string | undefined;
 }
 
 const participantStates = globalThis.__fonCheckboxDemoParticipantStates ?? new Map<string, DemoParticipantState>();
 globalThis.__fonCheckboxDemoParticipantStates = participantStates;
+const installations = globalThis.__fonCheckboxDemoInstallations ?? new Map<string, DemoInstallation>();
+globalThis.__fonCheckboxDemoInstallations = installations;
+
+const registrationCredentialPath = process.env.FON_REGISTRATION_CREDENTIAL_PATH?.trim()
+  || join(process.cwd(), ".fon", "registration.json");
+
+export function getRegistrationSecret() {
+  const configured = process.env.FON_REGISTRATION_SECRET?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const cached = globalThis.__fonCheckboxDemoRegistrationSecret?.trim();
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const credential = JSON.parse(readFileSync(registrationCredentialPath, "utf8")) as {
+      appId?: unknown;
+      registrationSecret?: unknown;
+    };
+    const persistedSecret = credential.appId === appId && typeof credential.registrationSecret === "string"
+      ? credential.registrationSecret.trim()
+      : "";
+    if (persistedSecret) {
+      globalThis.__fonCheckboxDemoRegistrationSecret = persistedSecret;
+    }
+    return persistedSecret;
+  } catch {
+    return "";
+  }
+}
+
+export function setRegistrationSecret(secret: string) {
+  const normalized = secret.trim();
+  globalThis.__fonCheckboxDemoRegistrationSecret = normalized;
+  if (!normalized || process.env.FON_REGISTRATION_SECRET?.trim()) {
+    return;
+  }
+
+  mkdirSync(dirname(registrationCredentialPath), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    registrationCredentialPath,
+    `${JSON.stringify({ appId, registrationSecret: normalized }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+}
+
+export function isValidRegistrationSecret(request: Request) {
+  const expected = getRegistrationSecret();
+  const supplied = request.headers.get("x-fon-registration-secret")?.trim()
+    || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim()
+    || "";
+  return Boolean(expected) && supplied === expected;
+}
+
+export function saveInstallation(installation: DemoInstallation) {
+  installations.set(installation.mountableInstanceId, installation);
+}
+
+export function listInstallations() {
+  return Array.from(installations.values());
+}
+
+export function activateInstallation(input: {
+  mountableInstanceId: string;
+  campaignId: string;
+  validFrom: string;
+  validUntil: string;
+  timeframeSeconds: number;
+  selectedPrinciples: MountableAppPrincipleSelection[];
+}) {
+  const existing = installations.get(input.mountableInstanceId);
+  if (!existing) {
+    return false;
+  }
+  installations.set(input.mountableInstanceId, { ...existing, ...input });
+  return true;
+}
+
+export function installationIsActive(installation: DemoInstallation, at = new Date()) {
+  const startsAt = new Date(installation.validFrom).getTime();
+  const endsAt = new Date(installation.validUntil).getTime();
+  return Number.isFinite(startsAt) && Number.isFinite(endsAt) && at.getTime() >= startsAt && at.getTime() < endsAt;
+}
 
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -228,6 +331,7 @@ export function saveParticipantState(input: {
     updatedAt: new Date().toISOString(),
   };
   participantStates.set(key, state);
+  participantStates.set(state.participantAddress, state);
   return state;
 }
 
@@ -319,7 +423,8 @@ export function buildManifest(origin: string): RegisteredMountableAppManifest {
     description: "A demo hosted app where login and checkboxes become FON mounted principles.",
     sdkVersion: "0.1.0",
     appUrl: origin,
-    iconUrl: `${origin}/favicon.ico`,
+    logoUrl: `${origin}/logo.png`,
+    iconUrl: `${origin}/logo.png`,
     verifyInstallUrl: `${origin}/api/verify-install`,
     activityWebhookUrl: `${origin}/api/activity`,
     pollUpdatesUrl: `${origin}/api/poll`,

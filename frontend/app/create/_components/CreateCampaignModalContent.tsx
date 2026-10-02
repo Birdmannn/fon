@@ -718,6 +718,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     trimmedModalTitle,
   ]);
   const currentAppMountableCampaignContext = useMemo<VerifyMountableAppCampaignContext>(() => ({
+    freightId: activeDraftRecord?.campaignId ?? null,
     campaignId: activeDraftRecord?.campaignId ?? null,
     createdByHash: activeDraftRecord?.createdByHash ?? null,
     chainCreatedAt: activeDraftRecord?.chainCreatedAt ?? new Date().toISOString(),
@@ -726,6 +727,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     taskDurationHours,
     startsAt: null,
     endsAt: null,
+    timeframeSeconds: null,
   }), [activeDraftRecord?.campaignId, activeDraftRecord?.chainCreatedAt, activeDraftRecord?.createdByHash, campaignType, taskDurationHours, taskStartDelayHours]);
   const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
   const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);

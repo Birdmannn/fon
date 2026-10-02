@@ -203,6 +203,12 @@ interface FonMountableHostedAppSdk {
 
 This is not yet a packaged external SDK implementation; it is the ideal interface contract embedded into the current internal SDK/types file.
 
+App registration is durable and app-level, not mount-level. FON persists each
+manifest in MongoDB and returns one registration secret. The hosted app retains
+that credential so it can authenticate FON callbacks after restarts and
+authenticate any later manifest update. A normal restart does not register the
+app again.
+
 ---
 
 ## What changed in verification/install flow
@@ -217,6 +223,16 @@ It now:
 - stores the resolved selections on the mounted app config
 
 This makes the installed mountable closer to the final principle model.
+
+Verification does not deliver event credentials. After the freight has its
+canonical id and timeframe, FON generates a per-freight event webhook grant and
+sends it in an authenticated `mount.requested` event to the app's registered
+`activityWebhookUrl`. The event includes the freight id, mounted instance id,
+selected principles, exact FON event URL, start/end timestamps, and
+`timeframeSeconds`. Only the grant secret's hash is retained in the freight
+record, and delivery logs redact it. App-originated updates are accepted only
+inside that freight window, and the polling worker revokes persisted hashes
+after expiry.
 
 ---
 
@@ -257,7 +273,11 @@ The interface is now richer, but some product/runtime parts are still future-fac
 Creators can still mainly select principles, but there is not yet a full generated UI for entering arbitrary `paramsSchema` values.
 
 ### 2. Pull-evaluation runtime
-The SDK types now support pull-style evaluation requests, but the repo still leans operationally toward hosted apps pushing updates into FON.
+Pull evaluation is implemented through the protected
+`/api/mountables/apps/poll` worker. It builds a typed poll request for each due
+installation, authenticates to the hosted app, ingests returned updates through
+the same runtime used by push updates, and honors each app's configured polling
+interval. `frontend/vercel.json` invokes the worker once per minute on Vercel.
 
 ### 3. External SDK packaging
 The ideal interfaces live in the internal codebase, but there is not yet a standalone published SDK package for third-party app authors.

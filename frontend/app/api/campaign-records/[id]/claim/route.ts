@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { SignerSignType } from "@ckb-ccc/core";
 
@@ -11,6 +11,7 @@ import {
 import { verifyWalletSignature } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 import { resolveTargetAddress } from "@/app/api/user-profiles/_lib/profileTarget";
+import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 
 export const dynamic = "force-dynamic";
 
@@ -191,6 +192,17 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       },
       { upsert: true },
     );
+
+    const campaignId = typeof record.campaignId === "string" ? record.campaignId.toLowerCase() : "";
+    after(async () => {
+      const canonicalVerification = await finalizeCampaignParticipant({ campaignId, participantAddress: address });
+      await dispatchMountedAppRequestsForParticipant({
+        campaignId,
+        participantAddress: address,
+        canonicalVerification,
+        source: "gift-claim",
+      });
+    });
 
     return NextResponse.json({
       ok: true,

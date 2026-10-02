@@ -1,6 +1,7 @@
 "use client";
 
 import { Blocks, Check, LoaderCircle, Trash2 } from "lucide-react";
+import Image from "next/image";
 
 import { appMountableSummary } from "@/app/_lib/appMountable";
 import type { AppMountableConfig, RegisteredMountableApp } from "@/app/_types/appMountable";
@@ -52,7 +53,9 @@ export default function MountableAppsConfigurator({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-gray-900">
-                    <Blocks size={16} strokeWidth={2} aria-hidden="true" />
+                    {config.logoUrl ? (
+                      <Image className="h-8 w-8 shrink-0 rounded-md object-cover" src={config.logoUrl} alt="" width={32} height={32} unoptimized />
+                    ) : <Blocks size={16} strokeWidth={2} aria-hidden="true" />}
                     <p className="font-semibold">{config.appName || config.appId || "Mounted app"}</p>
                   </div>
                   <p className="mt-1 text-sm text-gray-500">{appMountableSummary(config)}</p>
@@ -104,9 +107,19 @@ export default function MountableAppsConfigurator({
                 onClick={() => onSelectMountableAppId(isSelected ? "" : app.appId)}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-gray-900">{app.appName || app.appId}</p>
-                    <p className="text-sm text-gray-500">{app.description?.trim() || "No description yet."}</p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Image
+                      className="h-10 w-10 shrink-0 rounded-md border border-black/10 object-cover"
+                      src={app.logoUrl}
+                      alt={`${app.appName || app.appId} logo`}
+                      width={40}
+                      height={40}
+                      unoptimized
+                    />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900">{app.appName || app.appId}</p>
+                      <p className="text-sm text-gray-500">{app.description?.trim() || "No description yet."}</p>
+                    </div>
                   </div>
                   {isSelected ? <Check size={16} strokeWidth={2.6} className="shrink-0 text-[#961cac]" aria-hidden="true" /> : null}
                 </div>

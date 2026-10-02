@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { getCampaignParticipantsCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
+import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 
 type CampaignParticipantPayload = {
   campaignId?: unknown;
@@ -207,6 +208,20 @@ export async function POST(request: Request) {
       },
       { upsert: true }
     );
+
+    after(async () => {
+      const canonicalVerification = await finalizeCampaignParticipant({
+        campaignId: payload.campaignId,
+        participantAddress: payload.participantAddress,
+      });
+      await dispatchMountedAppRequestsForParticipant({
+        campaignId: payload.campaignId,
+        participantAddress: payload.participantAddress,
+        participant: payload,
+        canonicalVerification,
+        source: "participant-upsert",
+      });
+    });
 
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (error) {

@@ -58,7 +58,8 @@ export type RegisteredMountableAppManifest = {
   description: string;
   sdkVersion: string;
   appUrl: string;
-  iconUrl: string;
+  logoUrl: string;
+  iconUrl?: string;
   verifyInstallUrl: string;
   activityWebhookUrl: string;
   pollUpdatesUrl: string;
@@ -81,6 +82,7 @@ export type RegisterMountableAppResult = {
   appName: string;
   principles: MountableAppPrincipleDefinition[];
   registrationSecret: string;
+  logoUrl: string;
   activityWebhookUrl: string;
   pollUpdatesUrl: string;
   syncMode: MountableAppSyncMode;
@@ -88,6 +90,7 @@ export type RegisterMountableAppResult = {
 };
 
 export type VerifyMountableAppCampaignContext = {
+  freightId: string | null;
   campaignId: string | null;
   createdByHash: string | null;
   chainCreatedAt: string | null;
@@ -96,6 +99,16 @@ export type VerifyMountableAppCampaignContext = {
   taskDurationHours: string | null;
   startsAt: string | null;
   endsAt: string | null;
+  timeframeSeconds: number | null;
+};
+
+export type MountableAppEventWebhookGrant = {
+  mountableInstanceId: string;
+  url: string;
+  secret: string;
+  validFrom: string | null;
+  validUntil: string | null;
+  timeframeSeconds: number | null;
 };
 
 export type VerifyMountableAppRequest = {
@@ -117,7 +130,6 @@ export type VerifyMountableAppResult = {
   principles?: MountableAppPrincipleDefinition[];
   selectedPrinciples?: MountableAppPrincipleSelection[];
   config?: MountableJsonObject;
-  sharedSecret?: string;
   adminNotice?: string;
 };
 
@@ -175,7 +187,7 @@ export type MountedAppUpdatePayload = {
   statusMessage?: string;
 };
 
-export type MountedAppActivityEventType = "participant.updated" | "participant.finalized" | "mounted-app.verified";
+export type MountedAppActivityEventType = "participant.updated" | "participant.finalized" | "mount.requested";
 
 export type MountedAppActivityParticipantSnapshot = {
   participantAddress: string;
@@ -208,6 +220,7 @@ export type MountedAppActivityEvent = {
   occurredAt: string;
   freight: VerifyMountableAppCampaignContext;
   selectedPrinciples: MountableAppPrincipleSelection[];
+  eventWebhook?: MountableAppEventWebhookGrant;
   participant?: MountedAppActivityParticipantSnapshot;
   canonicalVerification?: MountedAppCanonicalVerificationSnapshot;
   source?: string;
@@ -226,6 +239,14 @@ export type PollMountableAppResult = {
   updates: MountedAppUpdatePayload[];
   polledAt?: string;
   adminNotice?: string;
+};
+
+export type MountedAppUpdateIngestionResult = {
+  childSatisfied: boolean;
+  parentSatisfied: boolean;
+  status: "pending" | "verified";
+  canonicalVerification: MountedAppCanonicalVerificationSnapshot;
+  becameVerified: boolean;
 };
 
 type MountableAppPrincipleLike = MountableAppPrincipleDefinition | ResolvedMountableAppPrincipleSelection;

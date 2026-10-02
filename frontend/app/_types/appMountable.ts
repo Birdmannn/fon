@@ -19,6 +19,7 @@ export type AppMountableConfig = {
   description: string;
   sdkVersion: string;
   appUrl: string;
+  logoUrl: string;
   iconUrl: string;
   mountableInstanceId: string;
   installationId: string;
@@ -29,6 +30,7 @@ export type AppMountableConfig = {
   verifiedAt: string;
   supportsTimestampQuery: boolean;
   activityWebhookUrl: string;
+  updateWebhookUrl: string;
   pollUpdatesUrl: string;
   syncMode: MountableAppSyncMode;
   pollIntervalSeconds: number | null;
@@ -40,7 +42,11 @@ export type AppMountableConfig = {
   config: MountableJsonObject;
   adminNotice: string;
   installationSecretHash: string;
+  webhookSecretExpiresAt?: string;
+  webhookSecretRevokedAt?: string;
+  webhookActivatedAt?: string;
   lastSyncAt?: string;
+  lastPollAt?: string;
 };
 
 export type RegisteredMountableApp = RegisteredMountableAppManifest & {

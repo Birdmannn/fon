@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
@@ -6,6 +6,7 @@ import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getMongoCollection } from "@/lib/mongodb";
+import { activateMountedAppsForCampaignRecord } from "@/lib/mountableAppRuntime";
 
 export const dynamic = "force-dynamic";
 
@@ -383,6 +384,9 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
 
     if (result.matchedCount === 0) {
       return badRequest("Campaign record not found", 404);
+    }
+    if (payload.status === "published" && payload.campaignId) {
+      after(() => activateMountedAppsForCampaignRecord(payload));
     }
 
     return NextResponse.json({ ok: true, id });

@@ -21,6 +21,7 @@ export const DEFAULT_APP_MOUNTABLE_CONFIG: AppMountableConfig = {
   description: "",
   sdkVersion: "",
   appUrl: "",
+  logoUrl: "",
   iconUrl: "",
   mountableInstanceId: "",
   installationId: "",
@@ -31,6 +32,7 @@ export const DEFAULT_APP_MOUNTABLE_CONFIG: AppMountableConfig = {
   verifiedAt: "",
   supportsTimestampQuery: false,
   activityWebhookUrl: "",
+  updateWebhookUrl: "",
   pollUpdatesUrl: "",
   syncMode: "webhook",
   pollIntervalSeconds: null,
@@ -42,7 +44,11 @@ export const DEFAULT_APP_MOUNTABLE_CONFIG: AppMountableConfig = {
   config: {},
   adminNotice: "",
   installationSecretHash: "",
+  webhookSecretExpiresAt: "",
+  webhookSecretRevokedAt: "",
+  webhookActivatedAt: "",
   lastSyncAt: "",
+  lastPollAt: "",
 };
 
 export function normalizeAppMountableStatus(value: unknown): MountableAppStatus {
@@ -96,6 +102,7 @@ export function normalizeAppMountableConfig(value: Partial<AppMountableConfig> |
     description: typeof value?.description === "string" ? value.description.trim() : "",
     sdkVersion: typeof value?.sdkVersion === "string" ? value.sdkVersion.trim() : "",
     appUrl: normalizeMountableUrl(typeof value?.appUrl === "string" ? value.appUrl : ""),
+    logoUrl: normalizeMountableUrl(typeof value?.logoUrl === "string" ? value.logoUrl : typeof value?.iconUrl === "string" ? value.iconUrl : ""),
     iconUrl: normalizeMountableUrl(typeof value?.iconUrl === "string" ? value.iconUrl : ""),
     mountableInstanceId: typeof value?.mountableInstanceId === "string" ? value.mountableInstanceId.trim() : "",
     installationId: typeof value?.installationId === "string" ? value.installationId.trim() : "",
@@ -106,6 +113,7 @@ export function normalizeAppMountableConfig(value: Partial<AppMountableConfig> |
     verifiedAt: normalizeIsoTimestamp(value?.verifiedAt),
     supportsTimestampQuery: value?.supportsTimestampQuery === true,
     activityWebhookUrl: normalizeMountableUrl(typeof value?.activityWebhookUrl === "string" ? value.activityWebhookUrl : ""),
+    updateWebhookUrl: normalizeMountableUrl(typeof value?.updateWebhookUrl === "string" ? value.updateWebhookUrl : ""),
     pollUpdatesUrl: normalizeMountableUrl(typeof value?.pollUpdatesUrl === "string" ? value.pollUpdatesUrl : ""),
     syncMode: value?.syncMode === "poll" || value?.syncMode === "both" ? value.syncMode : "webhook",
     pollIntervalSeconds: typeof value?.pollIntervalSeconds === "number" && Number.isFinite(value.pollIntervalSeconds) ? value.pollIntervalSeconds : null,
@@ -117,7 +125,11 @@ export function normalizeAppMountableConfig(value: Partial<AppMountableConfig> |
     config: normalizeMountableJsonObject(value?.config),
     adminNotice: typeof value?.adminNotice === "string" ? value.adminNotice.trim() : "",
     installationSecretHash: typeof value?.installationSecretHash === "string" ? value.installationSecretHash.trim().toLowerCase() : "",
+    webhookSecretExpiresAt: normalizeIsoTimestamp(value?.webhookSecretExpiresAt),
+    webhookSecretRevokedAt: normalizeIsoTimestamp(value?.webhookSecretRevokedAt),
+    webhookActivatedAt: normalizeIsoTimestamp(value?.webhookActivatedAt),
     lastSyncAt: normalizeIsoTimestamp(value?.lastSyncAt),
+    lastPollAt: normalizeIsoTimestamp(value?.lastPollAt),
   };
 }
 

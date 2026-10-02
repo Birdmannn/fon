@@ -37,6 +37,11 @@ function normalizePayload(payload: RegisterMountableAppPayload) {
     throw new Error("verifyInstallUrl must be a valid http(s) URL");
   }
 
+  const logoUrl = normalizeMountableUrl(typeof payload.logoUrl === "string" ? payload.logoUrl : "");
+  if (!logoUrl) {
+    throw new Error("logoUrl must be a valid http(s) URL");
+  }
+
   const principles = normalizeMountableAppPrinciples(payload.principles);
   if (principles.length === 0) {
     throw new Error("principles must include at least one principle definition");
@@ -47,8 +52,8 @@ function normalizePayload(payload: RegisterMountableAppPayload) {
   const pollUpdatesUrl = normalizeMountableUrl(typeof payload.pollUpdatesUrl === "string" ? payload.pollUpdatesUrl : "");
   const pollIntervalSeconds = normalizeMountablePositiveInteger(payload.pollIntervalSeconds);
 
-  if ((syncMode === "webhook" || syncMode === "both") && !activityWebhookUrl) {
-    throw new Error("activityWebhookUrl must be a valid http(s) URL when webhook delivery is enabled");
+  if (!activityWebhookUrl) {
+    throw new Error("activityWebhookUrl must be a valid http(s) URL");
   }
 
   if ((syncMode === "poll" || syncMode === "both") && !pollUpdatesUrl) {
@@ -61,6 +66,7 @@ function normalizePayload(payload: RegisterMountableAppPayload) {
     description: typeof payload.description === "string" ? payload.description.trim() : "",
     sdkVersion: typeof payload.sdkVersion === "string" ? payload.sdkVersion.trim() : "",
     appUrl: normalizeMountableUrl(typeof payload.appUrl === "string" ? payload.appUrl : ""),
+    logoUrl,
     iconUrl: normalizeMountableUrl(typeof payload.iconUrl === "string" ? payload.iconUrl : ""),
     verifyInstallUrl,
     activityWebhookUrl,
@@ -82,13 +88,28 @@ export async function POST(request: Request) {
     const now = new Date();
     const existing = await collection.findOne(
       { appId: payload.appId },
-      { projection: { _id: 0, registrationSecret: 1 } },
-    ) as { registrationSecret?: unknown } | null;
+      { projection: { _id: 0, registrationSecret: 1, registrationSecretHash: 1, registrationSecretIssuedAt: 1 } },
+    ) as { registrationSecret?: unknown; registrationSecretHash?: unknown; registrationSecretIssuedAt?: unknown } | null;
+
+    const suppliedSecret = request.headers.get("x-fon-registration-secret")?.trim()
+      || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim()
+      || "";
+    if (existing) {
+      const suppliedHash = suppliedSecret ? await hashMountableSecret(suppliedSecret) : "";
+      const storedHash = typeof existing.registrationSecretHash === "string" ? existing.registrationSecretHash.trim() : "";
+      const legacySecret = typeof existing.registrationSecret === "string" ? existing.registrationSecret.trim() : "";
+      const authenticated = Boolean(suppliedSecret) && (storedHash ? suppliedHash === storedHash : suppliedSecret === legacySecret);
+      if (!authenticated) {
+        return badRequest("This appId is already registered; provide its registration secret to update the manifest", 401);
+      }
+    }
 
     const registrationSecret = payload.rotateRegistrationSecret || typeof existing?.registrationSecret !== "string" || !existing.registrationSecret.trim()
       ? createMountableRegistrationSecret()
       : existing.registrationSecret.trim();
-    const registrationSecretIssuedAt = now.toISOString();
+    const registrationSecretIssuedAt = payload.rotateRegistrationSecret || typeof existing?.registrationSecretIssuedAt !== "string"
+      ? now.toISOString()
+      : existing.registrationSecretIssuedAt;
     const registrationSecretHash = await hashMountableSecret(registrationSecret);
 
     await collection.updateOne(
@@ -100,6 +121,7 @@ export async function POST(request: Request) {
           description: payload.description,
           sdkVersion: payload.sdkVersion,
           appUrl: payload.appUrl,
+          logoUrl: payload.logoUrl,
           iconUrl: payload.iconUrl,
           verifyInstallUrl: payload.verifyInstallUrl,
           activityWebhookUrl: payload.activityWebhookUrl,
@@ -128,6 +150,7 @@ export async function POST(request: Request) {
       appName: payload.appName,
       principles: payload.principles,
       registrationSecret,
+      logoUrl: payload.logoUrl,
       activityWebhookUrl: payload.activityWebhookUrl,
       pollUpdatesUrl: payload.pollUpdatesUrl,
       syncMode: payload.syncMode,

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/mountables/apps/poll",
+      "schedule": "* * * * *"
+    }
+  ]
+}
