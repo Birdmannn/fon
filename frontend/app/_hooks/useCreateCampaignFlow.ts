@@ -27,6 +27,13 @@ type UseCreateCampaignFlowArgs<TMode extends string> = {
   setShowInfoModal: (show: boolean) => void;
 };
 
+type MountableSelectionState = {
+  hasMountedHashtag: boolean;
+  formsSelected: boolean;
+  lockSelected: boolean;
+  appMountablesSelected: number;
+};
+
 export function useCreateCampaignFlow<TMode extends string>({
   animationMs,
   initialInfoModalMode,
@@ -186,6 +193,25 @@ export function useCreateCampaignFlow<TMode extends string>({
     setAppsMountableSelected(nextEnabledConfigs.length > 0);
     setAppMountablesSelected(nextEnabledConfigs.length);
     setMountablesPromptError("");
+  }, []);
+
+  const handleMountableSelectionStateChange = useCallback((state: MountableSelectionState) => {
+    const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
+    const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
+
+    setFormsMountableSelected(state.formsSelected);
+    setLockMountableSelected(state.lockSelected);
+    setAppsMountableSelected(state.appMountablesSelected > 0);
+    setAppMountablesSelected(state.appMountablesSelected);
+    setMountedAppConfigs((current) => (
+      current.length === nextEnabledAppMountables.length
+      && current.every((entry, index) => entry === nextEnabledAppMountables[index])
+        ? current
+        : nextEnabledAppMountables
+    ));
+    if (!state.hasMountedHashtag && state.appMountablesSelected === 0) {
+      setMountablesPromptError("");
+    }
   }, []);
 
   const handleVerifySelectedMountableApp = useCallback(async () => {
@@ -523,6 +549,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     formsMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
+    handleMountableSelectionStateChange,
     handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
     handleSelectMountableAppId,

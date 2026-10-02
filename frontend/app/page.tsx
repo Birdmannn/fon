@@ -215,6 +215,7 @@ export default function Home() {
     formsMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
+    handleMountableSelectionStateChange,
     handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
     handleSelectMountableAppId,
@@ -247,8 +248,6 @@ export default function Home() {
     saveDraftPromptError,
     selectedMountableAppId,
     selectedMountablePrincipleIds,
-    setAppMountablesSelected,
-    setAppsMountableSelected,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
@@ -257,7 +256,6 @@ export default function Home() {
     setIsMountableLockFocused,
     setIsMountablesContinuing,
     setLockMountableSelected,
-    setMountedAppConfigs,
     setMountableAppInstallToken,
     setMountableFormLinks,
     setMountableLockFbars,
@@ -1313,18 +1311,7 @@ export default function Home() {
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
-        onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected, lockSelected, appMountablesSelected: nextAppMountablesSelected }) => {
-          const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
-          const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
-          setFormsMountableSelected(formsSelected);
-          setLockMountableSelected(lockSelected);
-          setAppsMountableSelected(nextAppMountablesSelected > 0);
-          setAppMountablesSelected(nextAppMountablesSelected);
-          setMountedAppConfigs(nextEnabledAppMountables);
-          if (!hasMountedHashtag && nextAppMountablesSelected === 0) {
-            setMountablesPromptError("");
-          }
-        }}
+        onMountableSelectionStateChange={handleMountableSelectionStateChange}
         onOpenCreateModal={openCreateModal}
         onPreviewErrorChange={setPreviewError}
         onPublishSuccess={(txHash) => {

@@ -421,6 +421,7 @@ export default function CampaignDetailPage() {
     lockMountableSelected,
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
+    handleMountableSelectionStateChange,
     handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
     handleSelectMountableAppId,
@@ -452,8 +453,6 @@ export default function CampaignDetailPage() {
     saveDraftPromptError,
     selectedMountableAppId,
     selectedMountablePrincipleIds,
-    setAppMountablesSelected,
-    setAppsMountableSelected,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
@@ -463,7 +462,6 @@ export default function CampaignDetailPage() {
     setIsMountableLockFocused,
     setIsMountablesContinuing,
     setMountableAppInstallToken,
-    setMountedAppConfigs,
     setMountableFormLinks,
     setMountableLockFbars,
     setMountableFormValidationState,
@@ -2235,18 +2233,7 @@ export default function CampaignDetailPage() {
           onDraftSelectionRequest={handleDraftSelectionRequest}
           onInsufficientFbars={openInsufficientFbarsInfoModal}
           onMountableSelectionRequired={openMountablesModal}
-          onMountableSelectionStateChange={({ hasMountedHashtag, formsSelected, lockSelected, appMountablesSelected: nextAppMountablesSelected }) => {
-            const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
-            const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
-            setFormsMountableSelected(formsSelected);
-            setLockMountableSelected(lockSelected);
-            setAppsMountableSelected(nextAppMountablesSelected > 0);
-            setAppMountablesSelected(nextAppMountablesSelected);
-            setMountedAppConfigs(nextEnabledAppMountables);
-            if (!hasMountedHashtag && nextAppMountablesSelected === 0) {
-              setMountablesPromptError("");
-            }
-          }}
+          onMountableSelectionStateChange={handleMountableSelectionStateChange}
           onOpenCreateModal={openCreateModal}
           onPreviewErrorChange={setPreviewError}
           onPublishSuccess={(txHash) => {

@@ -96,6 +96,19 @@
   overflow-y: auto;
 }
 
+.header-info-modal,
+.header-info-modal * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.header-info-modal::-webkit-scrollbar,
+.header-info-modal *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .header-info-modal-title-row {
   display: flex;
   align-items: flex-start;
@@ -210,4 +223,3 @@
     opacity: 0;
   }
 }
-
