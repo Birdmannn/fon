@@ -256,27 +256,22 @@
   margin-top: 0.08rem;
 }
 
-.profile-handle-edit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.profile-display-name-edit-trigger {
+.profile-handle-edit-trigger {
   padding: 0;
   margin: 0;
   border: 0;
   background: transparent;
   color: inherit;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  text-align: left;
   cursor: pointer;
 }
 
-.profile-display-name-edit-trigger:hover,
-.profile-display-name-edit-trigger:focus-visible {
-  color: #961cac;
+.profile-handle-edit-trigger:hover,
+.profile-handle-edit-trigger:focus-visible {
+  text-decoration-line: underline;
+  text-decoration-color: #961cac;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2rem;
   outline: none;
 }
 

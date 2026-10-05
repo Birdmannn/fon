@@ -6,7 +6,6 @@ import {
   CheckCircle,
   Copy,
   Camera,
-  Pencil,
   Search,
   Trophy,
 } from "lucide-react";
@@ -1346,19 +1345,18 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   </div>
                 )}
                 {photoUploadError ? <p className="profile-photo-error" role="alert">{photoUploadError}</p> : null}
-                <div className="profile-handle-edit-row">
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-handle profile-handle-under-avatar profile-handle-edit-trigger"
+                    onClick={openDisplayNameModal}
+                    aria-label={`Edit ${handleLabel}`}
+                  >
+                    {handleLabel}
+                  </button>
+                ) : (
                   <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-                  {canEditDisplayName ? (
-                    <button
-                      type="button"
-                      className="profile-display-name-edit-trigger"
-                      onClick={openDisplayNameModal}
-                      aria-label="Edit display name"
-                    >
-                      <Pencil size={14} strokeWidth={2} aria-hidden="true" />
-                    </button>
-                  ) : null}
-                </div>
+                )}
               </div>
 
               <section className="profile-summary-card">
