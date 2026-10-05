@@ -6,6 +6,7 @@ import {
   CheckCircle,
   Copy,
   Camera,
+  LoaderCircle,
   Search,
   Trophy,
 } from "lucide-react";
@@ -83,7 +84,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState("");
-  const [uploadedPhoto, setUploadedPhoto] = useState<{ address: string; version: string } | null>(null);
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
@@ -141,9 +141,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     markUserProfileDirty,
     overallLeaderboard,
     profileCacheKey,
-    refreshUserProfile,
     saveDisplayName,
     saveLightModePrimaryColor,
+    setCurrentUserProfile,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
@@ -467,9 +467,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     ? `/user/${encodeURIComponent(connectedProfileUsername)}`
     : undefined;
   const creatorAvailableFbars = connectedUserProfile?.fbars;
-  const photoVersion = uploadedPhoto && uploadedPhoto.address === currentUserProfile?.address
-    ? uploadedPhoto.version
-    : currentUserProfile?.photoUpdatedAt;
+  const photoVersion = currentUserProfile?.photoUpdatedAt;
   const photoUrl = currentUserProfile?.address && photoVersion
     ? `/api/user-profiles/photo?address=${encodeURIComponent(currentUserProfile.address)}&v=${encodeURIComponent(photoVersion)}`
     : null;
@@ -517,8 +515,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         throw new Error(payload.error ?? "Failed to upload photo");
       }
 
-      setUploadedPhoto({ address, version: payload.photoUpdatedAt });
-      refreshUserProfile();
+      setCurrentUserProfile((profile) => profile?.address === address
+        ? { ...profile, photoUpdatedAt: payload.photoUpdatedAt }
+        : profile);
     } catch (error) {
       setPhotoUploadError(error instanceof Error ? error.message : "Failed to upload photo");
     } finally {
@@ -1332,12 +1331,17 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     type="button"
                     className="profile-avatar-placeholder profile-avatar-editable"
                     onClick={() => photoInputRef.current?.click()}
-                    aria-label={photoUrl ? "Change profile photo" : "Upload profile photo"}
+                    aria-label={isUploadingPhoto ? "Uploading profile photo" : photoUrl ? "Change profile photo" : "Upload profile photo"}
                     title="Upload photo (max 4 MB)"
                     disabled={isUploadingPhoto}
                   >
-                    {photoUrl ? <Image src={photoUrl} alt="" fill unoptimized className="profile-avatar-image" /> : <Camera size={28} strokeWidth={1.8} aria-hidden="true" />}
-                    {isUploadingPhoto ? <span className="profile-avatar-progress">Uploading...</span> : null}
+                    {isUploadingPhoto ? (
+                      <LoaderCircle className="profile-avatar-spinner" size={30} strokeWidth={2} aria-hidden="true" />
+                    ) : photoUrl ? (
+                      <Image src={photoUrl} alt="" fill unoptimized className="profile-avatar-image" />
+                    ) : (
+                      <Camera size={28} strokeWidth={1.8} aria-hidden="true" />
+                    )}
                   </button>
                 ) : (
                   <div className="profile-avatar-placeholder">

@@ -150,6 +150,7 @@ export default function CampaignCard({
       <CampaignCardSurface
         campaign={campaign}
         record={record}
+        creatorPhotoUpdatedAt={creatorProfile?.photoUpdatedAt}
         displayStatus={displayStatus}
         nowMs={nowMs}
         isHighlighted={isHighlighted}

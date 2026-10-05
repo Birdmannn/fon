@@ -82,7 +82,17 @@
 }
 
 .create-review-mountable-icon + .create-review-mountable-icon {
-  margin-left: -1.2rem;
+  margin-left: -1.44rem;
+}
+
+.create-review-mountable-icon-overflow {
+  border-color: #6b7280;
+  background: #9ca3af;
+  color: #ffffff;
+  font-family: var(--font-mono, monospace);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0;
 }
 
 .create-review-section-label {

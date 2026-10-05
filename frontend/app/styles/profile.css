@@ -134,12 +134,19 @@
   object-fit: cover;
 }
 
-.profile-avatar-progress {
-  position: relative;
-  z-index: 2;
-  padding: 0.25rem;
-  background: var(--background);
+.profile-avatar-spinner {
+  animation: profile-avatar-spin 850ms linear infinite;
   color: var(--foreground);
+}
+
+@keyframes profile-avatar-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-avatar-spinner {
+    animation-duration: 2s;
+  }
 }
 
 .profile-photo-error {

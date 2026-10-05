@@ -526,6 +526,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const summaryBytes = createContentChars;
   const title = "Create a Campaign";
   const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
+  const reviewMountedIcons = [
+    ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
+    ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
+      key: entry.mountableInstanceId || entry.appId,
+      name: entry.appName || entry.appId,
+      kind: "app" as const,
+      logoUrl: entry.logoUrl || entry.iconUrl,
+    })),
+  ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  const visibleReviewMountedIcons = reviewMountedIcons.length >= 4 ? reviewMountedIcons.slice(0, 3) : reviewMountedIcons;
+  const hiddenReviewMountedIconCount = reviewMountedIcons.length - visibleReviewMountedIcons.length;
   const activeModalError = draftSaveError || errorMsg;
   const isNextDisabled = status === "pending" || !constraintsPassed;
   const startDelayParts = useMemo(() => splitTimingParts(taskStartDelayHours, 0), [taskStartDelayHours]);
@@ -3021,18 +3033,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ))}
             </div>
           )}
-          {(formsMountable.enabled || lockMountable.enabled || appMountables.some((entry) => entry.enabled)) ? (
+          {reviewMountedIcons.length > 0 ? (
             <div className="create-review-mountable-icons" aria-label="Mounted apps">
-              {[
-                ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
-                ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
-                ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
-                  key: entry.mountableInstanceId || entry.appId,
-                  name: entry.appName || entry.appId,
-                  kind: "app" as const,
-                  logoUrl: entry.logoUrl || entry.iconUrl,
-                })),
-              ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" })).map((mountable, index) => (
+              {visibleReviewMountedIcons.map((mountable, index) => (
                 <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : ""}`.trim()} title={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
                   {mountable.kind === "app" && mountable.logoUrl ? (
                     <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
@@ -3043,6 +3046,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   )}
                 </span>
               ))}
+              {hiddenReviewMountedIconCount > 0 ? (
+                <span
+                  className="create-review-mountable-icon create-mountable-option-icon-bg create-review-mountable-icon-overflow"
+                  title={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  aria-label={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  style={{ zIndex: visibleReviewMountedIcons.length + 1 }}
+                >
+                  +{hiddenReviewMountedIconCount}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>

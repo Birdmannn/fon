@@ -132,6 +132,7 @@ async function copyText(text: string) {
 
 type CampaignCardSurfaceProps = {
   campaign: CampaignCell;
+  creatorPhotoUpdatedAt?: string | null;
   displayStatus: CampaignStatus;
   isHighlighted?: boolean;
   nowMs: number;
@@ -142,6 +143,7 @@ type CampaignCardSurfaceProps = {
 
 export default function CampaignCardSurface({
   campaign,
+  creatorPhotoUpdatedAt,
   displayStatus,
   isHighlighted = false,
   nowMs,
@@ -159,6 +161,9 @@ export default function CampaignCardSurface({
   const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
+  const creatorPhotoUrl = creatorPhotoUpdatedAt
+    ? `/api/user-profiles/photo?address=${encodeURIComponent(creatorAddress)}&v=${encodeURIComponent(creatorPhotoUpdatedAt)}`
+    : null;
   const mentions = record?.socialMetadata?.mentions ?? [];
   const giftDeliverable = record?.giftDeliverable;
   const rewardCountValue = Number(data.rewardCount);
@@ -195,6 +200,8 @@ export default function CampaignCardSurface({
       logoUrl: entry.logoUrl || entry.iconUrl,
     })),
   ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  const visibleMountedIcons = mountedIcons.length >= 4 ? mountedIcons.slice(0, 3) : mountedIcons;
+  const hiddenMountedIconCount = mountedIcons.length - visibleMountedIcons.length;
 
   const handleCopyAddress = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -220,56 +227,72 @@ export default function CampaignCardSurface({
   return (
     <div className={rootClassName} onClick={onOpenDetail} role={onOpenDetail ? "button" : undefined} tabIndex={onOpenDetail ? 0 : undefined}>
       <div className="campaign-card-body campaign-card-body-feed">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <button
-              type="button"
-              onClick={handleCopyAddress}
-              className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
-              title={creatorAddress}
-              aria-label="Copy creator address"
-            >
-              <Copy size={14} strokeWidth={2} aria-hidden="true" />
-              <span>{truncateAddress(creatorAddress)}</span>
-            </button>
-            <Link
-              href={`/user/${encodeURIComponent(creatorHandle)}`}
-              className="campaign-card-handle-link"
-              onClick={(event) => {
-                event.stopPropagation();
-              }}
-            >
-              {creatorHandle}
-            </Link>
-            {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
-            {copyFeedback === "error" && <span className="text-[11px] text-red-500">Copy failed</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`status-indicator status-${getStatusClassName(displayStatus)}`} title={STATUS_LABELS[displayStatus] ?? String(displayStatus)} />
-          </div>
-        </div>
+        <div className="campaign-card-creator-header">
+          <div className="campaign-card-creator-meta">
+            <div className="campaign-card-creator-primary-line">
+              <span
+                className={`status-indicator status-${getStatusClassName(displayStatus)}`}
+                title={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
+                aria-label={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
+              />
+              <button
+                type="button"
+                onClick={handleCopyAddress}
+                className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
+                title={creatorAddress}
+                aria-label="Copy creator address"
+              >
+                <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                <span>{truncateAddress(creatorAddress)}</span>
+              </button>
+              <Link
+                href={`/user/${encodeURIComponent(creatorHandle)}`}
+                className="campaign-card-handle-link"
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+              >
+                {creatorHandle}
+              </Link>
+              {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
+              {copyFeedback === "error" && <span className="text-[11px] text-red-500">Copy failed</span>}
+            </div>
 
-        <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
-          <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
-          {isRaffleCampaign && ticketPriceShannons > 0n && (
-            <>
-              <span className="campaign-card-ticket-price">
-                1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
-              </span>
-              {data.rewardCount > 0n && (
+            <div className="campaign-card-creator-secondary-line">
+              <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
+              {isRaffleCampaign && ticketPriceShannons > 0n && (
                 <>
-                  <span className="font-medium text-gray-800">then:</span>
-                  <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`}>take {String(rewardCountValue)}</span>
-                  {supportPoolPercent > 0 ? (
+                  <span className="campaign-card-ticket-price">
+                    1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
+                  </span>
+                  {data.rewardCount > 0n && (
                     <>
-                      <span className="font-medium text-gray-800">with:</span>
-                      <span className="campaign-card-ticket-price">{supportPoolPercent}%</span>
+                      <span className="font-medium text-gray-800">then:</span>
+                      <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`}>take {String(rewardCountValue)}</span>
+                      {supportPoolPercent > 0 ? (
+                        <>
+                          <span className="font-medium text-gray-800">with:</span>
+                          <span className="campaign-card-ticket-price">{supportPoolPercent}%</span>
+                        </>
+                      ) : null}
                     </>
-                  ) : null}
+                  )}
                 </>
               )}
-            </>
-          )}
+            </div>
+          </div>
+          <Link
+            href={`/user/${encodeURIComponent(creatorHandle)}`}
+            className={`campaign-card-creator-photo ${creatorPhotoUrl ? "campaign-card-creator-photo-image" : "campaign-card-creator-photo-fallback"}`.trim()}
+            aria-label={`View ${creatorHandle} profile`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {creatorPhotoUrl ? (
+              <Image src={creatorPhotoUrl} alt="" width={44} height={44} unoptimized />
+            ) : (
+              <span className="campaign-card-creator-photo-fallback-inner" aria-hidden="true" />
+            )}
+          </Link>
         </div>
 
         <div className="campaign-card-content campaign-card-content-feed">
@@ -318,7 +341,7 @@ export default function CampaignCardSurface({
         <div className="campaign-card-footer-meta">
           {mountedIcons.length > 0 ? (
             <div className="campaign-card-mountable-icons" aria-label="Mounted apps">
-              {mountedIcons.map((mountable, index) => (
+              {visibleMountedIcons.map((mountable, index) => (
                 <span
                   className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : ""}`.trim()}
                   title={mountable.name}
@@ -339,6 +362,16 @@ export default function CampaignCardSurface({
                   )}
                 </span>
               ))}
+              {hiddenMountedIconCount > 0 ? (
+                <span
+                  className="campaign-card-mounted-icon campaign-card-mounted-icon-overflow"
+                  title={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  aria-label={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  style={{ zIndex: visibleMountedIcons.length + 1 }}
+                >
+                  +{hiddenMountedIconCount}
+                </span>
+              ) : null}
             </div>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
