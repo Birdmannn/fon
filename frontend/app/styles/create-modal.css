@@ -678,12 +678,31 @@
 }
 
 
+.create-mountable-catalog {
+  display: flex;
+  flex-direction: column;
+}
+
+.create-mountable-group {
+  min-width: 0;
+}
+
+.create-mountable-group-heading {
+  display: block;
+  margin-top: 0.7rem;
+  color: #6b7280;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: left;
+}
+
 .create-mountable-options-row {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.85rem;
-  margin-top: 0.1rem;
+  margin-top: 0.55rem;
   margin-right: 0;
 }
 

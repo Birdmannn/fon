@@ -1,7 +1,7 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { Blocks, Check, CheckCircle, DollarSign, LockKeyhole, Scroll } from "lucide-react";
+import { CheckCircle } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -12,6 +12,7 @@ import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_comp
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
+import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
@@ -1656,87 +1657,37 @@ export default function CampaignDetailPage() {
   ) : showCreateModal && infoModalMode === "mountables" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
-      <div className="create-mountable-options-row">
-        <button
-          type="button"
-          className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
-          aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
-          aria-pressed={formsMountableSelected}
-          data-tooltip="Forms"
-          onClick={() => {
+      <MountableOptionsCatalog
+        appMountablesSelected={appMountablesSelected}
+        appsMountableSelected={appsMountableSelected}
+        formsMountableSelected={formsMountableSelected}
+        lockMountableSelected={lockMountableSelected}
+        mountedAppConfigs={mountedAppConfigs}
+        registeredMountableApps={registeredMountableApps}
+        onToggleForms={() => {
             const nextSelected = !formsMountableSelected;
             createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
             setFormsMountableSelected(nextSelected);
             setMountableFormLinks((current) => current.length > 0 ? current : [""]);
             setMountablesPromptError("");
-          }}
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <Scroll size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-            <span className="create-mountable-option-check" aria-hidden="true">
-              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className="create-mountable-option"
-          data-tooltip="Payable"
-          disabled
-          aria-label="Payable mountable coming soon"
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <DollarSign size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`create-mountable-option ${lockMountableSelected ? "create-mountable-option-selected" : ""}`}
-          aria-label={lockMountableSelected ? "Deselect lock mountable" : "Select lock mountable"}
-          aria-pressed={lockMountableSelected}
-          data-tooltip="Lock"
-          onClick={() => {
+        }}
+        onToggleLock={() => {
             const nextSelected = !lockMountableSelected;
             createModalContentRef.current?.setLockMountableEnabled(nextSelected);
             setLockMountableSelected(nextSelected);
             setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
             setMountablesPromptError("");
-          }}
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-            <span className="create-mountable-option-check" aria-hidden="true">
-              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`create-mountable-option ${appsMountableSelected ? "create-mountable-option-selected" : ""}`}
-          aria-label={appsMountableSelected ? `Manage ${appMountablesSelected} app mountable${appMountablesSelected === 1 ? "" : "s"}` : "Open app mountables"}
-          aria-pressed={appsMountableSelected}
-          data-tooltip={appMountablesSelected > 0 ? `Apps (${appMountablesSelected})` : "Apps"}
-          onClick={() => {
-            transitionMountablesModal("mountables-apps");
-            setMountablesPromptError("");
-          }}
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <Blocks size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-            <span className="create-mountable-option-check" aria-hidden="true">
-              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-      </div>
+        }}
+        onOpenApps={() => {
+          transitionMountablesModal("mountables-apps");
+          setMountablesPromptError("");
+        }}
+        onConfigureApp={(appId) => {
+          handleSelectMountableAppId(appId);
+          transitionMountablesModal("mountables-apps");
+          setMountablesPromptError("");
+        }}
+      />
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
           <span>{mountablesPromptError}</span>
