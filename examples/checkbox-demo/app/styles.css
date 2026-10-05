@@ -234,6 +234,19 @@ code {
   gap: 10px;
 }
 
+.exact-text-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.exact-text-form label {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
 .checkbox-card {
   position: relative;
   gap: 12px;

@@ -113,7 +113,6 @@ export type MountableAppEventWebhookGrant = {
 
 export type VerifyMountableAppRequest = {
   appId: string;
-  installToken: string;
   selectedPrincipleIds?: string[];
   selectedPrinciples?: MountableAppPrincipleSelection[];
   config?: MountableJsonObject;

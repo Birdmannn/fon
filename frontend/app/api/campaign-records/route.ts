@@ -236,12 +236,14 @@ function ensureOptionalLockMountable(value: unknown) {
   const candidate = value as {
     enabled?: unknown;
     criterion?: unknown;
+    rule?: unknown;
     minimumFbars?: unknown;
   };
 
   const normalized = normalizeLockMountableConfig({
     enabled: Boolean(candidate.enabled),
     criterion: candidate.criterion as "fbars" | undefined,
+    rule: candidate.rule as "block_below" | "block_at_or_above" | undefined,
     minimumFbars: typeof candidate.minimumFbars === "string"
       ? candidate.minimumFbars
       : candidate.minimumFbars === null || candidate.minimumFbars === undefined

@@ -42,6 +42,7 @@ export type UserProfileGoogleAccount = {
 export type UserProfile = LeaderboardEntry & {
   overallRank: number;
   weeklyRank: number;
+  photoUpdatedAt?: string | null;
   canEditWeeklyMarquee: boolean;
   lightModePrimaryColor: LightModePrimaryColor;
   weeklyMarqueeMessage?: string | null;
@@ -782,20 +783,21 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
   return createElement(UserProfileContext.Provider, { value }, children);
 }
 
-export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string | null) {
+export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string | null, targetAddress?: string | null) {
   const context = useContext(UserProfileContext);
   if (!context) {
     throw new Error("useUserProfile must be used within a UserProfileProvider");
   }
 
   const targetArgs = useMemo<ProfileTargetArgs>(() => ({
+    address: targetAddress ?? null,
     handle: targetHandle ?? null,
     signer,
-  }), [signer, targetHandle]);
+  }), [signer, targetAddress, targetHandle]);
   const previousSignerRef = useRef<ccc.Signer | null>(signer);
 
   useEffect(() => {
-    if (targetHandle) {
+    if (targetHandle || targetAddress) {
       return;
     }
 
@@ -803,33 +805,33 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       context.resetViewerRequest();
       previousSignerRef.current = signer;
     }
-  }, [context, signer, targetHandle]);
+  }, [context, signer, targetAddress, targetHandle]);
 
   const resolvedKey = context.resolveProfileKey(targetArgs);
   const entry = resolvedKey ? (context.entries[resolvedKey] ?? createEmptyProfileEntry()) : createEmptyProfileEntry();
 
   useEffect(() => {
-    if (!signer && !targetHandle) {
+    if (!signer && !targetHandle && !targetAddress) {
       return;
     }
 
     context.ensureLoaded(targetArgs);
-  }, [context, signer, targetArgs, targetHandle]);
+  }, [context, signer, targetAddress, targetArgs, targetHandle]);
 
   useEffect(() => {
-    if (targetHandle || !entry.currentUserProfile?.lightModePrimaryColor) {
+    if (targetHandle || targetAddress || !entry.currentUserProfile?.lightModePrimaryColor) {
       return;
     }
 
     persistLightModePrimaryColor(entry.currentUserProfile.lightModePrimaryColor);
-  }, [entry.currentUserProfile?.lightModePrimaryColor, targetHandle]);
+  }, [entry.currentUserProfile?.lightModePrimaryColor, targetAddress, targetHandle]);
 
   const seedWalletFbars = useCallback(async () => {
     return context.seedWalletFbars(targetArgs);
   }, [context, targetArgs]);
 
   useEffect(() => {
-    if (!signer || targetHandle || entry.isUserProfileLoading || entry.isSeedingWalletFbars) {
+    if (!signer || targetHandle || targetAddress || entry.isUserProfileLoading || entry.isSeedingWalletFbars) {
       return;
     }
 
@@ -863,15 +865,15 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
       .finally(() => {
         finishWalletSeedAttempt(address);
       });
-  }, [context, entry.currentUserProfile, entry.isSeedingWalletFbars, entry.isUserProfileLoading, seedWalletFbars, signer, targetArgs, targetHandle]);
+  }, [context, entry.currentUserProfile, entry.isSeedingWalletFbars, entry.isUserProfileLoading, seedWalletFbars, signer, targetAddress, targetArgs, targetHandle]);
 
   const refreshUserProfile = useCallback(() => {
-    if (!signer && !targetHandle) {
+    if (!signer && !targetHandle && !targetAddress) {
       return;
     }
 
     context.ensureLoaded(targetArgs, true);
-  }, [context, signer, targetArgs, targetHandle]);
+  }, [context, signer, targetAddress, targetArgs, targetHandle]);
 
   const markUserProfileDirty = useCallback((overrideArgs?: { address?: string | null; handle?: string | null }) => {
     context.markDirty({

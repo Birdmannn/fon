@@ -9,6 +9,8 @@ import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
+import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import MountablesPanel from "@/app/_components/MountablesPanel";
@@ -18,7 +20,6 @@ import {
   CREATE_INFO_NOTE_HEADING,
   CREATE_INFO_NOTE_ITEMS,
   CREATE_INFO_PREVIEW_HEADING,
-  CREATE_INFO_PREVIEW_ITEMS,
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
@@ -197,8 +198,8 @@ export default function Home() {
   });
 
   const {
-    appsMountableSelected,
-    appMountablesSelected,
+    advanceMountableSetup,
+    beginMountableSetup,
     constraintStatus,
     createModalContentRef,
     createModalStep,
@@ -209,24 +210,23 @@ export default function Home() {
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleMountableSelectionStateChange,
-    handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
-    handleSelectMountableAppId,
     handleToggleSelectedMountablePrinciple,
+    handleUpdateSelectedMountablePrincipleParam,
+    handleToggleMountableAppSelection,
     handleVerifySelectedMountableApp,
     isCreateDraftListOpen,
     isCreateModalClosing,
-    isMountableAppsLoading,
     isMountableFormFocused,
     isMountableLockFocused,
     isMountablesContinuing,
     isVerifyingMountableApp,
     lockMountableSelected,
     mountedAppConfigs,
-    mountableAppInstallToken,
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
     mountablesPromptError,
@@ -240,7 +240,9 @@ export default function Home() {
     resetCreateModal,
     saveDraftPromptError,
     selectedMountableAppId,
+    selectedMountableAppIds,
     selectedMountablePrincipleIds,
+    selectedMountablePrincipleParams,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
@@ -249,9 +251,9 @@ export default function Home() {
     setIsMountableLockFocused,
     setIsMountablesContinuing,
     setLockMountableSelected,
-    setMountableAppInstallToken,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,
     setMountablesPromptError,
@@ -259,7 +261,7 @@ export default function Home() {
     setSubmissionSuccessTxHash,
     showCreateModal,
     submissionSuccessTxHash,
-    transitionMountablesModal,
+    goBackMountableSetup,
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     initialInfoModalMode: "about",
@@ -672,12 +674,10 @@ export default function Home() {
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
       <MountableOptionsCatalog
-        appMountablesSelected={appMountablesSelected}
-        appsMountableSelected={appsMountableSelected}
         formsMountableSelected={formsMountableSelected}
         lockMountableSelected={lockMountableSelected}
-        mountedAppConfigs={mountedAppConfigs}
         registeredMountableApps={registeredMountableApps}
+        selectedMountableAppIds={selectedMountableAppIds}
         onToggleForms={() => {
             const nextSelected = !formsMountableSelected;
             createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
@@ -692,15 +692,7 @@ export default function Home() {
             setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
             setMountablesPromptError("");
         }}
-        onOpenApps={() => {
-          transitionMountablesModal("mountables-apps");
-          setMountablesPromptError("");
-        }}
-        onConfigureApp={(appId) => {
-          handleSelectMountableAppId(appId);
-          transitionMountablesModal("mountables-apps");
-          setMountablesPromptError("");
-        }}
+        onToggleApp={handleToggleMountableAppSelection}
       />
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
@@ -709,90 +701,48 @@ export default function Home() {
       ) : null}
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
-    <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config create-info-forms-config-tight">
-        <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Lock with:</p>
-          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
-        </div>
-        <div className="create-info-forms-row flex items-center gap-2">
-          <div className="create-info-ticket-input-wrap">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={mountableLockFbars}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setMountableLockFbars(nextValue);
-                createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
-                setMountablesPromptError("");
-              }}
-              onFocus={() => {
-                if (mountableLockValidationState === "idle") {
-                  setIsMountableLockFocused(true);
-                }
-              }}
-              onBlur={() => setIsMountableLockFocused(false)}
-              placeholder="0"
-              className={`create-info-ticket-input create-info-ticket-input-with-suffix ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-              aria-label="Lock FBARS threshold"
-            />
-            <span className="create-info-ticket-input-suffix">FBARS</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <LockMountableConfigurator
+      errorMessage={mountablesPromptError}
+      fbars={mountableLockFbars}
+      isFocused={isMountableLockFocused}
+      onFbarsChange={(nextValue) => {
+        setMountableLockFbars(nextValue);
+        createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+        setMountablesPromptError("");
+      }}
+      onFocusChange={setIsMountableLockFocused}
+      onRuleChange={(rule) => {
+        setMountableLockRule(rule);
+        createModalContentRef.current?.updateLockMountableConfig({ rule });
+      }}
+      rule={mountableLockRule}
+      validationState={mountableLockValidationState}
+    />
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
-    <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config">
-        <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
-          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
-        </div>
-        {mountableFormLinks.map((value, index) => (
-          <div key={`forms-link-${index}`} className="create-info-forms-row">
-            <input
-              type="text"
-              value={value}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
-                createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
-                setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
-                setMountablesPromptError("");
-              }}
-              onFocus={() => {
-                if (mountableFormValidationState === "idle") {
-                  setIsMountableFormFocused(true);
-                }
-              }}
-              onBlur={() => setIsMountableFormFocused(false)}
-              placeholder="Paste Google Forms responder link"
-              className={`create-info-ticket-input ${mountableFormValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableFormValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableFormFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-              aria-label={`Forms link ${index + 1}`}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+    <FormsMountableConfigurator
+      errorMessage={mountablesPromptError}
+      formLinks={mountableFormLinks}
+      isFocused={isMountableFormFocused}
+      onFocusChange={setIsMountableFormFocused}
+      onLinkChange={(index, nextValue) => {
+        setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+        createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+        setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
+        setMountablesPromptError("");
+      }}
+      validationState={mountableFormValidationState}
+    />
   ) : showCreateModal && infoModalMode === "mountables-apps" ? (
     <MountableAppsConfigurator
       errorMessage={mountableAppsError || mountablesPromptError}
-      isMountableAppsLoading={isMountableAppsLoading}
       isVerifyingMountableApp={isVerifyingMountableApp}
       mountedAppConfigs={mountedAppConfigs}
-      mountableAppInstallToken={mountableAppInstallToken}
-      onInstallTokenChange={(value) => {
-        setMountableAppInstallToken(value);
-        setMountablesPromptError("");
-      }}
-      onRemoveMountedAppConfig={handleRemoveMountedAppConfig}
-      onSelectMountableAppId={handleSelectMountableAppId}
       onToggleSelectedMountablePrinciple={handleToggleSelectedMountablePrinciple}
-      onVerifySelectedMountableApp={handleVerifySelectedMountableApp}
+      onUpdateSelectedMountablePrincipleParam={handleUpdateSelectedMountablePrincipleParam}
       registeredMountableApps={registeredMountableApps}
       selectedMountableAppId={selectedMountableAppId}
       selectedMountablePrincipleIds={selectedMountablePrincipleIds}
+      selectedMountablePrincipleParams={selectedMountablePrincipleParams}
     />
   ) : showCreateModal && isCreateDraftListOpen ? (
     <div className="create-info-constraints-copy">
@@ -806,11 +756,14 @@ export default function Home() {
       {createModalStep === "review" ? (
         <>
           <p>{CREATE_INFO_PREVIEW_HEADING}</p>
-          {CREATE_INFO_PREVIEW_ITEMS.map((item) => (
-            <p key={item} className="create-info-constraint-item">
-              <span>{item}</span>
-            </p>
-          ))}
+          <CreateReviewMountablesInfo
+            appMountables={mountedAppConfigs}
+            formsEnabled={formsMountableSelected}
+            formsUrl={mountableFormLinks[mountableFormLinks.length - 1] ?? ""}
+            lockEnabled={lockMountableSelected}
+            lockFbars={mountableLockFbars}
+            lockRule={mountableLockRule}
+          />
           {previewError && (
             <>
               <p className="mt-3 text-red-500 font-semibold">Errors</p>
@@ -880,6 +833,28 @@ export default function Home() {
       ) : null}
     </div>
   );
+  const handleIgnoreBuiltInMountable = async (kind: "forms" | "lock") => {
+    try {
+      setIsMountablesContinuing(true);
+      setMountablesPromptError("");
+      if (kind === "forms") {
+        createModalContentRef.current?.setFormsMountableEnabled(false);
+        setFormsMountableSelected(false);
+      } else {
+        createModalContentRef.current?.setLockMountableEnabled(false);
+        setLockMountableSelected(false);
+      }
+      if (advanceMountableSetup(kind)) return;
+      await createModalContentRef.current?.persistCurrentDraft();
+      closeInfoModal(resetHomeInfoModalState);
+      void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+    } catch (error) {
+      setMountablesPromptError(error instanceof Error ? error.message : `Failed to ignore mounted ${kind}`);
+    } finally {
+      setIsMountablesContinuing(false);
+    }
+  };
+
   const infoModalActions = infoModalMode === "ticket-purchase" ? (
     <form
       className="create-info-confirm-actions"
@@ -940,33 +915,24 @@ export default function Home() {
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected && !lockMountableSelected && appMountablesSelected === 0) {
-            setMountablesPromptError("Select a mountable to continue.");
-            return;
-          }
-
-          if (lockMountableSelected) {
-            transitionMountablesModal("mountables-lock");
-            setMountablesPromptError("");
-            return;
-          }
-
-          if (formsMountableSelected) {
-            transitionMountablesModal("mountables-forms");
-            setMountablesPromptError("");
-            return;
-          }
-
-          transitionMountablesModal("mountables-apps");
-          setMountablesPromptError("");
+          beginMountableSetup();
         }}
       >
         Continue
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
-    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
-      <button
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup("lock")}
+          disabled={isMountablesContinuing}
+        >
+          Back
+        </button>
+        <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         disabled={isMountablesContinuing || mountableLockValidationState !== "valid"}
@@ -981,15 +947,7 @@ export default function Home() {
 
               createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: String(minimumFbars) });
 
-              if (formsMountableSelected) {
-                transitionMountablesModal("mountables-forms");
-                setMountablesPromptError("");
-                return;
-              }
-
-              if (appMountablesSelected > 0) {
-                transitionMountablesModal("mountables-apps");
-                setMountablesPromptError("");
+              if (advanceMountableSetup("lock")) {
                 return;
               }
 
@@ -1008,11 +966,29 @@ export default function Home() {
         }}
       >
         {isMountablesContinuing ? "Hold..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing}
+        onClick={() => void handleIgnoreBuiltInMountable("lock")}
+      >
+        Ignore
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
-    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
-      <button
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup("forms")}
+          disabled={isMountablesContinuing}
+        >
+          Back
+        </button>
+        <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         disabled={isMountablesContinuing || mountableFormValidationState !== "valid"}
@@ -1052,9 +1028,7 @@ export default function Home() {
               });
               setMountableFormLinks([canonicalFormUrl]);
 
-              if (appMountablesSelected > 0) {
-                transitionMountablesModal("mountables-apps");
-                setMountablesPromptError("");
+              if (advanceMountableSetup("forms")) {
                 return;
               }
 
@@ -1071,27 +1045,68 @@ export default function Home() {
         }}
       >
         {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing}
+        onClick={() => void handleIgnoreBuiltInMountable("forms")}
+      >
+        Ignore
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-apps" ? (
-    <div className="create-info-confirm-actions">
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup(`app:${selectedMountableAppId}`)}
+          disabled={isMountablesContinuing || isVerifyingMountableApp}
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          className="create-info-confirm-btn create-info-confirm-btn-primary"
+          disabled={isMountablesContinuing || isVerifyingMountableApp || !selectedMountableAppId}
+          onClick={() => {
+            void (async () => {
+              try {
+                setIsMountablesContinuing(true);
+                setMountablesPromptError("");
+                await handleVerifySelectedMountableApp();
+
+                if (advanceMountableSetup(`app:${selectedMountableAppId}`)) {
+                  return;
+                }
+
+                await createModalContentRef.current?.persistCurrentDraft();
+                closeInfoModal(resetHomeInfoModalState);
+                void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+              } catch (error) {
+                setMountablesPromptError(error instanceof Error ? error.message : "Failed to set up mounted app");
+              } finally {
+                setIsMountablesContinuing(false);
+              }
+            })();
+          }}
+        >
+          {isMountablesContinuing || isVerifyingMountableApp ? "Hold..." : "Continue"}
+        </button>
+      </div>
       <button
         type="button"
-        className="create-info-confirm-btn"
-        onClick={() => transitionMountablesModal(formsMountableSelected ? "mountables-forms" : lockMountableSelected ? "mountables-lock" : "mountables")}
-        disabled={isMountablesContinuing || isVerifyingMountableApp}
-      >
-        Back
-      </button>
-      <button
-        type="button"
-        className="create-info-confirm-btn create-info-confirm-btn-primary"
-        disabled={isMountablesContinuing || isVerifyingMountableApp}
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing || isVerifyingMountableApp || !selectedMountableAppId}
         onClick={() => {
           void (async () => {
             try {
-              if (mountedAppConfigs.length === 0) {
-                setMountablesPromptError("Verify at least one app before continuing.");
+              const ignoredAppId = selectedMountableAppId;
+              handleToggleMountableAppSelection(ignoredAppId);
+
+              if (advanceMountableSetup(`app:${ignoredAppId}`)) {
                 return;
               }
 
@@ -1101,14 +1116,14 @@ export default function Home() {
               closeInfoModal(resetHomeInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
-              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save mounted apps");
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to ignore mounted app");
             } finally {
               setIsMountablesContinuing(false);
             }
           })();
         }}
       >
-        {isMountablesContinuing ? "Hold..." : "Continue"}
+        Ignore
       </button>
     </div>
   ) : infoModalMode === "discard-comment-confirm" ? (

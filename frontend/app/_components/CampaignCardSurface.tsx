@@ -1,7 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
+import { Blocks, Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
@@ -184,6 +185,16 @@ export default function CampaignCardSurface({
   const countdownTitle = countdown.phase === "start" ? "Starts in" : countdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  const mountedIcons = [
+    ...(record?.mountables?.forms?.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
+    ...(record?.mountables?.lock?.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(record?.mountables?.apps ?? []).filter((entry) => entry.enabled).map((entry) => ({
+      key: entry.mountableInstanceId || entry.appId,
+      name: entry.appName || entry.appId,
+      kind: "app" as const,
+      logoUrl: entry.logoUrl || entry.iconUrl,
+    })),
+  ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
 
   const handleCopyAddress = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -305,15 +316,30 @@ export default function CampaignCardSurface({
 
       <div className="campaign-card-footer">
         <div className="campaign-card-footer-meta">
-          {record?.mountables?.forms?.enabled ? (
-            <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
-              <Scroll size={22} strokeWidth={2} aria-hidden="true" />
-            </span>
-          ) : null}
-          {record?.mountables?.lock?.enabled ? (
-            <span className="campaign-card-mounted-icon" title="Lock mounted" aria-label="Lock mounted">
-              <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
-            </span>
+          {mountedIcons.length > 0 ? (
+            <div className="campaign-card-mountable-icons" aria-label="Mounted apps">
+              {mountedIcons.map((mountable, index) => (
+                <span
+                  className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : ""}`.trim()}
+                  title={mountable.name}
+                  aria-label={mountable.name}
+                  key={mountable.key}
+                  style={{ zIndex: index + 1 }}
+                >
+                  {mountable.kind === "app" ? (
+                    mountable.logoUrl ? (
+                      <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
+                    ) : (
+                      <Blocks size={20} strokeWidth={2} aria-hidden="true" />
+                    )
+                  ) : mountable.kind === "forms" ? (
+                    <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </span>
+              ))}
+            </div>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
             <a

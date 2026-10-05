@@ -31,8 +31,8 @@ credential in MongoDB. The hosted app must retain the returned registration
 secret; later manifest updates and secret rotations are authenticated with that
 secret, while ordinary app restarts require no FON registration call.
 
-Verification only validates the creator's install token and selected
-configuration. After the freight receives its canonical ID, FON sends an
+Mount setup validates the selected principles and configuration. After the
+freight receives its canonical ID, FON sends an
 authenticated `mount.requested` event to the registered `activityWebhookUrl`.
 That event contains the selected principles, freight window, duration in
 seconds, and a distinct per-freight event webhook grant. The grant secret

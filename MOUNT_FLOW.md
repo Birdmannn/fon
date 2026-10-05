@@ -50,7 +50,6 @@ appropriate. Secret-bearing network operations remain server-to-server.
 | --- | --- | --- | --- | --- |
 | Registration bootstrap authorization | FON administrator/account system | Initial app registration | Authorize claiming an `appId` | One-time; production mechanism still required |
 | `registrationSecret` | FON | One registered app | Authenticate FON-to-app calls and later manifest updates | Until rotated or app registration is revoked |
-| Creator install token | Hosted app | Creator/app relationship | Validate that a creator may mount/configure the app | Defined by the hosted app |
 | `eventWebhook.secret` | FON | One app mount on one freight | Authenticate app-to-FON freight events | Only the freight's active window |
 
 The current implementation permits the first registration without bootstrap
@@ -76,7 +75,7 @@ sequenceDiagram
     A->>A: Store secret in a secret manager or encrypted storage
 
     C->>F: Add #mounted and select app principles
-    F->>A: POST verifyInstallUrl with install token and configuration
+    F->>A: POST verifyInstallUrl with selected principles and configuration
     A-->>F: Verified mount configuration
     F->>D: Save mount configuration on freight draft
 
@@ -196,7 +195,7 @@ overwrite an existing `appId` is rejected.
 An ordinary restart only reloads the stored credential. It does not register the
 app again.
 
-## 3. Creator Mount Verification
+## 3. Creator Mount Setup
 
 When a creator adds `#mounted`, FON loads the registered app catalogue and shows
 each app's persisted logo. The creator chooses an app and at least one principle.
@@ -206,7 +205,6 @@ FON sends the app's `verifyInstallUrl`:
 ```ts
 {
   appId: "my-app",
-  installToken: "CREATOR_PROVIDED_TOKEN",
   selectedPrinciples: [
     {
       principleId: "task-completed",
@@ -225,9 +223,9 @@ FON sends the app's `verifyInstallUrl`:
 }
 ```
 
-This call verifies the creator's token and app configuration. It does not carry
-the mount event secret. At this stage a newly created freight may not yet have
-its canonical on-chain ID.
+This call validates and resolves the selected app configuration. It does not
+carry the mount event secret. At this stage a newly created freight may not yet
+have its canonical on-chain ID.
 
 ## 4. Canonical Mount Request
 

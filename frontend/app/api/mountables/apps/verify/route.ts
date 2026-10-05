@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { maskInstallToken, normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableAppPrincipleSelections, normalizeMountableJsonObject, normalizeMountableUrl, resolveSelectedMountableAppPrinciples, type VerifyMountableAppRequest, type VerifyMountableAppResult } from "@/lib/fonMountablesSdk";
+import { normalizeMountableAppId, normalizeMountableAppPrinciples, normalizeMountableAppPrincipleSelections, normalizeMountableJsonObject, normalizeMountableUrl, resolveSelectedMountableAppPrinciples, type VerifyMountableAppRequest, type VerifyMountableAppResult } from "@/lib/fonMountablesSdk";
 import { deriveMountableWindow, mountableWindowDurationSeconds } from "@/lib/mountableTiming";
 import { getMountableAppsCollection } from "@/lib/mongodb";
 
@@ -48,11 +48,6 @@ export async function POST(request: Request) {
     const appId = normalizeMountableAppId(ensureString(payload.appId, "appId"));
     if (!appId) {
       throw new Error("appId is required");
-    }
-
-    const installToken = ensureString(payload.installToken, "installToken");
-    if (!installToken) {
-      throw new Error("installToken is required");
     }
 
     const collection = await getMountableAppsCollection();
@@ -117,7 +112,6 @@ export async function POST(request: Request) {
 
     const forwardedPayload: VerifyMountableAppRequest = {
       appId,
-      installToken,
       selectedPrincipleIds: normalizedSelectedPrinciples.map((entry) => entry.principleId),
       selectedPrinciples: normalizedSelectedPrinciples,
       config: normalizeMountableJsonObject(payload.config),
@@ -191,8 +185,8 @@ export async function POST(request: Request) {
         mountableInstanceId,
         installationId,
         installationLabel: typeof result?.installationLabel === "string" ? result.installationLabel.trim() : installationId,
-        installTokenMasked: maskInstallToken(installToken),
-        installTokenUpdatedAt: verifiedAt,
+        installTokenMasked: "",
+        installTokenUpdatedAt: "",
         status: "verified",
         verifiedAt,
         supportsTimestampQuery: result?.supportsTimestampQuery === true || manifest.supportsTimestampQuery === true,

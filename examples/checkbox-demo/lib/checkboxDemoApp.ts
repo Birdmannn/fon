@@ -18,6 +18,7 @@ export type DemoParticipantState = {
   externalUserId: string;
   participantAddress: string;
   checked: DemoCheckboxId[];
+  submittedText: string;
   updatedAt: string;
 };
 
@@ -153,6 +154,28 @@ const principleDefinitions: MountableAppPrincipleDefinition[] = [
     },
     readableFormat: "Complete checkbox set: {required-set}",
     exampleReadableText: "Complete checkbox set: starter",
+  },
+  {
+    principleId: "demo-exact-text-match",
+    title: "Exact Text Match",
+    description: "Requires the participant to type the exact text configured by the freight creator.",
+    supportsTimestampQuery: false,
+    paramsSchema: [
+      {
+        paramKey: "target-text",
+        title: "Required text",
+        description: "The exact text the participant must enter.",
+        valueType: "string",
+        required: true,
+        defaultValue: "freight",
+        placeholder: "Enter the required text",
+      },
+    ],
+    paramsDefaults: {
+      "target-text": "freight",
+    },
+    readableFormat: "Type exactly: {target-text}",
+    exampleReadableText: "Type exactly: freight",
   },
 ];
 
@@ -312,6 +335,7 @@ export function readParticipantState(externalUserId: string, participantAddress?
     externalUserId: key,
     participantAddress: participantAddress?.trim().toLowerCase() || `demo:${key}`,
     checked: [],
+    submittedText: "",
     updatedAt: new Date().toISOString(),
   };
 }
@@ -320,14 +344,17 @@ export function saveParticipantState(input: {
   externalUserId: string;
   participantAddress?: string;
   checked: string[];
+  submittedText?: string;
 }) {
   const key = input.externalUserId.trim() || input.participantAddress?.trim().toLowerCase() || "demo-user";
+  const existing = participantStates.get(key);
   const allowed = new Set(checkboxCatalog.map((checkbox) => checkbox.id));
   const checked = input.checked.filter((id): id is DemoCheckboxId => allowed.has(id as DemoCheckboxId));
   const state: DemoParticipantState = {
     externalUserId: key,
     participantAddress: input.participantAddress?.trim().toLowerCase() || `demo:${key}`,
     checked,
+    submittedText: typeof input.submittedText === "string" ? input.submittedText : normalizeText(existing?.submittedText),
     updatedAt: new Date().toISOString(),
   };
   participantStates.set(key, state);
@@ -385,6 +412,22 @@ export const hostedApp = createHostedAppSdk()
         updatedAt: getStateForRequest(request)?.updatedAt ?? new Date().toISOString(),
       };
     },
+  })
+  .addPrinciple(principleDefinitions[3], {
+    formatSelection(params) {
+      return `Type exactly: ${normalizeText(params["target-text"])}`;
+    },
+    evaluate(request) {
+      const targetText = normalizeText(request.params?.["target-text"]);
+      const state = getStateForRequest(request);
+      const fulfilled = Boolean(targetText) && normalizeText(state?.submittedText) === targetText;
+      return {
+        principleId: "demo-exact-text-match",
+        fulfilled,
+        detail: fulfilled ? "Exact text matched" : "The entered text does not match yet",
+        updatedAt: state?.updatedAt ?? new Date().toISOString(),
+      };
+    },
   });
 
 export function defaultSelectedPrinciples(): MountableAppPrincipleSelection[] {
@@ -392,6 +435,7 @@ export function defaultSelectedPrinciples(): MountableAppPrincipleSelection[] {
     buildSelectedPrinciple("demo-checkbox-completed", { "checkbox-id": "terms" }, "Complete checkbox: Terms accepted"),
     buildSelectedPrinciple("demo-checkbox-count-at-least", { "min-completed": 3 }, "Check at least 3 boxes"),
     buildSelectedPrinciple("demo-checkbox-set-completed", { "required-set": "starter" }, "Complete checkbox set: starter"),
+    buildSelectedPrinciple("demo-exact-text-match", { "target-text": "freight" }, "Type exactly: freight"),
   ];
 }
 

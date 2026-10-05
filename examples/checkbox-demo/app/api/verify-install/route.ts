@@ -5,15 +5,10 @@ import { appId, buildManifest, defaultSelectedPrinciples, parseSelectedPrinciple
 export async function POST(request: Request) {
   try {
     const payload = await request.json().catch(() => ({}));
-    const installToken = typeof payload.installToken === "string" ? payload.installToken.trim() : "";
-    if (!installToken) {
-      return NextResponse.json({ error: "installToken is required" }, { status: 400 });
-    }
-
     const origin = process.env.NEXT_PUBLIC_APP_BASE_URL?.trim() || new URL(request.url).origin;
     const selectedPrinciples = parseSelectedPrinciples(payload.selectedPrinciples);
     const manifest = buildManifest(origin);
-    const installationId = `checkbox-demo-${installToken.slice(-8) || crypto.randomUUID()}`;
+    const installationId = `checkbox-demo-${crypto.randomUUID()}`;
 
     return NextResponse.json({
       installationId,

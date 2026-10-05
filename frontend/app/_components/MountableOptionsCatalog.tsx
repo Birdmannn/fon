@@ -3,25 +3,22 @@
 import { Blocks, Check, DollarSign, LockKeyhole, Scroll } from "lucide-react";
 import Image from "next/image";
 
-import type { AppMountableConfig, RegisteredMountableApp } from "@/app/_types/appMountable";
+import type { RegisteredMountableApp } from "@/app/_types/appMountable";
 
 type MountableOptionsCatalogProps = {
-  appMountablesSelected: number;
-  appsMountableSelected: boolean;
   formsMountableSelected: boolean;
   lockMountableSelected: boolean;
-  mountedAppConfigs: AppMountableConfig[];
-  onConfigureApp: (appId: string) => void;
-  onOpenApps: () => void;
+  onToggleApp: (appId: string) => void;
   onToggleForms: () => void;
   onToggleLock: () => void;
   registeredMountableApps: RegisteredMountableApp[];
+  selectedMountableAppIds: string[];
 };
 
 type CatalogItem = {
   id: string;
   label: string;
-  kind: "apps" | "forms" | "lock" | "payable" | "registered";
+  kind: "forms" | "lock" | "payable" | "registered";
   app?: RegisteredMountableApp;
 };
 
@@ -33,19 +30,15 @@ function groupForLabel(label: string) {
 }
 
 export default function MountableOptionsCatalog({
-  appMountablesSelected,
-  appsMountableSelected,
   formsMountableSelected,
   lockMountableSelected,
-  mountedAppConfigs,
-  onConfigureApp,
-  onOpenApps,
+  onToggleApp,
   onToggleForms,
   onToggleLock,
   registeredMountableApps,
+  selectedMountableAppIds,
 }: MountableOptionsCatalogProps) {
   const builtInItems: CatalogItem[] = [
-    { id: "builtin:apps", label: "Apps", kind: "apps" },
     { id: "builtin:forms", label: "Forms", kind: "forms" },
     { id: "builtin:lock", label: "Lock", kind: "lock" },
     { id: "builtin:payable", label: "Payable", kind: "payable" },
@@ -75,30 +68,21 @@ export default function MountableOptionsCatalog({
             <div className="create-mountable-options-row">
               {group.items.map((item) => {
                 const app = item.app;
-                const isRegisteredAppMounted = app
-                  ? mountedAppConfigs.some((config) => config.appId === app.appId)
+                const isRegisteredAppSelected = app
+                  ? selectedMountableAppIds.includes(app.appId)
                   : false;
                 const selected = item.kind === "forms"
                   ? formsMountableSelected
                   : item.kind === "lock"
                     ? lockMountableSelected
-                    : item.kind === "apps"
-                      ? appsMountableSelected
-                      : isRegisteredAppMounted;
-                const tooltip = item.kind === "apps" && appMountablesSelected > 0
-                  ? `Apps (${appMountablesSelected})`
-                  : item.label;
+                    : isRegisteredAppSelected;
                 const ariaLabel = item.kind === "forms"
                   ? `${selected ? "Deselect" : "Select"} forms mountable`
                   : item.kind === "lock"
                     ? `${selected ? "Deselect" : "Select"} lock mountable`
-                    : item.kind === "apps"
-                      ? selected
-                        ? `Manage ${appMountablesSelected} app mountable${appMountablesSelected === 1 ? "" : "s"}`
-                        : "Open app mountables"
-                      : item.kind === "payable"
-                        ? "Payable mountable coming soon"
-                        : `Configure ${item.label}`;
+                    : item.kind === "payable"
+                      ? "Payable mountable coming soon"
+                      : `Configure ${item.label}`;
 
                 return (
                   <button
@@ -107,17 +91,15 @@ export default function MountableOptionsCatalog({
                     className={`create-mountable-option ${selected ? "create-mountable-option-selected" : ""}`.trim()}
                     aria-label={ariaLabel}
                     aria-pressed={item.kind === "payable" ? undefined : selected}
-                    data-tooltip={tooltip}
+                    data-tooltip={item.label}
                     disabled={item.kind === "payable"}
                     onClick={item.kind === "forms"
                       ? onToggleForms
                       : item.kind === "lock"
                         ? onToggleLock
-                        : item.kind === "apps"
-                          ? onOpenApps
-                          : app
-                            ? () => onConfigureApp(app.appId)
-                            : undefined}
+                        : app
+                          ? () => onToggleApp(app.appId)
+                          : undefined}
                   >
                     <span className="create-mountable-option-icon-wrap">
                       <span className={`create-mountable-option-icon-bg ${app ? "create-mountable-option-logo-bg" : ""}`.trim()}>

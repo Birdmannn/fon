@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { canAccessLockMountable, getLockMountableBypassFbars } from "@/app/_lib/lockMountable";
+import { canAccessLockMountable, getLockMountableThresholdFbars, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
 import type { CampaignComment, CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import type { SettlementModalData, SettlementRecipient } from "@/app/_types/settlement";
 import {
@@ -100,6 +100,7 @@ type UseCampaignCardStateArgs = {
   signer: ccc.Signer | null;
   client: ccc.Client;
   currentViewerFbars?: number | null;
+  creatorCurrentFbars?: number | null;
   currentWalletAddress: string | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
@@ -128,6 +129,7 @@ export function useCampaignCardState({
   signer,
   client,
   currentViewerFbars,
+  creatorCurrentFbars,
   currentWalletAddress,
   onCommentDiscardRequest,
   commentDiscardDecision,
@@ -214,9 +216,9 @@ export function useCampaignCardState({
   const isCreatorViewer = normalizedCurrentWalletAddress.length > 0
     && normalizeHash(creatorAddress) === normalizedCurrentWalletAddress;
   const lockMountable = record?.mountables?.lock ?? null;
-  const lockBypassFbars = getLockMountableBypassFbars(lockMountable);
-  const isLockedForInteractions = lockBypassFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars);
-  const lockAccessMessage = lockBypassFbars === null ? "This freight is locked." : `Need ${lockBypassFbars} FBARS to bypass this lock`;
+  const lockThresholdFbars = getLockMountableThresholdFbars(lockMountable);
+  const isLockedForInteractions = lockThresholdFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars, creatorCurrentFbars);
+  const lockAccessMessage = lockMountableAccessMessage(lockMountable, creatorCurrentFbars);
   const canGiftApprove = Boolean(
     normalizedCurrentWalletAddress
     && giftDeliverable.enabled

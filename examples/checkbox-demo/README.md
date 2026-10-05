@@ -7,6 +7,7 @@ It demonstrates the principle model from `PRINCIPLES.md` with a local login and 
 - `demo-checkbox-completed`: one configured checkbox must be checked
 - `demo-checkbox-count-at-least`: at least `minCompleted` boxes must be checked
 - `demo-checkbox-set-completed`: a configured checkbox set must be checked
+- `demo-exact-text-match`: the participant must type the exact text configured by the freight creator
 
 The app exposes the hosted-app endpoints FON can call:
 
@@ -45,13 +46,18 @@ authenticates that update with its existing credential. Once an app is mounted
 on a freight, checkbox changes are pushed back to FON automatically. FON can
 also poll the demo with authenticated `POST /api/poll` requests.
 
-Verification validates the creator's install token and selected configuration;
-it does not deliver event credentials. When the freight is published, FON sends
+Mount setup validates the selected principles and configuration; it does not
+deliver event credentials. When the freight is published, FON sends
 an authenticated `mount.requested` event to `/api/activity`. That event contains
 the final freight id, selected principles, mounted instance id, exact FON event
 URL, mount-scoped secret, start/end timestamps, and duration in seconds. The demo
 only pushes checkbox events while that window is active; FON independently
 rejects early or expired events.
+
+After pulling the exact-text demo principle for the first time, call
+`POST /api/register` once so the existing FON app record receives the updated
+four-principle manifest. This updates the existing app registration; it does not
+create a duplicate or rotate its credential.
 
 ## Run The Poll Worker Locally
 

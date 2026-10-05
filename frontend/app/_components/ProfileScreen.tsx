@@ -5,18 +5,22 @@ import {
   Check,
   CheckCircle,
   Copy,
+  Camera,
   Pencil,
   Search,
   Trophy,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
+import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
@@ -29,7 +33,6 @@ import {
   CREATE_INFO_NOTE_HEADING,
   CREATE_INFO_NOTE_ITEMS,
   CREATE_INFO_PREVIEW_HEADING,
-  CREATE_INFO_PREVIEW_ITEMS,
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
@@ -41,7 +44,7 @@ import { markProfileFreightsDirty, useProfileFreights } from "@/app/_hooks/usePr
 import { markProfileTransactionsDirty, useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
 import { formatAdsfUsdParts, useProfileViewState, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
-import { formatCkbAmount } from "@/lib/campaignDisplay";
+import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 
 const INFO_MODAL_ANIMATION_MS = 620;
@@ -52,6 +55,7 @@ const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
+const MAX_PROFILE_PHOTO_BYTES = 4 * 1024 * 1024;
 
 type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
@@ -77,6 +81,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState("");
+  const [uploadedPhoto, setUploadedPhoto] = useState<{ address: string; version: string } | null>(null);
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
@@ -134,11 +142,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     markUserProfileDirty,
     overallLeaderboard,
     profileCacheKey,
+    refreshUserProfile,
     saveDisplayName,
     saveLightModePrimaryColor,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
+  const {
+    currentUserProfile: connectedUserProfile,
+    markUserProfileDirty: markConnectedUserProfileDirty,
+  } = useUserProfile(signer ?? null);
   const { activeTab, setActiveTab } = useProfileViewState(signer ?? null, targetHandle);
   const profileAddress = currentUserProfile?.address ?? (targetHandle ? null : (walletAddress || null));
 
@@ -202,8 +215,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   }, [currentUserProfile?.address, currentUserProfile?.username, markUserProfileDirty, profileCacheKey, targetHandle]);
 
   const {
-    appsMountableSelected,
-    appMountablesSelected,
+    advanceMountableSetup,
+    beginMountableSetup,
     constraintStatus,
     createModalContentRef,
     createModalStep,
@@ -215,23 +228,22 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     handleCreateTopRightAction,
     handleDraftSelectionRequest,
     handleMountableSelectionStateChange,
-    handleRemoveMountedAppConfig,
     handleSaveDraftChoice,
-    handleSelectMountableAppId,
     handleToggleSelectedMountablePrinciple,
+    handleUpdateSelectedMountablePrincipleParam,
+    handleToggleMountableAppSelection,
     handleVerifySelectedMountableApp,
     isCreateDraftListOpen,
     isCreateModalClosing,
-    isMountableAppsLoading,
     isMountableFormFocused,
     isMountableLockFocused,
     isMountablesContinuing,
     isVerifyingMountableApp,
-    mountableAppInstallToken,
     mountedAppConfigs,
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
     mountablesPromptError,
@@ -245,7 +257,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     resetCreateModal,
     saveDraftPromptError,
     selectedMountableAppId,
+    selectedMountableAppIds,
     selectedMountablePrincipleIds,
+    selectedMountablePrincipleParams,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
@@ -254,16 +268,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsMountableFormFocused,
     setIsMountableLockFocused,
     setIsMountablesContinuing,
-    setMountableAppInstallToken,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,
     setMountablesPromptError,
     setPreviewError,
     showCreateModal,
     submissionSuccessTxHash,
-    transitionMountablesModal,
+    goBackMountableSetup,
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     initialInfoModalMode: "about",
@@ -442,6 +456,76 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
   const canEditDisplayName = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
+  const isViewingAnotherUserProfile = Boolean(
+    signer
+    && connectedUserProfile?.address
+    && currentUserProfile?.address
+    && connectedUserProfile.address.toLowerCase() !== currentUserProfile.address.toLowerCase()
+  );
+  const connectedProfileUsername = connectedUserProfile?.username?.trim()
+    || (walletAddress ? buildDefaultUsername(walletAddress) : "");
+  const introspectHref = isViewingAnotherUserProfile && connectedProfileUsername
+    ? `/user/${encodeURIComponent(connectedProfileUsername)}`
+    : undefined;
+  const creatorAvailableFbars = connectedUserProfile?.fbars;
+  const photoVersion = uploadedPhoto && uploadedPhoto.address === currentUserProfile?.address
+    ? uploadedPhoto.version
+    : currentUserProfile?.photoUpdatedAt;
+  const photoUrl = currentUserProfile?.address && photoVersion
+    ? `/api/user-profiles/photo?address=${encodeURIComponent(currentUserProfile.address)}&v=${encodeURIComponent(photoVersion)}`
+    : null;
+  const handlePhotoSelected = async (file: File | undefined) => {
+    if (!file || !signer || !canEditDisplayName || !currentUserProfile) return;
+    setPhotoUploadError("");
+    if (file.size === 0 || file.size > MAX_PROFILE_PHOTO_BYTES) {
+      setPhotoUploadError("Choose a photo no larger than 4 MB.");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setPhotoUploadError("Choose a JPEG, PNG, or WebP photo.");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const address = currentUserProfile.address;
+      const digestBytes = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const digest = Array.from(new Uint8Array(digestBytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, purpose: "profile-photo" }),
+      });
+      const noncePayload = await nonceResponse.json();
+      if (!nonceResponse.ok || typeof noncePayload.nonce !== "string") {
+        throw new Error(noncePayload.error ?? "Failed to authorize photo upload");
+      }
+
+      const nonce = `${noncePayload.nonce}:${digest}`;
+      const signature = await signer.signMessage(nonce);
+      const form = new FormData();
+      form.set("address", address);
+      form.set("nonce", nonce);
+      form.set("signature", JSON.stringify({
+        signature: signature.signature,
+        identity: signature.identity,
+        signType: signature.signType,
+      }));
+      form.set("photo", file);
+      const response = await fetch("/api/user-profiles/photo", { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok || typeof payload.photoUpdatedAt !== "string") {
+        throw new Error(payload.error ?? "Failed to upload photo");
+      }
+
+      setUploadedPhoto({ address, version: payload.photoUpdatedAt });
+      refreshUserProfile();
+    } catch (error) {
+      setPhotoUploadError(error instanceof Error ? error.message : "Failed to upload photo");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
   const activeLeaderboard = leaderboardScope === "weekly" ? weeklyLeaderboard : overallLeaderboard;
   const activeLeaderboardLabel = leaderboardScope === "weekly" ? "Weekly" : "Overall";
   const activeLeaderboardTitle = `${activeLeaderboardLabel} Ranking`;
@@ -599,7 +683,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       return;
     }
 
-    const nextValidationState = getLockMountableValidationState(mountableLockFbars, currentUserProfile?.fbars);
+    const nextValidationState = getLockMountableValidationState(mountableLockFbars, creatorAvailableFbars);
     setMountableLockValidationState(nextValidationState);
     if (nextValidationState !== "idle") {
       setIsMountableLockFocused(false);
@@ -609,11 +693,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     if (nextValidationState === "invalid") {
       if (
         parsedLockFbars !== null
-        && typeof currentUserProfile?.fbars === "number"
-        && Number.isFinite(currentUserProfile.fbars)
-        && parsedLockFbars > Math.trunc(currentUserProfile.fbars)
+        && typeof creatorAvailableFbars === "number"
+        && Number.isFinite(creatorAvailableFbars)
+        && parsedLockFbars > Math.trunc(creatorAvailableFbars)
       ) {
-        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(currentUserProfile.fbars)} FBARS.`);
+        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(creatorAvailableFbars)} FBARS.`);
       } else {
         setMountablesPromptError("Enter a positive FBARS amount.");
       }
@@ -621,7 +705,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     }
 
     setMountablesPromptError("");
-  }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
+  }, [creatorAvailableFbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
 
   const infoModalBody = infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
@@ -673,12 +757,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
       <MountableOptionsCatalog
-        appMountablesSelected={appMountablesSelected}
-        appsMountableSelected={appsMountableSelected}
         formsMountableSelected={formsMountableSelected}
         lockMountableSelected={lockMountableSelected}
-        mountedAppConfigs={mountedAppConfigs}
         registeredMountableApps={registeredMountableApps}
+        selectedMountableAppIds={selectedMountableAppIds}
         onToggleForms={() => {
             const nextSelected = !formsMountableSelected;
             createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
@@ -693,15 +775,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
             setMountablesPromptError("");
         }}
-        onOpenApps={() => {
-          transitionMountablesModal("mountables-apps");
-          setMountablesPromptError("");
-        }}
-        onConfigureApp={(appId) => {
-          handleSelectMountableAppId(appId);
-          transitionMountablesModal("mountables-apps");
-          setMountablesPromptError("");
-        }}
+        onToggleApp={handleToggleMountableAppSelection}
       />
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
@@ -710,102 +784,62 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       ) : null}
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
-    <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config create-info-forms-config-tight">
-        <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Lock criteria:</p>
-          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
-        </div>
-        <div className="create-info-forms-row flex items-center gap-2">
-          <span className="create-review-section-label text-gray-900">With:</span>
-          <div className="create-info-ticket-input-wrap">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={mountableLockFbars}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setMountableLockFbars(nextValue);
-                createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
-                setMountablesPromptError("");
-              }}
-              onFocus={() => {
-                if (mountableLockValidationState === "idle") {
-                  setIsMountableLockFocused(true);
-                }
-              }}
-              onBlur={() => setIsMountableLockFocused(false)}
-              placeholder="0"
-              className={`create-info-ticket-input create-info-ticket-input-with-suffix ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-              aria-label="Lock FBARS threshold"
-            />
-            <span className="create-info-ticket-input-suffix">FBARS</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <LockMountableConfigurator
+      errorMessage={mountablesPromptError}
+      fbars={mountableLockFbars}
+      isFocused={isMountableLockFocused}
+      onFbarsChange={(nextValue) => {
+        setMountableLockFbars(nextValue);
+        createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+        setMountablesPromptError("");
+      }}
+      onFocusChange={setIsMountableLockFocused}
+      onRuleChange={(rule) => {
+        setMountableLockRule(rule);
+        createModalContentRef.current?.updateLockMountableConfig({ rule });
+      }}
+      rule={mountableLockRule}
+      validationState={mountableLockValidationState}
+    />
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
-    <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config">
-        <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
-          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
-        </div>
-        {mountableFormLinks.map((value, index) => (
-          <div key={`forms-link-${index}`} className="create-info-forms-row">
-            <input
-              type="text"
-              value={value}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
-                createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
-                setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
-                setMountablesPromptError("");
-              }}
-              onFocus={() => {
-                if (mountableFormValidationState === "idle") {
-                  setIsMountableFormFocused(true);
-                }
-              }}
-              onBlur={() => setIsMountableFormFocused(false)}
-              placeholder="Paste Google Forms responder link"
-              className={`create-info-ticket-input ${mountableFormValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableFormValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableFormFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-              aria-label={`Forms link ${index + 1}`}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+    <FormsMountableConfigurator
+      errorMessage={mountablesPromptError}
+      formLinks={mountableFormLinks}
+      isFocused={isMountableFormFocused}
+      onFocusChange={setIsMountableFormFocused}
+      onLinkChange={(index, nextValue) => {
+        setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+        createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+        setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
+        setMountablesPromptError("");
+      }}
+      validationState={mountableFormValidationState}
+    />
   ) : showCreateModal && infoModalMode === "mountables-apps" ? (
     <MountableAppsConfigurator
       errorMessage={mountableAppsError || mountablesPromptError}
-      isMountableAppsLoading={isMountableAppsLoading}
       isVerifyingMountableApp={isVerifyingMountableApp}
       mountedAppConfigs={mountedAppConfigs}
-      mountableAppInstallToken={mountableAppInstallToken}
-      onInstallTokenChange={(value) => {
-        setMountableAppInstallToken(value);
-        setMountablesPromptError("");
-      }}
-      onRemoveMountedAppConfig={handleRemoveMountedAppConfig}
-      onSelectMountableAppId={handleSelectMountableAppId}
       onToggleSelectedMountablePrinciple={handleToggleSelectedMountablePrinciple}
-      onVerifySelectedMountableApp={handleVerifySelectedMountableApp}
+      onUpdateSelectedMountablePrincipleParam={handleUpdateSelectedMountablePrincipleParam}
       registeredMountableApps={registeredMountableApps}
       selectedMountableAppId={selectedMountableAppId}
       selectedMountablePrincipleIds={selectedMountablePrincipleIds}
+      selectedMountablePrincipleParams={selectedMountablePrincipleParams}
     />
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
       {createModalStep === "review" ? (
         <>
           <p>{CREATE_INFO_PREVIEW_HEADING}</p>
-          {CREATE_INFO_PREVIEW_ITEMS.map((item) => (
-            <p key={item} className="create-info-constraint-item">
-              <span>{item}</span>
-            </p>
-          ))}
+          <CreateReviewMountablesInfo
+            appMountables={mountedAppConfigs}
+            formsEnabled={formsMountableSelected}
+            formsUrl={mountableFormLinks[mountableFormLinks.length - 1] ?? ""}
+            lockEnabled={lockMountableSelected}
+            lockFbars={mountableLockFbars}
+            lockRule={mountableLockRule}
+          />
           {previewError ? (
             <>
               <p className="mt-3 text-red-500 font-semibold">Errors</p>
@@ -893,6 +927,28 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   );
 
+  const handleIgnoreBuiltInMountable = async (kind: "forms" | "lock") => {
+    try {
+      setIsMountablesContinuing(true);
+      setMountablesPromptError("");
+      if (kind === "forms") {
+        createModalContentRef.current?.setFormsMountableEnabled(false);
+        setFormsMountableSelected(false);
+      } else {
+        createModalContentRef.current?.setLockMountableEnabled(false);
+        setLockMountableSelected(false);
+      }
+      if (advanceMountableSetup(kind)) return;
+      await createModalContentRef.current?.persistCurrentDraft();
+      closeInfoModal(resetInfoModalState);
+      void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+    } catch (error) {
+      setMountablesPromptError(error instanceof Error ? error.message : `Failed to ignore mounted ${kind}`);
+    } finally {
+      setIsMountablesContinuing(false);
+    }
+  };
+
   const infoModalActions = infoModalMode === "edit-display-name" ? (
     <div className="profile-display-name-edit-row">
       <input
@@ -946,33 +1002,24 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected && !lockMountableSelected && appMountablesSelected === 0) {
-            setMountablesPromptError("Select a mountable to continue.");
-            return;
-          }
-
-          if (lockMountableSelected) {
-            transitionMountablesModal("mountables-lock");
-            setMountablesPromptError("");
-            return;
-          }
-
-          if (formsMountableSelected) {
-            transitionMountablesModal("mountables-forms");
-            setMountablesPromptError("");
-            return;
-          }
-
-          transitionMountablesModal("mountables-apps");
-          setMountablesPromptError("");
+          beginMountableSetup();
         }}
       >
         Continue
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
-    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
-      <button
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup("lock")}
+          disabled={isMountablesContinuing}
+        >
+          Back
+        </button>
+        <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         disabled={isMountablesContinuing || mountableLockValidationState !== "valid"}
@@ -987,15 +1034,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
               createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: String(minimumFbars) });
 
-              if (formsMountableSelected) {
-                transitionMountablesModal("mountables-forms");
-                setMountablesPromptError("");
-                return;
-              }
-
-              if (appMountablesSelected > 0) {
-                transitionMountablesModal("mountables-apps");
-                setMountablesPromptError("");
+              if (advanceMountableSetup("lock")) {
                 return;
               }
 
@@ -1014,11 +1053,29 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
       >
         {isMountablesContinuing ? "Hold..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing}
+        onClick={() => void handleIgnoreBuiltInMountable("lock")}
+      >
+        Ignore
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
-    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
-      <button
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup("forms")}
+          disabled={isMountablesContinuing}
+        >
+          Back
+        </button>
+        <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         disabled={isMountablesContinuing || mountableFormValidationState !== "valid"}
@@ -1058,9 +1115,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               });
               setMountableFormLinks([canonicalFormUrl]);
 
-              if (appMountablesSelected > 0) {
-                transitionMountablesModal("mountables-apps");
-                setMountablesPromptError("");
+              if (advanceMountableSetup("forms")) {
                 return;
               }
 
@@ -1077,27 +1132,68 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
       >
         {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing}
+        onClick={() => void handleIgnoreBuiltInMountable("forms")}
+      >
+        Ignore
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-apps" ? (
-    <div className="create-info-confirm-actions">
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup(`app:${selectedMountableAppId}`)}
+          disabled={isMountablesContinuing || isVerifyingMountableApp}
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          className="create-info-confirm-btn create-info-confirm-btn-primary"
+          disabled={isMountablesContinuing || isVerifyingMountableApp || !selectedMountableAppId}
+          onClick={() => {
+            void (async () => {
+              try {
+                setIsMountablesContinuing(true);
+                setMountablesPromptError("");
+                await handleVerifySelectedMountableApp();
+
+                if (advanceMountableSetup(`app:${selectedMountableAppId}`)) {
+                  return;
+                }
+
+                await createModalContentRef.current?.persistCurrentDraft();
+                closeInfoModal(resetInfoModalState);
+                void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+              } catch (error) {
+                setMountablesPromptError(error instanceof Error ? error.message : "Failed to set up mounted app");
+              } finally {
+                setIsMountablesContinuing(false);
+              }
+            })();
+          }}
+        >
+          {isMountablesContinuing || isVerifyingMountableApp ? "Hold..." : "Continue"}
+        </button>
+      </div>
       <button
         type="button"
-        className="create-info-confirm-btn"
-        onClick={() => transitionMountablesModal(formsMountableSelected ? "mountables-forms" : lockMountableSelected ? "mountables-lock" : "mountables")}
-        disabled={isMountablesContinuing || isVerifyingMountableApp}
-      >
-        Back
-      </button>
-      <button
-        type="button"
-        className="create-info-confirm-btn create-info-confirm-btn-primary"
-        disabled={isMountablesContinuing || isVerifyingMountableApp}
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing || isVerifyingMountableApp || !selectedMountableAppId}
         onClick={() => {
           void (async () => {
             try {
-              if (mountedAppConfigs.length === 0) {
-                setMountablesPromptError("Verify at least one app before continuing.");
+              const ignoredAppId = selectedMountableAppId;
+              handleToggleMountableAppSelection(ignoredAppId);
+
+              if (advanceMountableSetup(`app:${ignoredAppId}`)) {
                 return;
               }
 
@@ -1107,14 +1203,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               closeInfoModal(resetInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
-              setMountablesPromptError(error instanceof Error ? error.message : "Failed to save mounted apps");
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to ignore mounted app");
             } finally {
               setIsMountablesContinuing(false);
             }
           })();
         }}
       >
-        {isMountablesContinuing ? "Hold..." : "Continue"}
+        Ignore
       </button>
     </div>
   ) : undefined;
@@ -1203,6 +1299,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
+          walletActionHref={introspectHref}
+          walletActionLabel="Introspect"
           walletActionOnly={false}
         />
 
@@ -1216,9 +1314,38 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           <>
             <div className="profile-hero-row">
               <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-                <div className="profile-avatar-placeholder" aria-hidden="true">
-                  <span>Profile photo</span>
-                </div>
+                {canEditDisplayName ? (
+                  <input
+                    ref={photoInputRef}
+                    className="profile-photo-input"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    aria-label="Choose profile photo"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      void handlePhotoSelected(file);
+                    }}
+                  />
+                ) : null}
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-avatar-placeholder profile-avatar-editable"
+                    onClick={() => photoInputRef.current?.click()}
+                    aria-label={photoUrl ? "Change profile photo" : "Upload profile photo"}
+                    title="Upload photo (max 4 MB)"
+                    disabled={isUploadingPhoto}
+                  >
+                    {photoUrl ? <Image src={photoUrl} alt="" fill unoptimized className="profile-avatar-image" /> : <Camera size={28} strokeWidth={1.8} aria-hidden="true" />}
+                    {isUploadingPhoto ? <span className="profile-avatar-progress">Uploading...</span> : null}
+                  </button>
+                ) : (
+                  <div className="profile-avatar-placeholder">
+                    {photoUrl ? <Image src={photoUrl} alt={`${currentUserProfile?.displayName ?? "User"}'s profile photo`} fill unoptimized className="profile-avatar-image" /> : <span>Profile photo</span>}
+                  </div>
+                )}
+                {photoUploadError ? <p className="profile-photo-error" role="alert">{photoUploadError}</p> : null}
                 <div className="profile-handle-edit-row">
                   <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
                   {canEditDisplayName ? (
@@ -1440,13 +1567,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
           markProfileRouteDataDirty();
+          markConnectedUserProfileDirty();
           openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}
         onStepChange={setCreateModalStep}
         showCreateModal={showCreateModal}
         isCreateModalClosing={isCreateModalClosing}
-        availableFbars={currentUserProfile?.fbars}
+        availableFbars={creatorAvailableFbars}
       />
     </main>
   );

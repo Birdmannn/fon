@@ -38,6 +38,7 @@ const BASE_PROFILE_PROJECTION = {
   weeklyMarqueeWeekKey: 1,
   weeklyMarqueeUpdatedAt: 1,
   lightModePrimaryColor: 1,
+  photoUpdatedAt: 1,
 } as const;
 
 type WalletSignaturePayload = {
@@ -99,6 +100,7 @@ type StoredProfileRecord = StoredFbarsProfile & {
   lastSeenAt?: string | null;
   googleAccount?: unknown;
   lightModePrimaryColor?: unknown;
+  photoUpdatedAt?: unknown;
   weeklyMarqueeMessage?: unknown;
   weeklyMarqueeWeekKey?: unknown;
   weeklyMarqueeUpdatedAt?: unknown;
@@ -109,6 +111,7 @@ type UserProfileResponse = LeaderboardEntry & {
   weeklyRank: number;
   canEditWeeklyMarquee: boolean;
   lightModePrimaryColor: string;
+  photoUpdatedAt?: string | null;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
   weeklyMarqueeEditsUsed: number;
@@ -352,6 +355,7 @@ function buildFallbackUserProfileResponse(address: string, bundle: LeaderboardBu
     overallRank: bundle.overallLeaderboard.length + 1,
     canEditWeeklyMarquee: false,
     lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
+    photoUpdatedAt: null,
     weeklyMarqueeMessage: null,
     weeklyMarqueeWeekKey: null,
     weeklyMarqueeEditsUsed: 0,
@@ -391,6 +395,7 @@ function buildUserProfileResponse(
     overallRank: overallEntry?.rank ?? 0,
     canEditWeeklyMarquee: bundle.weeklyWinnerAddress === baseEntry.address && weeklyMarqueeEditsRemaining > 0,
     lightModePrimaryColor: sanitizeLightModePrimaryColor(rawProfile?.lightModePrimaryColor),
+    photoUpdatedAt: typeof rawProfile?.photoUpdatedAt === "string" ? rawProfile.photoUpdatedAt : null,
     weeklyMarqueeMessage,
     weeklyMarqueeWeekKey,
     weeklyMarqueeEditsUsed: weeklyState.marqueeEditCount,
@@ -545,6 +550,7 @@ export async function GET(request: Request) {
           overallRank: entry.rank,
           canEditWeeklyMarquee: false,
           lightModePrimaryColor: sanitizeLightModePrimaryColor(profilesByAddress.get(entry.address)?.lightModePrimaryColor),
+          photoUpdatedAt: typeof profilesByAddress.get(entry.address)?.photoUpdatedAt === "string" ? profilesByAddress.get(entry.address)?.photoUpdatedAt as string : null,
           weeklyMarqueeMessage: null,
           weeklyMarqueeWeekKey: null,
           weeklyMarqueeEditsUsed: parseWeeklyFbarsState(profilesByAddress.get(entry.address), bundle.weekKey).marqueeEditCount,

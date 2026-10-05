@@ -27,12 +27,3 @@ export const CREATE_INFO_TYPING_ITEMS = [
 ] as const;
 
 export const CREATE_INFO_PREVIEW_HEADING = "Preview:";
-
-export const CREATE_INFO_PREVIEW_ITEMS = [
-  "The generated summary is the short on-chain version of the post.",
-  "It is required because on-chain summary storage is limited to 64 UTF-8 bytes.",
-  "You can edit the summary before publishing if you want a clearer on-chain description.",
-  "Review and set the campaign args here, especially duration and max deposit.",
-  "If the first hashtag is #Raffle, a ticket price is also required.",
-  "The full title, description, mentions, and review snapshot are saved off-chain.",
-] as const;

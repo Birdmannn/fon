@@ -15,8 +15,10 @@ import {
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { SettlementModalData } from "@/app/_types/settlement";
 import { CampaignStatus } from "@/lib/contract";
+import { decodeCreatedByAddress } from "@/lib/campaignDisplay";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignCardProps = {
@@ -71,6 +73,8 @@ export default function CampaignCard({
   onWithdrawalCompleted,
   onSettlementInfoRequest,
 }: CampaignCardProps) {
+  const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
+  const { currentUserProfile: creatorProfile } = useUserProfile(null, null, creatorAddress);
   const {
     bookmarks,
     commentComposerRef,
@@ -132,6 +136,7 @@ export default function CampaignCard({
     signer,
     client,
     currentViewerFbars,
+    creatorCurrentFbars: creatorProfile?.fbars,
     currentWalletAddress,
     onCommentDiscardRequest,
     commentDiscardDecision,

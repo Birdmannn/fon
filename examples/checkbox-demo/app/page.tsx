@@ -16,10 +16,12 @@ type ApiState = {
     externalUserId: string;
     participantAddress: string;
     checked: string[];
+    submittedText: string;
     updatedAt: string;
   };
   principleStates: PrincipleState[];
   allFulfilled?: boolean;
+  mountableInstanceId?: string;
 };
 
 function isApiState(value: ApiState | { error?: string }): value is ApiState {
@@ -57,7 +59,9 @@ export default function Home() {
   const [handleInput, setHandleInput] = useState("demo-creator");
   const [activeHandle, setActiveHandle] = useState("");
   const [checked, setChecked] = useState<string[]>([]);
+  const [submittedText, setSubmittedText] = useState("");
   const [principleStates, setPrincipleStates] = useState<PrincipleState[]>([]);
+  const [mountableInstanceId, setMountableInstanceId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -68,7 +72,7 @@ export default function Home() {
 
   const allFulfilled = principleStates.length > 0 && principleStates.every((state: PrincipleState) => state.fulfilled);
 
-  async function syncState(nextChecked: string[], handle = activeHandle) {
+  async function syncState(nextChecked: string[], handle = activeHandle, nextSubmittedText = submittedText) {
     if (!handle) {
       return;
     }
@@ -85,6 +89,8 @@ export default function Home() {
           externalUserId: handle,
           participantAddress: buildDemoAddress(handle),
           checked: nextChecked,
+          submittedText: nextSubmittedText,
+          mountableInstanceId,
         }),
       });
       const payload = await response.json() as ApiState | { error?: string };
@@ -93,7 +99,9 @@ export default function Home() {
       }
 
       setChecked(payload.state.checked);
+      setSubmittedText(payload.state.submittedText);
       setPrincipleStates(payload.principleStates);
+      setMountableInstanceId(payload.mountableInstanceId ?? "");
       setMessage(payload.allFulfilled === true ? "All selected principles are fulfilled." : "Some selected principles are still pending.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to update demo state");
@@ -192,6 +200,26 @@ export default function Home() {
                 );
               })}
             </div>
+            <form
+              className="exact-text-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void syncState(checked, activeHandle, submittedText);
+              }}
+            >
+              <label htmlFor="exact-text">Exact text principle</label>
+              <div className="login-row">
+                <input
+                  id="exact-text"
+                  type="text"
+                  value={submittedText}
+                  disabled={!activeHandle || isLoading}
+                  onChange={(event) => setSubmittedText(event.target.value)}
+                  placeholder="Type the creator's exact text"
+                />
+                <button type="submit" disabled={!activeHandle || isLoading}>Check text</button>
+              </div>
+            </form>
           </section>
 
           <section className="principle-surface" aria-label="Principle evaluation">

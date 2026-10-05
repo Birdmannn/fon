@@ -1,10 +1,11 @@
-import type { LockMountableConfig, LockMountableCriterion } from "@/app/_types/lockMountable";
+import type { LockMountableConfig, LockMountableCriterion, LockMountableRule } from "@/app/_types/lockMountable";
 
-export const LOCK_MOUNTABLE_BYPASS_MULTIPLIER = 3;
+export const LOCK_MOUNTABLE_BYPASS_MULTIPLIER = 5;
 
 export const DEFAULT_LOCK_MOUNTABLE_CONFIG: LockMountableConfig = {
   enabled: false,
   criterion: "fbars",
+  rule: "block_below",
   minimumFbars: "",
 };
 
@@ -12,10 +13,15 @@ export function normalizeLockMountableCriterion(value: unknown): LockMountableCr
   return value === "fbars" ? value : "fbars";
 }
 
+export function normalizeLockMountableRule(value: unknown): LockMountableRule {
+  return value === "block_at_or_above" ? value : "block_below";
+}
+
 export function normalizeLockMountableConfig(value: Partial<LockMountableConfig> | null | undefined): LockMountableConfig {
   return {
     enabled: Boolean(value?.enabled),
     criterion: normalizeLockMountableCriterion(value?.criterion),
+    rule: normalizeLockMountableRule(value?.rule),
     minimumFbars: typeof value?.minimumFbars === "string"
       ? value.minimumFbars
       : value?.minimumFbars === null || value?.minimumFbars === undefined
@@ -36,18 +42,29 @@ export function isLockMountableEnabled(value: Partial<LockMountableConfig> | nul
   return normalized.enabled && minimumFbars !== null;
 }
 
-export function getLockMountableBypassFbars(value: Partial<LockMountableConfig> | null | undefined) {
-  const minimumFbars = getLockMountableMinimumFbars(value);
-  return minimumFbars === null ? null : minimumFbars * LOCK_MOUNTABLE_BYPASS_MULTIPLIER;
+export function getLockMountableThresholdFbars(value: Partial<LockMountableConfig> | null | undefined) {
+  return getLockMountableMinimumFbars(value);
 }
 
-export function canAccessLockMountable(value: Partial<LockMountableConfig> | null | undefined, viewerFbars?: number | null) {
+export function getLockMountableBypassFbars(creatorFbars?: number | null) {
+  if (typeof creatorFbars !== "number" || !Number.isFinite(creatorFbars) || creatorFbars < 0) {
+    return null;
+  }
+  return Math.trunc(creatorFbars) * LOCK_MOUNTABLE_BYPASS_MULTIPLIER;
+}
+
+export function canAccessLockMountable(
+  value: Partial<LockMountableConfig> | null | undefined,
+  viewerFbars?: number | null,
+  creatorFbars?: number | null,
+) {
+  const normalized = normalizeLockMountableConfig(value);
   if (!isLockMountableEnabled(value)) {
     return true;
   }
 
-  const bypassFbars = getLockMountableBypassFbars(value);
-  if (bypassFbars === null) {
+  const thresholdFbars = getLockMountableThresholdFbars(value);
+  if (thresholdFbars === null) {
     return true;
   }
 
@@ -55,7 +72,29 @@ export function canAccessLockMountable(value: Partial<LockMountableConfig> | nul
     return false;
   }
 
-  return Math.trunc(viewerFbars) >= bypassFbars;
+  const participantFbars = Math.trunc(viewerFbars);
+  const bypassFbars = getLockMountableBypassFbars(creatorFbars);
+  if (bypassFbars !== null && participantFbars >= bypassFbars) {
+    return true;
+  }
+
+  return normalized.rule === "block_at_or_above"
+    ? participantFbars < thresholdFbars
+    : participantFbars >= thresholdFbars;
+}
+
+export function lockMountableAccessMessage(
+  value: Partial<LockMountableConfig> | null | undefined,
+  creatorFbars?: number | null,
+) {
+  const normalized = normalizeLockMountableConfig(value);
+  const threshold = getLockMountableThresholdFbars(normalized);
+  if (threshold === null) return "This freight is locked.";
+  const ruleMessage = normalized.rule === "block_at_or_above"
+    ? `This freight is limited to participants below ${threshold} FBARS`
+    : `This freight requires at least ${threshold} FBARS`;
+  const bypassFbars = getLockMountableBypassFbars(creatorFbars);
+  return bypassFbars === null ? ruleMessage : `${ruleMessage}, or ${bypassFbars} FBARS to override`;
 }
 
 export function parseLockMinimumFbars(value: unknown) {
@@ -112,5 +151,8 @@ export function lockMountableSummary(config: LockMountableConfig) {
   }
 
   const minimumFbars = parseLockMinimumFbars(config.minimumFbars) ?? 0;
-  return `FBARS lock • ${minimumFbars} FBARS set • ${minimumFbars * LOCK_MOUNTABLE_BYPASS_MULTIPLIER} FBARS bypass`;
+  const ruleSummary = normalizeLockMountableRule(config.rule) === "block_at_or_above"
+    ? `Block participants with ${minimumFbars} FBARS or more`
+    : `Block participants with fewer than ${minimumFbars} FBARS`;
+  return `${ruleSummary}; participants with 5x the creator's current FBARS can override`;
 }

@@ -7,6 +7,7 @@ import {
   isMountedAppPollDue,
   mountedAppWindowState,
 } from "../lib/mountableAppRuntimeRules.ts";
+import { resolveSelectedMountableAppPrinciples } from "../lib/fonMountablesSdk.ts";
 
 test("optional principles do not block mounted-app satisfaction", () => {
   assert.equal(areRequiredPrinciplesSatisfied(
@@ -61,4 +62,28 @@ test("poll scheduling honors the configured interval", () => {
   assert.equal(isMountedAppPollDue({ now, lastPollAt: "2026-09-29T12:00:45.000Z", pollIntervalSeconds: 30 }), false);
   assert.equal(isMountedAppPollDue({ now, lastPollAt: "2026-09-29T12:00:30.000Z", pollIntervalSeconds: 30 }), true);
   assert.equal(isMountedAppPollDue({ now, lastPollAt: "2026-09-29T12:00:59.000Z", pollIntervalSeconds: 300, force: true }), true);
+});
+
+test("creator principle parameters survive selection resolution", () => {
+  const [selection] = resolveSelectedMountableAppPrinciples([
+    {
+      principleId: "exact-text",
+      title: "Exact text",
+      description: "",
+      supportsTimestampQuery: false,
+      paramsSchema: [{
+        paramKey: "target-text",
+        title: "Required text",
+        description: "",
+        valueType: "string",
+        required: true,
+      }],
+      paramsDefaults: { "target-text": "default" },
+      readableFormat: "Type exactly: {target-text}",
+      exampleReadableText: "Type exactly: default",
+    },
+  ], [{ principleId: "exact-text", params: { "target-text": "creator-value" } }]);
+
+  assert.equal(selection.params["target-text"], "creator-value");
+  assert.equal(selection.displayLabel, "Type exactly: creator-value");
 });

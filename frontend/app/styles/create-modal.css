@@ -512,6 +512,26 @@
   border-color: #16a34a;
 }
 
+.create-info-mountable-app-actions {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+}
+
+.create-info-confirm-btn-ignore {
+  flex: none;
+  background: #9ca3af;
+  color: #ffffff;
+  border-color: #9ca3af;
+}
+
+.create-info-confirm-btn-ignore:not(:disabled):hover,
+.create-info-confirm-btn-ignore:not(:disabled):focus-visible {
+  background: #f59e0b;
+  color: #ffffff;
+  border-color: #f59e0b;
+}
+
 .create-info-skeleton-list {
   display: flex;
   flex-direction: column;
@@ -662,6 +682,55 @@
   margin-top: 0;
 }
 
+.create-mountable-config-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.create-mountable-config-header-icon {
+  flex: 0 0 auto;
+}
+
+.create-mountable-config-header-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.create-review-info-mountables {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.8rem;
+}
+
+.create-review-info-mountable {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.create-review-info-mountable-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.create-review-info-mountable-principles {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .create-info-forms-inline-error {
   margin: 0;
   text-align: right;
@@ -675,6 +744,89 @@
   align-items: stretch;
   gap: 0;
   width: 100%;
+}
+
+.create-mountable-principles,
+.create-mountable-params {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.create-mountable-principle-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.create-mountable-params-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.create-mountable-params-heading .create-info-forms-inline-error {
+  margin-left: auto;
+}
+
+.create-mountable-principle {
+  width: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 0;
+  padding: 0.65rem 0.75rem;
+  background: #fff;
+  color: inherit;
+  text-align: left;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+button.create-mountable-principle {
+  cursor: pointer;
+}
+
+button.create-mountable-principle:hover,
+button.create-mountable-principle:focus-visible,
+.create-mountable-principle-selected {
+  border-color: #961cac;
+  background: rgba(150, 28, 172, 0.08);
+}
+
+.create-mountable-principle-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  cursor: pointer;
+}
+
+.create-mountable-principle-radio input {
+  margin-top: 0.15rem;
+  accent-color: #961cac;
+}
+
+.create-mountable-principle-params {
+  margin-top: 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-top: 0;
+  padding: 0.7rem 0.75rem;
+}
+
+.create-mountable-param {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.create-mountable-param-title {
+  color: #111827;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.create-mountable-param small {
+  color: #6b7280;
+  font-size: 0.72rem;
 }
 
 

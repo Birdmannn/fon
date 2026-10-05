@@ -57,6 +57,8 @@
 }
 
 .create-review-preview-card-main {
+  display: flex;
+  flex-direction: column;
   border: none;
   border-radius: 0;
   padding: 0 0 0.25rem;
@@ -64,6 +66,23 @@
   box-shadow: none;
   min-height: 0;
   overflow-y: auto;
+}
+
+.create-review-mountable-icons {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.create-review-mountable-icon {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.create-review-mountable-icon + .create-review-mountable-icon {
+  margin-left: -1.2rem;
 }
 
 .create-review-section-label {

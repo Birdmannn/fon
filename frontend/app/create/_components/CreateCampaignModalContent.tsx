@@ -1,18 +1,15 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, LoaderCircle, LockKeyhole, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
 
+import Image from "next/image";
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import {
-  appMountableSummary,
-  normalizeAppMountableConfigs,
-} from "@/app/_lib/appMountable";
+import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import {
   DEFAULT_LOCK_MOUNTABLE_CONFIG,
-  lockMountableSummary,
   normalizeLockMountableConfig,
 } from "@/app/_lib/lockMountable";
 import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
@@ -1910,7 +1907,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       setDraftSaveError("");
 
       try {
+        const formsMountableSnapshot = formsMountableRef.current;
+        const lockMountableSnapshot = lockMountableRef.current;
+        const appMountablesSnapshot = [...appMountablesRef.current];
         const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage, identityOverride);
+        payload.mountables = {
+          forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
+          lock: lockMountableSnapshot.enabled ? lockMountableSnapshot : null,
+          apps: draftStatus === "draft" ? appMountablesSnapshot : appMountablesSnapshot.filter((entry) => entry.enabled),
+        };
         const response = await fetch(recordIdOverride ? `/api/campaign-records/${recordIdOverride}` : "/api/campaign-records", {
           method: recordIdOverride ? "PATCH" : "POST",
           headers: {
@@ -1942,9 +1947,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
-          formsMountable,
-          lockMountable,
-          appMountables,
+          formsMountable: formsMountableSnapshot,
+          lockMountable: lockMountableSnapshot,
+          appMountables: appMountablesSnapshot,
         });
         setLastSavedSnapshot(nextSnapshot);
 
@@ -1967,9 +1972,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
             },
             mountables: {
-              forms: formsMountable.enabled ? formsMountable : null,
-              lock: lockMountable.enabled ? lockMountable : null,
-              apps: appMountables.filter((entry) => entry.enabled),
+              forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
+              lock: lockMountableSnapshot.enabled ? lockMountableSnapshot : null,
+              apps: draftStatus === "draft" ? appMountablesSnapshot : appMountablesSnapshot.filter((entry) => entry.enabled),
             },
             socialMetadata: {
               mentions: allMentions,
@@ -2989,17 +2994,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <div className="create-review-preview-card create-review-preview-card-main">
           <p className="create-review-section-label">Preview</p>
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
-          {formsMountable.enabled && formsMountable.formUrl.trim().length > 0 ? (
-            <p className="create-review-preview-body">Mounted form: {formsMountable.formUrl.trim()}</p>
-          ) : null}
-          {lockMountable.enabled && lockMountable.minimumFbars.trim().length > 0 ? (
-            <p className="create-review-preview-body">Mounted lock: {lockMountableSummary(lockMountable)}</p>
-          ) : null}
-          {appMountables.filter((entry) => entry.enabled).map((mountable) => (
-            <p key={mountable.mountableInstanceId || mountable.appId} className="create-review-preview-body">
-              Mounted app: {appMountableSummary(mountable)}
-            </p>
-          ))}
           {createPreviewLines.length > 0 ? (
             <div className="create-review-preview-content">
               {createPreviewLines.map((line, index) => {
@@ -3027,6 +3021,30 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ))}
             </div>
           )}
+          {(formsMountable.enabled || lockMountable.enabled || appMountables.some((entry) => entry.enabled)) ? (
+            <div className="create-review-mountable-icons" aria-label="Mounted apps">
+              {[
+                ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
+                ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+                ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
+                  key: entry.mountableInstanceId || entry.appId,
+                  name: entry.appName || entry.appId,
+                  kind: "app" as const,
+                  logoUrl: entry.logoUrl || entry.iconUrl,
+                })),
+              ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" })).map((mountable, index) => (
+                <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : ""}`.trim()} title={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
+                  {mountable.kind === "app" && mountable.logoUrl ? (
+                    <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
+                  ) : mountable.kind === "forms" ? (
+                    <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <div className="create-review-summary-card">

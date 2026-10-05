@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 
-import { canAccessLockMountable, getLockMountableBypassFbars } from "@/app/_lib/lockMountable";
+import { canAccessLockMountable, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
 import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex } from "@/lib/encoding";
@@ -20,6 +20,15 @@ export type TicketPurchaseAvailability = {
   liveSoldTickets: bigint;
   remainingTickets: bigint;
 };
+
+async function fetchCurrentFbars(address: string | null | undefined) {
+  const normalizedAddress = address?.trim();
+  if (!normalizedAddress) return null;
+  const response = await fetch(`/api/user-profiles?address=${encodeURIComponent(normalizedAddress)}`, { cache: "no-store" });
+  const payload = await response.json().catch(() => null) as { profile?: { fbars?: unknown } | null } | null;
+  const fbars = payload?.profile?.fbars;
+  return response.ok && typeof fbars === "number" && Number.isFinite(fbars) ? fbars : null;
+}
 
 export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, onTicketBuySuccess }: UseTicketPurchaseFlowArgs) {
   const signer = ccc.useSigner();
@@ -61,9 +70,13 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       return;
     }
 
-    if (!canAccessLockMountable(ticketPurchaseRecord?.mountables?.lock, currentViewerFbars)) {
-      const bypassFbars = getLockMountableBypassFbars(ticketPurchaseRecord?.mountables?.lock);
-      setTicketPurchaseError(bypassFbars === null ? "This raffle is locked." : `Need ${bypassFbars} FBARS to bypass this lock`);
+    const [liveViewerFbars, creatorCurrentFbars] = await Promise.all([
+      signer.getRecommendedAddress().then((address) => fetchCurrentFbars(address)).catch(() => currentViewerFbars ?? null),
+      fetchCurrentFbars(ticketPurchaseRecord?.creatorAddress).catch(() => null),
+    ]);
+    const effectiveViewerFbars = liveViewerFbars ?? currentViewerFbars;
+    if (!canAccessLockMountable(ticketPurchaseRecord?.mountables?.lock, effectiveViewerFbars, creatorCurrentFbars)) {
+      setTicketPurchaseError(lockMountableAccessMessage(ticketPurchaseRecord?.mountables?.lock, creatorCurrentFbars));
       return;
     }
 
