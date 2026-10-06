@@ -733,6 +733,75 @@
   white-space: pre-wrap;
 }
 
+.campaign-attachment-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  overflow: hidden;
+}
+
+.campaign-attachment-grid-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.campaign-attachment-tile {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #d1d5db;
+}
+
+.campaign-attachment-tile img {
+  object-fit: cover;
+}
+
+.campaign-attachment-remove {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 160ms ease, background-color 160ms ease;
+  z-index: 2;
+}
+
+.campaign-attachment-tile:hover .campaign-attachment-remove,
+.campaign-attachment-remove:focus-visible {
+  opacity: 1;
+}
+
+.campaign-attachment-remove:hover,
+.campaign-attachment-remove:focus-visible {
+  background: #dc2626;
+  outline: none;
+}
+
+.campaign-attachment-overflow {
+  position: absolute;
+  inset: 0;
+  background: rgba(55, 65, 81, 0.7);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono, monospace);
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  z-index: 1;
+}
+
 .campaign-card-description-quote {
   display: flex;
   flex-direction: column;

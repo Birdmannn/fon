@@ -1,6 +1,7 @@
 import type { AppMountableConfig } from "@/app/_types/appMountable";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
+import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
 import type { GiftDeliverable } from "@/lib/giftDeliverables";
 
 export type CampaignComment = {
@@ -51,6 +52,7 @@ export type CampaignRecord = {
     resharedByAddresses?: string[];
   };
   giftDeliverable?: GiftDeliverable | null;
+  attachments?: CampaignAttachment[];
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: "draft" | "published" | "publish_failed";

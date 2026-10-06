@@ -34,6 +34,7 @@ function getMongoClientPromise() {
 
 export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "freightonnervos";
 export const CAMPAIGN_RECORDS_COLLECTION = "campaignRecords";
+export const CAMPAIGN_ATTACHMENTS_COLLECTION = "campaignAttachments";
 export const CAMPAIGN_PARTICIPANTS_COLLECTION = "campaignParticipants";
 export const CAMPAIGN_DEPOSITS_COLLECTION = "campaignDeposits";
 export const USER_PROFILES_COLLECTION = "userProfiles";
@@ -49,6 +50,18 @@ export const CAMPAIGN_PARTICIPANT_FINALIZATIONS_COLLECTION = "campaignParticipan
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(CAMPAIGN_RECORDS_COLLECTION);
+}
+
+export async function getCampaignAttachmentsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection<{
+    data: Binary | Buffer;
+    contentType: string;
+    name: string;
+    creatorAddress: string;
+    groupId: string;
+    createdAt: string;
+  }>(CAMPAIGN_ATTACHMENTS_COLLECTION);
 }
 
 export async function getCampaignParticipantsCollection() {

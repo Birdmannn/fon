@@ -6,6 +6,7 @@ import { Blocks, Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
@@ -315,6 +316,8 @@ export default function CampaignCardSurface({
             </button>
           )}
         </div>
+
+        <CampaignAttachmentGrid attachments={record?.attachments ?? []} />
 
         {mentions.length > 0 && (
           <div className="flex flex-wrap gap-2 text-xs">

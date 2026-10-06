@@ -160,7 +160,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -423,6 +423,7 @@ export default function CampaignDetailPage() {
     formsMountableSelected,
     lockMountableSelected,
     handleCreateTopRightAction,
+    handleCreateErrorChange,
     handleDraftSelectionRequest,
     handleMountableSelectionStateChange,
     handleSaveDraftChoice,
@@ -471,12 +472,12 @@ export default function CampaignDetailPage() {
     setMountableFormValidationState,
     setMountableLockValidationState,
     setMountablesPromptError,
-    setPreviewError,
     showCreateModal,
     submissionSuccessTxHash,
     goBackMountableSetup,
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
+    createErrorInfoModalMode: "create-error",
     initialInfoModalMode: "about",
     openWallet: openWalletWithSeed,
     signer,
@@ -516,7 +517,8 @@ export default function CampaignDetailPage() {
     setShowInfoModal,
   ]);
 
-  const preventInfoHover = infoModalMode === "save-draft-confirm"
+  const preventInfoHover = infoModalMode === "create-error"
+    || infoModalMode === "save-draft-confirm"
     || infoModalMode === "mountables"
     || infoModalMode === "mountables-lock"
     || infoModalMode === "mountables-forms"
@@ -1630,7 +1632,12 @@ export default function CampaignDetailPage() {
     </div>
   );
 
-  const infoModalBody = infoModalMode === "submission-success" ? (
+  const infoModalBody = infoModalMode === "create-error" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+      <p className="create-info-constraint-item text-red-500 break-words"><span>{previewError}</span></p>
+    </div>
+  ) : infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">txhash:
@@ -2139,9 +2146,9 @@ export default function CampaignDetailPage() {
         <AppShellHeader
           className={`campaign-shell-header ${activeShellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
-          infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
+          infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
           infoModalActions={infoModalActions}
           infoModalClosing={isInfoModalClosing}
@@ -2154,7 +2161,9 @@ export default function CampaignDetailPage() {
           onInfoButtonClick={() => handleReturnToFeed()}
           onInfoButtonFocus={() => openInfoModalFromHover(preventInfoHover)}
           onInfoModalKeepOpen={keepInfoModalOpen}
-          onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
+          onInfoModalRequestClose={() => {
+            if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
+          }}
           onInfoModalScheduleClose={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
           onInfoMouseEnter={() => openInfoModalFromHover(preventInfoHover)}
           onInfoMouseLeave={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
@@ -2205,7 +2214,7 @@ export default function CampaignDetailPage() {
           onMountableSelectionRequired={openMountablesModal}
           onMountableSelectionStateChange={handleMountableSelectionStateChange}
           onOpenCreateModal={openCreateModal}
-          onPreviewErrorChange={setPreviewError}
+          onPreviewErrorChange={handleCreateErrorChange}
           onPublishSuccess={(txHash) => {
             finalizeCloseCreateModal();
             markCurrentProfileDataDirty();

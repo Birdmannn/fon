@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
@@ -68,6 +69,7 @@ export default function CampaignDetailSurface({
           <div className="campaign-card-description campaign-card-description-detail">
             <CampaignDescriptionContent lines={descriptionLines} />
           </div>
+          <CampaignAttachmentGrid attachments={record.attachments ?? []} />
         </div>
       </div>
     </div>

@@ -216,6 +216,20 @@
   bottom: 4.35rem;
 }
 
+.create-modal-compose-attachments {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0.5rem 1.25rem 5.1rem;
+}
+
+.create-modal-description-editor {
+  min-height: 4rem;
+}
+
+.create-modal-compose-attachments .campaign-attachment-tile {
+  aspect-ratio: 2 / 1;
+}
+
 /* Send button */
 .create-modal-send-btn {
   position: absolute;
@@ -273,6 +287,37 @@
   animation: create-modal-send-spin 0.9s linear infinite;
 }
 
+.create-modal-attachment-input {
+  display: none;
+}
+
+.create-modal-attachment-btn {
+  position: absolute;
+  right: 4.85rem;
+  bottom: 1rem;
+  width: 2.6rem;
+  height: 3.15rem;
+  border: 0;
+  background: transparent;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 56;
+}
+
+.create-modal-attachment-btn:hover,
+.create-modal-attachment-btn:focus-visible {
+  color: #6b7280;
+  outline: none;
+}
+
+.create-modal-attachment-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 @keyframes create-modal-send-spin {
   from {
     transform: rotate(0deg);
@@ -328,14 +373,6 @@
 
 .create-modal-gift-warning {
   color: #a16207;
-}
-
-.create-modal-error-box {
-  position: absolute;
-  left: 1rem;
-  right: 5.2rem;
-  padding: 0.6rem 0.8rem;
-  z-index: 55;
 }
 
 /* Constraints */

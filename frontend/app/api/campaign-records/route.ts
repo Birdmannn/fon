@@ -1,10 +1,11 @@
+import { ObjectId } from "mongodb";
 import { after, NextResponse } from "next/server";
 import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
-import { getMongoCollection } from "@/lib/mongodb";
+import { getCampaignAttachmentsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 import { activateMountedAppsForCampaignRecord } from "@/lib/mountableAppRuntime";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ type CampaignRecordPayload = {
     resharedByAddresses?: unknown;
   };
   giftDeliverable?: unknown;
+  attachments?: unknown;
   creatorAddress?: unknown;
   creatorHandle?: unknown;
   status?: unknown;
@@ -160,6 +162,18 @@ function ensureOptionalRecipients(value: unknown) {
       amountShannons: ensureString(candidate.amountShannons, `settledRecipients[${index}].amountShannons`).trim(),
       creditedUsdCents,
     };
+  });
+}
+
+function ensureAttachments(value: unknown) {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("attachments must be an array");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`attachments[${index}] must be an object`);
+    const item = entry as { id?: unknown; name?: unknown; contentType?: unknown };
+    const id = ensureString(item.id, `attachments[${index}].id`).trim();
+    if (!/^[a-f0-9]{24}$/i.test(id)) throw new Error(`attachments[${index}].id is invalid`);
+    return { id, name: ensureString(item.name, `attachments[${index}].name`).slice(0, 180), contentType: ensureString(item.contentType, `attachments[${index}].contentType`) };
   });
 }
 
@@ -323,6 +337,19 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     taskDurationHours,
   });
   const giftDeliverable = parseStoredGiftDeliverable(payload.giftDeliverable);
+  const attachments = ensureAttachments(payload.attachments);
+  if (attachments.length > 0) {
+    if (!creatorAddress) throw new Error("creatorAddress is required for attachments");
+    const normalizedCreatorAddress = creatorAddress.toLowerCase();
+    const [profile, ownedAttachmentCount] = await Promise.all([
+      (await getUserProfilesCollection()).findOne({ address: normalizedCreatorAddress }, { projection: { _id: 0, fbars: 1 } }),
+      (await getCampaignAttachmentsCollection()).countDocuments({ _id: { $in: attachments.map((item) => new ObjectId(item.id)) }, creatorAddress: normalizedCreatorAddress }),
+    ]);
+    const fbars = typeof profile?.fbars === "number" ? profile.fbars : Number(profile?.fbars ?? 0);
+    const allowance = Math.max(0, Math.floor(fbars / 20));
+    if (attachments.length > allowance) throw new Error(`Your ${Math.trunc(fbars || 0)} FBARS allow ${allowance} photos`);
+    if (ownedAttachmentCount !== attachments.length) throw new Error("One or more attachments do not belong to this creator");
+  }
 
   return {
     title,
@@ -360,6 +387,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         : [],
     },
     giftDeliverable,
+    attachments,
     creatorAddress,
     creatorHandle,
     status,

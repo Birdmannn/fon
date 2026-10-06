@@ -52,7 +52,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
 
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 
@@ -208,6 +208,7 @@ export default function Home() {
     finalizeCloseCreateModal,
     formsMountableSelected,
     handleCreateTopRightAction,
+    handleCreateErrorChange,
     handleDraftSelectionRequest,
     handleMountableSelectionStateChange,
     handleSaveDraftChoice,
@@ -257,13 +258,13 @@ export default function Home() {
     setMountableFormValidationState,
     setMountableLockValidationState,
     setMountablesPromptError,
-    setPreviewError,
     setSubmissionSuccessTxHash,
     showCreateModal,
     submissionSuccessTxHash,
     goBackMountableSetup,
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
+    createErrorInfoModalMode: "create-error",
     initialInfoModalMode: "about",
     openWallet: openWalletWithSeed,
     signer,
@@ -523,7 +524,12 @@ export default function Home() {
   }, [closeInfoModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal]);
 
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
-  const infoModalBody = infoModalMode === "submission-success" ? (
+  const infoModalBody = infoModalMode === "create-error" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+      <p className="create-info-constraint-item text-red-500 break-words"><span>{previewError}</span></p>
+    </div>
+  ) : infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">txhash: 
@@ -1151,9 +1157,9 @@ export default function Home() {
         <AppShellHeader
           className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
-          infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
+          infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "raffle-settlement"}
           infoModalBody={infoModalBody}
           infoModalActions={infoModalActions}
           infoModalClosing={isInfoModalClosing}
@@ -1167,14 +1173,16 @@ export default function Home() {
           } : undefined}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
           onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
-          onInfoModalRequestClose={() => closeInfoModal(resetHomeInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
+          onInfoModalRequestClose={() => {
+            if (infoModalMode !== "create-error") closeInfoModal(resetHomeInfoModalState);
+          }}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
           onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets), resetHomeInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
@@ -1244,7 +1252,7 @@ export default function Home() {
         onMountableSelectionRequired={openMountablesModal}
         onMountableSelectionStateChange={handleMountableSelectionStateChange}
         onOpenCreateModal={openCreateModal}
-        onPreviewErrorChange={setPreviewError}
+        onPreviewErrorChange={handleCreateErrorChange}
         onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
           markCurrentProfileDataDirty();

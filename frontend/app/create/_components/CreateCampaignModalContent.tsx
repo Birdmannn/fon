@@ -1,12 +1,13 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, LoaderCircle, LockKeyhole, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
 
 import Image from "next/image";
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
+import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import {
   DEFAULT_LOCK_MOUNTABLE_CONFIG,
@@ -15,6 +16,7 @@ import {
 import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { AppMountableConfig } from "@/app/_types/appMountable";
+import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import { CampaignType } from "@/lib/contract";
@@ -266,6 +268,7 @@ type DraftRecord = {
     mentions?: string[];
   };
   giftDeliverable?: GiftDeliverable | null;
+  attachments?: CampaignAttachment[];
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: DraftRecordStatus;
@@ -290,6 +293,7 @@ type DraftSnapshot = {
   raffleSupportPoolPercent: string;
   mentions: string[];
   giftDeliverable: GiftDeliverable;
+  attachments: CampaignAttachment[];
   formsMountable?: FormsMountableConfig;
   lockMountable?: LockMountableConfig;
   appMountables?: AppMountableConfig[];
@@ -369,6 +373,7 @@ function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
     summaryDraft: snapshot.summaryDraft.trim(),
     mentions: [...snapshot.mentions],
     giftDeliverable: snapshot.giftDeliverable,
+    attachments: Array.isArray(snapshot.attachments) ? [...snapshot.attachments] : [],
     appMountables: normalizeAppMountableConfigs(snapshot.appMountables),
   };
 }
@@ -429,6 +434,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const pageEditorRef = useRef<HTMLDivElement>(null);
   const modalTitleRef = useRef<HTMLDivElement>(null);
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const attachmentGroupIdRef = useRef("");
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
   const lastHandledStepBackSignalRef = useRef(stepBackSignal);
@@ -484,6 +491,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [isVerifyingFormsResponseAccess, setIsVerifyingFormsResponseAccess] = useState(false);
   const [formsResponseAccessError, setFormsResponseAccessError] = useState("");
   const [pendingPublishedRecordSync, setPendingPublishedRecordSync] = useState<PendingPublishedRecordSync | null>(null);
+  const [attachments, setAttachments] = useState<CampaignAttachment[]>([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const activeDraftRecord = useMemo(
     () => draftRecords.find((record) => record._id === activeDraftRecordId) ?? null,
     [activeDraftRecordId, draftRecords]
@@ -707,12 +716,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     raffleSupportPoolPercent,
     mentions: allMentions,
     giftDeliverable: giftDeliverableDraft,
+    attachments,
     formsMountable,
     lockMountable,
     appMountables,
   }), [
     allMentions,
     appMountables,
+    attachments,
     campaignType,
     currentAuxAmountCkb,
     currentDraftSummary,
@@ -1074,6 +1085,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setGiftRatioEntries([]);
     setGiftResolvedAddresses({});
     setGiftResolutionWarnings([]);
+    setAttachments([]);
+    attachmentGroupIdRef.current = "";
     formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
     lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
     appMountablesRef.current = [];
@@ -1152,8 +1165,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   ]);
 
   useEffect(() => {
-    onPreviewErrorChange?.(isReviewStep ? activeModalError : "");
-  }, [activeModalError, isReviewStep, onPreviewErrorChange]);
+    onPreviewErrorChange?.(activeModalError);
+  }, [activeModalError, onPreviewErrorChange]);
 
   useEffect(() => {
     onDraftListOpenChange?.(isDraftListOpen);
@@ -1519,6 +1532,48 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     return creatorAddress;
   }, [signer]);
 
+  const handleAttachPhotos = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const allowance = Math.max(0, Math.floor((availableFbars ?? 0) / 20));
+    if (attachments.length + files.length > allowance) {
+      setErrorMsg(`Your ${Math.trunc(availableFbars ?? 0)} FBARS allow ${allowance} photo${allowance === 1 ? "" : "s"}.`);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+      return;
+    }
+
+    setIsUploadingAttachments(true);
+    setErrorMsg("");
+    try {
+      const creatorAddress = await getCreatorAddress();
+      if (!attachmentGroupIdRef.current) attachmentGroupIdRef.current = crypto.randomUUID();
+      const uploaded: CampaignAttachment[] = [];
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.set("photo", file);
+        form.set("creatorAddress", creatorAddress);
+        form.set("groupId", attachmentGroupIdRef.current);
+        const response = await fetch("/api/campaign-attachments", { method: "POST", body: form });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.attachment) throw new Error(payload?.error ?? `Failed to upload ${file.name}`);
+        uploaded.push(payload.attachment as CampaignAttachment);
+      }
+      setAttachments((current) => [...current, ...uploaded]);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Failed to attach photos");
+    } finally {
+      setIsUploadingAttachments(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  }, [attachments.length, availableFbars, getCreatorAddress]);
+
+  const handleRemoveAttachment = useCallback((attachment: CampaignAttachment) => {
+    setAttachments((current) => current.filter((item) => item.id !== attachment.id));
+    void getCreatorAddress().then((creatorAddress) => fetch(
+      `/api/campaign-attachments/${encodeURIComponent(attachment.id)}?creatorAddress=${encodeURIComponent(creatorAddress)}`,
+      { method: "DELETE" },
+    )).catch(() => undefined);
+  }, [getCreatorAddress]);
+
   const clearCreateModalResumeState = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1555,6 +1610,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       ),
     );
     setGiftResolutionWarnings([]);
+    setAttachments(nextSnapshot.attachments);
     setTaskStartDelayHours(nextSnapshot.taskStartDelayHours);
     setTaskDurationHours(nextSnapshot.taskDurationHours);
     setMaxAmountCkb(nextSnapshot.maxAmountCkb);
@@ -1655,6 +1711,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
     const nextRaffleSupportPoolPercent = record.argsDraft?.raffleSupportPoolPercent ?? "0";
     const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
+    const nextAttachments = Array.isArray(record.attachments) ? record.attachments : [];
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
 
     setModalTitle(nextTitle);
@@ -1673,6 +1730,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       ),
     );
     setGiftResolutionWarnings([]);
+    setAttachments(nextAttachments);
     setTaskStartDelayHours(nextStartDelay);
     setTaskDurationHours(nextDuration);
     setMaxAmountCkb(nextMaxAmount);
@@ -1715,6 +1773,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       raffleSupportPoolPercent: nextRaffleSupportPoolPercent,
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
+      attachments: nextAttachments,
       formsMountable: nextFormsMountable,
       lockMountable: nextLockMountable,
       appMountables: nextAppMountables,
@@ -1877,6 +1936,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           resharedByAddresses: [],
         },
         giftDeliverable: giftDeliverableDraft,
+        attachments,
         creatorAddress,
         creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
         status: draftStatus,
@@ -1894,6 +1954,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       lockMountable,
       getCreatorAddress,
       giftDeliverableDraft,
+      attachments,
       maxAmountCkb,
       raffleTicketPriceCkb,
       rewardCount,
@@ -1959,6 +2020,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
+          attachments,
           formsMountable: formsMountableSnapshot,
           lockMountable: lockMountableSnapshot,
           appMountables: appMountablesSnapshot,
@@ -1992,6 +2054,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               mentions: allMentions,
             },
             giftDeliverable: giftDeliverableDraft,
+            attachments,
             status: draftStatus,
             txHash: txHashValue,
             publishError,
@@ -2026,6 +2089,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       activeDraftRecordId,
       allMentions,
       appMountables,
+      attachments,
       buildDraftPayload,
       campaignType,
       giftDeliverableDraft,
@@ -2877,7 +2941,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               data-placeholder="description"
               role="textbox"
               aria-placeholder="description"
-              className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
+              className="create-modal-description-editor w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
               style={{
                 wordWrap: "break-word",
                 overflowWrap: "break-word",
@@ -2885,6 +2949,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 caretColor: "currentColor",
               }}
             />
+
+            {attachments.length > 0 ? (
+              <div className="create-modal-compose-attachments">
+                <CampaignAttachmentGrid attachments={attachments} editable onRemove={handleRemoveAttachment} />
+              </div>
+            ) : null}
 
             <div className="create-modal-counter create-modal-body-counter">
               {modalDescriptionChars}/{modalDescriptionMaxChars}
@@ -3025,6 +3095,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           ) : (
             <p className="create-review-preview-body">No preview available yet.</p>
           )}
+          <CampaignAttachmentGrid attachments={attachments} />
           {(firstHashtag || otherHashtags.length > 0) && (
             <div className="create-review-tag-row">
               {firstHashtag && <span className="create-review-primary-tag">#{firstHashtag}</span>}
@@ -3233,23 +3304,30 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 </div>
               </div>
 
-              {activeModalError && (
-                isReviewStep ? (
-                  <div className="create-modal-constraints-row">
-                    <p className="create-modal-constraints-text text-red-500">An Error Occurred. Hover on info for more</p>
-                  </div>
-                ) : (
-                  <div
-                    className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
-                    style={{ bottom: mentions.length > 0 ? "7.6rem" : "3.2rem" }}
-                  >
-                    <p className="text-sm font-semibold text-red-500">Error</p>
-                    <p className="text-xs text-red-600 break-all">{activeModalError}</p>
-                  </div>
-                )
-              )}
-
               {(!showDraftsPane || isReviewStep) && (
+                <>
+                {!isReviewStep ? (
+                  <>
+                    <input
+                      ref={attachmentInputRef}
+                      className="create-modal-attachment-input"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      multiple
+                      onChange={(event) => void handleAttachPhotos(event.target.files)}
+                    />
+                    <button
+                      type="button"
+                      className="create-modal-attachment-btn"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={isUploadingAttachments}
+                      aria-label="Attach photos"
+                      title={`Attach photos (1 photo per 20 FBARS; ${Math.max(0, Math.floor((availableFbars ?? 0) / 20))} allowed)`}
+                    >
+                      {isUploadingAttachments ? <LoaderCircle className="create-modal-send-spinner" size={23} strokeWidth={2} aria-hidden="true" /> : <Paperclip size={24} strokeWidth={2} aria-hidden="true" />}
+                    </button>
+                  </>
+                ) : null}
                 <button
                   type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
                   disabled={
@@ -3314,6 +3392,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
                   )}
                 </button>
+                </>
               )}
             </>
           ) : (

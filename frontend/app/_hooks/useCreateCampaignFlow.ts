@@ -16,6 +16,7 @@ import type { MountableJsonObject, MountableJsonValue } from "@/lib/fonMountable
 
 type UseCreateCampaignFlowArgs<TMode extends string> = {
   animationMs: number;
+  createErrorInfoModalMode: TMode;
   initialInfoModalMode: TMode;
   openWallet: () => void;
   signer: unknown;
@@ -45,6 +46,7 @@ type MountableSetupStep = {
 
 export function useCreateCampaignFlow<TMode extends string>({
   animationMs,
+  createErrorInfoModalMode,
   initialInfoModalMode,
   openWallet,
   signer,
@@ -58,6 +60,9 @@ export function useCreateCampaignFlow<TMode extends string>({
   setShowInfoModal,
 }: UseCreateCampaignFlowArgs<TMode>) {
   const createHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const createErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeInfoModalRef = useRef(closeInfoModal);
+  closeInfoModalRef.current = closeInfoModal;
   const createModalContentRef = useRef<CreateCampaignModalContentHandle>(null);
 
   const [saveDraftPromptError, setSaveDraftPromptError] = useState("");
@@ -117,6 +122,28 @@ export function useCreateCampaignFlow<TMode extends string>({
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
   }, [clearInfoCloseTimer, clearInfoHideTimer, setInfoModalInteraction, setInfoModalMode, setIsInfoModalClosing, setShowInfoModal]);
+
+  const handleCreateErrorChange = useCallback((message: string) => {
+    setPreviewError(message);
+    if (!message) return;
+
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearSubmissionSuccessTimer?.();
+    if (createErrorTimerRef.current) clearTimeout(createErrorTimerRef.current);
+    setInfoModalMode(createErrorInfoModalMode);
+    setInfoModalInteraction?.("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    createErrorTimerRef.current = setTimeout(() => {
+      closeInfoModalRef.current();
+      createErrorTimerRef.current = null;
+    }, 3000);
+  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, createErrorInfoModalMode, setInfoModalInteraction, setInfoModalMode, setIsInfoModalClosing, setShowInfoModal]);
+
+  useEffect(() => () => {
+    if (createErrorTimerRef.current) clearTimeout(createErrorTimerRef.current);
+  }, []);
 
   const openSaveDraftConfirmModal = useCallback(() => {
     setSaveDraftPromptError("");
@@ -679,6 +706,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     setSubmissionSuccessPreimage(null);
     setMountablesPromptError("");
     setMountableAppsError("");
+    setPreviewError("");
     setSelectedMountableAppIds([]);
     setSelectedMountableAppId("");
     setSelectedMountablePrincipleIds([]);
@@ -699,6 +727,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     finalizeCloseCreateModal,
     formsMountableSelected,
     handleCreateTopRightAction,
+    handleCreateErrorChange,
     handleDraftSelectionRequest,
     handleMountableSelectionStateChange,
     handleRemoveMountedAppConfig,
