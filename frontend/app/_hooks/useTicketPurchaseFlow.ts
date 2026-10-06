@@ -7,7 +7,7 @@ import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex } from "@/lib/encoding";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId } from "@/lib/campaignIdentity";
-import { fetchCampaigns, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
+import { fetchCampaigns, fetchParticipants, getRaffleTicketsPerUser, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
 type UseTicketPurchaseFlowArgs = {
@@ -80,27 +80,30 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       return;
     }
 
-    const quantity = Number.parseInt(ticketPurchaseQuantity.trim(), 10);
-    if (!Number.isInteger(quantity) || quantity <= 0) {
+    const quantity = Number(ticketPurchaseQuantity.trim());
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 100) {
       setTicketPurchaseError("Enter a valid number of tickets");
       return;
     }
 
     const requestedTickets = BigInt(quantity);
-    if (requestedTickets !== 1n) {
-      setTicketPurchaseError("One ticket at a time for now");
-      return;
-    }
-
-    const totalCostShannons = ticketPurchaseCampaign.data.auxAmount;
-    if (totalCostShannons <= 0n) {
-      setTicketPurchaseError("Ticket price is unavailable for this raffle");
-      return;
-    }
 
     const remainingTickets = ticketPurchaseAvailability?.remainingTickets ?? 0n;
-    if (remainingTickets <= 0n) {
+    if (remainingTickets >= 0n && requestedTickets > remainingTickets) {
       setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
+      return;
+    }
+
+    try {
+      const walletAddress = await signer.getRecommendedAddress();
+      const priorEntries = await fetchParticipants(signer.client, ticketPurchaseCampaign, 5000, [walletAddress], true);
+      const perUserLimit = getRaffleTicketsPerUser(ticketPurchaseCampaign);
+      if (BigInt(priorEntries.length) + requestedTickets > perUserLimit) {
+        setTicketPurchaseError(`This raffle allows ${String(perUserLimit)} ticket${perUserLimit === 1n ? "" : "s"} per wallet`);
+        return;
+      }
+    } catch (error) {
+      setTicketPurchaseError(error instanceof Error ? error.message : "Could not check existing tickets");
       return;
     }
 
@@ -153,7 +156,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
         setTicketPurchaseError("Step 2/2 — Buying ticket… Please hold…");
       }
 
-      const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase);
+      const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase, requestedTickets);
       await fetch("/api/campaign-participants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

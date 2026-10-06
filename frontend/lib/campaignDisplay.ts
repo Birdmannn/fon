@@ -1,7 +1,7 @@
 import { ccc } from "@ckb-ccc/connector-react";
 
 import { CampaignStatus, CampaignType } from "@/lib/contract";
-import { bytesToHex, computeCreatorWithdrawableAmount, computeRaffleRewardPool } from "@/lib/encoding";
+import { bytesToHex, computeCreatorWithdrawableAmount } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
@@ -76,7 +76,7 @@ export function deriveRaffleSettlementUiState(args: {
   const soldTickets = hasSettlementRecord && snapshotSoldTickets !== null ? snapshotSoldTickets : liveSoldTickets;
   const hasSettledRewards = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
-    && (computeRaffleRewardPool(campaign.data) === 0n || hasSettlementRecord);
+    && (hasSettlementRecord || soldTickets === 0n);
   const shouldGlowSettlement = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
     && campaign.data.rewardCount > 0n

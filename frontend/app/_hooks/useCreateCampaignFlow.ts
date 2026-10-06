@@ -78,6 +78,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     bodyPassed: false,
     firstHashtagPassed: false,
     additionalHashtagsPassed: true,
+    isRaffle: false,
   });
   const [previewError, setPreviewError] = useState("");
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);

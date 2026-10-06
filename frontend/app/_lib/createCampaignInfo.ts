@@ -27,3 +27,5 @@ export const CREATE_INFO_TYPING_ITEMS = [
 ] as const;
 
 export const CREATE_INFO_PREVIEW_HEADING = "Preview:";
+
+export const CREATE_INFO_RAFFLE_SUPPORT_NOTE = "The selected percentage of voluntary support deposits joins the winners' prize pool; the remainder stays withdrawable by the creator after settlement.";

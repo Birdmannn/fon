@@ -169,10 +169,7 @@ pub fn validate_campaign_params(
     }
 
     if campaign_type == CampaignType::Raffle {
-        if aux_amount == 0 {
-            return Err(Error::InvalidCampaignArgs);
-        }
-        if maximum_amount % aux_amount != 0 {
+        if aux_amount != 0 && maximum_amount % aux_amount != 0 {
             return Err(Error::InvalidCampaignArgs);
         }
         if support_pool_bps > 10_000 {
@@ -266,11 +263,11 @@ pub fn apply_creator_support_deposit(campaign: &mut Campaign, amount: u64) -> Re
     Ok(())
 }
 
-pub fn apply_ticket_sale_deposit(campaign: &mut Campaign, amount: u64) -> Result<(), Error> {
+pub fn apply_ticket_sale_deposit(campaign: &mut Campaign, amount: u64, ticket_count: u64) -> Result<(), Error> {
     apply_deposit(campaign, amount)?;
     campaign.ticket_sales_total = campaign
         .ticket_sales_total
-        .checked_add(amount)
+        .checked_add(if campaign.ticket_price() == 0 { ticket_count } else { amount })
         .ok_or(Error::AmountMismatch)?;
     Ok(())
 }

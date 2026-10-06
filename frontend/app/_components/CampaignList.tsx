@@ -18,6 +18,7 @@ type CampaignListProps = {
   error: string;
   loading: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
+  onMountablesClick: (record: CampaignRecord) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
   onSettlementCompleted: (
@@ -49,6 +50,7 @@ export default function CampaignList({
   error,
   loading,
   onCommentDiscardRequest,
+  onMountablesClick,
   onScrolledToNewest,
   onSettlementCompleted,
   onSettlementInfoRequest,
@@ -144,6 +146,7 @@ export default function CampaignList({
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
             onOpenDetail={() => onStartDetailTransition(`/campaign/${getCampaignStableId(campaign)}`)}
+            onMountablesClick={onMountablesClick}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
             onSettlementCompleted={onSettlementCompleted}

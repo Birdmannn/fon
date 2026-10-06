@@ -74,7 +74,7 @@ pub struct Campaign {
     pub randomness_hash: [u8; 32],      // blake2b_256(randomness); [0;32] = sequential mode (32 bytes)
     pub summary: [u8; 64],              // Campaign summary, UTF-8 zero-padded (64 bytes)
     pub aux_amount: u64,                // Auxiliary amount: ticket_price for Raffle, 0 otherwise (8 bytes)
-    pub ticket_sales_total: u64,        // Raffle ticket money still held in escrow (8 bytes)
+    pub ticket_sales_total: u64,        // Ticket money for paid raffles, entry count for free raffles (8 bytes)
     pub creator_support_total: u64,     // Creator-attributable support still held in escrow (8 bytes)
     pub support_pool_bps: u64,          // Basis points of creator support that join the raffle pool (8 bytes)
 }
@@ -139,6 +139,22 @@ impl Campaign {
         self.aux_amount
     }
 
+    pub fn ticket_limit(&self) -> u64 {
+        if self.ticket_price() == 0 {
+            self.maximum_amount
+        } else {
+            self.maximum_amount / self.ticket_price()
+        }
+    }
+
+    pub fn sold_tickets(&self) -> u64 {
+        if self.ticket_price() == 0 {
+            self.ticket_sales_total
+        } else {
+            self.ticket_sales_total / self.ticket_price()
+        }
+    }
+
     pub fn ends_at(&self) -> Option<u64> {
         let start_delay_ms = self.start_duration_in_seconds.checked_mul(1_000)?;
         let task_duration_ms = self.task_duration_in_seconds.checked_mul(1_000)?;
@@ -193,7 +209,8 @@ impl Campaign {
         }
 
         let support_contribution = self.support_pool_contribution()?;
-        self.ticket_sales_total.checked_add(support_contribution)
+        let ticket_pool = if self.ticket_price() == 0 { 0 } else { self.ticket_sales_total };
+        ticket_pool.checked_add(support_contribution)
     }
 }
 

@@ -15,7 +15,7 @@ Options:
   --to-address <address>     Address that receives the reclaimed capacity (defaults to --from-address)
   --tx-hash <hash>           Contract cell tx hash (default: current fresh deployment)
   --index <index>            Contract cell output index (default: 0)
-  --capacity <ckb>           Output capacity in CKB (default: derive from live cell)
+  --capacity <ckb>           Output capacity in CKB (default: live cell minus 0.01 CKB fee)
   --rpc-url <url>            CKB RPC URL (default: https://testnet.ckb.dev/rpc)
   --expected-lock-args <hex> Expected lock args for safety check (default: fresh deployment owner)
   --tx-file <path>           Temporary tx file path (default: /tmp/freight-reclaim-tx.json)
@@ -38,7 +38,7 @@ RPC_URL="${RPC_URL:-https://testnet.ckb.dev/rpc}"
 FROM_ADDRESS=""
 FROM_ACCOUNT=""
 TO_ADDRESS=""
-TX_HASH="0xdab1cf2bef0eea2bcdfba4244d04d984fbf7963d329fae055c604f97830c3a53"
+TX_HASH="0x0fe747b69d88e6b5e8cb624882d7c15ba0ee4626ffbd29d8f42d58e29e34d4bc"
 INDEX="0"
 EXPECTED_LOCK_ARGS="0x8da4d7725a1fc36984f5d3b81ddaa148b80aca84"
 TX_FILE="/tmp/freight-reclaim-tx.json"
@@ -118,7 +118,10 @@ import json, sys
 from pathlib import Path
 obj = json.loads(Path(sys.argv[1]).read_text())
 capacity_hex = obj["cell"]["output"]["capacity"]
-print(f"{int(capacity_hex, 16) / 100_000_000:.8f}")
+capacity_shannons = int(capacity_hex, 16) - 1_000_000
+if capacity_shannons <= 0:
+    raise SystemExit("Target cell does not have enough capacity for the default 0.01 CKB fee")
+print(f"{capacity_shannons / 100_000_000:.8f}")
 PY
 )"
 fi

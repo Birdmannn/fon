@@ -141,7 +141,9 @@ export function useCampaignCardState({
   const cardId = getCampaignStableId(c);
   const isRaffleCampaign = data.campaignType === 4;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
-  const totalTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : 0n;
+  const totalTickets = isRaffleCampaign
+    ? ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : data.maximumAmount
+    : 0n;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
@@ -170,7 +172,12 @@ export function useCampaignCardState({
   });
   const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
-  const liveSoldTickets = parseOptionalBigInt(record?.liveSoldTicketCount);
+  const chainSoldTickets = ticketPriceShannons > 0n
+    ? data.ticketSalesTotal / ticketPriceShannons
+    : data.ticketSalesTotal;
+  const recordedSoldTickets = parseOptionalBigInt(record?.liveSoldTicketCount);
+  const liveSoldTickets = recordedSoldTickets !== null && recordedSoldTickets > chainSoldTickets
+    ? recordedSoldTickets : chainSoldTickets;
   const settlementUiState = deriveRaffleSettlementUiState({
     campaign: c,
     displayStatus,
@@ -195,8 +202,9 @@ export function useCampaignCardState({
     : data.currentDeposits;
   const supportDisplayCkb = formatWholeCkbAmount(supportDisplayShannons);
   const supportPoolPercent = record?.argsDraft?.raffleSupportPoolPercent ?? (hasSplitSupport ? String(Number(data.supportPoolBps / 100n)) : "0");
-  const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
-  const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
+  const remainingTickets = isRaffleCampaign && totalTickets === 0n
+    ? -1n : totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
+  const hasNoRemainingTickets = isRaffleCampaign && totalTickets > 0n && remainingTickets <= 0n;
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
       ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")

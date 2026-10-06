@@ -8,6 +8,7 @@ import {
   type GiftTaggedUser,
 } from "@/lib/giftDeliverables";
 import { CampaignType } from "@/lib/contract";
+import { raffleSupportPercentToBasisPoints } from "@/lib/raffleSupportPool";
 
 const SUMMARY_MAX_BYTES = 64;
 const MAX_DURATION_SECONDS = 365n * 24n * 60n * 60n;
@@ -82,6 +83,7 @@ export type NormalizeCreateCampaignParamsInput = {
   maxAmountCkb: string;
   raffleSupportPoolPercent: string;
   raffleTicketPriceCkb: string;
+  ticketsPerUser?: string;
   rewardCount: string;
   shouldCollectRaffleTicketPrice: boolean;
   summary: string;
@@ -96,6 +98,7 @@ export type NormalizedCreateCampaignParams = {
   startDurationSecs: bigint;
   supportPoolBps: bigint;
   taskDurationSecs: bigint;
+  ticketsPerUser: bigint | null;
 };
 
 export type GiftCreateValidationInput = {
@@ -160,6 +163,7 @@ export function normalizeCreateCampaignParams({
   maxAmountCkb,
   raffleSupportPoolPercent,
   raffleTicketPriceCkb,
+  ticketsPerUser = "1",
   rewardCount,
   shouldCollectRaffleTicketPrice,
   summary,
@@ -203,26 +207,22 @@ export function normalizeCreateCampaignParams({
     const ticketPrice = parseWholeNumberString(raffleTicketPriceCkb, "Raffle ticket price");
     const supportPoolPercent = parseWholePercentString(raffleSupportPoolPercent, "Raffle support pool percentage");
 
-    if (ticketCount <= 0n) {
-      throw new Error("Please enter a valid number of tickets greater than 0");
+    const perUserLimit = ticketCount === 0n ? null : parseWholeNumberString(ticketsPerUser, "Tickets per user");
+    if (perUserLimit !== null && perUserLimit <= 0n) {
+      throw new Error("Tickets per user must be at least 1");
     }
 
-    if (ticketPrice <= 0n) {
-      throw new Error("Please enter a valid raffle ticket price greater than 0 CKB");
-    }
-
-    const maximumAmount = ticketCount * ticketPrice;
-    if (maximumAmount % ticketPrice !== 0n) {
-      throw new Error("Raffle total must be divisible by ticket price");
-    }
+    const maximumAmount = ticketPrice === 0n ? ticketCount : ticketCount * ticketPrice;
+    if (maximumAmount > 0xffff_ffff_ffff_ffffn) throw new Error("Raffle ticket capacity exceeds contract limit");
 
     return {
       auxAmountCkb: ticketPrice,
       maximumAmountCkb: maximumAmount,
       rewardCount: parsedRewardCount,
       startDurationSecs,
-      supportPoolBps: supportPoolPercent * 100n,
+      supportPoolBps: raffleSupportPercentToBasisPoints(supportPoolPercent),
       taskDurationSecs,
+      ticketsPerUser: perUserLimit,
     };
   }
 
@@ -238,5 +238,6 @@ export function normalizeCreateCampaignParams({
     startDurationSecs,
     supportPoolBps: 0n,
     taskDurationSecs,
+    ticketsPerUser: null,
   };
 }

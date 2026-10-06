@@ -34,6 +34,7 @@ type CampaignCardProps = {
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onOpenDetail: () => void;
+  onMountablesClick: (record: CampaignRecord) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
   onSettlementCompleted: (
@@ -67,6 +68,7 @@ export default function CampaignCard({
   onCommentDiscardRequest,
   commentDiscardDecision,
   onOpenDetail,
+  onMountablesClick,
   onTicketPurchaseRequest,
   onTicketBought,
   onSettlementCompleted,
@@ -156,6 +158,7 @@ export default function CampaignCard({
         nowMs={nowMs}
         isHighlighted={isHighlighted}
         onOpenDetail={onOpenDetail}
+        onMountablesClick={record ? () => onMountablesClick(record) : undefined}
       />
 
       <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
@@ -248,10 +251,10 @@ export default function CampaignCard({
                 onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                 disabled={isPurchaseDisabled}
                 className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                data-tooltip={!isConnected ? "Connect wallet to buy tickets" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
+                data-tooltip={!isConnected ? "Connect wallet to enter raffle" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
               >
                 <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+                <span className="campaign-action-count font-mono">{remainingTickets < 0n ? "Unlimited" : `${String(remainingTickets)} left`}</span>
               </button>
             </div>
           )}
@@ -306,13 +309,13 @@ export default function CampaignCard({
                           ? "Freight unavailable"
                           : hasNotStartedRaffle
                             ? "Raffle has not started"
-                            : remainingTickets <= 0n
+                            : remainingTickets === 0n
                               ? "No tickets left"
-                              : "Buy tickets"
+                              : campaign.data.auxAmount === 0n ? "Enter raffle" : "Buy tickets"
                   }
                 >
                   <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+                  <span className="campaign-action-count font-mono">{remainingTickets < 0n ? "Unlimited" : `${String(remainingTickets)} left`}</span>
                 </button>
               </div>
             ) : (

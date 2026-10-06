@@ -175,6 +175,7 @@
 }
 
 .campaign-card-creator-photo {
+  position: relative;
   width: 2.75rem;
   height: 2.75rem;
   flex: 0 0 2.75rem;
@@ -209,10 +210,17 @@
   background: #d1d5db;
 }
 
-.campaign-card-creator-photo-image img {
+.campaign-card-creator-photo-source {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  opacity: 0;
+}
+
+.campaign-card-creator-photo-source-loaded {
+  opacity: 1;
 }
 
 .campaign-detail-card-heading {
@@ -1005,6 +1013,10 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
 }
 
 .campaign-card-mountable-icons .campaign-card-mounted-icon + .campaign-card-mounted-icon {

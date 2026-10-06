@@ -16,6 +16,80 @@ const DEPOSITOR: u8 = 42;
 const DEFAULT_CAPACITY: u64 = 100_000;
 
 #[test]
+fn test_free_and_unlimited_raffle_parameters() {
+    use freight::utils::validate_campaign_params;
+
+    assert!(validate_campaign_params(0, 60, CampaignType::Raffle, 0, 0, 0).is_ok());
+    assert!(validate_campaign_params(0, 60, CampaignType::Raffle, 5, 0, 0).is_ok());
+    assert!(validate_campaign_params(0, 60, CampaignType::Raffle, 0, 100, 0).is_ok());
+    assert!(validate_campaign_params(0, 60, CampaignType::Raffle, 500, 100, 0).is_ok());
+    assert!(validate_campaign_params(0, 60, CampaignType::Raffle, 501, 100, 0).is_err());
+}
+
+#[test]
+fn test_free_raffle_multiple_entries() {
+    let mut context = Context::default();
+    let freight = context.deploy_cell_by_name("freight");
+    let always_success = context.deploy_cell(ALWAYS_SUCCESS.clone());
+    let creator = address_from(CREATOR);
+    let entrant = address_from(DEPOSITOR);
+    let created_at = 1_700_000_000_000u64;
+    let timestamp = created_at + 1_000;
+    let header_hash = insert_header(&mut context, timestamp);
+    let mut script_args = build_create_campaign_script_args(0, 60, CampaignType::Raffle, 2, 0).to_vec();
+    script_args.extend_from_slice(&2u64.to_le_bytes());
+    let campaign_script = context.build_script(&freight, Bytes::from(script_args)).unwrap();
+    let creator_lock = context.build_script(&always_success, Bytes::from(creator.to_vec())).unwrap();
+    let entrant_lock = context.build_script(&always_success, Bytes::from(entrant.to_vec())).unwrap();
+
+    let input_data = build_campaign_bytes(
+        created_at, 0, 60, &creator, CampaignType::Raffle, 2, 0,
+        CampaignStatus::Active, 1, [0; 32], &default_summary(), 0,
+    ).to_vec();
+    let campaign_out_point = context.create_cell(
+        CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone()).type_(Some(campaign_script.clone()).pack()).build(),
+        Bytes::from(input_data.clone()),
+    );
+    let entrant_out_point = context.create_cell(
+        CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(entrant_lock.clone()).build(), Bytes::new(),
+    );
+    let mut output_data = input_data.clone();
+    output_data[174..182].copy_from_slice(&2u64.to_le_bytes());
+    let participant_data = build_participant_bytes(
+        &creator, created_at, CampaignType::Raffle, &entrant, timestamp,
+        ParticipantStatus::Verified, 0,
+    );
+    let mut action = vec![3u8];
+    action.extend_from_slice(&2u64.to_le_bytes());
+    let witness = WitnessArgsBuilder::default()
+        .output_type(Some(Bytes::from(action)).pack()).build();
+    let tx = TransactionBuilder::default()
+        .inputs(vec![
+            CellInput::new_builder().previous_output(campaign_out_point).build(),
+            CellInput::new_builder().previous_output(entrant_out_point).build(),
+        ])
+        .header_dep(header_hash)
+        .outputs(vec![
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(creator_lock).type_(Some(campaign_script).pack()).build(),
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(entrant_lock.clone()).build(),
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(entrant_lock).build(),
+            CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(context.build_script(&always_success, Bytes::from(entrant.to_vec())).unwrap()).build(),
+        ])
+        .outputs_data(vec![Bytes::from(output_data), Bytes::new(), participant_data.clone(), participant_data].pack())
+        .witnesses(vec![witness.as_bytes().pack(), Bytes::new().pack()])
+        .build();
+    let tx = context.complete_tx(tx);
+    context.verify_tx(&tx, 10_000_000)
+        .expect("free raffle entry should increment the count without escrow");
+}
+
+#[test]
 fn test_simple_task_tips_do_not_expire() {
     let mut campaign = Campaign {
         created_at: 0,
@@ -119,7 +193,7 @@ fn default_summary() -> [u8; 64] {
 }
 
 /// Build create_campaign type script args.
-/// Format: [0x00][start(8)][task(8)][type(1)][max(8)][aux(8)][randomness_hash(32)][reward_count(8)] = 74 bytes
+/// Format: [0x00][start(8)][task(8)][type(1)][max(8)][aux(8)][randomness_hash(32)][reward_count(8)][support_pool_bps(8)] = 82 bytes
 /// Existing tests default to zero randomness and zero reward count.
 fn build_create_campaign_script_args(
     start_duration: u64,
@@ -128,7 +202,7 @@ fn build_create_campaign_script_args(
     maximum_amount: u64,
     aux_amount: u64,
 ) -> Bytes {
-    let mut args = Vec::with_capacity(74);
+    let mut args = Vec::with_capacity(82);
     args.push(0u8);
     args.extend_from_slice(&start_duration.to_le_bytes());
     args.extend_from_slice(&task_duration.to_le_bytes());
@@ -136,6 +210,7 @@ fn build_create_campaign_script_args(
     args.extend_from_slice(&maximum_amount.to_le_bytes());
     args.extend_from_slice(&aux_amount.to_le_bytes());
     args.extend_from_slice(&[0u8; 32]);
+    args.extend_from_slice(&0u64.to_le_bytes());
     args.extend_from_slice(&0u64.to_le_bytes());
     Bytes::from(args)
 }
@@ -702,7 +777,7 @@ fn test_deposit_success() {
 }
 
 #[test]
-fn test_deposit_exceeds_maximum_caps_to_remaining() {
+fn test_deposit_rejects_when_output_does_not_match_requested_amount() {
     let mut context = Context::default();
     let freight_out_point = context.deploy_cell_by_name("freight");
     let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
@@ -786,8 +861,8 @@ fn test_deposit_exceeds_maximum_caps_to_remaining() {
         .build();
     let tx = context.complete_tx(tx);
 
-    let cycles = context.verify_tx(&tx, 10_000_000).expect("deposit should cap to remaining");
-    println!("test_deposit_exceeds_maximum_caps_to_remaining cycles: {}", cycles);
+    let result = context.verify_tx(&tx, 10_000_000);
+    assert!(result.is_err(), "deposit output must match the amount signed in the instruction");
 }
 
 #[test]
@@ -993,7 +1068,7 @@ fn test_deposit_within_start_period_millisecond_timestamps() {
 }
 
 #[test]
-fn test_deposit_rejects_after_start_period_elapsed() {
+fn test_deposit_accepts_support_after_start_while_campaign_is_live() {
     let mut context = Context::default();
     let freight_out_point = context.deploy_cell_by_name("freight");
     let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
@@ -1026,7 +1101,7 @@ fn test_deposit_rejects_after_start_period_elapsed() {
 
     let input_data = build_campaign_bytes(
         created_at_ms, start_duration, task_duration, &creator_address,
-        CampaignType::FundedTask, max_amount, 0, CampaignStatus::Created, 0, [0u8; 32], &summary, 0,
+        CampaignType::FundedTask, max_amount, 0, CampaignStatus::Active, 0, [0u8; 32], &summary, 0,
     );
     let campaign_out_point = context.create_cell(
         CellOutput::new_builder()
@@ -1049,7 +1124,7 @@ fn test_deposit_rejects_after_start_period_elapsed() {
 
     let output_data = build_campaign_bytes(
         created_at_ms, start_duration, task_duration, &creator_address,
-        CampaignType::FundedTask, max_amount, deposit_amount, CampaignStatus::Created, 0, [0u8; 32], &summary, 0,
+        CampaignType::FundedTask, max_amount, deposit_amount, CampaignStatus::Active, 0, [0u8; 32], &summary, 0,
     );
 
     let mut witness_action = vec![1u8];
@@ -1077,8 +1152,8 @@ fn test_deposit_rejects_after_start_period_elapsed() {
         .build();
     let tx = context.complete_tx(tx);
 
-    let result = context.verify_tx(&tx, 10_000_000);
-    assert!(result.is_err(), "deposit after start period must be rejected");
+    context.verify_tx(&tx, 10_000_000)
+        .expect("support should remain available while the campaign is active");
 }
 
 // ────────────────────────── verify_participant ───────────────────────────────
@@ -1089,7 +1164,7 @@ fn test_verify_participant_campaign_expired() {
     let freight_out_point = context.deploy_cell_by_name("freight");
     let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
 
-    let created_at = 1_700_000_000u64;
+    let created_at = 1_700_000_000_000u64;
     let start_duration = 86_400u64;
     let task_duration = 604_800u64;
     let expired_timestamp = 1_701_000_000u64;
@@ -1266,8 +1341,8 @@ fn test_verify_participant_raffle_success() {
     let ticket_price = 100u64;
     let summary = default_summary();
 
-    // Timestamp within deposit window
-    let ts = created_at + 1_000;
+    // Timestamp within the active ticket-sales window.
+    let ts = created_at + start_duration * 1_000 + 1_000;
     let header_hash = insert_header(&mut context, ts);
 
     // Script args: [selector=3] — no admin args needed for raffle
@@ -1286,7 +1361,7 @@ fn test_verify_participant_raffle_success() {
 
     let campaign_input_data = build_campaign_bytes(
         created_at, start_duration, task_duration, &creator_address,
-        CampaignType::Raffle, max_amount, 0, CampaignStatus::Created, 0, [0u8; 32], &summary, ticket_price,
+        CampaignType::Raffle, max_amount, 0, CampaignStatus::Active, 0, [0u8; 32], &summary, ticket_price,
     );
     let campaign_out_point = context.create_cell(
         CellOutput::new_builder()
@@ -1308,10 +1383,12 @@ fn test_verify_participant_raffle_success() {
     let depositor_input = CellInput::new_builder().previous_output(depositor_cell).build();
 
     // Campaign output: current_deposits += ticket_price
-    let campaign_output_data = build_campaign_bytes(
+    let mut campaign_output_data = build_campaign_bytes(
         created_at, start_duration, task_duration, &creator_address,
-        CampaignType::Raffle, max_amount, ticket_price, CampaignStatus::Created, 0, [0u8; 32], &summary, ticket_price,
-    );
+        CampaignType::Raffle, max_amount, ticket_price, CampaignStatus::Active, 0, [0u8; 32], &summary, ticket_price,
+    ).to_vec();
+    campaign_output_data[174..182].copy_from_slice(&ticket_price.to_le_bytes());
+    let campaign_output_data = Bytes::from(campaign_output_data);
     
     let tx_hash_bytes: [u8; 32] = campaign_out_point.tx_hash().as_slice().try_into().unwrap();
     let campaign_index = u32::from_le_bytes(campaign_out_point.index().as_slice().try_into().unwrap());

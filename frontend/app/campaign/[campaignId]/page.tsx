@@ -1567,6 +1567,15 @@ export default function CampaignDetailPage() {
       });
     }
 
+    if ((selectedRecord?.giftDeliverable?.approvers?.length ?? 0) > 0) {
+      items.push({
+        description: "Requires signing to deliver.",
+        icon: "signable",
+        key: "signable",
+        title: "Signable",
+      });
+    }
+
     appMountables.forEach((appMountable) => {
       const metadata = [
         appMountable.installationLabel ? `Install ${appMountable.installationLabel}` : "",
@@ -1587,7 +1596,7 @@ export default function CampaignDetailPage() {
     });
 
     return items;
-  }, [formsMountableActions, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
+  }, [formsMountableActions, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
   const commentsLocked = !canAccessLockMountable(selectedRecord?.mountables?.lock, currentUserProfile?.fbars, freightCreatorProfile?.fbars);
   const commentsLockBypassFbars = getLockMountableThresholdFbars(selectedRecord?.mountables?.lock);

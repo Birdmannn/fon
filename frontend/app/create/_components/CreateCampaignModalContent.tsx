@@ -75,6 +75,9 @@ const buildCreateContent = (title: string, description: string) => [title, descr
 const normalizeSummarySource = (text: string) => text.replace(/\s+/g, " ").trim();
 const stripTagsForCount = (text: string) => text.replace(/(^|\s)([#@]\w+)/g, "$1");
 const getCountableChars = (text: string) => getTextChars(stripTagsForCount(text));
+const stripBodyTagsForCount = (text: string) => text.replace(/(^|\s)[#@][^\s#@]*/g, "$1");
+const getBodyCountableChars = (text: string) => getTextChars(stripBodyTagsForCount(text).replace(/\s/g, ""));
+const compactBlankLines = (text: string) => text.replace(/\n{3,}/g, "\n\n");
 
 const truncateToUtf8Bytes = (text: string, maxBytes: number) => {
   let truncated = "";
@@ -98,6 +101,18 @@ const truncateToTextLimit = (text: string, maxChars: number) => {
     if (getTextChars(candidate) > maxChars) {
       break;
     }
+    truncated = candidate;
+  }
+
+  return truncated;
+};
+
+const truncateBodyToCountableLimit = (text: string, maxChars: number) => {
+  let truncated = "";
+
+  for (const char of Array.from(text)) {
+    const candidate = truncated + char;
+    if (getBodyCountableChars(candidate) > maxChars) break;
     truncated = candidate;
   }
 
@@ -259,6 +274,7 @@ type DraftRecord = {
     auxAmountCkb?: string;
     rewardCount?: string;
     raffleSupportPoolPercent?: string;
+    ticketsPerUser?: string;
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
@@ -292,6 +308,7 @@ type DraftSnapshot = {
   rewardCount: string;
   auxAmountCkb: string;
   raffleSupportPoolPercent: string;
+  ticketsPerUser: string;
   mentions: string[];
   giftDeliverable: GiftDeliverable;
   attachments: CampaignAttachment[];
@@ -349,6 +366,7 @@ export type CreateConstraintStatus = {
   bodyPassed: boolean;
   firstHashtagPassed: boolean;
   additionalHashtagsPassed: boolean;
+  isRaffle: boolean;
 };
 
 type CreateCampaignModalContentProps = {
@@ -418,7 +436,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onDraftSelectionRequest,
   onPublishSuccess,
   onMountableSelectionRequired,
-  onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   availableFbars,
 }: CreateCampaignModalContentProps, ref) {
@@ -466,6 +483,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
   const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
+  const [ticketsPerUser, setTicketsPerUser] = useState("1");
+  const handleTicketCountChange = (value: string) => {
+    setMaxAmountCkb(value);
+    if (Number(value) === 0) setTicketsPerUser("1");
+  };
   const [raffleSupportPoolPercent, setRaffleSupportPoolPercent] = useState("0");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
@@ -519,7 +541,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     : buildOnchainSummary({ title: "", description: summary });
   const activeReviewSummary = isModal ? reviewSummary : generatedOnchainSummary;
   const modalTitleChars = getCountableChars(modalTitle);
-  const modalDescriptionChars = getCountableChars(modalDescription);
+  const modalDescriptionChars = getBodyCountableChars(modalDescription);
   const modalTitleMaxChars = CREATE_MODAL_TITLE_MAX_CHARS;
   const modalDescriptionMaxChars = CREATE_MODAL_BODY_MAX_CHARS;
   const reviewSummaryBytes = getTextBytes(activeReviewSummary);
@@ -536,7 +558,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const isFirstHashtagCompulsory = normalizedFirstHashtag.length > 0 && COMPULSORY_HASHTAG_SET.has(normalizedFirstHashtag);
   const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length >= 1;
   const hasRequiredCompulsoryHashtag = isFirstHashtagCompulsory && hasExactlyOneCompulsoryHashtag;
-  const descriptionChars = getCountableChars(descriptionText.trim());
+  const descriptionChars = getBodyCountableChars(descriptionText);
   const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
   const hasRequiredBodyLength = descriptionChars >= minDescriptionChars;
   const hasRequiredTitle = !isModal || trimmedModalTitle.length > 0;
@@ -688,6 +710,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           maxAmountCkb,
           raffleSupportPoolPercent,
           raffleTicketPriceCkb,
+          ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
           rewardCount,
           shouldCollectRaffleTicketPrice,
           summary: activeReviewSummary,
@@ -707,10 +730,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     campaignType,
     maxAmountCkb,
     raffleTicketPriceCkb,
+    raffleSupportPoolPercent,
     rewardCount,
     shouldCollectRaffleTicketPrice,
     taskDurationHours,
     taskStartDelayHours,
+    ticketsPerUser,
   ]);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
   const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
@@ -727,6 +752,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
     raffleSupportPoolPercent,
+    ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
     mentions: allMentions,
     giftDeliverable: giftDeliverableDraft,
     attachments,
@@ -745,8 +771,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     formsMountable,
     lockMountable,
     rewardCount,
+    raffleSupportPoolPercent,
     storedDurationHours,
     storedStartDelayHours,
+    ticketsPerUser,
     trimmedModalDescription,
     trimmedModalTitle,
   ]);
@@ -1041,25 +1069,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
 
       const fragment = document.createDocumentFragment();
-      const lines = text.split("\n");
-
-      lines.forEach((line, index) => {
-        if (index > 0) {
-          fragment.appendChild(document.createTextNode("\n"));
-        }
-
-        if (/^\s*##\s+/.test(line)) {
-          const headingLine = document.createElement("span");
-          headingLine.textContent = line;
-          headingLine.style.fontSize = "1.45rem";
-          headingLine.style.lineHeight = "1.25";
-          headingLine.style.fontWeight = "700";
-          fragment.appendChild(headingLine);
-          return;
-        }
-
-        fragment.appendChild(document.createTextNode(line));
-      });
+      fragment.appendChild(document.createTextNode(text));
 
       if (text.endsWith("\n")) {
         fragment.appendChild(document.createElement("br"));
@@ -1091,6 +1101,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb("1000");
     setRewardCount("1");
     setRaffleTicketPriceCkb("1");
+    setTicketsPerUser("1");
     setRaffleSupportPoolPercent("0");
     setGiftApprovalMode("all");
     setGiftApprovalThreshold("1");
@@ -1169,8 +1180,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       bodyPassed: hasRequiredBodyLength,
       firstHashtagPassed: hasRequiredCompulsoryHashtag,
       additionalHashtagsPassed: true,
+      isRaffle: campaignType === CampaignType.Raffle,
     });
   }, [
+    campaignType,
     hasRequiredTitle,
     hasRequiredBodyLength,
     hasRequiredCompulsoryHashtag,
@@ -1187,19 +1200,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
     setShowNoDraftsMessage(false);
-    const inputEvent = event.nativeEvent as InputEvent;
-    const inputType = inputEvent.inputType ?? "";
-    const insertedContent = inputEvent.data ?? inputEvent.dataTransfer?.getData("text/plain") ?? "";
-    const isInsertion = inputType.startsWith("insert");
-    const isDeletion = inputType.startsWith("delete");
     const text = event.currentTarget.textContent || "";
     let normalizedText = text.trim().length === 0 ? "" : text;
+
+    if (event.currentTarget === modalDescriptionRef.current || event.currentTarget === pageEditorRef.current) {
+      normalizedText = compactBlankLines(normalizedText);
+    }
 
     if (isModal) {
       if (event.currentTarget === modalTitleRef.current) {
         normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_TITLE_MAX_CHARS);
       } else if (event.currentTarget === modalDescriptionRef.current) {
-        normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
+        normalizedText = truncateBodyToCountableLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
       }
     }
 
@@ -1233,8 +1245,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const hashtagMatch =
         lastHashIndex !== -1 ? beforeCursor.substring(lastHashIndex + 1).match(/^[\w]*$/) : null;
 
-      const allowHashtagMenu =
-        event.currentTarget === modalDescriptionRef.current || event.currentTarget === pageEditorRef.current;
+      const allowHashtagMenu = event.currentTarget === pageEditorRef.current;
 
       if (
         allowHashtagMenu &&
@@ -1256,36 +1267,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const mentionMatch =
         lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w.-]*$/) : null;
 
-      const insertedAtOffset = insertedContent.lastIndexOf("@");
-      const insertedAtIndex = isInsertion && insertedAtOffset !== -1
-        ? Math.max(0, updatedCaretPos - insertedContent.length + insertedAtOffset)
-        : -1;
-      const pastedTagMatch = insertedAtIndex !== -1
-        ? normalizedText.slice(insertedAtIndex + 1).match(/^[\w.-]*/)
-        : null;
-      const tagStart = insertedAtIndex !== -1 ? insertedAtIndex : lastAtIndex;
-      const tagEnd = insertedAtIndex !== -1
-        ? insertedAtIndex + 1 + (pastedTagMatch?.[0].length ?? 0)
-        : updatedCaretPos;
-      const tagQuery = tagStart !== -1 ? normalizedText.slice(tagStart + 1, tagEnd) : "";
-      const shouldOpenTagSuggestions = isModal
-        && Boolean(onTagSuggestionsRequested)
-        && !isDeletion
-        && isInsertion
-        && (insertedAtIndex !== -1 || Boolean(mentionMatch));
-
-      if (shouldOpenTagSuggestions) {
-        if (tagStart !== -1) {
-          tagInsertionPointRef.current = {
-            target: event.currentTarget === modalTitleRef.current ? "title" : "description",
-            start: tagStart,
-            end: tagEnd,
-          };
-          setShowMentionMenu(false);
-          onTagSuggestionsRequested?.(tagQuery);
-          return;
-        }
-      } else if (!isModal && mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
+      if (!isModal && mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
         const rect = event.currentTarget.getBoundingClientRect();
@@ -1340,25 +1322,24 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const currentLine = text.slice(lineStartIndex, lineEndIndex);
         const nextListLine = getNextListLine(currentLine);
 
-        let newText =
+        const rawNewText =
           nextListLine?.mode === "exit"
             ? text.slice(0, lineStartIndex) + text.slice(lineEndIndex)
             : text.slice(0, caretPos) + (nextListLine?.insertText ?? "\n") + text.slice(caretPos);
+        const rawCaretPos = nextListLine?.mode === "exit"
+          ? lineStartIndex
+          : caretPos + (nextListLine?.insertText?.length ?? 1);
+        let newText = compactBlankLines(rawNewText);
 
         if (isModal && event.currentTarget === modalDescriptionRef.current) {
-          newText = truncateToTextLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
+          newText = truncateBodyToCountableLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
         }
 
         renderEditorText(event.currentTarget, newText);
         setEditorTextByNode(event.currentTarget, newText);
         hideMenus();
 
-        const newCaretPos = Math.min(
-          nextListLine?.mode === "exit"
-            ? lineStartIndex
-            : caretPos + (nextListLine?.insertText?.length ?? 1),
-          newText.length
-        );
+        const newCaretPos = Math.min(compactBlankLines(rawNewText.slice(0, rawCaretPos)).length, newText.length);
 
         setCaretPosition(event.currentTarget, newCaretPos);
         return;
@@ -1438,7 +1419,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const insertedText = text.substring(0, lastHashIndex) + `#${label} ` + text.substring(caretPos);
         const newText =
           isModal && targetEditor === modalDescriptionRef.current
-            ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+            ? truncateBodyToCountableLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
             : isModal && targetEditor === modalTitleRef.current
               ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
               : insertedText;
@@ -1480,7 +1461,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const insertedText = text.substring(0, lastAtIndex) + `@${username} ` + text.substring(caretPos);
         const newText =
           isModal && targetEditor === modalDescriptionRef.current
-            ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+            ? truncateBodyToCountableLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
             : isModal && targetEditor === modalTitleRef.current
               ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
               : insertedText;
@@ -1529,7 +1510,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextText = insertionPoint.target === "title"
       ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
       : insertionPoint.target === "description"
-        ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+        ? truncateBodyToCountableLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
         : insertedText;
 
     renderEditorText(targetEditor, nextText);
@@ -1707,6 +1688,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb(nextSnapshot.maxAmountCkb);
     setRewardCount(nextSnapshot.rewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextSnapshot.auxAmountCkb : "1");
+    setTicketsPerUser(isRaffleDraft && Number(nextSnapshot.maxAmountCkb) !== 0 ? nextSnapshot.ticketsPerUser ?? "1" : "1");
     setRaffleSupportPoolPercent(isRaffleDraft ? nextSnapshot.raffleSupportPoolPercent : "0");
     setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
     setFormsMountable(nextFormsMountable);
@@ -1827,6 +1809,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb(nextMaxAmount);
     setRewardCount(nextRewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
+    setTicketsPerUser(isRaffleDraft && Number(nextMaxAmount) !== 0 ? record.argsDraft?.ticketsPerUser ?? "1" : "1");
     setRaffleSupportPoolPercent(isRaffleDraft ? nextRaffleSupportPoolPercent : "0");
     const nextFormsMountable = normalizeFormsMountableConfig(record.mountables?.forms);
     const nextLockMountable = normalizeLockMountableConfig(record.mountables?.lock);
@@ -1862,6 +1845,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
       raffleSupportPoolPercent: nextRaffleSupportPoolPercent,
+      ticketsPerUser: Number(nextMaxAmount) === 0 ? "1" : record.argsDraft?.ticketsPerUser ?? "1",
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
       attachments: nextAttachments,
@@ -1955,6 +1939,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setMaxAmountCkb("1000");
         setRewardCount("1");
         setRaffleTicketPriceCkb("1");
+        setTicketsPerUser("1");
         setRaffleSupportPoolPercent("0");
         setGiftApprovalMode("all");
         setGiftApprovalThreshold("1");
@@ -2011,6 +1996,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
           raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+          ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
         },
         mountables: {
           forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
@@ -2039,19 +2025,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [
       activeDraftRecord,
       allMentions,
-      appMountables,
       campaignType,
-      formsMountable,
-      lockMountable,
       getCreatorAddress,
       giftDeliverableDraft,
       attachments,
       maxAmountCkb,
       raffleTicketPriceCkb,
+      raffleSupportPoolPercent,
       rewardCount,
       shouldCollectRaffleTicketPrice,
       storedDurationHours,
       storedStartDelayHours,
+      ticketsPerUser,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -2071,9 +2056,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       setDraftSaveError("");
 
       try {
-        const formsMountableSnapshot = formsMountableRef.current;
-        const lockMountableSnapshot = lockMountableRef.current;
-        const appMountablesSnapshot = [...appMountablesRef.current];
+        const formsMountableSnapshot = hasMountedHashtag
+          ? formsMountableRef.current
+          : DEFAULT_FORMS_MOUNTABLE_CONFIG;
+        const lockMountableSnapshot = hasMountedHashtag
+          ? lockMountableRef.current
+          : DEFAULT_LOCK_MOUNTABLE_CONFIG;
+        const appMountablesSnapshot = hasMountedHashtag
+          ? [...appMountablesRef.current]
+          : [];
         const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage, identityOverride);
         payload.mountables = {
           forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
@@ -2109,6 +2100,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
           raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+          ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
           attachments,
@@ -2135,6 +2127,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
               raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+              ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
             },
             mountables: {
               forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
@@ -2179,19 +2172,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       activeDraftRecord,
       activeDraftRecordId,
       allMentions,
-      appMountables,
       attachments,
       buildDraftPayload,
       campaignType,
       giftDeliverableDraft,
+      hasMountedHashtag,
       maxAmountCkb,
       raffleTicketPriceCkb,
+      raffleSupportPoolPercent,
       rewardCount,
       shouldCollectRaffleTicketPrice,
       storedDurationHours,
       storedStartDelayHours,
       taskDurationHours,
       taskStartDelayHours,
+      ticketsPerUser,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -2320,9 +2315,33 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     };
   }, []);
 
+  const clearMountedConfigs = useCallback(() => {
+    formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
+    lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
+    appMountablesRef.current = [];
+    setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+    setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+    setAppMountables([]);
+    setFormsResponseAccessError("");
+    setIsVerifyingFormsResponseAccess(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isModal || hasMountedHashtag) return;
+
+    const hasStoredMountables = formsMountableRef.current.enabled
+      || lockMountableRef.current.enabled
+      || appMountablesRef.current.length > 0;
+    if (hasStoredMountables) clearMountedConfigs();
+  }, [clearMountedConfigs, hasMountedHashtag, isModal]);
+
   const handleAdvanceToReview = useCallback(async (skipMountedSelection = false) => {
     if (!validateComposeConstraints()) {
       return;
+    }
+
+    if (!hasMountedHashtag) {
+      clearMountedConfigs();
     }
 
     if (!skipMountedSelection && hasMountedHashtag) {
@@ -2354,7 +2373,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch {
       setStatus("error");
     }
-  }, [formsMountable.enabled, hasMountedHashtag, hideMenus, lockMountable.enabled, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
+  }, [clearMountedConfigs, hasMountedHashtag, hideMenus, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
 
   const handleSaveDraftFromClose = useCallback(async () => {
     if (!hasDraftableChanges) {
@@ -2674,6 +2693,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         campaignType,
         maximumAmountCkb: normalizedParams.maximumAmountCkb,
         auxAmountCkb: normalizedParams.auxAmountCkb,
+        ticketsPerUser: normalizedParams.ticketsPerUser,
         rewardCount: normalizedParams.rewardCount,
         supportPoolBps: normalizedParams.supportPoolBps,
         summary: summaryToPublish,
@@ -2835,10 +2855,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <div className="create-review-arg-control">
           <input
             type="number"
-            min="1"
+            min={shouldCollectRaffleTicketPrice ? "0" : "1"}
             step="1"
             value={maxAmountCkb}
-            onChange={(event) => setMaxAmountCkb(event.target.value)}
+            onChange={(event) => shouldCollectRaffleTicketPrice ? handleTicketCountChange(event.target.value) : setMaxAmountCkb(event.target.value)}
             className="create-review-arg-input"
           />
           <span className="create-review-arg-unit">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
@@ -2867,13 +2887,28 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             <div className="create-review-arg-control">
               <input
                 type="number"
-                min="1"
+                min="0"
                 step="1"
                 value={raffleTicketPriceCkb}
                 onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
                 className="create-review-arg-input"
               />
               <span className="create-review-arg-unit">CKB</span>
+            </div>
+          </div>
+          <div className="create-review-arg-field">
+            <label className="create-review-arg-label">Tickets per user</label>
+            <div className="create-review-arg-control">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser}
+                onChange={(event) => setTicketsPerUser(event.target.value)}
+                disabled={Number(maxAmountCkb) === 0}
+                className="create-review-arg-input"
+              />
+              <span className="create-review-arg-unit">tickets</span>
             </div>
           </div>
           <div className="create-review-arg-field">
@@ -3674,10 +3709,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
-                          min="1"
+                          min={shouldCollectRaffleTicketPrice ? "0" : "1"}
                           step="1"
                           value={maxAmountCkb}
-                          onChange={(event) => setMaxAmountCkb(event.target.value)}
+                          onChange={(event) => shouldCollectRaffleTicketPrice ? handleTicketCountChange(event.target.value) : setMaxAmountCkb(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
@@ -3726,6 +3761,20 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       </div>
                     )}
                   </div>
+                  {shouldCollectRaffleTicketPrice ? (
+                    <div className="mt-2 flex flex-col gap-1">
+                      <label className="text-xs font-semibold theme-fg">Tickets per user</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser}
+                        onChange={(event) => setTicketsPerUser(event.target.value)}
+                        disabled={Number(maxAmountCkb) === 0}
+                        className="px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-sky-500 disabled:opacity-50"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

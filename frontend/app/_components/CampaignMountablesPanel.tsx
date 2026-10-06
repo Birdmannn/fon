@@ -1,13 +1,13 @@
 "use client";
 
-import { Blocks, LockKeyhole, Scroll } from "lucide-react";
+import { Blocks, LockKeyhole, Scroll, Signature } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type CampaignMountableItem = {
   actions?: ReactNode;
   description: string;
   href?: string;
-  icon?: "app" | "forms" | "lock";
+  icon?: "app" | "forms" | "lock" | "signable";
   key: string;
   metadata?: string[];
   proofInstructions?: string;
@@ -36,11 +36,17 @@ export default function CampaignMountablesPanel({
           {items.map((item) => (
             <article key={item.key} className="campaign-detail-mountable-item">
               <div className="campaign-detail-mountable-heading-row">
-                <span className="campaign-card-mounted-icon" title={`${item.title} mounted`} aria-label={`${item.title} mounted`}>
+                <span
+                  className="campaign-card-mounted-icon"
+                  title={item.icon === "signable" ? "Signable" : `${item.title} mounted`}
+                  aria-label={item.icon === "signable" ? "Signable" : `${item.title} mounted`}
+                >
                   {item.icon === "lock" ? (
                     <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
                   ) : item.icon === "app" ? (
                     <Blocks size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : item.icon === "signable" ? (
+                    <Signature size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <Scroll size={22} strokeWidth={2} aria-hidden="true" />
                   )}

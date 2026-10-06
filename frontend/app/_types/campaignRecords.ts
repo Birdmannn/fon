@@ -36,6 +36,7 @@ export type CampaignRecord = {
     auxAmountCkb?: string;
     rewardCount?: string;
     raffleSupportPoolPercent?: string;
+    ticketsPerUser?: string;
   };
   mountables?: {
     forms?: FormsMountableConfig | null;

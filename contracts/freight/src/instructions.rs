@@ -5,7 +5,7 @@ use crate::validations::*;
 use ckb_hash::blake2b_256;
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::prelude::Entity;
-use ckb_std::high_level::{load_input, load_witness_args};
+use ckb_std::high_level::{load_input, load_script, load_witness_args};
 use crate::utils::verify_ecdsa_signature;
 use ckb_std::{debug, high_level::load_cell_data};
 
@@ -17,7 +17,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         }
     };
 
-    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)][support_pool_bps(8)]
+    // args format: [start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)][support_pool_bps(8)][optional tickets_per_user(8)]
     debug!("create_campaign args len={}", args.len());
     if args.len() < 81 {
         return Err(Error::InvalidCampaignArgs);
@@ -32,6 +32,18 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     randomness_hash.copy_from_slice(&args[33..65]);
     let reward_count = u64::from_le_bytes(args[65..73].try_into().unwrap());
     let support_pool_bps = u64::from_le_bytes(args[73..81].try_into().unwrap());
+    if args.len() != 81 && args.len() != 89 {
+        return Err(Error::InvalidCampaignArgs);
+    }
+    if args.len() == 89 {
+        if campaign_type_byte != CampaignType::Raffle as u8 || maximum_amount == 0 {
+            return Err(Error::InvalidCampaignArgs);
+        }
+        let tickets_per_user = u64::from_le_bytes(args[81..89].try_into().unwrap());
+        if tickets_per_user == 0 {
+            return Err(Error::InvalidCampaignArgs);
+        }
+    }
 
     if !is_campaign_creation()? {
         debug!("create_campaign rejected because group input exists");
@@ -135,7 +147,7 @@ pub fn deposit(args: &[u8]) -> Result<(), Error> {
 /// `[admin_address(20)][admin_pubkey(33)]` — signature in witness.input_type
 ///
 /// # Instruction args (raffle)
-/// No args needed — ticket price is read from campaign.aux_amount.
+/// Optional [ticket_count(8)] — absent means one ticket.
 pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
     let participant_address = extract_caller_address(AddressKey::Depositor)?;
     let campaign_data = load_cell_data(0, Source::GroupInput)?;
@@ -168,13 +180,35 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
             return Err(Error::DepositNotCompleted); // must be Active
         }
 
+        let ticket_count = if args.is_empty() {
+            1
+        } else if args.len() == 8 {
+            u64::from_le_bytes(args[0..8].try_into().unwrap())
+        } else {
+            return Err(Error::InvalidVerificationArgs);
+        };
+        if ticket_count == 0 {
+            return Err(Error::InvalidVerificationArgs);
+        }
         let ticket_price = campaign.ticket_price();
-        if ticket_price == 0 {
-            return Err(Error::InvalidCampaignArgs);
+        let ticket_limit = campaign.ticket_limit();
+        if ticket_limit != 0 && campaign.sold_tickets().checked_add(ticket_count).ok_or(Error::AmountMismatch)? > ticket_limit {
+            return Err(Error::InvalidOperation);
         }
 
-        // Validate capacity transition: campaign cell gains exactly ticket_price.
-        apply_ticket_sale_deposit(&mut campaign, ticket_price)?;
+        let script_args = load_script().map_err(|_| Error::InvalidCampaignArgs)?.args().raw_data();
+        let tickets_per_user = if script_args.len() == 90 {
+            u64::from_le_bytes(script_args[82..90].try_into().unwrap())
+        } else {
+            1
+        };
+        if ticket_count > tickets_per_user {
+            return Err(Error::InvalidOperation);
+        }
+
+        let total_price = ticket_price.checked_mul(ticket_count).ok_or(Error::AmountMismatch)?;
+
+        apply_ticket_sale_deposit(&mut campaign, total_price, ticket_count)?;
 
         // Verify output campaign cell data.
         let output_campaign_data =
@@ -184,12 +218,9 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
         }
 
         // Validate the new participant cell in outputs.
-        validate_participant_added(
-            &participant_address,
-            &campaign.created_by,
-            campaign.created_at,
-            campaign.campaign_type,
-            ticket_price,
+        validate_raffle_entry_count(
+            &participant_address, &campaign.created_by, campaign.created_at,
+            ticket_price, ticket_count,
         )?;
     } else {
         // ── Non-raffle path ──────────────────────────────────────────────────

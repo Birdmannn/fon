@@ -34,6 +34,7 @@ import {
   CREATE_INFO_NOTE_HEADING,
   CREATE_INFO_NOTE_ITEMS,
   CREATE_INFO_PREVIEW_HEADING,
+  CREATE_INFO_RAFFLE_SUPPORT_NOTE,
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
@@ -856,6 +857,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <p className="mt-3 text-red-500 font-semibold">Errors</p>
               <p className="create-info-constraint-item text-red-500">
                 <span>{previewError}</span>
+              </p>
+            </>
+          ) : null}
+          {constraintStatus.isRaffle ? (
+            <>
+              <p className="mt-3 font-semibold">Support to pool:</p>
+              <p className="create-info-constraint-item text-gray-500">
+                <span>{CREATE_INFO_RAFFLE_SUPPORT_NOTE}</span>
               </p>
             </>
           ) : null}

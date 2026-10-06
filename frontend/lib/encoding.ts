@@ -7,6 +7,11 @@ import {
   ParticipantStatus,
   Selector,
 } from "./contract";
+import {
+  calculateCreatorWithdrawableSupport,
+  calculateRaffleRewardPool,
+  calculateRaffleSupportContribution,
+} from "./raffleSupportPool";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,6 +70,7 @@ export function lockScriptToAddressBytes(lock: ccc.ScriptLike): Uint8Array {
 
 /** args for selector 0 – create_campaign
  *  [0x00][start_duration(8)][task_duration(8)][campaign_type(1)][maximum_amount(8)][aux_amount(8)][randomness_hash(32)][reward_count(8)][support_pool_bps(8)]
+ *  Raffles with a finite ticket count append [tickets_per_user(8)].
  */
 export function encodeCreateCampaignArgs(
   startDurationSecs: bigint,
@@ -75,6 +81,7 @@ export function encodeCreateCampaignArgs(
   randomnessHash: Uint8Array,
   rewardCount: bigint,
   supportPoolBps: bigint,
+  ticketsPerUser: bigint | null = null,
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
@@ -87,6 +94,7 @@ export function encodeCreateCampaignArgs(
     randomnessHash,
     u64LE(rewardCount),
     u64LE(supportPoolBps),
+    ...(ticketsPerUser === null ? [] : [u64LE(ticketsPerUser)]),
   );
 }
 
@@ -119,6 +127,10 @@ export function encodeVerifyParticipantArgs(
   if (adminAddress.length !== 20) throw new Error("adminAddress must be 20 bytes");
   if (adminPubkey.length !== 33) throw new Error("adminPubkey must be 33 bytes (compressed)");
   return concat(new Uint8Array([Selector.VerifyParticipant]), adminAddress, adminPubkey);
+}
+
+export function encodeVerifyRaffleTicketCount(ticketCount: bigint): Uint8Array {
+  return concat(new Uint8Array([Selector.VerifyParticipant]), u64LE(ticketCount));
 }
 
 /** args for selector 5 – submit_randomness_hash
@@ -173,7 +185,7 @@ export function computeRaffleSupportPoolContribution(campaign: CampaignData) {
     return 0n;
   }
 
-  return (campaign.creatorSupportTotal * campaign.supportPoolBps) / 10_000n;
+  return calculateRaffleSupportContribution(campaign.creatorSupportTotal, campaign.supportPoolBps);
 }
 
 export function computeRaffleRewardPool(campaign: CampaignData) {
@@ -181,7 +193,12 @@ export function computeRaffleRewardPool(campaign: CampaignData) {
     return campaign.currentDeposits;
   }
 
-  return campaign.ticketSalesTotal + computeRaffleSupportPoolContribution(campaign);
+  return calculateRaffleRewardPool({
+    ticketPrice: campaign.auxAmount,
+    ticketSalesTotal: campaign.ticketSalesTotal,
+    creatorSupportTotal: campaign.creatorSupportTotal,
+    supportPoolBps: campaign.supportPoolBps,
+  });
 }
 
 export function computeCreatorWithdrawableAmount(campaign: CampaignData) {
@@ -195,7 +212,11 @@ export function computeCreatorWithdrawableAmount(campaign: CampaignData) {
     return 0n;
   }
 
-  return campaign.creatorSupportTotal;
+  return calculateCreatorWithdrawableSupport({
+    currentDeposits: campaign.currentDeposits,
+    ticketSalesTotal: campaign.ticketSalesTotal,
+    creatorSupportTotal: campaign.creatorSupportTotal,
+  });
 }
 
 export function encodeSummary(text: string): Uint8Array {

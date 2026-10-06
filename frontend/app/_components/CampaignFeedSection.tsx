@@ -17,6 +17,7 @@ type CampaignFeedSectionProps = {
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onErrorChange: (message: string) => void;
+  onMountablesClick: (record: CampaignRecord) => void;
   onProfileDataChanged?: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
@@ -28,6 +29,7 @@ export default function CampaignFeedSection({
   commentDiscardDecision,
   onTicketPurchaseRequest,
   onErrorChange,
+  onMountablesClick,
   onProfileDataChanged,
   onSettlementInfoRequest,
 }: CampaignFeedSectionProps) {
@@ -89,6 +91,7 @@ export default function CampaignFeedSection({
         shouldScrollToNewest={shouldScrollToNewest}
         onScrolledToNewest={clearShouldScrollToNewest}
         onCommentDiscardRequest={onCommentDiscardRequest}
+        onMountablesClick={onMountablesClick}
         commentDiscardDecision={commentDiscardDecision}
         onStartDetailTransition={(href) => {
           sessionStorage.setItem("freight:detail-expanding", "1");

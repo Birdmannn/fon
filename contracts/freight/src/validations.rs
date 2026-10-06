@@ -9,6 +9,36 @@ use ckb_std::ckb_types::prelude::Entity;
 use ckb_std::debug;
 use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_cell_lock, load_cell_type, load_input};
 
+pub fn validate_raffle_entry_count(
+    participant_address: &[u8; 20], campaign_created_by: &[u8; 20],
+    campaign_created_at: u64, ticket_price: u64, expected: u64,
+) -> Result<(), Error> {
+    let mut count = 0u64;
+    let mut i = 1;
+    while let Ok(data) = load_cell_data(i, Source::Output) {
+        if data.len() == PARTICIPANT_DATA_LEN {
+            let participant = parse_participant_data(&data)?;
+            if &participant.campaign_created_by == campaign_created_by
+                && participant.campaign_created_at == campaign_created_at
+                && participant.campaign_type == crate::types::CampaignType::Raffle
+            {
+                if &participant.participant_address != participant_address
+                    || participant.status != ParticipantStatus::Verified
+                    || participant.deposited_amount != ticket_price
+                {
+                    return Err(Error::InvalidOperation);
+                }
+                count = count.checked_add(1).ok_or(Error::AmountMismatch)?;
+            }
+        }
+        i += 1;
+    }
+    if count != expected {
+        return Err(Error::InvalidOperation);
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct ParticipantEntry {
     pub participant: ParticipantData,

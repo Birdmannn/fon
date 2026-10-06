@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Blocks, Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
+import { Blocks, Copy, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
@@ -138,6 +138,7 @@ type CampaignCardSurfaceProps = {
   isHighlighted?: boolean;
   nowMs: number;
   onOpenDetail?: () => void;
+  onMountablesClick?: () => void;
   record: CampaignRecord | null;
   variant?: "feed" | "detail";
 };
@@ -149,6 +150,7 @@ export default function CampaignCardSurface({
   isHighlighted = false,
   nowMs,
   onOpenDetail,
+  onMountablesClick,
   record,
   variant = "feed",
 }: CampaignCardSurfaceProps) {
@@ -167,6 +169,7 @@ export default function CampaignCardSurface({
     : null;
   const mentions = record?.socialMetadata?.mentions ?? [];
   const giftDeliverable = record?.giftDeliverable;
+  const isSignable = (giftDeliverable?.approvers?.length ?? 0) > 0;
   const rewardCountValue = Number(data.rewardCount);
   const supportPoolPercent = Number.parseInt(
     record?.argsDraft?.raffleSupportPoolPercent
@@ -197,9 +200,12 @@ export default function CampaignCardSurface({
     : timedCountdown.phase === "start" ? "Starts in" : timedCountdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  const [loadedCreatorPhotoUrl, setLoadedCreatorPhotoUrl] = useState<string | null>(null);
+  const isCreatorPhotoLoaded = creatorPhotoUrl !== null && loadedCreatorPhotoUrl === creatorPhotoUrl;
   const mountedIcons = [
     ...(record?.mountables?.forms?.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
     ...(record?.mountables?.lock?.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(isSignable ? [{ key: "signable", name: "Signable", kind: "signable" as const, logoUrl: "" }] : []),
     ...(record?.mountables?.apps ?? []).filter((entry) => entry.enabled).map((entry) => ({
       key: entry.mountableInstanceId || entry.appId,
       name: entry.appName || entry.appId,
@@ -290,15 +296,25 @@ export default function CampaignCardSurface({
           </div>
           <Link
             href={`/user/${encodeURIComponent(creatorHandle)}`}
-            className={`campaign-card-creator-photo ${creatorPhotoUrl ? "campaign-card-creator-photo-image" : "campaign-card-creator-photo-fallback"}`.trim()}
+            className={`campaign-card-creator-photo ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-image" : "campaign-card-creator-photo-fallback"}`.trim()}
             aria-label={`View ${creatorHandle} profile`}
             onClick={(event) => event.stopPropagation()}
           >
-            {creatorPhotoUrl ? (
-              <Image src={creatorPhotoUrl} alt="" width={44} height={44} unoptimized />
-            ) : (
+            {!isCreatorPhotoLoaded ? (
               <span className="campaign-card-creator-photo-fallback-inner" aria-hidden="true" />
-            )}
+            ) : null}
+            {creatorPhotoUrl ? (
+              <Image
+                src={creatorPhotoUrl}
+                alt=""
+                width={44}
+                height={44}
+                unoptimized
+                className={`campaign-card-creator-photo-source ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-source-loaded" : ""}`.trim()}
+                onLoad={() => setLoadedCreatorPhotoUrl(creatorPhotoUrl)}
+                onError={() => setLoadedCreatorPhotoUrl((current) => current === creatorPhotoUrl ? null : current)}
+              />
+            ) : null}
           </Link>
         </div>
 
@@ -349,7 +365,15 @@ export default function CampaignCardSurface({
       <div className="campaign-card-footer">
         <div className="campaign-card-footer-meta">
           {mountedIcons.length > 0 ? (
-            <div className="campaign-card-mountable-icons" aria-label="Mounted apps">
+            <button
+              type="button"
+              className="campaign-card-mountable-icons"
+              aria-label="View mountables"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMountablesClick?.();
+              }}
+            >
               {visibleMountedIcons.map((mountable, index) => (
                 <span
                   className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : ""}`.trim()}
@@ -366,6 +390,8 @@ export default function CampaignCardSurface({
                     )
                   ) : mountable.kind === "forms" ? (
                     <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "signable" ? (
+                    <Signature size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
                   )}
@@ -381,7 +407,7 @@ export default function CampaignCardSurface({
                   +{hiddenMountedIconCount}
                 </span>
               ) : null}
-            </div>
+            </button>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
             <a

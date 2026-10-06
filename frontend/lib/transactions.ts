@@ -7,6 +7,7 @@ import {
   encodeDepositArgs,
   encodeCampaignData,
   encodeParticipantData,
+  encodeVerifyRaffleTicketCount,
   encodeSummary,
   decodeCampaignData,
   decodeParticipantData,
@@ -80,14 +81,17 @@ export async function sendCreateCampaign(
     campaignType: CampaignType;
     maximumAmountCkb: bigint;
     auxAmountCkb: bigint; // ticket_price for Raffle (in CKB), 0 otherwise
+    ticketsPerUser?: bigint | null;
     rewardCount: bigint;
     supportPoolBps: bigint;
     summary: string;
     randomnessHash: Uint8Array;
   }
 ): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
-  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, supportPoolBps, summary, randomnessHash } = opts;
-  const maximumAmount = maximumAmountCkb * 100_000_000n;
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, ticketsPerUser, rewardCount, supportPoolBps, summary, randomnessHash } = opts;
+  const maximumAmount = campaignType === CampaignType.Raffle && auxAmountCkb === 0n
+    ? maximumAmountCkb
+    : maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
 
   const tx = ccc.Transaction.default();
@@ -112,7 +116,8 @@ export async function sendCreateCampaign(
     auxAmount,
     randomnessHash,
     rewardCount,
-    supportPoolBps
+    supportPoolBps,
+    campaignType === CampaignType.Raffle ? ticketsPerUser : null,
   );
 
   // Campaign cell data (174 bytes).
@@ -298,8 +303,10 @@ export async function sendCreatorTip(
 
 export async function sendVerifyParticipantRaffle(
   signer: ccc.Signer,
-  campaignCell: CampaignCell
+  campaignCell: CampaignCell,
+  ticketCount: bigint = 1n,
 ): Promise<string> {
+  if (ticketCount < 1n || ticketCount > 100n) throw new Error("Choose between 1 and 100 tickets per purchase");
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
 
@@ -310,10 +317,7 @@ export async function sendVerifyParticipantRaffle(
   const depositorAddressBytes = lockScriptToAddressBytes(depositorAddressObj.script);
   const joinedAt = tipHeader.timestamp;
   const ticketPrice = campaignCell.data.auxAmount;
-
-  if (ticketPrice <= 0n) {
-    throw new Error("Ticket price is unavailable for this raffle");
-  }
+  const totalPrice = ticketPrice * ticketCount;
 
   // Input[0]: campaign cell — must be GroupInput[0] so the contract finds it
   // Provide full cell data so ccc can resolve capacity without an extra RPC call.
@@ -332,16 +336,16 @@ export async function sendVerifyParticipantRaffle(
   const updatedCampaignData = hasSplitSupportAccounting(campaignCell.data)
     ? {
         ...campaignCell.data,
-        currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
-        ticketSalesTotal: campaignCell.data.ticketSalesTotal + ticketPrice,
+        currentDeposits: campaignCell.data.currentDeposits + totalPrice,
+        ticketSalesTotal: campaignCell.data.ticketSalesTotal + (ticketPrice === 0n ? ticketCount : totalPrice),
       }
     : {
         ...campaignCell.data,
-        currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
+        currentDeposits: campaignCell.data.currentDeposits + totalPrice,
       };
   tx.addOutput(
     {
-      capacity: campaignCell.capacityShannons + ticketPrice,
+      capacity: campaignCell.capacityShannons + totalPrice,
       lock: campaignCell.lock,
       type: campaignCell.type,
     },
@@ -351,21 +355,23 @@ export async function sendVerifyParticipantRaffle(
   // Output[1]: participant cell
   // Minimum: cell overhead (61) + secp256k1 lock (~53) + data (73) = 187 bytes → 18_700_000_000 shannons
   const PARTICIPANT_CELL_CAPACITY = 18_700_000_000n;
-  tx.addOutput(
-    {
-      capacity: PARTICIPANT_CELL_CAPACITY,
-      lock: depositorAddressObj.script,
-    },
-    bytesToHex(encodeParticipantData({
-      campaignCreatedBy: campaignCell.data.createdBy,
-      campaignCreatedAt: campaignCell.data.createdAt,
-      campaignType: campaignCell.data.campaignType,
-      participantAddress: depositorAddressBytes,
-      joinedAt,
-      status: ParticipantStatus.Verified,
-      depositedAmount: ticketPrice,
-    }))
-  );
+  for (let entry = 0n; entry < ticketCount; entry++) {
+    tx.addOutput(
+      {
+        capacity: PARTICIPANT_CELL_CAPACITY,
+        lock: depositorAddressObj.script,
+      },
+      bytesToHex(encodeParticipantData({
+        campaignCreatedBy: campaignCell.data.createdBy,
+        campaignCreatedAt: campaignCell.data.createdAt,
+        campaignType: campaignCell.data.campaignType,
+        participantAddress: depositorAddressBytes,
+        joinedAt,
+        status: ParticipantStatus.Verified,
+        depositedAmount: ticketPrice,
+      }))
+    );
+  }
 
   // Let completeFeeBy pull in whatever inputs are needed to cover:
   // ticket price (transferred to campaign cell) + participant cell + any required change + fee
@@ -373,7 +379,9 @@ export async function sendVerifyParticipantRaffle(
 
   // Set witness at index 0 (campaign cell position) with selector byte 0x03
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
-  witness.outputType = bytesToHex(new Uint8Array([3])) as `0x${string}`;
+  witness.outputType = bytesToHex(ticketCount === 1n
+    ? new Uint8Array([3])
+    : encodeVerifyRaffleTicketCount(ticketCount)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
   return signer.sendTransaction(tx);
@@ -600,6 +608,16 @@ export interface CampaignCell {
   type: ccc.ScriptLike;
 }
 
+export function getRaffleTicketsPerUser(campaign: CampaignCell): bigint {
+  const args = (campaign.type as { args?: string }).args;
+  if (!args) return 1n;
+  const bytes = hexToBytes(args);
+  if (bytes.length !== 90 || bytes[0] !== Selector.CreateCampaign) return 1n;
+  const view = new DataView(bytes.buffer, bytes.byteOffset);
+  const limit = view.getBigUint64(82, true);
+  return limit > 0n ? limit : 1n;
+}
+
 export async function fetchCampaigns(
   client: ccc.Client,
   limit = 20
@@ -659,13 +677,15 @@ export async function fetchParticipants(
   client: ccc.Client,
   campaign: CampaignCell,
   limit = 500,
-  participantAddresses?: string[]
+  participantAddresses?: string[],
+  requireCompleteScan = false,
 ): Promise<ParticipantCell[]> {
   const results: ParticipantCell[] = [];
   const campaignCreatedByHex = bytesToHex(campaign.data.createdBy);
   const campaignCreatedAt = campaign.data.createdAt;
   const campaignType = campaign.data.campaignType;
   const normalizedAddresses = participantAddresses?.map((value) => value.trim()).filter(Boolean) ?? [];
+  const queryLimit = requireCompleteScan ? limit + 1 : limit;
 
   type IndexedCell = {
     outPoint: { txHash: string; index: string | number | bigint };
@@ -680,7 +700,10 @@ export async function fetchParticipants(
   const collectFromCells = (cells: AsyncIterable<IndexedCell>) => (async () => {
     let count = 0;
     for await (const cell of cells) {
-      if (count++ >= limit) break;
+      if (count++ >= limit) {
+        if (requireCompleteScan) throw new Error("Wallet has too many cells to verify its raffle ticket count");
+        break;
+      }
       try {
         const rawData = hexToBytes(cell.outputData);
         if (rawData.length !== 66) continue;
@@ -722,7 +745,7 @@ export async function fetchParticipants(
           withData: true,
         },
         "asc",
-        limit
+        queryLimit
       ));
     }
     return results;
@@ -740,7 +763,7 @@ export async function fetchParticipants(
       withData: true,
     },
     "asc",
-    limit
+    queryLimit
   ));
 
   return results;

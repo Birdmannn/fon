@@ -25,6 +25,7 @@ type CampaignRecordPayload = {
     auxAmountCkb?: unknown;
     rewardCount?: unknown;
     raffleSupportPoolPercent?: unknown;
+    ticketsPerUser?: unknown;
   };
   mountables?: {
     forms?: unknown;
@@ -292,6 +293,8 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const auxAmountCkb = ensureNumberString(payload.argsDraft?.auxAmountCkb, "argsDraft.auxAmountCkb");
   const rewardCount = ensureNumberString(payload.argsDraft?.rewardCount, "argsDraft.rewardCount");
   const raffleSupportPoolPercent = ensureNumberString(payload.argsDraft?.raffleSupportPoolPercent, "argsDraft.raffleSupportPoolPercent");
+  const ticketsPerUser = maxAmountCkb !== "0" && payload.argsDraft?.ticketsPerUser !== undefined
+    ? ensureNumberString(payload.argsDraft.ticketsPerUser, "argsDraft.ticketsPerUser") : undefined;
 
   const mentions = Array.isArray(payload.socialMetadata?.mentions)
     ? payload.socialMetadata?.mentions.map((value) => ensureString(value, "socialMetadata.mentions[]"))
@@ -367,6 +370,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
       auxAmountCkb,
       rewardCount,
       raffleSupportPoolPercent,
+      ...(ticketsPerUser === undefined ? {} : { ticketsPerUser }),
     },
     mountables: {
       forms: formsMountable,

@@ -17,8 +17,9 @@ fn build_full_create_campaign_script_args(
     aux_amount: u64,
     randomness_hash: [u8; 32],
     reward_count: u64,
+    support_pool_bps: u64,
 ) -> Bytes {
-    let mut args = Vec::with_capacity(73);
+    let mut args = Vec::with_capacity(81);
     args.push(0u8);
     args.extend_from_slice(&start_duration.to_le_bytes());
     args.extend_from_slice(&task_duration.to_le_bytes());
@@ -27,7 +28,44 @@ fn build_full_create_campaign_script_args(
     args.extend_from_slice(&aux_amount.to_le_bytes());
     args.extend_from_slice(&randomness_hash);
     args.extend_from_slice(&reward_count.to_le_bytes());
+    args.extend_from_slice(&support_pool_bps.to_le_bytes());
     Bytes::from(args)
+}
+
+fn build_raffle_campaign_bytes(
+    created_at: u64,
+    start_duration: u64,
+    task_duration: u64,
+    created_by: &[u8; 20],
+    maximum_amount: u64,
+    current_deposits: u64,
+    status: CampaignStatus,
+    reward_count: u64,
+    randomness_hash: [u8; 32],
+    summary: &[u8; 64],
+    ticket_price: u64,
+    ticket_sales_total: u64,
+    creator_support_total: u64,
+    support_pool_bps: u64,
+) -> Bytes {
+    let mut data = build_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        created_by,
+        CampaignType::Raffle,
+        maximum_amount,
+        current_deposits,
+        status,
+        reward_count,
+        randomness_hash,
+        summary,
+        ticket_price,
+    ).to_vec();
+    data[174..182].copy_from_slice(&ticket_sales_total.to_le_bytes());
+    data[182..190].copy_from_slice(&creator_support_total.to_le_bytes());
+    data[190..198].copy_from_slice(&support_pool_bps.to_le_bytes());
+    Bytes::from(data)
 }
 
 fn witness_with_output_type(bytes: Vec<u8>) -> WitnessArgs {
@@ -127,6 +165,8 @@ fn test_raffle_full_lifecycle_e2e() {
     let maximum_amount = 1_000u64;
     let ticket_price = 100u64;
     let reward_count = 2u64;
+    let support_amount = 200u64;
+    let support_pool_bps = 2_500u64;
     let summary = default_summary();
     let randomness_preimage = [7u8; 32];
     let randomness_hash = blake2b_256(&randomness_preimage);
@@ -143,6 +183,7 @@ fn test_raffle_full_lifecycle_e2e() {
                 ticket_price,
                 zero_randomness_hash,
                 0,
+                support_pool_bps,
             ),
         )
         .expect("build raffle campaign type script");
@@ -160,12 +201,11 @@ fn test_raffle_full_lifecycle_e2e() {
         .previous_output(creator_input_out_point)
         .build();
 
-    let initial_campaign_data = build_campaign_bytes(
+    let initial_campaign_data = build_raffle_campaign_bytes(
         created_at,
         start_duration,
         task_duration,
         &creator_address,
-        CampaignType::Raffle,
         maximum_amount,
         0,
         CampaignStatus::Created,
@@ -173,6 +213,9 @@ fn test_raffle_full_lifecycle_e2e() {
         zero_randomness_hash,
         &summary,
         ticket_price,
+        0,
+        0,
+        support_pool_bps,
     );
     let initial_campaign_output = CellOutput::new_builder()
         .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
@@ -202,12 +245,11 @@ fn test_raffle_full_lifecycle_e2e() {
     );
 
     // 2. Submit randomness commitment.
-    let committed_campaign_data = build_campaign_bytes(
+    let committed_campaign_data = build_raffle_campaign_bytes(
         created_at,
         start_duration,
         task_duration,
         &creator_address,
-        CampaignType::Raffle,
         maximum_amount,
         0,
         CampaignStatus::Created,
@@ -215,6 +257,9 @@ fn test_raffle_full_lifecycle_e2e() {
         randomness_hash,
         &summary,
         ticket_price,
+        0,
+        0,
+        support_pool_bps,
     );
     let submit_randomness_tx = TransactionBuilder::default()
         .input(
@@ -244,12 +289,11 @@ fn test_raffle_full_lifecycle_e2e() {
     // 3. Advance status to Active (start_duration has elapsed, ticket sales open).
     let active_timestamp = created_at + start_duration * 1_000;
     let pre_sales_header_hash = insert_header(&mut context, active_timestamp);
-    let active_committed_campaign_data = build_campaign_bytes(
+    let active_committed_campaign_data = build_raffle_campaign_bytes(
         created_at,
         start_duration,
         task_duration,
         &creator_address,
-        CampaignType::Raffle,
         maximum_amount,
         0,
         CampaignStatus::Active,
@@ -257,6 +301,9 @@ fn test_raffle_full_lifecycle_e2e() {
         randomness_hash,
         &summary,
         ticket_price,
+        0,
+        0,
+        support_pool_bps,
     );
     let active_campaign_output_pre = CellOutput::new_builder()
         .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
@@ -284,14 +331,77 @@ fn test_raffle_full_lifecycle_e2e() {
         active_committed_campaign_data,
     );
 
-    // 4. Add raffle participants after start time (during Active window).
+    // 4. Add voluntary creator support while the raffle is active.
+    let supporter_address = address_from(DEPOSITOR.wrapping_add(20));
+    let supporter_lock = context
+        .build_script(&always_success_out_point, Bytes::from(supporter_address.to_vec()))
+        .expect("build supporter lock");
+    let supporter_funding_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(supporter_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let supported_campaign_data = build_raffle_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        maximum_amount,
+        support_amount,
+        CampaignStatus::Active,
+        reward_count,
+        randomness_hash,
+        &summary,
+        ticket_price,
+        0,
+        support_amount,
+        support_pool_bps,
+    );
+    let supported_campaign_output = CellOutput::new_builder()
+        .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + support_amount)))
+        .lock(creator_lock.clone())
+        .type_(Some(campaign_type_script.clone()).pack())
+        .build();
+    let support_tx = TransactionBuilder::default()
+        .inputs(vec![
+            CellInput::new_builder().previous_output(campaign_out_point.clone()).build(),
+            CellInput::new_builder().previous_output(supporter_funding_out_point).build(),
+        ])
+        .outputs(vec![
+            supported_campaign_output.clone(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - support_amount)))
+                .lock(supporter_lock)
+                .build(),
+        ])
+        .outputs_data(vec![supported_campaign_data.clone(), Bytes::new()].pack())
+        .witness(witness_with_output_type({
+            let mut bytes = vec![1u8];
+            bytes.extend_from_slice(&support_amount.to_le_bytes());
+            bytes
+        }).as_bytes().pack())
+        .build();
+    let support_tx = context.complete_tx(support_tx);
+    context
+        .verify_tx(&support_tx, 10_000_000)
+        .expect("raffle creator support deposit should pass");
+    context.create_cell_with_out_point(
+        campaign_out_point.clone(),
+        supported_campaign_output,
+        supported_campaign_data,
+    );
+
+    // 5. Add raffle participants after start time (during Active window).
     // Timestamps must be after created_at + start_duration * 1_000 and before
     // created_at + start_duration * 1_000 + task_duration * 1_000.
     let sales_open = created_at + start_duration * 1_000;
     let participant_seeds = [DEPOSITOR, DEPOSITOR.wrapping_add(1), DEPOSITOR.wrapping_add(2)];
     let participant_joined_at = [sales_open + 1_000, sales_open + 2_000, sales_open + 3_000];
     let mut participants = Vec::new();
-    let mut current_deposits = 0u64;
+    let mut current_deposits = support_amount;
+    let mut ticket_sales_total = 0u64;
 
     for (index, (&seed, &joined_at)) in participant_seeds
         .iter()
@@ -312,12 +422,12 @@ fn test_raffle_full_lifecycle_e2e() {
 
         let header_hash = insert_header(&mut context, joined_at);
         let updated_deposits = current_deposits + ticket_price;
-        let updated_campaign_data = build_campaign_bytes(
+        let updated_ticket_sales_total = ticket_sales_total + ticket_price;
+        let updated_campaign_data = build_raffle_campaign_bytes(
             created_at,
             start_duration,
             task_duration,
             &creator_address,
-            CampaignType::Raffle,
             maximum_amount,
             updated_deposits,
             CampaignStatus::Active, // campaign is Active during ticket sales
@@ -325,6 +435,9 @@ fn test_raffle_full_lifecycle_e2e() {
             randomness_hash,
             &summary,
             ticket_price,
+            updated_ticket_sales_total,
+            support_amount,
+            support_pool_bps,
         );
         let updated_campaign_output = CellOutput::new_builder()
             .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + updated_deposits)))
@@ -410,19 +523,20 @@ fn test_raffle_full_lifecycle_e2e() {
             cell_out_point: participant_out_point,
         });
         current_deposits = updated_deposits;
+        ticket_sales_total = updated_ticket_sales_total;
     }
 
-    assert_eq!(current_deposits, 300, "expected three ticket purchases");
+    assert_eq!(ticket_sales_total, 300, "expected three ticket purchases");
+    assert_eq!(current_deposits, 500, "ticket sales and support should remain separately accounted");
 
-    // 5. Advance status to Completed.
+    // 6. Advance status to Completed.
     let completed_timestamp = created_at + (start_duration + task_duration) * 1_000 + 1_000;
     let completed_header_hash = insert_header(&mut context, completed_timestamp);
-    let completed_campaign_data = build_campaign_bytes(
+    let completed_campaign_data = build_raffle_campaign_bytes(
         created_at,
         start_duration,
         task_duration,
         &creator_address,
-        CampaignType::Raffle,
         maximum_amount,
         current_deposits,
         CampaignStatus::Completed,
@@ -430,6 +544,9 @@ fn test_raffle_full_lifecycle_e2e() {
         randomness_hash,
         &summary,
         ticket_price,
+        ticket_sales_total,
+        support_amount,
+        support_pool_bps,
     );
     let completed_campaign_output = CellOutput::new_builder()
         .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + current_deposits)))
@@ -457,7 +574,7 @@ fn test_raffle_full_lifecycle_e2e() {
         completed_campaign_data,
     );
 
-    // 6. Batch deliver deterministic raffle winners.
+    // 7. Batch deliver deterministic raffle winners.
     let campaign_tx_hash: [u8; 32] = campaign_out_point
         .tx_hash()
         .as_slice()
@@ -479,23 +596,30 @@ fn test_raffle_full_lifecycle_e2e() {
     );
     assert_eq!(winners.len(), reward_count as usize, "winner count should match reward count");
 
-    let reward_per_winner = current_deposits / reward_count;
-    let delivered_campaign_data = build_campaign_bytes(
+    let support_pool_contribution = support_amount * support_pool_bps / 10_000;
+    let reward_pool = ticket_sales_total + support_pool_contribution;
+    let reward_per_winner = reward_pool / reward_count;
+    let creator_remainder = current_deposits - reward_pool;
+    assert_eq!(reward_pool, 350, "winner pool should include the selected support share");
+    assert_eq!(creator_remainder, 150, "support outside the selected share should remain for the creator");
+    let delivered_campaign_data = build_raffle_campaign_bytes(
         created_at,
         start_duration,
         task_duration,
         &creator_address,
-        CampaignType::Raffle,
         maximum_amount,
-        0,
+        creator_remainder,
         CampaignStatus::Completed,
         reward_count,
         randomness_hash,
         &summary,
         ticket_price,
+        0,
+        creator_remainder,
+        0,
     );
     let delivered_campaign_output = CellOutput::new_builder()
-        .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+        .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + creator_remainder)))
         .lock(creator_lock.clone())
         .type_(Some(campaign_type_script.clone()).pack())
         .build();
@@ -552,4 +676,66 @@ fn test_raffle_full_lifecycle_e2e() {
     context
         .verify_tx(&deliver_tx, 10_000_000)
         .expect("raffle batch deliver should pass");
+
+    // 8. Withdraw the support remainder to the creator.
+    let delivered_campaign_out_point = OutPoint::new_builder()
+        .tx_hash(deliver_tx.hash())
+        .index(0u32)
+        .build();
+    context.create_cell_with_out_point(
+        delivered_campaign_out_point.clone(),
+        delivered_campaign_output,
+        delivered_campaign_data,
+    );
+    let creator_funding_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+            .lock(creator_lock.clone())
+            .build(),
+        Bytes::new(),
+    );
+    let withdrawn_campaign_data = build_raffle_campaign_bytes(
+        created_at,
+        start_duration,
+        task_duration,
+        &creator_address,
+        maximum_amount,
+        0,
+        CampaignStatus::Completed,
+        reward_count,
+        randomness_hash,
+        &summary,
+        ticket_price,
+        0,
+        0,
+        0,
+    );
+    let withdraw_tx = TransactionBuilder::default()
+        .inputs(vec![
+            CellInput::new_builder().previous_output(delivered_campaign_out_point).build(),
+            CellInput::new_builder().previous_output(creator_funding_out_point).build(),
+        ])
+        .header_dep(insert_header(&mut context, completed_timestamp + 2_000))
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&creator_remainder))
+                .lock(creator_lock.clone())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(creator_lock)
+                .build(),
+        ])
+        .outputs_data(vec![withdrawn_campaign_data, Bytes::new(), Bytes::new()].pack())
+        .witness(witness_with_output_type(vec![8u8]).as_bytes().pack())
+        .build();
+    let withdraw_tx = context.complete_tx(withdraw_tx);
+    context
+        .verify_tx(&withdraw_tx, 10_000_000)
+        .expect("creator should withdraw the support remainder after settlement");
 }
