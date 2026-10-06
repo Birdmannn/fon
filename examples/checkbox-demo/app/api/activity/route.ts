@@ -1,13 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { evaluateSelections, isValidRegistrationSecret, parseSelectedPrinciples, saveInstallation } from "@/lib/checkboxDemoApp";
+import { appendFlowLog } from "@/lib/flowLogs";
 
 export async function POST(request: Request) {
+  let event: Record<string, any> | null = null;
   try {
     if (!isValidRegistrationSecret(request)) {
+      appendFlowLog({ kind: "webhook", direction: "inbound", method: "POST", source: "FON", target: "/api/activity", status: 403, summary: "Rejected activity webhook with invalid registration secret" });
       return NextResponse.json({ error: "Invalid FON registration secret" }, { status: 403 });
     }
-    const event = await request.json();
+    event = await request.json();
+    if (!event) throw new Error("Activity payload is required");
+    appendFlowLog({ kind: "webhook", direction: "inbound", method: "POST", source: "FON", target: "/api/activity", summary: `Received ${event?.eventType ?? "activity"} webhook`, request: event });
     if (event.eventType === "mount.requested") {
       const mountableInstanceId = typeof event.mountableInstanceId === "string" ? event.mountableInstanceId.trim() : "";
       const campaignId = typeof event.freight?.campaignId === "string" ? event.freight.campaignId.trim().toLowerCase() : "";
@@ -30,7 +35,9 @@ export async function POST(request: Request) {
         timeframeSeconds,
         selectedPrinciples: parseSelectedPrinciples(event.selectedPrinciples),
       });
-      return NextResponse.json({ ok: true, mounted: true, eventId: event.eventId ?? null });
+      const responsePayload = { ok: true, mounted: true, eventId: event.eventId ?? null };
+      appendFlowLog({ kind: "response", direction: "outbound", method: "POST", source: "/api/activity", target: "FON", status: 200, summary: `Stored mount grant for freight ${campaignId}`, response: responsePayload });
+      return NextResponse.json(responsePayload);
     }
     const participantAddress = typeof event.participant?.participantAddress === "string"
       ? event.participant.participantAddress.trim()
@@ -48,14 +55,17 @@ export async function POST(request: Request) {
       selectedPrinciples: parseSelectedPrinciples(event.selectedPrinciples),
     });
 
-    return NextResponse.json({
+    const responsePayload = {
       ok: true,
       eventId: typeof event.eventId === "string" ? event.eventId : null,
       principleStates,
       allFulfilled: principleStates.every((state) => state.fulfilled),
-    });
+    };
+    appendFlowLog({ kind: "response", direction: "outbound", method: "POST", source: "/api/activity", target: "FON", status: 200, summary: "Returned activity principle evaluation", response: responsePayload });
+    return NextResponse.json(responsePayload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to process activity event";
+    appendFlowLog({ kind: "response", direction: "outbound", method: "POST", source: "/api/activity", target: "FON", status: 400, summary: message, request: event, response: { error: message } });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

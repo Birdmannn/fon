@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 
 import { appId, evaluateSelections, installationIsActive, listInstallations, readParticipantState, saveParticipantState } from "@/lib/checkboxDemoApp";
+import { appendFlowLog } from "@/lib/flowLogs";
 import { sendParticipantUpdateToUrl } from "@/lib/fonSdk";
+import { getJoyIdSession } from "@/lib/joyidSession";
 
 export async function GET(request: Request) {
+  const session = getJoyIdSession(request);
+  if (!session) return NextResponse.json({ error: "Connect JoyID first" }, { status: 401 });
   const url = new URL(request.url);
-  const externalUserId = url.searchParams.get("externalUserId")?.trim() || "demo-user";
-  const participantAddress = url.searchParams.get("participantAddress")?.trim() || undefined;
+  const externalUserId = session.address;
+  const participantAddress = session.address;
   const state = readParticipantState(externalUserId, participantAddress);
   const requestedMountableInstanceId = url.searchParams.get("mountableInstanceId")?.trim() || "";
   const availableInstallations = listInstallations();
@@ -14,19 +18,23 @@ export async function GET(request: Request) {
     ?? availableInstallations.filter((entry) => installationIsActive(entry)).at(-1)
     ?? availableInstallations.at(-1);
   const principleStates = await evaluateSelections({ ...state, selectedPrinciples: installation?.selectedPrinciples });
-  return NextResponse.json({ ok: true, state, principleStates, mountableInstanceId: installation?.mountableInstanceId ?? "" });
+  const responsePayload = { ok: true, state, principleStates, mountableInstanceId: installation?.mountableInstanceId ?? "" };
+  appendFlowLog({ kind: "response", direction: "internal", method: "GET", source: "/api/participant-state", target: session.address, status: 200, summary: "Loaded wallet activity state", response: responsePayload });
+  return NextResponse.json(responsePayload);
 }
 
 export async function POST(request: Request) {
+  let payload: Record<string, unknown> | null = null;
   try {
-    const payload = await request.json();
-    const externalUserId = typeof payload.externalUserId === "string" ? payload.externalUserId.trim() : "";
-    const participantAddress = typeof payload.participantAddress === "string" ? payload.participantAddress.trim() : undefined;
+    const session = getJoyIdSession(request);
+    if (!session) return NextResponse.json({ error: "Connect JoyID first" }, { status: 401 });
+    payload = await request.json();
+    if (!payload) throw new Error("Participant activity payload is required");
+    const externalUserId = session.address;
+    const participantAddress = session.address;
     const checked = Array.isArray(payload.checked) ? payload.checked : [];
     const requestedMountableInstanceId = typeof payload.mountableInstanceId === "string" ? payload.mountableInstanceId.trim() : "";
-    if (!externalUserId) {
-      return NextResponse.json({ error: "externalUserId is required" }, { status: 400 });
-    }
+    appendFlowLog({ kind: "request", direction: "inbound", method: "POST", source: session.address, target: "/api/participant-state", summary: "Wallet activity changed", request: { ...payload, externalUserId, participantAddress } });
 
     const submittedText = typeof payload.submittedText === "string" ? payload.submittedText : "";
     const state = saveParticipantState({ externalUserId, participantAddress, checked, submittedText });
@@ -43,7 +51,7 @@ export async function POST(request: Request) {
           selectedPrinciples: installation.selectedPrinciples,
         });
         try {
-          await sendParticipantUpdateToUrl(installation.updateWebhookUrl, {
+          const webhookPayload = {
             appId,
             campaignId: installation.campaignId,
             participantAddress: state.participantAddress,
@@ -53,22 +61,30 @@ export async function POST(request: Request) {
             statusMessage: installationStates.every((principle) => principle.fulfilled)
               ? "All required checkbox principles are fulfilled"
               : "Checkbox principles are still pending",
-          }, installation.sharedSecret);
+          };
+          appendFlowLog({ kind: "webhook", direction: "outbound", method: "POST", source: appId, target: installation.updateWebhookUrl, summary: `Sending participant update for freight ${installation.campaignId}`, request: webhookPayload });
+          const webhookResponse = await sendParticipantUpdateToUrl(installation.updateWebhookUrl, webhookPayload, installation.sharedSecret);
+          appendFlowLog({ kind: "response", direction: "inbound", method: "POST", source: "FON", target: appId, status: 200, summary: `FON accepted participant update for freight ${installation.campaignId}`, response: webhookResponse });
           return { mountableInstanceId: installation.mountableInstanceId, ok: true };
         } catch (error) {
-          return { mountableInstanceId: installation.mountableInstanceId, ok: false, error: error instanceof Error ? error.message : String(error) };
+          const message = error instanceof Error ? error.message : String(error);
+          appendFlowLog({ kind: "response", direction: "inbound", method: "POST", source: "FON", target: appId, status: 502, summary: `Participant update failed: ${message}`, response: { error: message } });
+          return { mountableInstanceId: installation.mountableInstanceId, ok: false, error: message };
         }
       }));
-    return NextResponse.json({
+    const responsePayload = {
       ok: true,
       state,
       principleStates,
       allFulfilled: principleStates.every((principle) => principle.fulfilled),
       mountableInstanceId: installation?.mountableInstanceId ?? "",
       syncResults,
-    });
+    };
+    appendFlowLog({ kind: "evaluation", direction: "internal", method: "POST", source: appId, target: state.participantAddress, status: 200, summary: responsePayload.allFulfilled ? "All selected principles fulfilled" : "Principles evaluated with pending items", response: responsePayload });
+    return NextResponse.json(responsePayload);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to save participant state";
+    appendFlowLog({ kind: "response", direction: "internal", method: "POST", source: "/api/participant-state", target: "browser", status: 400, summary: message, request: payload, response: { error: message } });
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

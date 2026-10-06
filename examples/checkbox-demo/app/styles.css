@@ -57,7 +57,12 @@ input {
 .session-strip,
 .checkbox-card,
 .principle-row,
-.status-pill {
+.status-pill,
+.wallet-button,
+.log-actions,
+.flow-log-row summary,
+.log-meta,
+.flow-log-row small {
   display: flex;
   align-items: center;
 }
@@ -121,7 +126,8 @@ h2 {
 
 .login-panel,
 .task-surface,
-.principle-surface {
+.principle-surface,
+.logs-surface {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.86);
@@ -135,12 +141,19 @@ h2 {
   padding: 18px;
 }
 
+.panel-label,
 .login-panel label {
   display: block;
+  margin-top: 0;
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.wallet-button {
+  gap: 8px;
+  padding: 0 14px;
 }
 
 .login-row {
@@ -188,6 +201,18 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.connection-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #9aa39f;
+}
+
+.connection-dot.connected {
+  background: var(--accent);
+}
+
 code {
   max-width: 220px;
   overflow: hidden;
@@ -207,7 +232,8 @@ code {
 }
 
 .task-surface,
-.principle-surface {
+.principle-surface,
+.logs-surface {
   padding: 18px;
 }
 
@@ -346,6 +372,284 @@ code {
   font-size: 0.92rem;
 }
 
+.log-count {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.log-actions {
+  gap: 8px;
+}
+
+.flow-log-list {
+  display: grid;
+  gap: 8px;
+}
+
+.flow-log-row {
+  border: 1px solid var(--line);
+  border-left: 3px solid #aab3af;
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.flow-log-row.direction-inbound {
+  border-left-color: #3b82b8;
+}
+
+.flow-log-row.direction-outbound {
+  border-left-color: var(--accent);
+}
+
+.flow-log-row[open] {
+  border-color: #9caaa4;
+  box-shadow: 0 8px 22px rgba(35, 52, 45, 0.08);
+}
+
+.flow-log-row summary {
+  gap: 12px;
+  min-height: 76px;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.flow-log-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure-chevron {
+  flex: 0 0 auto;
+  color: var(--muted);
+  transition: transform 140ms ease;
+}
+
+.flow-log-row[open] .disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.direction-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef1ef;
+  color: var(--muted);
+}
+
+.direction-icon.inbound {
+  background: #e7f2ff;
+  color: #2468a2;
+}
+
+.direction-icon.outbound {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.log-main {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 5px;
+}
+
+.log-main > strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-meta {
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.log-meta time {
+  text-transform: none;
+}
+
+.log-kind,
+.log-status {
+  border-radius: 4px;
+  padding: 2px 5px;
+  background: #eef1ef;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.log-kind.webhook,
+.log-kind.registration {
+  background: #e7f2ff;
+  color: #2468a2;
+}
+
+.log-kind.poll,
+.log-kind.evaluation {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.log-status.failed,
+.log-error {
+  color: #a73535;
+}
+
+.flow-log-row small {
+  min-width: 0;
+  gap: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-payloads {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 14px 14px 58px;
+}
+
+.payload-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #2d3b35;
+  border-radius: 6px;
+  background: #111815;
+}
+
+.payload-heading,
+.payload-heading > span,
+.payload-tools {
+  display: flex;
+  align-items: center;
+}
+
+.payload-heading {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid #2d3b35;
+  background: #1a2520;
+  color: #dce7e2;
+}
+
+.payload-heading > span,
+.payload-tools {
+  gap: 6px;
+}
+
+.payload-heading > span:first-child {
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.payload-panel.request .payload-heading > span:first-child {
+  color: #79c7ff;
+}
+
+.payload-panel.response .payload-heading > span:first-child {
+  color: #71d6ac;
+}
+
+.payload-tools > span:first-child {
+  color: #8fa199;
+  font-size: 0.68rem;
+}
+
+.payload-tools button {
+  display: grid;
+  width: 28px;
+  min-height: 28px;
+  place-items: center;
+  padding: 0;
+  border-color: #3b4b44;
+  border-radius: 4px;
+  background: transparent;
+  color: #cbd8d2;
+}
+
+.payload-tools button:hover {
+  border-color: #667a71;
+  background: #26342e;
+}
+
+.payload-panel pre {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  background: #111815;
+  color: #d7e0dc;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.75rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.payload-panel code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.json-key {
+  color: #79c7ff;
+}
+
+.json-string {
+  color: #9ee6b8;
+}
+
+.json-number {
+  color: #ffd479;
+}
+
+.json-boolean {
+  color: #e7a6ff;
+}
+
+.json-null {
+  color: #ff9c9c;
+  font-style: italic;
+}
+
+.payload-panel pre::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.payload-panel pre::-webkit-scrollbar-thumb {
+  border: 2px solid #111815;
+  border-radius: 8px;
+  background: #4c5f56;
+}
+
+.no-payload {
+  margin: 0;
+  padding: 0 14px 14px 58px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.log-empty {
+  min-height: 110px;
+}
+
+.log-error {
+  margin: -8px 0 14px;
+  font-size: 0.86rem;
+}
+
 .spin {
   animation: spin 0.85s linear infinite;
 }
@@ -389,5 +693,20 @@ code {
   .login-row input,
   .login-row button {
     width: 100%;
+  }
+
+  .session-strip {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .log-payloads {
+    grid-template-columns: 1fr;
+    padding-left: 14px;
+  }
+
+  .log-main > strong,
+  .flow-log-row small {
+    white-space: normal;
   }
 }

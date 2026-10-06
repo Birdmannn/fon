@@ -1749,7 +1749,6 @@ export default function CampaignDetailPage() {
   ) : showCreateModal && infoModalMode === "mountables-apps" ? (
     <MountableAppsConfigurator
       errorMessage={mountableAppsError || mountablesPromptError}
-      isVerifyingMountableApp={isVerifyingMountableApp}
       mountedAppConfigs={mountedAppConfigs}
       onToggleSelectedMountablePrinciple={handleToggleSelectedMountablePrinciple}
       onUpdateSelectedMountablePrincipleParam={handleUpdateSelectedMountablePrincipleParam}

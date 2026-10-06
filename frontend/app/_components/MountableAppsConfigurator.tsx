@@ -7,7 +7,6 @@ import type { MountableAppPrincipleParamDefinition, MountableJsonObject, Mountab
 
 type MountableAppsConfiguratorProps = {
   errorMessage?: string;
-  isVerifyingMountableApp: boolean;
   mountedAppConfigs: AppMountableConfig[];
   onToggleSelectedMountablePrinciple: (principleId: string) => void;
   onUpdateSelectedMountablePrincipleParam: (principleId: string, paramKey: string, value: MountableJsonValue) => void;
@@ -23,7 +22,6 @@ function parameterValue(params: MountableJsonObject, definition: MountableAppPri
 
 export default function MountableAppsConfigurator({
   errorMessage = "",
-  isVerifyingMountableApp,
   mountedAppConfigs,
   onToggleSelectedMountablePrinciple,
   onUpdateSelectedMountablePrincipleParam,
@@ -126,7 +124,6 @@ export default function MountableAppsConfigurator({
               </p>
             )}
           </div>
-          {isVerifyingMountableApp ? <p className="create-info-constraint-item mt-3 text-gray-500"><span>Setting up app...</span></p> : null}
         </div>
       ) : (
         <p className="create-info-constraint-item text-red-500"><span>Selected app is unavailable.</span></p>

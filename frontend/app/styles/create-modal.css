@@ -812,8 +812,14 @@ button.create-mountable-principle {
 }
 
 button.create-mountable-principle:hover,
-button.create-mountable-principle:focus-visible,
-.create-mountable-principle-selected {
+button.create-mountable-principle:focus-visible {
+  border-color: #9ca3af;
+  background: rgba(156, 163, 175, 0.08);
+}
+
+.create-mountable-principle-selected,
+button.create-mountable-principle.create-mountable-principle-selected:hover,
+button.create-mountable-principle.create-mountable-principle-selected:focus-visible {
   border-color: #961cac;
   background: rgba(150, 28, 172, 0.08);
 }

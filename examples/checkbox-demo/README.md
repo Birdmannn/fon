@@ -2,7 +2,7 @@
 
 This is a tiny hosted-app demo for `@freightonervos/fon-sdk`.
 
-It demonstrates the principle model from `PRINCIPLES.md` with a local login and checkboxes:
+It demonstrates the principle model from `PRINCIPLES.md` with a JoyID wallet login and checkboxes:
 
 - `demo-checkbox-completed`: one configured checkbox must be checked
 - `demo-checkbox-count-at-least`: at least `minCompleted` boxes must be checked
@@ -26,6 +26,19 @@ npm run dev -- --port 3001
 ```
 
 Open `http://localhost:3001`.
+
+The demo uses JoyID testnet by default. Set `NEXT_PUBLIC_CKB_NETWORK=mainnet`
+to use mainnet instead. Keep this value aligned with the FON frontend so the
+participant address recorded by the mounted app matches the connected FON user.
+
+Connect JoyID before changing participant state. The server issues a one-time
+challenge, verifies the JoyID signature and credential, and stores the connected
+CKB address in an HttpOnly session, then
+uses that verified address for every checkbox and exact-text event. The Logs
+section refreshes automatically and records registration, mount callbacks,
+participant events, outbound webhooks, FON responses, and polling. Log payloads
+are held in memory, limited to the latest 250 entries, and sensitive fields are
+redacted.
 
 ## Register With A Local FON Frontend
 
