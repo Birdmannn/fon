@@ -58,6 +58,7 @@ const GIFT_FUNDED_TASK_NOTICE = "Gift directives use FundedTask escrow behavior.
 const MOUNTABLE_TRIGGER_HASHTAG = "mounted";
 
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
+const BUILT_IN_TAGS = new Set(["approve", "claim", "receive"]);
 const COMPULSORY_HASHTAG_SET = new Set([...Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()), "mounted"]);
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
@@ -340,6 +341,7 @@ export type CreateCampaignModalContentHandle = {
   updateLockMountableConfig: (updates: Partial<LockMountableConfig>) => void;
   persistCurrentDraft: () => Promise<void>;
   advanceToReviewAfterMountableSelection: () => Promise<void>;
+  insertTagSuggestion: (tag: string) => void;
 };
 
 export type CreateConstraintStatus = {
@@ -361,6 +363,7 @@ type CreateCampaignModalContentProps = {
   onDraftSelectionRequest?: (draftId: string) => void;
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
   onMountableSelectionRequired?: () => void;
+  onTagSuggestionsRequested?: (query: string) => void;
   onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
   availableFbars?: number;
 };
@@ -415,6 +418,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onDraftSelectionRequest,
   onPublishSuccess,
   onMountableSelectionRequired,
+  onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   availableFbars,
 }: CreateCampaignModalContentProps, ref) {
@@ -438,6 +442,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const attachmentGroupIdRef = useRef("");
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
+  const tagInsertionPointRef = useRef<{
+    target: "title" | "description" | "page";
+    start: number;
+    end: number;
+  } | null>(null);
   const lastHandledStepBackSignalRef = useRef(stepBackSignal);
   const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftListRequestIdRef = useRef(0);
@@ -675,6 +684,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     try {
       return {
         value: normalizeCreateCampaignParams({
+          campaignType,
           maxAmountCkb,
           raffleSupportPoolPercent,
           raffleTicketPriceCkb,
@@ -694,6 +704,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
   }, [
     activeReviewSummary,
+    campaignType,
     maxAmountCkb,
     raffleTicketPriceCkb,
     rewardCount,
@@ -703,13 +714,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   ]);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
   const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
+  const storedStartDelayHours = campaignType === CampaignType.SimpleTask ? "0" : taskStartDelayHours;
+  const storedDurationHours = campaignType === CampaignType.SimpleTask ? "0" : taskDurationHours;
   const currentDraftSnapshot = useMemo<DraftSnapshot>(() => buildDraftSnapshot({
     title: trimmedModalTitle,
     description: trimmedModalDescription,
     campaignType,
     summaryDraft: currentDraftSummary,
-    taskStartDelayHours,
-    taskDurationHours,
+    taskStartDelayHours: storedStartDelayHours,
+    taskDurationHours: storedDurationHours,
     maxAmountCkb,
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
@@ -732,8 +745,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     formsMountable,
     lockMountable,
     rewardCount,
-    taskDurationHours,
-    taskStartDelayHours,
+    storedDurationHours,
+    storedStartDelayHours,
     trimmedModalDescription,
     trimmedModalTitle,
   ]);
@@ -743,12 +756,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     createdByHash: activeDraftRecord?.createdByHash ?? null,
     chainCreatedAt: activeDraftRecord?.chainCreatedAt ?? new Date().toISOString(),
     campaignType,
-    taskStartDelayHours,
-    taskDurationHours,
+    taskStartDelayHours: storedStartDelayHours,
+    taskDurationHours: storedDurationHours,
     startsAt: null,
     endsAt: null,
     timeframeSeconds: null,
-  }), [activeDraftRecord?.campaignId, activeDraftRecord?.chainCreatedAt, activeDraftRecord?.createdByHash, campaignType, taskDurationHours, taskStartDelayHours]);
+  }), [activeDraftRecord?.campaignId, activeDraftRecord?.chainCreatedAt, activeDraftRecord?.createdByHash, campaignType, storedDurationHours, storedStartDelayHours]);
   const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
   const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
   const mountedFormUrl = formsMountable.canonicalFormUrl?.trim() || formsMountable.formUrl.trim();
@@ -1174,6 +1187,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const handleEditorInput = (event: React.FormEvent<HTMLDivElement>) => {
     setShowNoDraftsMessage(false);
+    const inputEvent = event.nativeEvent as InputEvent;
+    const inputType = inputEvent.inputType ?? "";
+    const insertedContent = inputEvent.data ?? inputEvent.dataTransfer?.getData("text/plain") ?? "";
+    const isInsertion = inputType.startsWith("insert");
+    const isDeletion = inputType.startsWith("delete");
     const text = event.currentTarget.textContent || "";
     let normalizedText = text.trim().length === 0 ? "" : text;
 
@@ -1236,9 +1254,38 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
       const lastAtIndex = beforeCursor.lastIndexOf("@");
       const mentionMatch =
-        lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w]*$/) : null;
+        lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w.-]*$/) : null;
 
-      if (mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
+      const insertedAtOffset = insertedContent.lastIndexOf("@");
+      const insertedAtIndex = isInsertion && insertedAtOffset !== -1
+        ? Math.max(0, updatedCaretPos - insertedContent.length + insertedAtOffset)
+        : -1;
+      const pastedTagMatch = insertedAtIndex !== -1
+        ? normalizedText.slice(insertedAtIndex + 1).match(/^[\w.-]*/)
+        : null;
+      const tagStart = insertedAtIndex !== -1 ? insertedAtIndex : lastAtIndex;
+      const tagEnd = insertedAtIndex !== -1
+        ? insertedAtIndex + 1 + (pastedTagMatch?.[0].length ?? 0)
+        : updatedCaretPos;
+      const tagQuery = tagStart !== -1 ? normalizedText.slice(tagStart + 1, tagEnd) : "";
+      const shouldOpenTagSuggestions = isModal
+        && Boolean(onTagSuggestionsRequested)
+        && !isDeletion
+        && isInsertion
+        && (insertedAtIndex !== -1 || Boolean(mentionMatch));
+
+      if (shouldOpenTagSuggestions) {
+        if (tagStart !== -1) {
+          tagInsertionPointRef.current = {
+            target: event.currentTarget === modalTitleRef.current ? "title" : "description",
+            start: tagStart,
+            end: tagEnd,
+          };
+          setShowMentionMenu(false);
+          onTagSuggestionsRequested?.(tagQuery);
+          return;
+        }
+      } else if (!isModal && mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
         const rect = event.currentTarget.getBoundingClientRect();
@@ -1460,6 +1507,50 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
     }
   };
+
+  const insertTagSuggestion = useCallback((tag: string) => {
+    const normalizedTags = Array.from(tag.matchAll(/@([^\s@]+)/g), (match) => match[1]?.trim() ?? "")
+      .filter(Boolean);
+    const insertionPoint = tagInsertionPointRef.current;
+    if (!insertionPoint) return;
+
+    const targetEditor = insertionPoint.target === "title"
+      ? modalTitleRef.current
+      : insertionPoint.target === "description"
+        ? modalDescriptionRef.current
+        : pageEditorRef.current;
+    if (!targetEditor) return;
+
+    const currentText = targetEditor.textContent || "";
+    const tagText = normalizedTags.map((normalizedTag) => `@${normalizedTag}`).join(" ");
+    const insertedText = tagText
+      ? `${currentText.slice(0, insertionPoint.start)}${tagText} ${currentText.slice(insertionPoint.end)}`
+      : currentText;
+    const nextText = insertionPoint.target === "title"
+      ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
+      : insertionPoint.target === "description"
+        ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+        : insertedText;
+
+    renderEditorText(targetEditor, nextText);
+    setEditorTextByNode(targetEditor, nextText);
+    tagInsertionPointRef.current = null;
+    setShowMentionMenu(false);
+
+    const userTags = normalizedTags.filter((normalizedTag) => !BUILT_IN_TAGS.has(normalizedTag.toLowerCase()));
+    if (userTags.length > 0) {
+      setMentions((current) => [...new Set([...current, ...userTags])]);
+    }
+
+    window.setTimeout(() => {
+      targetEditor.focus();
+      activeEditorRef.current = targetEditor;
+      const nextCaretPosition = tagText
+        ? insertionPoint.start + tagText.length + 1
+        : insertionPoint.end;
+      setCaretPosition(targetEditor, Math.min(nextCaretPosition, nextText.length));
+    }, 0);
+  }, [renderEditorText, setCaretPosition, setEditorTextByNode]);
 
   const handleRemoveMention = (mention: string) => {
     setMentions((current) => current.filter((item) => item !== mention));
@@ -1914,8 +2005,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         campaignType,
         summaryDraft,
         argsDraft: {
-          taskStartDelayHours,
-          taskDurationHours,
+          taskStartDelayHours: storedStartDelayHours,
+          taskDurationHours: storedDurationHours,
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
@@ -1959,8 +2050,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       raffleTicketPriceCkb,
       rewardCount,
       shouldCollectRaffleTicketPrice,
-      taskDurationHours,
-      taskStartDelayHours,
+      storedDurationHours,
+      storedStartDelayHours,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -2038,8 +2129,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             campaignType,
             summaryDraft,
             argsDraft: {
-              taskStartDelayHours,
-              taskDurationHours,
+              taskStartDelayHours: storedStartDelayHours,
+              taskDurationHours: storedDurationHours,
               maxAmountCkb,
               rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
@@ -2097,6 +2188,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       raffleTicketPriceCkb,
       rewardCount,
       shouldCollectRaffleTicketPrice,
+      storedDurationHours,
+      storedStartDelayHours,
       taskDurationHours,
       taskStartDelayHours,
       trimmedModalDescription,
@@ -2401,6 +2494,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       await persistDraftRecord(currentDraftSummary, "draft");
     },
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
+    insertTagSuggestion,
   }), [
     appMountables,
     currentAppMountableCampaignContext,
@@ -2417,6 +2511,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     handleUpdateFormsMountableConfig,
     handleUpdateLockMountableConfig,
     hasDraftableChanges,
+    insertTagSuggestion,
     lockMountable,
     persistDraftRecord,
   ]);
@@ -2681,55 +2776,59 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const renderModalArgsInputs = () => (
     <div className="create-review-args-grid">
-      <div className="create-review-arg-field">
-        <label className="create-review-arg-label">Start delay</label>
-        <div className="create-review-arg-control gap-2">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={String(startDelayParts.hours)}
-            onChange={(event) => handleStartDelayHoursChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">hrs</span>
-          <input
-            type="number"
-            min="0"
-            max="55"
-            step={TIMING_MINUTE_STEP}
-            value={String(startDelayParts.minutes)}
-            onChange={(event) => handleStartDelayMinutesChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">min</span>
+      {campaignType !== CampaignType.SimpleTask ? (
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Start delay</label>
+          <div className="create-review-arg-control gap-2">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={String(startDelayParts.hours)}
+              onChange={(event) => handleStartDelayHoursChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">hrs</span>
+            <input
+              type="number"
+              min="0"
+              max="55"
+              step={TIMING_MINUTE_STEP}
+              value={String(startDelayParts.minutes)}
+              onChange={(event) => handleStartDelayMinutesChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">min</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="create-review-arg-field">
-        <label className="create-review-arg-label">Duration</label>
-        <div className="create-review-arg-control gap-2">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={String(durationParts.hours)}
-            onChange={(event) => handleDurationHoursChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">hrs</span>
-          <input
-            type="number"
-            min={MIN_TASK_DURATION_MINUTES}
-            max="55"
-            step={TIMING_MINUTE_STEP}
-            value={String(durationParts.minutes)}
-            onChange={(event) => handleDurationMinutesChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">min</span>
+      {campaignType !== CampaignType.SimpleTask ? (
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Duration</label>
+          <div className="create-review-arg-control gap-2">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={String(durationParts.hours)}
+              onChange={(event) => handleDurationHoursChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">hrs</span>
+            <input
+              type="number"
+              min={MIN_TASK_DURATION_MINUTES}
+              max="55"
+              step={TIMING_MINUTE_STEP}
+              value={String(durationParts.minutes)}
+              onChange={(event) => handleDurationMinutesChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">min</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="create-review-arg-field">
         <label className="create-review-arg-label">{shouldCollectRaffleTicketPrice ? "Number of tickets" : "Max deposit"}</label>
@@ -3015,32 +3114,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           </>
         )}
       </div>
-
-      {!showDraftsPane && allMentions.length > 0 && (
-        <div className="create-modal-mentions-row">
-          {allMentions.map((mention) => {
-            const isEditableMention = mentions.includes(mention);
-            return (
-              <div
-                key={mention}
-                className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
-                style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
-              >
-                <span>@{mention}</span>
-                {isEditableMention ? (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMention(mention)}
-                    className="theme-fg opacity-70 hover:opacity-100 font-bold"
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {giftFeatureEnabled ? (
         <div className="create-modal-gift-row">
@@ -3568,31 +3641,33 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     <span className="font-medium">{summaryBytes}/{CREATE_TOTAL_MAX_CHARS} chars</span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold theme-fg">⏱️ Duration</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={String(durationParts.hours)}
-                          onChange={(event) => handleDurationHoursChange(event.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
-                        />
-                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
-                        <input
-                          type="number"
-                          min={MIN_TASK_DURATION_MINUTES}
-                          max="55"
-                          step={TIMING_MINUTE_STEP}
-                          value={String(durationParts.minutes)}
-                          onChange={(event) => handleDurationMinutesChange(event.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
-                        />
-                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">min</span>
+                  <div className={`grid gap-2 ${campaignType === CampaignType.SimpleTask ? "grid-cols-2" : "grid-cols-3"}`}>
+                    {campaignType !== CampaignType.SimpleTask ? (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold theme-fg">⏱️ Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={String(durationParts.hours)}
+                            onChange={(event) => handleDurationHoursChange(event.target.value)}
+                            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+                          />
+                          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
+                          <input
+                            type="number"
+                            min={MIN_TASK_DURATION_MINUTES}
+                            max="55"
+                            step={TIMING_MINUTE_STEP}
+                            value={String(durationParts.minutes)}
+                            onChange={(event) => handleDurationMinutesChange(event.target.value)}
+                            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+                          />
+                          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">min</span>
+                        </div>
                       </div>
-                    </div>
+                    ) : null}
 
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-semibold theme-fg">{shouldCollectRaffleTicketPrice ? "🎟️ Number of Tickets" : "💰 Max Deposit"}</label>

@@ -21,6 +21,7 @@ type CreateCampaignLauncherProps = {
   onDraftSelectionRequest: (draftId: string) => void;
   onInsufficientFbars?: () => void;
   onMountableSelectionRequired: () => void;
+  onTagSuggestionsRequested: (query: string) => void;
   onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
   onOpenCreateModal: () => void;
   onPreviewErrorChange: (message: string) => void;
@@ -42,6 +43,7 @@ export default function CreateCampaignLauncher({
   onDraftSelectionRequest,
   onInsufficientFbars,
   onMountableSelectionRequired,
+  onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   onOpenCreateModal,
   onPreviewErrorChange,
@@ -93,6 +95,7 @@ export default function CreateCampaignLauncher({
             onDraftListOpenChange={onDraftListOpenChange}
             onDraftSelectionRequest={onDraftSelectionRequest}
             onMountableSelectionRequired={onMountableSelectionRequired}
+            onTagSuggestionsRequested={onTagSuggestionsRequested}
             onMountableSelectionStateChange={onMountableSelectionStateChange}
             onPublishSuccess={onPublishSuccess}
             availableFbars={availableFbars}

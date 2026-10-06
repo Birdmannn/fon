@@ -102,6 +102,7 @@ export default function CampaignCard({
     isConnected,
     isDepositing,
     isLockedForInteractions,
+    isSupportLocked,
     isWithdrawing,
     isPurchaseDisabled,
     isSupportDisabled,
@@ -204,7 +205,7 @@ export default function CampaignCard({
               data-tooltip={
                 !isConnected
                   ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
-                  : isLockedForInteractions
+                  : isSupportLocked
                     ? lockAccessMessage
                     : !supportState.supportEnabled
                       ? "Support disabled for this freight"
@@ -266,7 +267,7 @@ export default function CampaignCard({
                   data-tooltip={
                     !isConnected
                       ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
-                      : isLockedForInteractions
+                      : isSupportLocked
                         ? lockAccessMessage
                         : !supportState.supportEnabled
                           ? "Support disabled for this freight"
@@ -321,12 +322,14 @@ export default function CampaignCard({
                 className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
                 data-tooltip={
                   !isConnected
-                    ? "Connect wallet to deposit"
-                    : isLockedForInteractions
+                    ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
+                    : isSupportLocked
                       ? lockAccessMessage
+                      : !supportState.supportEnabled
+                        ? "Support disabled for this freight"
                       : isCampaignInactive
                         ? "Freight unavailable"
-                        : "Deposit CKB"
+                        : supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"
                 }
               >
                 <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />

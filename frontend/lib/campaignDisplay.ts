@@ -1,11 +1,19 @@
 import { ccc } from "@ckb-ccc/connector-react";
 
-import { CampaignStatus } from "@/lib/contract";
+import { CampaignStatus, CampaignType } from "@/lib/contract";
 import { bytesToHex, computeCreatorWithdrawableAmount, computeRaffleRewardPool } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
-  if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
+  if (campaign.data.status === CampaignStatus.Cancelled) {
+    return campaign.data.status;
+  }
+
+  if (campaign.data.campaignType === CampaignType.SimpleTask) {
+    return CampaignStatus.Active;
+  }
+
+  if (campaign.data.status === CampaignStatus.Completed) {
     return campaign.data.status;
   }
 

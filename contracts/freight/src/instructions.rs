@@ -551,7 +551,9 @@ pub fn update_campaign_status(_args: &[u8]) -> Result<(), Error> {
         .checked_add(campaign.task_duration_in_seconds * 1_000)
         .ok_or(Error::InvalidCampaignArgs)?;
 
-    let new_status = if timestamp >= end_time {
+    let new_status = if campaign.campaign_type == CampaignType::SimpleTask && timestamp >= start_time {
+        CampaignStatus::Active
+    } else if timestamp >= end_time {
         CampaignStatus::Completed
     } else if timestamp >= start_time {
         CampaignStatus::Active

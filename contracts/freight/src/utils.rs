@@ -161,7 +161,9 @@ pub fn validate_campaign_params(
     let min_task_duration = 60;
     let max_task_duration = 365 * 24 * 60 * 60;
     debug!("validate_campaign_params min_task_duration={} max_task_duration={}", min_task_duration, max_task_duration);
-    if task_duration < min_task_duration || task_duration > max_task_duration {
+    if (campaign_type != CampaignType::SimpleTask && task_duration < min_task_duration)
+        || task_duration > max_task_duration
+    {
         debug!("validate_campaign_params rejected task_duration");
         return Err(Error::InvalidCampaignArgs);
     }

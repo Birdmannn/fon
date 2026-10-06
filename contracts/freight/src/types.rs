@@ -123,6 +123,9 @@ pub const CAMPAIGN_DATA_LEN: usize = 198;
 
 impl Campaign {
     pub fn accepts_deposits(&self) -> bool {
+        if self.campaign_type == CampaignType::SimpleTask {
+            return self.status != CampaignStatus::Cancelled;
+        }
         // Support/tips may continue while a freight is live, but not after it has
         // completed or been cancelled.
         self.status == CampaignStatus::Created || self.status == CampaignStatus::Active

@@ -399,7 +399,9 @@ export async function sendUpdateCampaignStatus(
   // Derive the new status the contract will compute and write it in the output cell.
   // The contract's update_campaign_status does exactly this same derivation.
   let newStatus: CampaignStatus;
-  if (nowMs >= endsAtMs) {
+  if (campaignCell.data.campaignType === CampaignType.SimpleTask && nowMs >= startsAtMs) {
+    newStatus = CampaignStatus.Active;
+  } else if (nowMs >= endsAtMs) {
     newStatus = CampaignStatus.Completed;
   } else if (nowMs >= startsAtMs) {
     newStatus = CampaignStatus.Active;

@@ -20,7 +20,7 @@ import {
   isGiftClaimOpen,
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
-import { CampaignStatus } from "@/lib/contract";
+import { CampaignStatus, CampaignType } from "@/lib/contract";
 import {
   bytesToHex,
   computeRaffleRewardPool,
@@ -277,7 +277,8 @@ export function useCampaignCardState({
   };
 
   const isConnected = !!signer;
-  const isSupportDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || !supportState.supportEnabled;
+  const isSupportLocked = isLockedForInteractions && c.data.campaignType !== CampaignType.SimpleTask;
+  const isSupportDisabled = !isConnected || isSupportLocked || isCampaignInactive || !supportState.supportEnabled;
   const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets;
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
@@ -709,7 +710,7 @@ export function useCampaignCardState({
   };
 
   const handleDepositClick = () => {
-    if (!isConnected || isLockedForInteractions || isCampaignInactive || !supportState.supportEnabled) {
+    if (isSupportDisabled) {
       return;
     }
     setShowDepositModal(true);
@@ -717,7 +718,7 @@ export function useCampaignCardState({
 
   const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    if (!signer || !depositAmount || isLockedForInteractions || isCampaignInactive || !supportState.supportEnabled) {
+    if (!signer || !depositAmount || isSupportDisabled) {
       return;
     }
 
@@ -1226,6 +1227,7 @@ export function useCampaignCardState({
     canGiftClaim,
     isDepositing,
     isLockedForInteractions,
+    isSupportLocked,
     isPurchaseDisabled,
     isSupportDisabled,
     isWithdrawing,

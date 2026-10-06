@@ -7,6 +7,7 @@ import {
   type GiftSplitMode,
   type GiftTaggedUser,
 } from "@/lib/giftDeliverables";
+import { CampaignType } from "@/lib/contract";
 
 const SUMMARY_MAX_BYTES = 64;
 const MAX_DURATION_SECONDS = 365n * 24n * 60n * 60n;
@@ -77,6 +78,7 @@ export function buildTimingHoursFromParts(hoursPart: string, minutesPart: string
 }
 
 export type NormalizeCreateCampaignParamsInput = {
+  campaignType: CampaignType;
   maxAmountCkb: string;
   raffleSupportPoolPercent: string;
   raffleTicketPriceCkb: string;
@@ -154,6 +156,7 @@ export function validateGiftCreateConfiguration({
 }
 
 export function normalizeCreateCampaignParams({
+  campaignType,
   maxAmountCkb,
   raffleSupportPoolPercent,
   raffleTicketPriceCkb,
@@ -172,8 +175,9 @@ export function normalizeCreateCampaignParams({
     throw new Error("Summary must be non-empty and fit within 64 UTF-8 bytes");
   }
 
-  const startDurationMinutes = parseStoredTimingHours(taskStartDelayHours, 0);
-  const taskDurationMinutes = parseStoredTimingHours(taskDurationHours, 0);
+  const isSimpleTask = campaignType === CampaignType.SimpleTask;
+  const startDurationMinutes = isSimpleTask ? 0 : parseStoredTimingHours(taskStartDelayHours, 0);
+  const taskDurationMinutes = isSimpleTask ? 0 : parseStoredTimingHours(taskDurationHours, 0);
   const startDurationSecs = BigInt(startDurationMinutes * 60);
   const taskDurationSecs = BigInt(taskDurationMinutes * 60);
 
@@ -181,7 +185,7 @@ export function normalizeCreateCampaignParams({
     throw new Error("Start delay cannot exceed 365 days");
   }
 
-  if (taskDurationSecs < MIN_TASK_DURATION_SECONDS) {
+  if (!isSimpleTask && taskDurationSecs < MIN_TASK_DURATION_SECONDS) {
     throw new Error("Duration must be at least 1 minute");
   }
 

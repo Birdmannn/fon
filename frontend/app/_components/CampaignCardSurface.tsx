@@ -15,7 +15,7 @@ import {
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
-import { CampaignStatus } from "@/lib/contract";
+import { CampaignStatus, CampaignType } from "@/lib/contract";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary, hasSplitSupportAccounting } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
@@ -187,8 +187,14 @@ export default function CampaignCardSurface({
   const shouldShowReadMore = collapsedDescription.truncated;
   const visibleDescription = isDescriptionExpanded ? displayDescription : collapsedDescription.text;
   const descriptionLines = visibleDescription.length > 0 ? visibleDescription.split("\n") : [];
-  const countdown = buildCampaignCountdown(campaign, nowMs);
-  const countdownTitle = countdown.phase === "start" ? "Starts in" : countdown.phase === "duration" ? "Ends in" : "Ended";
+  const isSimpleTask = campaign.data.campaignType === CampaignType.SimpleTask;
+  const timedCountdown = buildCampaignCountdown(campaign, nowMs);
+  const countdown = isSimpleTask
+    ? { text: displayStatus === CampaignStatus.Cancelled ? "Closed" : "Ongoing", tone: displayStatus === CampaignStatus.Cancelled ? "ended" as const : "good" as const }
+    : timedCountdown;
+  const countdownTitle = isSimpleTask
+    ? countdown.text
+    : timedCountdown.phase === "start" ? "Starts in" : timedCountdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
   const mountedIcons = [
@@ -390,7 +396,7 @@ export default function CampaignCardSurface({
           </span>
           <span className="campaign-card-created-date">Created {createdAtDate}</span>
         </div>
-        <span className={countdownClassName} title={countdownTitle} aria-label={`${countdownTitle} ${countdown.text}`}>
+        <span className={countdownClassName} title={countdownTitle} aria-label={isSimpleTask ? countdown.text : `${countdownTitle} ${countdown.text}`}>
           {countdown.text}
         </span>
       </div>

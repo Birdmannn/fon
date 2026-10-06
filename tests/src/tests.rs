@@ -5,7 +5,7 @@ use ckb_testtool::ckb_types::{
     packed::*, prelude::*,
 };
 use ckb_testtool::context::Context;
-use freight::types::{CampaignStatus, CampaignType, ParticipantStatus};
+use freight::types::{Campaign, CampaignStatus, CampaignType, ParticipantStatus};
 use secp256k1::global::SECP256K1;
 use secp256k1::{Message as SecpMessage, PublicKey, SecretKey};
 
@@ -14,6 +14,36 @@ mod raffle_e2e;
 const CREATOR: u8 = 11;
 const DEPOSITOR: u8 = 42;
 const DEFAULT_CAPACITY: u64 = 100_000;
+
+#[test]
+fn test_simple_task_tips_do_not_expire() {
+    let mut campaign = Campaign {
+        created_at: 0,
+        start_duration_in_seconds: 0,
+        task_duration_in_seconds: 0,
+        created_by: [0; 20],
+        campaign_type: CampaignType::SimpleTask,
+        maximum_amount: 1_000,
+        current_deposits: 0,
+        status: CampaignStatus::Created,
+        reward_count: 1,
+        randomness_hash: [0; 32],
+        summary: [0; 64],
+        aux_amount: 0,
+        ticket_sales_total: 0,
+        creator_support_total: 0,
+        support_pool_bps: 0,
+    };
+
+    assert!(freight::utils::validate_campaign_params(0, 0, CampaignType::SimpleTask, 1_000, 0, 0).is_ok());
+    assert!(freight::utils::validate_campaign_params(0, 0, CampaignType::FundedTask, 1_000, 0, 0).is_err());
+    for status in [CampaignStatus::Created, CampaignStatus::Active, CampaignStatus::Completed] {
+        campaign.status = status;
+        assert!(campaign.accepts_deposits(), "SimpleTask tips should be accepted in {status:?}");
+    }
+    campaign.status = CampaignStatus::Cancelled;
+    assert!(!campaign.accepts_deposits());
+}
 
 // ─────────────────────────────── helpers ────────────────────────────────────
 
@@ -25,7 +55,7 @@ fn address_from(seed: u8) -> [u8; 20] {
     address
 }
 
-/// Build the 174-byte campaign cell data blob.
+/// Build the 198-byte campaign cell data blob.
 fn build_campaign_bytes(
     created_at: u64,
     start_duration: u64,
@@ -40,7 +70,7 @@ fn build_campaign_bytes(
     summary: &[u8; 64],
     aux_amount: u64,
 ) -> Bytes {
-    let mut data = Vec::with_capacity(174);
+    let mut data = Vec::with_capacity(198);
     data.extend_from_slice(&created_at.to_le_bytes());
     data.extend_from_slice(&start_duration.to_le_bytes());
     data.extend_from_slice(&task_duration.to_le_bytes());
@@ -53,7 +83,8 @@ fn build_campaign_bytes(
     data.extend_from_slice(&randomness_hash);
     data.extend_from_slice(summary);
     data.extend_from_slice(&aux_amount.to_le_bytes());
-    assert_eq!(data.len(), 174, "campaign data must be exactly 174 bytes");
+    data.extend_from_slice(&[0u8; 24]);
+    assert_eq!(data.len(), 198, "campaign data must be exactly 198 bytes");
     Bytes::from(data)
 }
 
@@ -760,7 +791,7 @@ fn test_deposit_exceeds_maximum_caps_to_remaining() {
 }
 
 #[test]
-fn test_deposit_rejects_simple_task() {
+fn test_completed_simple_task_tip_requires_direct_creator_output() {
     let mut context = Context::default();
     let freight_out_point = context.deploy_cell_by_name("freight");
     let always_success_out_point = context.deploy_cell(ALWAYS_SUCCESS.clone());
@@ -774,7 +805,7 @@ fn test_deposit_rejects_simple_task() {
     let deposit_amount = 25_000u64;
     let summary = default_summary();
 
-    let header_hash = insert_header(&mut context, created_at);
+    let header_hash = insert_header(&mut context, created_at + (start_duration + task_duration) * 1_000 + 1);
 
     let campaign_type_script = context
         .build_script(
@@ -792,7 +823,7 @@ fn test_deposit_rejects_simple_task() {
 
     let input_data = build_campaign_bytes(
         created_at, start_duration, task_duration, &creator_address,
-        CampaignType::SimpleTask, max_amount, 0, CampaignStatus::Created, 0, [0u8; 32], &summary, 0,
+        CampaignType::SimpleTask, max_amount, 0, CampaignStatus::Completed, 0, [0u8; 32], &summary, 0,
     );
     let campaign_in_out_point = context.create_cell(
         CellOutput::new_builder()
@@ -815,7 +846,7 @@ fn test_deposit_rejects_simple_task() {
 
     let output_data = build_campaign_bytes(
         created_at, start_duration, task_duration, &creator_address,
-        CampaignType::SimpleTask, max_amount, deposit_amount, CampaignStatus::Created, 0, [0u8; 32], &summary, 0,
+        CampaignType::SimpleTask, max_amount, deposit_amount, CampaignStatus::Completed, 0, [0u8; 32], &summary, 0,
     );
 
     let mut witness_action = vec![1u8];
@@ -823,6 +854,31 @@ fn test_deposit_rejects_simple_task() {
     let witness_args = WitnessArgsBuilder::default()
         .output_type(Some(Bytes::from(witness_action)).pack())
         .build();
+
+    let valid_tip_tx = TransactionBuilder::default()
+        .inputs(vec![campaign_input.clone(), depositor_input.clone()])
+        .header_dep(header_hash.clone())
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(creator_lock.clone())
+                .type_(Some(campaign_type_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&deposit_amount))
+                .lock(creator_lock.clone())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY - deposit_amount)))
+                .lock(depositor_lock.clone())
+                .build(),
+        ])
+        .outputs_data(vec![output_data.clone(), Bytes::new(), Bytes::new()].pack())
+        .witnesses(vec![witness_args.as_bytes().pack(), Bytes::new().pack()])
+        .build();
+    let valid_tip_tx = context.complete_tx(valid_tip_tx);
+    context.verify_tx(&valid_tip_tx, 10_000_000)
+        .expect("completed SimpleTask should accept a direct creator tip");
 
     let tx = TransactionBuilder::default()
         .inputs(vec![campaign_input, depositor_input])

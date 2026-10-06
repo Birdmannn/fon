@@ -17,6 +17,7 @@ import type { MountableJsonObject, MountableJsonValue } from "@/lib/fonMountable
 type UseCreateCampaignFlowArgs<TMode extends string> = {
   animationMs: number;
   createErrorInfoModalMode: TMode;
+  tagSuggestionsInfoModalMode: TMode;
   initialInfoModalMode: TMode;
   openWallet: () => void;
   signer: unknown;
@@ -47,6 +48,7 @@ type MountableSetupStep = {
 export function useCreateCampaignFlow<TMode extends string>({
   animationMs,
   createErrorInfoModalMode,
+  tagSuggestionsInfoModalMode,
   initialInfoModalMode,
   openWallet,
   signer,
@@ -106,6 +108,7 @@ export function useCreateCampaignFlow<TMode extends string>({
   const [submissionSuccessTxHash, setSubmissionSuccessTxHash] = useState("");
   const [submissionSuccessPreimage, setSubmissionSuccessPreimage] = useState<string | null>(null);
   const [shouldResumeCreateModal, setShouldResumeCreateModal] = useState(false);
+  const [tagSuggestionQuery, setTagSuggestionQuery] = useState("");
 
   const clearCreateHideTimer = useCallback(() => {
     if (createHideTimerRef.current) {
@@ -140,6 +143,20 @@ export function useCreateCampaignFlow<TMode extends string>({
       createErrorTimerRef.current = null;
     }, 3000);
   }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, createErrorInfoModalMode, setInfoModalInteraction, setInfoModalMode, setIsInfoModalClosing, setShowInfoModal]);
+
+  const handleTagSuggestionsRequested = useCallback((query: string) => {
+    setTagSuggestionQuery(query);
+    showCreateInfoModal(tagSuggestionsInfoModalMode);
+  }, [showCreateInfoModal, tagSuggestionsInfoModalMode]);
+
+  const handleTagSuggestionContinue = useCallback((tag: string) => {
+    closeInfoModal();
+    window.setTimeout(() => {
+      createModalContentRef.current?.insertTagSuggestion(tag);
+      setTagSuggestionQuery("");
+      setInfoModalMode(initialInfoModalMode);
+    }, animationMs);
+  }, [animationMs, closeInfoModal, initialInfoModalMode, setInfoModalMode]);
 
   useEffect(() => () => {
     if (createErrorTimerRef.current) clearTimeout(createErrorTimerRef.current);
@@ -712,6 +729,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     setSelectedMountablePrincipleIds([]);
     setSelectedMountablePrincipleParams({});
     setIsVerifyingMountableApp(false);
+    setTagSuggestionQuery("");
   }, [initialInfoModalMode, setInfoModalMode]);
 
   return {
@@ -736,6 +754,8 @@ export function useCreateCampaignFlow<TMode extends string>({
     handleToggleSelectedMountablePrinciple,
     handleUpdateSelectedMountablePrincipleParam,
     handleToggleMountableAppSelection,
+    handleTagSuggestionsRequested,
+    handleTagSuggestionContinue,
     handleVerifySelectedMountableApp,
     isCreateDraftListOpen,
     isCreateModalClosing,
@@ -793,6 +813,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     showCreateModal,
     submissionSuccessPreimage,
     submissionSuccessTxHash,
+    tagSuggestionQuery,
     transitionMountablesModal,
     goBackMountableSetup,
   };

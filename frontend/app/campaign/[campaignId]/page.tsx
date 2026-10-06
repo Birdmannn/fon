@@ -16,6 +16,7 @@ import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_co
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
+import TagSuggestionsInfo from "@/app/_components/TagSuggestionsInfo";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
   CREATE_INFO_CONSTRAINT_ITEMS,
@@ -160,7 +161,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "create-error" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -438,6 +439,8 @@ export default function CampaignDetailPage() {
     isMountablesContinuing,
     isVerifyingMountableApp,
     mountedAppConfigs,
+    handleTagSuggestionsRequested,
+    handleTagSuggestionContinue,
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
@@ -474,10 +477,12 @@ export default function CampaignDetailPage() {
     setMountablesPromptError,
     showCreateModal,
     submissionSuccessTxHash,
+    tagSuggestionQuery,
     goBackMountableSetup,
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
     createErrorInfoModalMode: "create-error",
+    tagSuggestionsInfoModalMode: "tag-suggestions",
     initialInfoModalMode: "about",
     openWallet: openWalletWithSeed,
     signer,
@@ -518,6 +523,7 @@ export default function CampaignDetailPage() {
   ]);
 
   const preventInfoHover = infoModalMode === "create-error"
+    || infoModalMode === "tag-suggestions"
     || infoModalMode === "save-draft-confirm"
     || infoModalMode === "mountables"
     || infoModalMode === "mountables-lock"
@@ -1632,7 +1638,9 @@ export default function CampaignDetailPage() {
     </div>
   );
 
-  const infoModalBody = infoModalMode === "create-error" ? (
+  const infoModalBody = infoModalMode === "tag-suggestions" ? (
+    <TagSuggestionsInfo initialQuery={tagSuggestionQuery} onContinue={handleTagSuggestionContinue} />
+  ) : infoModalMode === "create-error" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 text-red-500 font-semibold">Errors:</p>
       <p className="create-info-constraint-item text-red-500 break-words"><span>{previewError}</span></p>
@@ -1823,7 +1831,13 @@ export default function CampaignDetailPage() {
     }
   };
 
-  const infoModalActions = showCreateModal && infoModalMode === "save-draft-confirm" ? (
+  const infoModalActions = infoModalMode === "tag-suggestions" ? (
+    <div className="create-info-confirm-actions">
+      <button type="submit" form="tag-suggestions-form" className="create-info-confirm-btn create-info-confirm-btn-primary">
+        Continue
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
         type="button"
@@ -2146,7 +2160,7 @@ export default function CampaignDetailPage() {
         <AppShellHeader
           className={`campaign-shell-header ${activeShellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -2212,6 +2226,7 @@ export default function CampaignDetailPage() {
           onDraftSelectionRequest={handleDraftSelectionRequest}
           onInsufficientFbars={openInsufficientFbarsInfoModal}
           onMountableSelectionRequired={openMountablesModal}
+          onTagSuggestionsRequested={handleTagSuggestionsRequested}
           onMountableSelectionStateChange={handleMountableSelectionStateChange}
           onOpenCreateModal={openCreateModal}
           onPreviewErrorChange={handleCreateErrorChange}
