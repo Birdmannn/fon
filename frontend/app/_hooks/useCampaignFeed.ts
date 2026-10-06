@@ -14,12 +14,13 @@ import {
   type CampaignRecordIndexes,
 } from "@/lib/campaignIdentity";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
+import type { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
 export type MergedCampaign = {
   campaign: CampaignCell;
   record: CampaignRecord | null;
-  displayStatus: number;
+  displayStatus: CampaignStatus;
 };
 
 const EMPTY_CAMPAIGN_RECORD_INDEXES: CampaignRecordIndexes<CampaignRecord> = {
@@ -34,7 +35,7 @@ function withLiveRaffleTicketCounts(campaigns: CampaignCell[], records: Campaign
     const matchedCampaign = explicitCampaignId
       ? campaigns.find((campaign) => getCampaignStableId(campaign) === explicitCampaignId)
       : null;
-    const isRaffleCampaign = matchedCampaign?.data.campaignType === 4 || record.campaignType === 4;
+    const isRaffleCampaign = matchedCampaign?.data.campaignType === 4 || matchedCampaign?.data.campaignType === 5 || record.campaignType === 4 || record.campaignType === 5;
     if (!isRaffleCampaign) {
       return record;
     }
@@ -152,7 +153,7 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
       ]);
 
       const raffleCampaignIds = chainCampaigns
-        .filter((campaign) => campaign.data.campaignType === 4)
+        .filter((campaign) => campaign.data.campaignType === 4 || campaign.data.campaignType === 5)
         .map((campaign) => getCampaignStableId(campaign));
       const participantCounts = raffleCampaignIds.length > 0
         ? Object.fromEntries(await Promise.all(

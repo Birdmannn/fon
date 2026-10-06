@@ -5,6 +5,7 @@ import {
   CampaignType,
   LEGACY_CAMPAIGN_DATA_LEN,
   ParticipantStatus,
+  RECURRING_CAMPAIGN_DATA_LEN,
   Selector,
 } from "./contract";
 import {
@@ -82,6 +83,7 @@ export function encodeCreateCampaignArgs(
   rewardCount: bigint,
   supportPoolBps: bigint,
   ticketsPerUser: bigint | null = null,
+  recurring?: { sleepDurationSecs: bigint; winnerReductionBps: bigint } | null,
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
@@ -95,6 +97,7 @@ export function encodeCreateCampaignArgs(
     u64LE(rewardCount),
     u64LE(supportPoolBps),
     ...(ticketsPerUser === null ? [] : [u64LE(ticketsPerUser)]),
+    ...(recurring ? [u64LE(recurring.sleepDurationSecs), u64LE(recurring.winnerReductionBps)] : []),
   );
 }
 
@@ -148,7 +151,7 @@ export function encodeSubmitRandomnessHashArgs(
   );
 }
 
-export type CampaignDataLayout = "legacy" | "split-support";
+export type CampaignDataLayout = "legacy" | "split-support" | "recurring";
 
 // ─── Campaign cell data (174 or 198 bytes) ───────────────────────────────────
 
@@ -169,10 +172,17 @@ export interface CampaignData {
   creatorSupportTotal: bigint;
   supportPoolBps: bigint;
   dataLayout: CampaignDataLayout;
+  sleepDurationSecs?: bigint;
+  winnerReductionBps?: bigint;
+  round?: bigint;
+  roundStartedAt?: bigint;
+  roundRewardPerWinner?: bigint;
+  roundWinnerCount?: bigint;
+  prizePool?: bigint;
 }
 
 export function hasSplitSupportAccounting(campaign: CampaignData) {
-  return campaign.dataLayout === "split-support";
+  return campaign.dataLayout !== "legacy";
 }
 
 export function computeRaffleSupportPoolContribution(campaign: CampaignData) {
@@ -189,6 +199,9 @@ export function computeRaffleSupportPoolContribution(campaign: CampaignData) {
 }
 
 export function computeRaffleRewardPool(campaign: CampaignData) {
+  if (campaign.campaignType === CampaignType.RecurringRaffle) {
+    return campaign.prizePool ?? 0n;
+  }
   if (campaign.campaignType !== CampaignType.Raffle || !hasSplitSupportAccounting(campaign)) {
     return campaign.currentDeposits;
   }
@@ -202,6 +215,9 @@ export function computeRaffleRewardPool(campaign: CampaignData) {
 }
 
 export function computeCreatorWithdrawableAmount(campaign: CampaignData) {
+  if (campaign.campaignType === CampaignType.RecurringRaffle) {
+    return campaign.status === CampaignStatus.Finished ? campaign.currentDeposits : 0n;
+  }
   if (
     campaign.campaignType !== CampaignType.Raffle
     || !hasSplitSupportAccounting(campaign)
@@ -252,11 +268,24 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     return base;
   }
 
-  return concat(
+  const splitSupport = concat(
     base,
     u64LE(c.ticketSalesTotal),
     u64LE(c.creatorSupportTotal),
     u64LE(c.supportPoolBps),
+  );
+  if (c.dataLayout !== "recurring") {
+    return splitSupport;
+  }
+  return concat(
+    splitSupport,
+    u64LE(c.sleepDurationSecs ?? 0n),
+    u64LE(c.winnerReductionBps ?? 0n),
+    u64LE(c.round ?? 1n),
+    u64LE(c.roundStartedAt ?? c.createdAt + c.startDurationSecs * 1000n),
+    u64LE(c.roundRewardPerWinner ?? 0n),
+    u64LE(c.roundWinnerCount ?? 0n),
+    u64LE(c.prizePool ?? 0n),
   );
 }
 
@@ -289,12 +318,26 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     };
   }
 
-  return {
+  const splitSupport = {
     ...base,
     ticketSalesTotal: view.getBigUint64(174, true),
     creatorSupportTotal: view.getBigUint64(182, true),
     supportPoolBps: view.getBigUint64(190, true),
-    dataLayout: "split-support",
+    dataLayout: "split-support" as CampaignDataLayout,
+  };
+  if (data.length < RECURRING_CAMPAIGN_DATA_LEN || base.campaignType !== CampaignType.RecurringRaffle) {
+    return splitSupport;
+  }
+  return {
+    ...splitSupport,
+    dataLayout: "recurring",
+    sleepDurationSecs: view.getBigUint64(198, true),
+    winnerReductionBps: view.getBigUint64(206, true),
+    round: view.getBigUint64(214, true),
+    roundStartedAt: view.getBigUint64(222, true),
+    roundRewardPerWinner: view.getBigUint64(230, true),
+    roundWinnerCount: view.getBigUint64(238, true),
+    prizePool: view.getBigUint64(246, true),
   };
 }
 
@@ -308,10 +351,12 @@ export interface ParticipantData {
   joinedAt: bigint;
   status: ParticipantStatus;
   depositedAmount: bigint; // shannons deposited by this participant
+  round?: bigint;
+  claimableAmount?: bigint;
 }
 
 export function encodeParticipantData(p: ParticipantData): Uint8Array {
-  return concat(
+  const base = concat(
     p.campaignCreatedBy,
     u64LE(p.campaignCreatedAt),
     new Uint8Array([p.campaignType]),
@@ -320,12 +365,16 @@ export function encodeParticipantData(p: ParticipantData): Uint8Array {
     new Uint8Array([p.status]),
     u64LE(p.depositedAmount),
   );
+  if (p.campaignType !== CampaignType.RecurringRaffle) {
+    return base;
+  }
+  return concat(base, u64LE(p.round ?? 1n), u64LE(p.claimableAmount ?? 0n));
 }
 
 export function decodeParticipantData(data: Uint8Array): ParticipantData {
   if (data.length < 66) throw new Error("participant data too short");
   const view = new DataView(data.buffer, data.byteOffset);
-  return {
+  const participant: ParticipantData = {
     campaignCreatedBy: data.slice(0, 20),
     campaignCreatedAt: view.getBigUint64(20, true),
     campaignType: data[28] as CampaignType,
@@ -334,6 +383,11 @@ export function decodeParticipantData(data: Uint8Array): ParticipantData {
     status: data[57] as ParticipantStatus,
     depositedAmount: view.getBigUint64(58, true),
   };
+  if (participant.campaignType === CampaignType.RecurringRaffle && data.length >= 82) {
+    participant.round = view.getBigUint64(66, true);
+    participant.claimableAmount = view.getBigUint64(74, true);
+  }
+  return participant;
 }
 
 export { u32LE };

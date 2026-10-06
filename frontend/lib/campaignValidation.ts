@@ -89,6 +89,8 @@ export type NormalizeCreateCampaignParamsInput = {
   summary: string;
   taskDurationHours: string;
   taskStartDelayHours: string;
+  recurringSleepHours?: string;
+  winnerReductionPercent?: string;
 };
 
 export type NormalizedCreateCampaignParams = {
@@ -99,6 +101,8 @@ export type NormalizedCreateCampaignParams = {
   supportPoolBps: bigint;
   taskDurationSecs: bigint;
   ticketsPerUser: bigint | null;
+  sleepDurationSecs: bigint;
+  winnerReductionBps: bigint;
 };
 
 export type GiftCreateValidationInput = {
@@ -169,6 +173,8 @@ export function normalizeCreateCampaignParams({
   summary,
   taskDurationHours,
   taskStartDelayHours,
+  recurringSleepHours = "1",
+  winnerReductionPercent = "50",
 }: NormalizeCreateCampaignParamsInput): NormalizedCreateCampaignParams {
   const trimmedSummary = summary.trim();
   if (trimmedSummary.length === 0) {
@@ -206,6 +212,15 @@ export function normalizeCreateCampaignParams({
     const ticketCount = parseWholeNumberString(maxAmountCkb, "Number of tickets");
     const ticketPrice = parseWholeNumberString(raffleTicketPriceCkb, "Raffle ticket price");
     const supportPoolPercent = parseWholePercentString(raffleSupportPoolPercent, "Raffle support pool percentage");
+    const isRecurring = campaignType === CampaignType.RecurringRaffle;
+    if (isRecurring && ticketPrice <= 0n) {
+      throw new Error("Recurring raffle ticket price must be greater than 0 CKB");
+    }
+    const sleepMinutes = isRecurring ? parseStoredTimingHours(recurringSleepHours, MIN_TASK_DURATION_MINUTES) : 0;
+    const reductionPercent = isRecurring ? parseWholePercentString(winnerReductionPercent, "Winner reduction percentage") : 0n;
+    if (isRecurring && (reductionPercent <= 0n || reductionPercent > 100n)) {
+      throw new Error("Winner reduction must be between 1% and 100%");
+    }
 
     const perUserLimit = ticketCount === 0n ? null : parseWholeNumberString(ticketsPerUser, "Tickets per user");
     if (perUserLimit !== null && perUserLimit <= 0n) {
@@ -223,6 +238,8 @@ export function normalizeCreateCampaignParams({
       supportPoolBps: raffleSupportPercentToBasisPoints(supportPoolPercent),
       taskDurationSecs,
       ticketsPerUser: perUserLimit,
+      sleepDurationSecs: BigInt(sleepMinutes * 60),
+      winnerReductionBps: reductionPercent * 100n,
     };
   }
 
@@ -239,5 +256,7 @@ export function normalizeCreateCampaignParams({
     supportPoolBps: 0n,
     taskDurationSecs,
     ticketsPerUser: null,
+    sleepDurationSecs: 0n,
+    winnerReductionBps: 0n,
   };
 }

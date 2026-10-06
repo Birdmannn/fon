@@ -109,6 +109,8 @@ export default function CampaignCard({
     isPurchaseDisabled,
     isSupportDisabled,
     isRaffleCampaign,
+    isRecurringRaffle,
+    recurringActionLabel,
     isSavingComment,
     supportState,
     canGiftApprove,
@@ -163,7 +165,7 @@ export default function CampaignCard({
           <button
             onClick={() => void handleLike()}
             className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected || isLockedForInteractions ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to like" : isLockedForInteractions ? lockAccessMessage : "Like"}
+            title={!isConnected ? "Connect wallet to like" : isLockedForInteractions ? lockAccessMessage : "Like"}
           >
             <Heart className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{likes}</span>
@@ -172,7 +174,7 @@ export default function CampaignCard({
           <button
             onClick={handleBookmark}
             className={`campaign-action-btn action-bookmark ${userBookmarked ? "campaign-action-active" : ""} ${!isConnected ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
+            title={!isConnected ? "Connect wallet to bookmark" : "Bookmark"}
           >
             <Bookmark className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{bookmarks}</span>
@@ -181,7 +183,7 @@ export default function CampaignCard({
           <button
             onClick={handleComment}
             className={`campaign-action-btn action-comment ${userCommented ? "campaign-action-active" : ""} ${!isConnected || isLockedForInteractions ? "campaign-action-disabled" : ""}`}
-            data-tooltip={!isConnected ? "Connect wallet to comment" : isLockedForInteractions ? lockAccessMessage : "Comment"}
+            title={!isConnected ? "Connect wallet to comment" : isLockedForInteractions ? lockAccessMessage : "Comment"}
           >
             <MessageSquare className="campaign-action-icon" size={16} strokeWidth={2} aria-hidden="true" />
             <span className="campaign-action-count">{comments}</span>
@@ -190,7 +192,7 @@ export default function CampaignCard({
           <button
             onClick={() => void handleReshare()}
             className={`campaign-action-btn action-reshare ${userReshared ? "campaign-action-active" : ""}`.trim()}
-            data-tooltip="Share"
+            title="Share"
           >
             <Repeat2 className="campaign-action-icon" size={22} strokeWidth={1.5} aria-hidden="true" />
             <span className="campaign-action-count">{reshares}</span>
@@ -202,7 +204,7 @@ export default function CampaignCard({
               onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
               disabled={isSupportDisabled}
               className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
-              data-tooltip={
+              title={
                 !isConnected
                   ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
                   : isSupportLocked
@@ -227,7 +229,7 @@ export default function CampaignCard({
                 type="button"
                 onClick={() => void handleSettlementClick()}
                 className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
-                data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
+                title={isRecurringRaffle ? recurringActionLabel ?? "Recurring raffle action" : shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
               >
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count">{String(soldTickets)}</span>
@@ -238,7 +240,7 @@ export default function CampaignCard({
                   onClick={() => void handleWithdrawClick()}
                   disabled={isWithdrawing}
                   className={`campaign-action-btn ${isWithdrawing ? "campaign-action-disabled" : ""}`.trim()}
-                  data-tooltip={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
+                  title={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
                 >
                   <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                   <span className="campaign-action-count font-mono">{isWithdrawing ? "..." : `${creatorWithdrawAmountCkb} CKB`}</span>
@@ -248,7 +250,7 @@ export default function CampaignCard({
                 onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                 disabled={isPurchaseDisabled}
                 className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                data-tooltip={!isConnected ? "Connect wallet to enter raffle" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
+                title={!isConnected ? "Connect wallet to enter raffle" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
               >
                 <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count font-mono">{remainingTickets < 0n ? "Unlimited" : `${String(remainingTickets)} left`}</span>
@@ -264,7 +266,7 @@ export default function CampaignCard({
                   onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
                   disabled={isSupportDisabled}
                   className={`campaign-action-btn ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                  data-tooltip={
+                  title={
                     !isConnected
                       ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
                       : isSupportLocked
@@ -287,7 +289,7 @@ export default function CampaignCard({
                     onClick={() => void handleWithdrawClick()}
                     disabled={isWithdrawing}
                     className={`campaign-action-btn ${isWithdrawing ? "campaign-action-disabled" : ""}`.trim()}
-                    data-tooltip={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
+                    title={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
                   >
                     <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
                     <span className="campaign-action-count font-mono">{isWithdrawing ? "..." : `${creatorWithdrawAmountCkb} CKB`}</span>
@@ -297,7 +299,7 @@ export default function CampaignCard({
                   onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                   disabled={isPurchaseDisabled}
                   className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                  data-tooltip={
+                  title={
                     !isConnected
                       ? "Connect wallet to buy tickets"
                       : isLockedForInteractions
@@ -320,7 +322,7 @@ export default function CampaignCard({
                 onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
                 disabled={isSupportDisabled}
                 className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                data-tooltip={
+                title={
                   !isConnected
                     ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
                     : isSupportLocked
@@ -344,7 +346,7 @@ export default function CampaignCard({
                 type="button"
                 onClick={handleGiftInfoClick}
                 className="campaign-action-btn action-gift"
-                data-tooltip="Gift details"
+                title="Gift details"
               >
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count">gift</span>
@@ -354,7 +356,7 @@ export default function CampaignCard({
                   type="button"
                   onClick={() => void handleGiftApprove()}
                   className="campaign-action-btn action-gift-approve"
-                  data-tooltip="Approve gift"
+                  title="Approve gift"
                 >
                   <Check className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                   <span className="campaign-action-count">approve</span>
@@ -365,7 +367,7 @@ export default function CampaignCard({
                   type="button"
                   onClick={() => void handleGiftClaim()}
                   className="campaign-action-btn action-gift-claim"
-                  data-tooltip="Claim gift"
+                  title="Claim gift"
                 >
                   <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                   <span className="campaign-action-count">claim</span>

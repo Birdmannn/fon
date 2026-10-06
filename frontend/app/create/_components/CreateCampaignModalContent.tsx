@@ -52,6 +52,7 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
   [CampaignType.Crowdfunding]: "Crowdfunding",
   [CampaignType.TimedChallenge]: "TimedChallenge",
   [CampaignType.Raffle]: "Raffle",
+  [CampaignType.RecurringRaffle]: "RecurringRaffle",
 };
 
 const GIFT_FUNDED_TASK_NOTICE = "Gift directives use FundedTask escrow behavior.";
@@ -276,6 +277,8 @@ type DraftRecord = {
     rewardCount?: string;
     raffleSupportPoolPercent?: string;
     ticketsPerUser?: string;
+    recurringSleepHours?: string;
+    winnerReductionPercent?: string;
   };
   mountables?: {
     forms?: FormsMountableConfig | null;
@@ -310,6 +313,8 @@ type DraftSnapshot = {
   auxAmountCkb: string;
   raffleSupportPoolPercent: string;
   ticketsPerUser: string;
+  recurringSleepHours: string;
+  winnerReductionPercent: string;
   mentions: string[];
   giftDeliverable: GiftDeliverable;
   attachments: CampaignAttachment[];
@@ -490,6 +495,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     if (Number(value) === 0) setTicketsPerUser("1");
   };
   const [raffleSupportPoolPercent, setRaffleSupportPoolPercent] = useState("0");
+  const [recurringSleepHours, setRecurringSleepHours] = useState("1");
+  const [winnerReductionPercent, setWinnerReductionPercent] = useState("50");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
   const [appMountables, setAppMountables] = useState<AppMountableConfig[]>([]);
@@ -560,7 +567,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length >= 1;
   const hasRequiredCompulsoryHashtag = isFirstHashtagCompulsory && hasExactlyOneCompulsoryHashtag;
   const descriptionChars = getBodyCountableChars(descriptionText);
-  const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
+  const minDescriptionChars = normalizedFirstHashtag === "raffle" || normalizedFirstHashtag === "recurringraffle" ? 15 : 120;
   const hasRequiredBodyLength = descriptionChars >= minDescriptionChars;
   const hasRequiredTitle = !isModal || trimmedModalTitle.length > 0;
   const constraintsPassed = hasRequiredTitle && hasRequiredBodyLength && hasRequiredCompulsoryHashtag;
@@ -602,7 +609,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const handleDurationMinutesChange = useCallback((value: string) => {
     updateDurationFromParts(String(durationParts.hours), value);
   }, [durationParts.hours, updateDurationFromParts]);
-  const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
+  const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle" || normalizedFirstHashtag === "recurringraffle";
   const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === MOUNTABLE_TRIGGER_HASHTAG);
   const parsedGiftDirectives = useMemo(() => parseGiftDirectiveSections(trimmedModalDescription), [trimmedModalDescription]);
   const isGiftEligibleType = isGiftEligibleCampaignType(campaignType);
@@ -718,6 +725,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           summary: activeReviewSummary,
           taskDurationHours,
           taskStartDelayHours,
+          recurringSleepHours,
+          winnerReductionPercent,
         }),
         error: null as string | null,
       };
@@ -737,6 +746,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     shouldCollectRaffleTicketPrice,
     taskDurationHours,
     taskStartDelayHours,
+    recurringSleepHours,
+    winnerReductionPercent,
     ticketsPerUser,
   ]);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
@@ -755,6 +766,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     auxAmountCkb: currentAuxAmountCkb,
     raffleSupportPoolPercent,
     ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
+    recurringSleepHours,
+    winnerReductionPercent,
     mentions: allMentions,
     giftDeliverable: giftDeliverableDraft,
     attachments,
@@ -774,9 +787,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     lockMountable,
     rewardCount,
     raffleSupportPoolPercent,
+    recurringSleepHours,
     storedDurationHours,
     storedStartDelayHours,
     ticketsPerUser,
+    winnerReductionPercent,
     trimmedModalDescription,
     trimmedModalTitle,
   ]);
@@ -1105,6 +1120,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRaffleTicketPriceCkb("1");
     setTicketsPerUser("1");
     setRaffleSupportPoolPercent("0");
+    setRecurringSleepHours("1");
+    setWinnerReductionPercent("50");
     setGiftApprovalMode("all");
     setGiftApprovalThreshold("1");
     setGiftSplitMode(null);
@@ -1182,7 +1199,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       bodyPassed: hasRequiredBodyLength,
       firstHashtagPassed: hasRequiredCompulsoryHashtag,
       additionalHashtagsPassed: true,
-      isRaffle: campaignType === CampaignType.Raffle,
+      isRaffle: campaignType === CampaignType.Raffle || campaignType === CampaignType.RecurringRaffle,
     });
   }, [
     campaignType,
@@ -1660,7 +1677,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextSnapshot = buildDraftSnapshot(resumeState.snapshot);
     const nextGiftDeliverable = parseStoredGiftDeliverable(nextSnapshot.giftDeliverable);
     const nextCampaignType = nextSnapshot.campaignType;
-    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
     const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
     const nextLockMountable = normalizeLockMountableConfig(nextSnapshot.lockMountable);
     const nextAppMountables = normalizeAppMountableConfigs(nextSnapshot.appMountables);
@@ -1692,6 +1709,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRaffleTicketPriceCkb(isRaffleDraft ? nextSnapshot.auxAmountCkb : "1");
     setTicketsPerUser(isRaffleDraft && Number(nextSnapshot.maxAmountCkb) !== 0 ? nextSnapshot.ticketsPerUser ?? "1" : "1");
     setRaffleSupportPoolPercent(isRaffleDraft ? nextSnapshot.raffleSupportPoolPercent : "0");
+    setRecurringSleepHours(nextSnapshot.recurringSleepHours ?? "1");
+    setWinnerReductionPercent(nextSnapshot.winnerReductionPercent ?? "50");
     setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
     setFormsMountable(nextFormsMountable);
     setLockMountable(nextLockMountable);
@@ -1785,9 +1804,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextRewardCount = record.argsDraft?.rewardCount ?? "1";
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
     const nextRaffleSupportPoolPercent = record.argsDraft?.raffleSupportPoolPercent ?? "0";
+    const nextRecurringSleepHours = record.argsDraft?.recurringSleepHours ?? "1";
+    const nextWinnerReductionPercent = record.argsDraft?.winnerReductionPercent ?? "50";
     const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
     const nextAttachments = Array.isArray(record.attachments) ? record.attachments : [];
-    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
 
     setModalTitle(nextTitle);
     setModalDescription(nextDescription);
@@ -1813,6 +1834,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
     setTicketsPerUser(isRaffleDraft && Number(nextMaxAmount) !== 0 ? record.argsDraft?.ticketsPerUser ?? "1" : "1");
     setRaffleSupportPoolPercent(isRaffleDraft ? nextRaffleSupportPoolPercent : "0");
+    setRecurringSleepHours(nextRecurringSleepHours);
+    setWinnerReductionPercent(nextWinnerReductionPercent);
     const nextFormsMountable = normalizeFormsMountableConfig(record.mountables?.forms);
     const nextLockMountable = normalizeLockMountableConfig(record.mountables?.lock);
     const nextAppMountables = normalizeAppMountableConfigs(record.mountables?.apps);
@@ -1848,6 +1871,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       auxAmountCkb: nextAuxAmount,
       raffleSupportPoolPercent: nextRaffleSupportPoolPercent,
       ticketsPerUser: Number(nextMaxAmount) === 0 ? "1" : record.argsDraft?.ticketsPerUser ?? "1",
+      recurringSleepHours: nextRecurringSleepHours,
+      winnerReductionPercent: nextWinnerReductionPercent,
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
       attachments: nextAttachments,
@@ -1943,6 +1968,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setRaffleTicketPriceCkb("1");
         setTicketsPerUser("1");
         setRaffleSupportPoolPercent("0");
+        setRecurringSleepHours("1");
+        setWinnerReductionPercent("50");
         setGiftApprovalMode("all");
         setGiftApprovalThreshold("1");
         setGiftSplitMode(null);
@@ -1998,6 +2025,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
           raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+          recurringSleepHours: campaignType === CampaignType.RecurringRaffle ? recurringSleepHours : "1",
+          winnerReductionPercent: campaignType === CampaignType.RecurringRaffle ? winnerReductionPercent : "50",
           ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
         },
         mountables: {
@@ -2034,11 +2063,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       maxAmountCkb,
       raffleTicketPriceCkb,
       raffleSupportPoolPercent,
+      recurringSleepHours,
       rewardCount,
       shouldCollectRaffleTicketPrice,
       storedDurationHours,
       storedStartDelayHours,
       ticketsPerUser,
+      winnerReductionPercent,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -2103,6 +2134,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
           raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
           ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
+          recurringSleepHours,
+          winnerReductionPercent,
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
           attachments,
@@ -2129,6 +2162,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
               raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+              recurringSleepHours: campaignType === CampaignType.RecurringRaffle ? recurringSleepHours : "1",
+              winnerReductionPercent: campaignType === CampaignType.RecurringRaffle ? winnerReductionPercent : "50",
               ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
             },
             mountables: {
@@ -2182,6 +2217,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       maxAmountCkb,
       raffleTicketPriceCkb,
       raffleSupportPoolPercent,
+      recurringSleepHours,
       rewardCount,
       shouldCollectRaffleTicketPrice,
       storedDurationHours,
@@ -2189,6 +2225,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       taskDurationHours,
       taskStartDelayHours,
       ticketsPerUser,
+      winnerReductionPercent,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -2700,6 +2737,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         supportPoolBps: normalizedParams.supportPoolBps,
         summary: summaryToPublish,
         randomnessHash,
+        sleepDurationSecs: normalizedParams.sleepDurationSecs,
+        winnerReductionBps: normalizedParams.winnerReductionBps,
       });
 
       const creatorAddress = await signer.getRecommendedAddress();
@@ -2840,8 +2879,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             <span className="create-review-arg-unit">hrs</span>
             <input
               type="number"
-              min={MIN_TASK_DURATION_MINUTES}
-              max="55"
+              min="0"
+              max="59"
               step={TIMING_MINUTE_STEP}
               value={String(durationParts.minutes)}
               onChange={(event) => handleDurationMinutesChange(event.target.value)}
@@ -2928,6 +2967,40 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               <span className="create-review-arg-unit">%</span>
             </div>
           </div>
+          {campaignType === CampaignType.RecurringRaffle ? (
+            <>
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Sleep time</label>
+                <div className="create-review-arg-control">
+                  <input
+                    type="number"
+                    min="0.0167"
+                    max="8760"
+                    step="0.25"
+                    value={recurringSleepHours}
+                    onChange={(event) => setRecurringSleepHours(event.target.value)}
+                    className="create-review-arg-input"
+                  />
+                  <span className="create-review-arg-unit">hrs</span>
+                </div>
+              </div>
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Winner reduction</label>
+                <div className="create-review-arg-control">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={winnerReductionPercent}
+                    onChange={(event) => setWinnerReductionPercent(event.target.value)}
+                    className="create-review-arg-input"
+                  />
+                  <span className="create-review-arg-unit">%</span>
+                </div>
+              </div>
+            </>
+          ) : null}
         </>
       ) : (
         <div className="create-review-arg-field">
@@ -3696,8 +3769,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                           <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
                           <input
                             type="number"
-                            min={MIN_TASK_DURATION_MINUTES}
-                            max="55"
+                            min="0"
+                            max="59"
                             step={TIMING_MINUTE_STEP}
                             value={String(durationParts.minutes)}
                             onChange={(event) => handleDurationMinutesChange(event.target.value)}

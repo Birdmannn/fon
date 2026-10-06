@@ -20,7 +20,7 @@ import {
   isGiftClaimOpen,
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
-import { CampaignStatus, CampaignType } from "@/lib/contract";
+import { CampaignStatus, CampaignType, ParticipantStatus } from "@/lib/contract";
 import {
   bytesToHex,
   computeRaffleRewardPool,
@@ -36,6 +36,10 @@ import { deriveCampaignSupportState } from "@/lib/campaignTipping";
 import {
   fetchParticipants,
   previewDeterministicWinners,
+  sendClaimRecurringRaffle,
+  sendDrawRecurringRaffle,
+  sendRolloverRecurringRaffle,
+  sendReclaimRecurringParticipant,
   sendBatchDeliver,
   sendCreatorTipShannons,
   sendCreatorWithdraw,
@@ -139,7 +143,8 @@ export function useCampaignCardState({
 }: UseCampaignCardStateArgs) {
   const { data, outPoint } = c;
   const cardId = getCampaignStableId(c);
-  const isRaffleCampaign = data.campaignType === 4;
+  const isRecurringRaffle = data.campaignType === CampaignType.RecurringRaffle;
+  const isRaffleCampaign = data.campaignType === CampaignType.Raffle || isRecurringRaffle;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const totalTickets = isRaffleCampaign
     ? ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : data.maximumAmount
@@ -170,12 +175,12 @@ export function useCampaignCardState({
     taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
     giftDeliverable,
   });
-  const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
+  const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled || displayStatus === CampaignStatus.Finished;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const chainSoldTickets = ticketPriceShannons > 0n
     ? data.ticketSalesTotal / ticketPriceShannons
     : data.ticketSalesTotal;
-  const recordedSoldTickets = parseOptionalBigInt(record?.liveSoldTicketCount);
+  const recordedSoldTickets = isRecurringRaffle ? null : parseOptionalBigInt(record?.liveSoldTicketCount);
   const liveSoldTickets = recordedSoldTickets !== null && recordedSoldTickets > chainSoldTickets
     ? recordedSoldTickets : chainSoldTickets;
   const settlementUiState = deriveRaffleSettlementUiState({
@@ -283,16 +288,29 @@ export function useCampaignCardState({
 
   const isConnected = !!signer;
   const isSupportLocked = isLockedForInteractions && c.data.campaignType !== CampaignType.SimpleTask;
-  const isSupportDisabled = !isConnected || isSupportLocked || isCampaignInactive || !supportState.supportEnabled;
-  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets;
+  const isSupportDisabled = !isConnected || isSupportLocked || isCampaignInactive || (isRecurringRaffle && displayStatus !== CampaignStatus.Active && displayStatus !== CampaignStatus.Created) || !supportState.supportEnabled;
+  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets || (isRecurringRaffle && displayStatus !== CampaignStatus.Active);
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userReshared = normalizedCurrentWalletAddress.length > 0 && resharedByAddresses.includes(normalizedCurrentWalletAddress);
   const userCommented = normalizedCurrentWalletAddress.length > 0
     && commentList.some((comment) => normalizeHash(comment.creatorAddress) === normalizedCurrentWalletAddress);
   const hasSettledRewards = settlementUiState.hasSettledRewards;
-  const shouldGlowSettlement = settlementUiState.shouldGlowSettlement;
-  const showSettlementAction = settlementUiState.showSettlementAction;
+  const recurringRoundEndsAt = Number(data.roundStartedAt ?? data.createdAt) + Number(data.taskDurationSecs) * 1000;
+  const recurringSleepEndsAt = recurringRoundEndsAt + Number(data.sleepDurationSecs ?? 0n) * 1000;
+  const shouldGlowSettlement = isRecurringRaffle
+    ? (displayStatus === CampaignStatus.Sleeping || (displayStatus === CampaignStatus.Active && Date.now() >= recurringRoundEndsAt))
+    : settlementUiState.shouldGlowSettlement;
+  const showSettlementAction = isRecurringRaffle
+    ? (displayStatus === CampaignStatus.Active || displayStatus === CampaignStatus.Sleeping)
+    : settlementUiState.showSettlementAction;
+  const recurringActionLabel = !isRecurringRaffle
+    ? null
+    : displayStatus === CampaignStatus.Active
+      ? (Date.now() >= recurringRoundEndsAt ? "Draw recurring raffle round" : "Recurring raffle actions")
+      : Date.now() > recurringSleepEndsAt
+        ? ((data.roundWinnerCount ?? 0n) === 1n ? "Finish recurring raffle" : "Start next raffle round")
+        : "Cash out recurring raffle reward";
   const showCreatorWithdrawAction = creatorWithdrawUiState.canWithdraw && isCreatorViewer;
   const creatorWithdrawAmountCkb = formatWholeCkbAmount(creatorWithdrawUiState.withdrawableAmount);
 
@@ -340,6 +358,8 @@ export function useCampaignCardState({
       auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
       rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
       raffleSupportPoolPercent: supportPoolPercent,
+      recurringSleepHours: record?.argsDraft?.recurringSleepHours ?? String(Number(data.sleepDurationSecs ?? 3_600n) / 3600),
+      winnerReductionPercent: record?.argsDraft?.winnerReductionPercent ?? String(Number((data.winnerReductionBps ?? 5_000n) / 100n)),
     },
     socialMetadata: {
       mentions,
@@ -941,6 +961,62 @@ export function useCampaignCardState({
       return;
     }
 
+    if (isRecurringRaffle) {
+      if (!signer) {
+        showActionFeedback("reshare", "error", "Connect a wallet first");
+        return;
+      }
+      try {
+        const round = data.round ?? 1n;
+        const walletAddress = await signer.getRecommendedAddress();
+        if (!walletAddress) throw new Error("Unable to resolve wallet address");
+        const ownedRoundCells = await fetchParticipants(
+          client,
+          c,
+          100,
+          [walletAddress],
+          false,
+          [ParticipantStatus.Winner, ParticipantStatus.Eliminated],
+        );
+        const reclaimable = ownedRoundCells.find((entry) => (
+          entry.data.status === ParticipantStatus.Eliminated
+          || ((entry.data.round ?? 0n) < round && entry.data.status === ParticipantStatus.Winner)
+        ));
+        if (reclaimable) {
+          await sendReclaimRecurringParticipant(signer, c, reclaimable);
+          showActionFeedback("reshare", "success", "Ticket storage reclaimed.");
+          window.setTimeout(() => window.location.reload(), 1200);
+          return;
+        }
+        if (displayStatus === CampaignStatus.Active) {
+          if (Date.now() < recurringRoundEndsAt) throw new Error("This raffle round is still accepting tickets");
+          const userHasPermission = await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record);
+          if (!userHasPermission) throw new Error("Only the freight creator can draw this round");
+          if (!record?.randomnessPreimage) throw new Error("The recurring raffle randomness preimage is unavailable");
+          const participants = (await fetchParticipants(client, c, 500, undefined, true))
+            .filter((entry) => entry.data.status === ParticipantStatus.Verified && (entry.data.round ?? 1n) === round);
+          await sendDrawRecurringRaffle(signer, c, participants, hexToBytes(record.randomnessPreimage));
+          showActionFeedback("reshare", "success", "Round drawn. Winner cash-out is now open.");
+        } else if (displayStatus === CampaignStatus.Sleeping) {
+          const winners = ownedRoundCells
+            .filter((entry) => (entry.data.round ?? 0n) === round);
+          if (winners.length > 0 && Date.now() <= recurringSleepEndsAt) {
+            await sendClaimRecurringRaffle(signer, c, winners[0]);
+            showActionFeedback("reshare", "success", "Reward cashed out.");
+          } else if (Date.now() > recurringSleepEndsAt) {
+            await sendRolloverRecurringRaffle(signer, c);
+            showActionFeedback("reshare", "success", (data.roundWinnerCount ?? 0n) === 1n ? "Recurring raffle finished." : "Next raffle round started.");
+          } else {
+            throw new Error("You are not a winner in this round");
+          }
+        }
+        window.setTimeout(() => window.location.reload(), 1200);
+      } catch (error) {
+        showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Recurring raffle action failed");
+      }
+      return;
+    }
+
     const randomnessHash = bytesToHex(data.randomnessHash);
     const randomnessPreimage = record?.randomnessPreimage ?? null;
 
@@ -1211,6 +1287,8 @@ export function useCampaignCardState({
     isWithdrawing,
     lockAccessMessage,
     isRaffleCampaign,
+    isRecurringRaffle,
+    recurringActionLabel,
     supportState,
     isSavingComment,
     likes,

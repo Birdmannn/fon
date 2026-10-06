@@ -37,6 +37,8 @@ export type CampaignRecord = {
     rewardCount?: string;
     raffleSupportPoolPercent?: string;
     ticketsPerUser?: string;
+    recurringSleepHours?: string;
+    winnerReductionPercent?: string;
   };
   mountables?: {
     forms?: FormsMountableConfig | null;

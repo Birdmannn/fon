@@ -6,6 +6,7 @@ use ckb_testtool::ckb_types::{
 };
 use ckb_testtool::context::Context;
 use freight::types::{Campaign, CampaignStatus, CampaignType, ParticipantStatus};
+use freight::types::next_recurring_winner_count;
 use secp256k1::global::SECP256K1;
 use secp256k1::{Message as SecpMessage, PublicKey, SecretKey};
 
@@ -14,6 +15,302 @@ mod raffle_e2e;
 const CREATOR: u8 = 11;
 const DEPOSITOR: u8 = 42;
 const DEFAULT_CAPACITY: u64 = 100_000;
+
+#[test]
+fn recurring_raffle_winner_reduction_uses_ceiling_and_stops_at_one() {
+    assert_eq!(next_recurring_winner_count(10, 2_500), Some(8));
+    assert_eq!(next_recurring_winner_count(3, 5_000), Some(2));
+    assert_eq!(next_recurring_winner_count(2, 5_000), Some(1));
+    assert_eq!(next_recurring_winner_count(1, 5_000), Some(1));
+    assert_eq!(next_recurring_winner_count(10, 0), None);
+    assert_eq!(next_recurring_winner_count(10, 10_001), None);
+}
+
+#[test]
+fn recurring_raffle_draw_then_final_winner_claims() {
+    let mut context = Context::default();
+    let freight = context.deploy_cell_by_name("freight");
+    let always_success = context.deploy_cell(ALWAYS_SUCCESS.clone());
+    let creator = address_from(CREATOR);
+    let winner = address_from(DEPOSITOR);
+    let created_at = 1_700_000_000_000u64;
+    let duration = 60u64;
+    let sleep_duration = 60u64;
+    let reward = 500u64;
+    let participant_capacity = 10_000u64;
+    let preimage = [9u8; 32];
+    let randomness_hash = blake2b_256(&preimage);
+
+    let mut type_args = Vec::with_capacity(106);
+    type_args.push(0);
+    type_args.extend_from_slice(&0u64.to_le_bytes());
+    type_args.extend_from_slice(&duration.to_le_bytes());
+    type_args.push(CampaignType::RecurringRaffle as u8);
+    type_args.extend_from_slice(&10_000u64.to_le_bytes());
+    type_args.extend_from_slice(&100u64.to_le_bytes());
+    type_args.extend_from_slice(&randomness_hash);
+    type_args.extend_from_slice(&1u64.to_le_bytes());
+    type_args.extend_from_slice(&0u64.to_le_bytes());
+    type_args.extend_from_slice(&1u64.to_le_bytes());
+    type_args.extend_from_slice(&sleep_duration.to_le_bytes());
+    type_args.extend_from_slice(&5_000u64.to_le_bytes());
+    let campaign_script = context.build_script(&freight, Bytes::from(type_args)).unwrap();
+
+    let mut state_lock = |address: [u8; 20]| {
+        let mut args = vec![255u8];
+        args.extend_from_slice(&address);
+        context.build_script(&freight, Bytes::from(args)).unwrap()
+    };
+    let creator_state_lock = state_lock(creator);
+    let winner_state_lock = {
+        let mut args = vec![255u8];
+        args.extend_from_slice(&creator);
+        args.extend_from_slice(&created_at.to_le_bytes());
+        args.extend_from_slice(&winner);
+        context.build_script(&freight, Bytes::from(args)).unwrap()
+    };
+    let winner_wallet_lock = context.build_script(&always_success, Bytes::from(winner.to_vec())).unwrap();
+    let summary = default_summary();
+    let campaign_active = build_recurring_campaign_bytes(
+        created_at, duration, &creator, reward, 1, CampaignStatus::Active, randomness_hash,
+        &summary, sleep_duration, 5_000, 1, created_at, 0, 0, reward,
+    );
+    let participant_verified = build_recurring_participant_bytes(
+        &creator, created_at, &winner, created_at, ParticipantStatus::Verified, 100, 1, 0,
+    );
+    let campaign_capacity = DEFAULT_CAPACITY + reward;
+    let campaign_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&campaign_capacity))
+            .lock(creator_state_lock.clone())
+            .type_(Some(campaign_script.clone()).pack())
+            .build(),
+        campaign_active,
+    );
+    let participant_out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&participant_capacity))
+            .lock(winner_state_lock.clone())
+            .build(),
+        participant_verified,
+    );
+    let draw_header = insert_header(&mut context, created_at + duration * 1_000);
+    let campaign_sleeping = build_recurring_campaign_bytes(
+        created_at, duration, &creator, reward, 1, CampaignStatus::Sleeping, randomness_hash,
+        &summary, sleep_duration, 5_000, 1, created_at, reward, 1, reward,
+    );
+    let participant_winner = build_recurring_participant_bytes(
+        &creator, created_at, &winner, created_at, ParticipantStatus::Winner, 100, 1, reward,
+    );
+    let mut draw_action = vec![9u8];
+    draw_action.extend_from_slice(&preimage);
+    let draw_tx = TransactionBuilder::default()
+        .inputs(vec![
+            CellInput::new_builder().previous_output(campaign_out_point).build(),
+            CellInput::new_builder().previous_output(participant_out_point).build(),
+        ])
+        .header_dep(draw_header)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&campaign_capacity))
+                .lock(creator_state_lock.clone())
+                .type_(Some(campaign_script.clone()).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&participant_capacity))
+                .lock(winner_state_lock.clone())
+                .build(),
+        ])
+        .outputs_data(vec![campaign_sleeping.clone(), participant_winner.clone()].pack())
+        .witness(WitnessArgsBuilder::default().output_type(Some(Bytes::from(draw_action)).pack()).build().as_bytes().pack())
+        .build();
+    let draw_tx = context.complete_tx(draw_tx);
+    context.verify_tx(&draw_tx, 10_000_000).expect("recurring draw should pass");
+
+    let drawn_campaign_out_point = OutPoint::new_builder().tx_hash(draw_tx.hash()).index(0u32).build();
+    let drawn_winner_out_point = OutPoint::new_builder().tx_hash(draw_tx.hash()).index(1u32).build();
+    context.create_cell_with_out_point(
+        drawn_campaign_out_point.clone(),
+        draw_tx.outputs().get(0).unwrap(),
+        campaign_sleeping,
+    );
+    context.create_cell_with_out_point(
+        drawn_winner_out_point.clone(),
+        draw_tx.outputs().get(1).unwrap(),
+        participant_winner,
+    );
+    let auth_out_point = context.create_cell(
+        CellOutput::new_builder().capacity(Pack::<Uint64>::pack(&1_000u64)).lock(winner_wallet_lock.clone()).build(),
+        Bytes::new(),
+    );
+    let claim_header = insert_header(&mut context, created_at + duration * 1_000 + 1);
+    let campaign_finished = build_recurring_campaign_bytes(
+        created_at, duration, &creator, 0, 1, CampaignStatus::Finished, randomness_hash,
+        &summary, sleep_duration, 5_000, 1, created_at, reward, 1, 0,
+    );
+    let claim_tx = TransactionBuilder::default()
+        .inputs(vec![
+            CellInput::new_builder().previous_output(drawn_campaign_out_point).build(),
+            CellInput::new_builder().previous_output(drawn_winner_out_point).build(),
+            CellInput::new_builder().previous_output(auth_out_point).build(),
+        ])
+        .header_dep(claim_header)
+        .outputs(vec![
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&DEFAULT_CAPACITY))
+                .lock(creator_state_lock)
+                .type_(Some(campaign_script).pack())
+                .build(),
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(participant_capacity + reward)))
+                .lock(winner_wallet_lock)
+                .build(),
+        ])
+        .outputs_data(vec![campaign_finished, Bytes::new()].pack())
+        .witness(WitnessArgsBuilder::default().output_type(Some(Bytes::from(vec![10u8])).pack()).build().as_bytes().pack())
+        .build();
+    let claim_tx = context.complete_tx(claim_tx);
+    context.verify_tx(&claim_tx, 10_000_000).expect("final recurring winner claim should pass");
+}
+
+#[test]
+fn recurring_raffle_rollover_reduces_winners_and_preserves_unclaimed_pool() {
+    let mut context = Context::default();
+    let freight = context.deploy_cell_by_name("freight");
+    let creator = address_from(CREATOR);
+    let created_at = 1_700_000_000_000u64;
+    let duration = 60u64;
+    let sleep_duration = 60u64;
+    let summary = default_summary();
+    let randomness_hash = blake2b_256(&[4u8; 32]);
+    let mut type_args = Vec::with_capacity(106);
+    type_args.push(0);
+    type_args.extend_from_slice(&0u64.to_le_bytes());
+    type_args.extend_from_slice(&duration.to_le_bytes());
+    type_args.push(CampaignType::RecurringRaffle as u8);
+    type_args.extend_from_slice(&10_000u64.to_le_bytes());
+    type_args.extend_from_slice(&100u64.to_le_bytes());
+    type_args.extend_from_slice(&randomness_hash);
+    type_args.extend_from_slice(&3u64.to_le_bytes());
+    type_args.extend_from_slice(&0u64.to_le_bytes());
+    type_args.extend_from_slice(&1u64.to_le_bytes());
+    type_args.extend_from_slice(&sleep_duration.to_le_bytes());
+    type_args.extend_from_slice(&5_000u64.to_le_bytes());
+    let campaign_script = context.build_script(&freight, Bytes::from(type_args)).unwrap();
+    let mut lock_args = vec![255u8];
+    lock_args.extend_from_slice(&creator);
+    let state_lock = context.build_script(&freight, Bytes::from(lock_args)).unwrap();
+    let sleeping = build_recurring_campaign_bytes(
+        created_at, duration, &creator, 500, 3, CampaignStatus::Sleeping, randomness_hash,
+        &summary, sleep_duration, 5_000, 1, created_at, 166, 3, 500,
+    );
+    let out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + 500)))
+            .lock(state_lock.clone())
+            .type_(Some(campaign_script.clone()).pack())
+            .build(),
+        sleeping,
+    );
+    let next_started_at = created_at + (duration + sleep_duration) * 1_000 + 1;
+    let header = insert_header(&mut context, next_started_at);
+    let active = build_recurring_campaign_bytes(
+        created_at, duration, &creator, 500, 2, CampaignStatus::Active, randomness_hash,
+        &summary, sleep_duration, 5_000, 2, next_started_at, 0, 0, 500,
+    );
+    let tx = TransactionBuilder::default()
+        .input(CellInput::new_builder().previous_output(out_point).build())
+        .header_dep(header)
+        .output(
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&(DEFAULT_CAPACITY + 500)))
+                .lock(state_lock)
+                .type_(Some(campaign_script).pack())
+                .build(),
+        )
+        .output_data(active.pack())
+        .witness(WitnessArgsBuilder::default().output_type(Some(Bytes::from(vec![11u8])).pack()).build().as_bytes().pack())
+        .build();
+    let tx = context.complete_tx(tx);
+    context.verify_tx(&tx, 10_000_000).expect("recurring rollover should pass");
+}
+
+#[test]
+fn recurring_raffle_empty_round_restarts_without_reducing_winners() {
+    let mut context = Context::default();
+    let freight = context.deploy_cell_by_name("freight");
+    let creator = address_from(CREATOR);
+    let created_at = 1_700_000_000_000u64;
+    let duration = 60u64;
+    let sleep_duration = 60u64;
+    let prize_pool = 500u64;
+    let preimage = [6u8; 32];
+    let randomness_hash = blake2b_256(&preimage);
+    let summary = default_summary();
+
+    let mut type_args = Vec::with_capacity(106);
+    type_args.push(0);
+    type_args.extend_from_slice(&0u64.to_le_bytes());
+    type_args.extend_from_slice(&duration.to_le_bytes());
+    type_args.push(CampaignType::RecurringRaffle as u8);
+    type_args.extend_from_slice(&10_000u64.to_le_bytes());
+    type_args.extend_from_slice(&100u64.to_le_bytes());
+    type_args.extend_from_slice(&randomness_hash);
+    type_args.extend_from_slice(&3u64.to_le_bytes());
+    type_args.extend_from_slice(&0u64.to_le_bytes());
+    type_args.extend_from_slice(&1u64.to_le_bytes());
+    type_args.extend_from_slice(&sleep_duration.to_le_bytes());
+    type_args.extend_from_slice(&5_000u64.to_le_bytes());
+    let campaign_script = context.build_script(&freight, Bytes::from(type_args)).unwrap();
+
+    let mut lock_args = vec![255u8];
+    lock_args.extend_from_slice(&creator);
+    let state_lock = context.build_script(&freight, Bytes::from(lock_args)).unwrap();
+    let campaign_capacity = DEFAULT_CAPACITY + prize_pool;
+    let active = build_recurring_campaign_bytes(
+        created_at, duration, &creator, prize_pool, 3, CampaignStatus::Active, randomness_hash,
+        &summary, sleep_duration, 5_000, 2, created_at, 0, 0, prize_pool,
+    );
+    let out_point = context.create_cell(
+        CellOutput::new_builder()
+            .capacity(Pack::<Uint64>::pack(&campaign_capacity))
+            .lock(state_lock.clone())
+            .type_(Some(campaign_script.clone()).pack())
+            .build(),
+        active,
+    );
+    let next_started_at = created_at + duration * 1_000;
+    let header = insert_header(&mut context, next_started_at);
+    let restarted = build_recurring_campaign_bytes(
+        created_at, duration, &creator, prize_pool, 3, CampaignStatus::Active, randomness_hash,
+        &summary, sleep_duration, 5_000, 3, next_started_at, 0, 0, prize_pool,
+    );
+    let mut action = vec![9u8];
+    action.extend_from_slice(&preimage);
+    let tx = TransactionBuilder::default()
+        .input(CellInput::new_builder().previous_output(out_point).build())
+        .header_dep(header)
+        .output(
+            CellOutput::new_builder()
+                .capacity(Pack::<Uint64>::pack(&campaign_capacity))
+                .lock(state_lock)
+                .type_(Some(campaign_script).pack())
+                .build(),
+        )
+        .output_data(restarted.pack())
+        .witness(
+            WitnessArgsBuilder::default()
+                .output_type(Some(Bytes::from(action)).pack())
+                .build()
+                .as_bytes()
+                .pack(),
+        )
+        .build();
+    let tx = context.complete_tx(tx);
+    context
+        .verify_tx(&tx, 10_000_000)
+        .expect("an empty recurring round should restart without shrinking the winner target");
+}
 
 #[test]
 fn test_free_and_unlimited_raffle_parameters() {
@@ -162,6 +459,48 @@ fn build_campaign_bytes(
     Bytes::from(data)
 }
 
+fn build_recurring_campaign_bytes(
+    created_at: u64,
+    task_duration: u64,
+    created_by: &[u8; 20],
+    current_deposits: u64,
+    reward_count: u64,
+    status: CampaignStatus,
+    randomness_hash: [u8; 32],
+    summary: &[u8; 64],
+    sleep_duration: u64,
+    reduction_bps: u64,
+    round: u64,
+    round_started_at: u64,
+    reward_per_winner: u64,
+    round_winner_count: u64,
+    prize_pool: u64,
+) -> Bytes {
+    let mut data = build_campaign_bytes(
+        created_at,
+        0,
+        task_duration,
+        created_by,
+        CampaignType::RecurringRaffle,
+        10_000,
+        current_deposits,
+        status,
+        reward_count,
+        randomness_hash,
+        summary,
+        100,
+    ).to_vec();
+    data.extend_from_slice(&sleep_duration.to_le_bytes());
+    data.extend_from_slice(&reduction_bps.to_le_bytes());
+    data.extend_from_slice(&round.to_le_bytes());
+    data.extend_from_slice(&round_started_at.to_le_bytes());
+    data.extend_from_slice(&reward_per_winner.to_le_bytes());
+    data.extend_from_slice(&round_winner_count.to_le_bytes());
+    data.extend_from_slice(&prize_pool.to_le_bytes());
+    assert_eq!(data.len(), 254);
+    Bytes::from(data)
+}
+
 /// Build the 66-byte participant cell data blob.
 fn build_participant_bytes(
     campaign_created_by: &[u8; 20],
@@ -181,6 +520,31 @@ fn build_participant_bytes(
     data.push(status as u8);
     data.extend_from_slice(&deposited_amount.to_le_bytes());
     assert_eq!(data.len(), 66, "participant data must be exactly 66 bytes");
+    Bytes::from(data)
+}
+
+fn build_recurring_participant_bytes(
+    campaign_created_by: &[u8; 20],
+    campaign_created_at: u64,
+    participant_address: &[u8; 20],
+    joined_at: u64,
+    status: ParticipantStatus,
+    deposited_amount: u64,
+    round: u64,
+    claimable_amount: u64,
+) -> Bytes {
+    let mut data = build_participant_bytes(
+        campaign_created_by,
+        campaign_created_at,
+        CampaignType::RecurringRaffle,
+        participant_address,
+        joined_at,
+        status,
+        deposited_amount,
+    ).to_vec();
+    data.extend_from_slice(&round.to_le_bytes());
+    data.extend_from_slice(&claimable_amount.to_le_bytes());
+    assert_eq!(data.len(), 82);
     Bytes::from(data)
 }
 

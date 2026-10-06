@@ -5,7 +5,7 @@ export const CREATE_INFO_CONSTRAINT_ITEMS = [
   { key: "bodyPassed", text: "2. Body must be at least 120 characters (Well, ofcourse, we can keep it 15 if it's a Raffle)" },
   {
     key: "firstHashtagPassed",
-    text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle.",
+    text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, #Raffle, or #RecurringRaffle.",
   },
 ] as const;
 

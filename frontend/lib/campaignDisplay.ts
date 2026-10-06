@@ -13,6 +13,15 @@ export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date
     return CampaignStatus.Active;
   }
 
+  if (campaign.data.campaignType === CampaignType.RecurringRaffle) {
+    if (campaign.data.status === CampaignStatus.Sleeping || campaign.data.status === CampaignStatus.Finished) {
+      return campaign.data.status;
+    }
+    const roundStart = Number(campaign.data.roundStartedAt ?? campaign.data.createdAt);
+    if (nowMs < roundStart) return CampaignStatus.Created;
+    return CampaignStatus.Active;
+  }
+
   if (campaign.data.status === CampaignStatus.Completed) {
     return campaign.data.status;
   }
@@ -67,7 +76,7 @@ export function deriveRaffleSettlementUiState(args: {
   liveSoldTickets?: bigint | null;
 }) {
   const { campaign, displayStatus, settlementTxHash, soldTicketCount, liveSoldTickets: liveSoldTicketsOverride } = args;
-  const isRaffleCampaign = campaign.data.campaignType === 4;
+  const isRaffleCampaign = campaign.data.campaignType === CampaignType.Raffle;
   const hasSettlementRecord = typeof settlementTxHash === "string" && settlementTxHash.trim().length > 0;
   const snapshotSoldTickets = typeof soldTicketCount === "string" && soldTicketCount.trim().length > 0
     ? BigInt(soldTicketCount.trim())
@@ -101,7 +110,7 @@ export function deriveCreatorWithdrawUiState(args: {
   const { campaign, displayStatus, withdrawalTxHash } = args;
   const hasWithdrawalRecord = typeof withdrawalTxHash === "string" && withdrawalTxHash.trim().length > 0;
   const withdrawableAmount = hasWithdrawalRecord ? 0n : computeCreatorWithdrawableAmount(campaign.data);
-  const completedWithdrawalReady = displayStatus === CampaignStatus.Completed && campaign.data.supportPoolBps === 0n;
+  const completedWithdrawalReady = (displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Finished) && campaign.data.supportPoolBps === 0n;
   const cancelledWithdrawalReady = displayStatus === CampaignStatus.Cancelled;
   const canWithdraw = withdrawableAmount > 0n && (completedWithdrawalReady || cancelledWithdrawalReady);
 

@@ -330,30 +330,6 @@
   }
 }
 
-/* Campaign action tooltips */
-.campaign-action-btn::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  background-color: #1f2937;
-  color: #ffffff;
-  padding: 0.375rem 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.75rem;
-  white-space: nowrap;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 200ms ease;
-  margin-bottom: 0.375rem;
-  z-index: 120;
-}
-
-.campaign-action-btn:hover::after {
-  opacity: 1;
-}
-
 /* Campaign status indicator */
 .status-indicator {
   display: inline-block;
@@ -1021,6 +997,81 @@
 
 .campaign-card-mountable-icons .campaign-card-mounted-icon + .campaign-card-mounted-icon {
   margin-left: -1.44rem;
+}
+
+.campaign-detail-mounted-icons {
+  cursor: default;
+}
+
+.campaign-detail-participants-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.4rem;
+}
+
+.campaign-participant-stack {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.campaign-participant-stack-item {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.campaign-participant-stack-item + .campaign-participant-stack-item {
+  margin-left: -1.44rem;
+}
+
+.campaign-participant-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  overflow: hidden;
+  border: 2px solid var(--campaign-card-border);
+  border-radius: 50%;
+  background: var(--tertiary-background);
+  color: var(--foreground);
+}
+
+.campaign-participant-avatar img {
+  object-fit: cover;
+}
+
+.campaign-participant-overflow {
+  border-color: #6b7280;
+  background: #9ca3af;
+  color: #ffffff;
+  font-family: var(--font-mono, monospace);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.campaign-participant-avatar-verified {
+  border-color: #16a34a;
+}
+
+.campaign-participant-avatar-pending {
+  border-color: #9ca3af;
+  transition: none;
+}
+
+.blink-on .campaign-participant-avatar-pending {
+  border-color: #dc2626;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .campaign-participant-avatar-pending {
+    border-color: #dc2626;
+  }
 }
 
 .campaign-card-mounted-icon-logo {

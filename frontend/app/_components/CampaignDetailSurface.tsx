@@ -9,6 +9,7 @@ import {
   buildDefaultHandle,
   decodeCreatedByAddress,
 } from "@/lib/campaignDisplay";
+import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary } from "@/lib/encoding";
@@ -38,7 +39,9 @@ export default function CampaignDetailSurface({
   const summary = record.summaryDraft?.trim() || (campaign ? decodeSummary(campaign.data.summary) : "Untitled freight");
   const displayTitle = record.title?.trim() || summary;
   const rawDescription = record.description?.trim() || summary;
-  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
+  const displayDescription = compactDescriptionBlankLines(
+    sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription))
+  );
   const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
 
   return (
@@ -69,7 +72,7 @@ export default function CampaignDetailSurface({
           <div className="campaign-card-description campaign-card-description-detail">
             <CampaignDescriptionContent lines={descriptionLines} />
           </div>
-          <CampaignAttachmentGrid attachments={record.attachments ?? []} />
+          <CampaignAttachmentGrid attachments={record.attachments ?? []} expandable />
         </div>
       </div>
     </div>

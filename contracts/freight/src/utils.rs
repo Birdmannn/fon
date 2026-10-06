@@ -1,7 +1,8 @@
 use crate::errors::Error;
 use crate::types::{
     AddressKey, CAMPAIGN_DATA_LEN, Campaign, CampaignStatus, CampaignType, PARTICIPANT_DATA_LEN,
-    ParticipantData, ParticipantStatus,
+    RECURRING_CAMPAIGN_DATA_LEN, RECURRING_PARTICIPANT_DATA_LEN, ParticipantData,
+    ParticipantStatus, RecurringParticipantState, RecurringRaffleState,
 };
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::packed::Script;
@@ -28,7 +29,10 @@ pub fn is_authorized_by_address(authorized_address: &[u8; 20]) -> Result<bool, E
         match load_cell_lock(i, Source::Input) {
             Ok(lock) => {
                 let lock_args = lock.args().raw_data();
-                if lock_args.len() >= 20 && &lock_args[0..20] == authorized_address {
+                if lock_args.first() != Some(&255)
+                    && lock_args.len() >= 20
+                    && &lock_args[0..20] == authorized_address
+                {
                     return Ok(true);
                 }
                 i += 1;
@@ -101,12 +105,13 @@ pub fn is_initialization() -> Result<bool, SysError> {
 
 fn extract_address_from_lock(lock: &Script) -> Result<[u8; 20], Error> {
     let lock_args = lock.args().raw_data();
-    if lock_args.len() < 20 {
+    let offset = usize::from(lock_args.first() == Some(&255));
+    if lock_args.len() < offset + 20 {
         return Err(Error::InvalidCellData);
     }
 
     let mut address = [0u8; 20];
-    address.copy_from_slice(&lock_args[0..20]);
+    address.copy_from_slice(&lock_args[offset..offset + 20]);
     Ok(address)
 }
 
@@ -124,7 +129,8 @@ pub fn extract_caller_address(key: AddressKey) -> Result<[u8; 20], Error> {
 fn get_depositor_address() -> Result<[u8; 20], Error> {
     let mut i = 0;
     while let Ok(lock) = load_cell_lock(i, Source::Input) {
-        if !is_campaign_cell(i, Source::Input)? {
+        let args = lock.args().raw_data();
+        if !is_campaign_cell(i, Source::Input)? && args.first() != Some(&255) {
             return extract_address_from_lock(&lock);
         }
         i += 1;
@@ -168,7 +174,7 @@ pub fn validate_campaign_params(
         return Err(Error::InvalidCampaignArgs);
     }
 
-    if campaign_type == CampaignType::Raffle {
+    if campaign_type == CampaignType::Raffle || campaign_type == CampaignType::RecurringRaffle {
         if aux_amount != 0 && maximum_amount % aux_amount != 0 {
             return Err(Error::InvalidCampaignArgs);
         }
@@ -235,6 +241,21 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
         ticket_sales_total,
         creator_support_total,
         support_pool_bps,
+    })
+}
+
+pub fn parse_recurring_raffle_state(data: &[u8]) -> Result<RecurringRaffleState, Error> {
+    if data.len() != RECURRING_CAMPAIGN_DATA_LEN {
+        return Err(Error::InvalidCellData);
+    }
+    Ok(RecurringRaffleState {
+        sleep_duration_in_seconds: u64::from_le_bytes(data[198..206].try_into().unwrap()),
+        winner_reduction_bps: u64::from_le_bytes(data[206..214].try_into().unwrap()),
+        round: u64::from_le_bytes(data[214..222].try_into().unwrap()),
+        round_started_at: u64::from_le_bytes(data[222..230].try_into().unwrap()),
+        round_reward_per_winner: u64::from_le_bytes(data[230..238].try_into().unwrap()),
+        round_winner_count: u64::from_le_bytes(data[238..246].try_into().unwrap()),
+        prize_pool: u64::from_le_bytes(data[246..254].try_into().unwrap()),
     })
 }
 
@@ -312,5 +333,15 @@ pub fn parse_participant_data(data: &[u8]) -> Result<ParticipantData, Error> {
         joined_at,
         status,
         deposited_amount,
+    })
+}
+
+pub fn parse_recurring_participant_state(data: &[u8]) -> Result<RecurringParticipantState, Error> {
+    if data.len() != RECURRING_PARTICIPANT_DATA_LEN {
+        return Err(Error::InvalidParticipantArgs);
+    }
+    Ok(RecurringParticipantState {
+        round: u64::from_le_bytes(data[66..74].try_into().unwrap()),
+        claimable_amount: u64::from_le_bytes(data[74..82].try_into().unwrap()),
     })
 }

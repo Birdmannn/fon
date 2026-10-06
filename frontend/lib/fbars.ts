@@ -87,6 +87,7 @@ export function getCurrentWeekKey(value = new Date()) {
 
 export function isWinningCampaignType(campaignType: number) {
   return campaignType === CampaignType.Raffle
+    || campaignType === CampaignType.RecurringRaffle
     || campaignType === CampaignType.TimedChallenge
     || campaignType === CampaignType.FundedTask;
 }

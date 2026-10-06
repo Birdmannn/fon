@@ -91,7 +91,7 @@ export default function MountableOptionsCatalog({
                     className={`create-mountable-option ${selected ? "create-mountable-option-selected" : ""}`.trim()}
                     aria-label={ariaLabel}
                     aria-pressed={item.kind === "payable" ? undefined : selected}
-                    data-tooltip={item.label}
+                    title={item.label}
                     disabled={item.kind === "payable"}
                     onClick={item.kind === "forms"
                       ? onToggleForms

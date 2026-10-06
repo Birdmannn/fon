@@ -1291,7 +1291,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <button
                 type="button"
                 className="create-modal-action-btn"
-                data-tooltip="Scroll to top"
+                title="Scroll to top"
                 onClick={() => {
                   const leaderboardList = document.querySelector<HTMLElement>(".profile-leaderboard-list");
                   leaderboardList?.scrollTo({ top: 0, behavior: "smooth" });
@@ -1303,7 +1303,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <button
                 type="button"
                 className="create-modal-action-btn"
-                data-tooltip="Search users"
+                title="Search users"
                 aria-label="Search users coming soon"
               >
                 <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />

@@ -52,6 +52,7 @@ const HOME_INFO_TYPE_ITEMS = [
   "3. Crowdfunding — an open funding freight where supporters deposit toward a shared pool.",
   "4. Timed Challenge — a challenge with a defined start and end window.",
   "5. Raffle — a ticket-based freight where entrants buy tickets for a randomized outcome.",
+  "6. Recurring Raffle — a multi-round raffle with winner cash-out windows and a shrinking winner set.",
 ];
 
 

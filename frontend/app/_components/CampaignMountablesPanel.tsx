@@ -1,6 +1,7 @@
 "use client";
 
 import { Blocks, HandCoins, LockKeyhole, Scroll, Signature } from "lucide-react";
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 export type CampaignMountableItem = {
@@ -9,88 +10,51 @@ export type CampaignMountableItem = {
   href?: string;
   icon?: "app" | "forms" | "lock" | "rewardable" | "signable";
   key: string;
+  logoUrl?: string;
   metadata?: string[];
   proofInstructions?: string;
   title: string;
 };
 
-type CampaignMountablesPanelProps = {
-  emptyMessage?: string;
-  items: CampaignMountableItem[];
-  title?: string;
-};
+export default function CampaignMountablesPanel({ items }: { items: CampaignMountableItem[] }) {
+  if (items.length === 0) return null;
 
-export default function CampaignMountablesPanel({
-  emptyMessage = "No mountables yet.",
-  items,
-  title = "Mountables",
-}: CampaignMountablesPanelProps) {
+  const visibleItems = items.length >= 4 ? items.slice(0, 3) : items;
+  const hiddenCount = items.length - visibleItems.length;
+
   return (
-    <div className="campaign-detail-card-shell campaign-detail-mountables-card">
-      <div className="campaign-detail-comments-header">
-        <h2 className="campaign-detail-comments-title">{title}</h2>
-        <span className="campaign-detail-comments-count">{items.length}</span>
-      </div>
-      {items.length > 0 ? (
-        <div className="campaign-detail-mountables-list">
-          {items.map((item) => (
-            <article key={item.key} className="campaign-detail-mountable-item">
-              <div className="campaign-detail-mountable-heading-row">
-                <span
-                  className="campaign-card-mounted-icon"
-                  title={item.icon === "signable" || item.icon === "rewardable" ? item.title : `${item.title} mounted`}
-                  aria-label={item.icon === "signable" || item.icon === "rewardable" ? item.title : `${item.title} mounted`}
-                >
-                  {item.icon === "lock" ? (
-                    <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
-                  ) : item.icon === "app" ? (
-                    <Blocks size={22} strokeWidth={2} aria-hidden="true" />
-                  ) : item.icon === "signable" ? (
-                    <Signature size={22} strokeWidth={2} aria-hidden="true" />
-                  ) : item.icon === "rewardable" ? (
-                    <HandCoins size={22} strokeWidth={2} aria-hidden="true" />
-                  ) : (
-                    <Scroll size={22} strokeWidth={2} aria-hidden="true" />
-                  )}
-                </span>
-                <div className="campaign-detail-mountable-copy">
-                  <div className="campaign-detail-mountable-title-row">
-                    <h3 className="campaign-detail-mountable-title">{item.title}</h3>
-                    {item.href ? (
-                      <a
-                        href={item.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="campaign-detail-mountable-link"
-                      >
-                        Open
-                      </a>
-                    ) : null}
-                  </div>
-                  <p className="campaign-detail-mountable-summary">{item.description}</p>
-                  {item.metadata?.length ? (
-                    <div className="campaign-detail-mountable-metadata-row">
-                      {item.metadata.map((value) => (
-                        <span key={value} className="campaign-detail-mountable-metadata">{value}</span>
-                      ))}
-                    </div>
-                  ) : null}
-                  {item.proofInstructions ? (
-                    <p className="campaign-detail-mountable-proof">{item.proofInstructions}</p>
-                  ) : null}
-                  {item.actions ? (
-                    <div className="campaign-detail-mountable-actions">
-                      {item.actions}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="campaign-detail-comments-empty">{emptyMessage}</p>
-      )}
+    <div className="campaign-card-mountable-icons campaign-detail-mounted-icons" aria-label="Mounted features">
+      {visibleItems.map((item, index) => (
+        <span
+          className={`campaign-card-mounted-icon ${item.icon === "app" && item.logoUrl ? "campaign-card-mounted-icon-logo" : ""}`.trim()}
+          title={item.title}
+          aria-label={item.title}
+          key={item.key}
+          style={{ zIndex: index + 1 }}
+        >
+          {item.icon === "app" ? (
+            item.logoUrl ? <Image src={item.logoUrl} alt="" width={38} height={38} unoptimized /> : <Blocks size={20} strokeWidth={2} aria-hidden="true" />
+          ) : item.icon === "forms" ? (
+            <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+          ) : item.icon === "signable" ? (
+            <Signature size={22} strokeWidth={2} aria-hidden="true" />
+          ) : item.icon === "rewardable" ? (
+            <HandCoins size={22} strokeWidth={2} aria-hidden="true" />
+          ) : (
+            <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
+          )}
+        </span>
+      ))}
+      {hiddenCount > 0 ? (
+        <span
+          className="campaign-card-mounted-icon campaign-card-mounted-icon-overflow"
+          title={`${hiddenCount} more ${hiddenCount === 1 ? "mountable" : "mountables"}`}
+          aria-label={`${hiddenCount} more ${hiddenCount === 1 ? "mountable" : "mountables"}`}
+          style={{ zIndex: visibleItems.length + 1 }}
+        >
+          +{hiddenCount}
+        </span>
+      ) : null}
     </div>
   );
 }

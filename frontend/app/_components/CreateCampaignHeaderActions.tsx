@@ -19,7 +19,7 @@ export default function CreateCampaignHeaderActions({
   onReset,
   onSecondaryAction,
 }: CreateCampaignHeaderActionsProps) {
-  const createTopActionTooltip = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
+  const createTopActionTitle = createModalStep === "review" ? "Back" : isCreateDraftListOpen ? "Hide drafts" : "Load drafts";
   const createTopActionLabel = createModalStep === "review" ? "Back to compose step" : isCreateDraftListOpen ? "Hide saved drafts" : "Load saved drafts";
 
   return (
@@ -31,7 +31,7 @@ export default function CreateCampaignHeaderActions({
       <button
         type="button"
         className="create-modal-action-btn"
-        data-tooltip="Reset form"
+        title="Reset form"
         onClick={onReset}
         aria-label="Reset create campaign form"
       >
@@ -40,7 +40,7 @@ export default function CreateCampaignHeaderActions({
       <button
         type="button"
         className="create-modal-action-btn"
-        data-tooltip={createTopActionTooltip}
+        title={createTopActionTitle}
         onClick={onSecondaryAction}
         aria-label={createTopActionLabel}
       >

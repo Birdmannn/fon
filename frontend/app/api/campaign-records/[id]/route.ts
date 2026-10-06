@@ -26,6 +26,8 @@ type CampaignRecordPayload = {
     rewardCount?: unknown;
     raffleSupportPoolPercent?: unknown;
     ticketsPerUser?: unknown;
+    recurringSleepHours?: unknown;
+    winnerReductionPercent?: unknown;
   };
   mountables?: {
     forms?: unknown;
@@ -276,6 +278,10 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const raffleSupportPoolPercent = ensureNumberString(payload.argsDraft?.raffleSupportPoolPercent, "argsDraft.raffleSupportPoolPercent");
   const ticketsPerUser = maxAmountCkb !== "0" && payload.argsDraft?.ticketsPerUser !== undefined
     ? ensureNumberString(payload.argsDraft.ticketsPerUser, "argsDraft.ticketsPerUser") : undefined;
+  const recurringSleepHours = payload.argsDraft?.recurringSleepHours === undefined
+    ? "1" : ensureNumberString(payload.argsDraft.recurringSleepHours, "argsDraft.recurringSleepHours");
+  const winnerReductionPercent = payload.argsDraft?.winnerReductionPercent === undefined
+    ? "50" : ensureNumberString(payload.argsDraft.winnerReductionPercent, "argsDraft.winnerReductionPercent");
 
   const mentions = Array.isArray(payload.socialMetadata?.mentions)
     ? payload.socialMetadata?.mentions.map((value) => ensureString(value, "socialMetadata.mentions[]"))
@@ -351,6 +357,8 @@ async function normalizePayload(payload: CampaignRecordPayload) {
       auxAmountCkb,
       rewardCount,
       raffleSupportPoolPercent,
+      recurringSleepHours,
+      winnerReductionPercent,
       ...(ticketsPerUser === undefined ? {} : { ticketsPerUser }),
     },
     mountables: {

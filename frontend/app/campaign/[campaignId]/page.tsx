@@ -9,6 +9,7 @@ import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
+import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
@@ -45,6 +46,7 @@ import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { isWinningCampaignType } from "@/lib/fbars";
+import { CampaignType } from "@/lib/contract";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -159,7 +161,7 @@ const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 const SHELL_TRANSITION_MS = 420;
 const DETAIL_CAMPAIGN_FETCH_LIMIT = 200;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
+const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
 type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
@@ -1599,20 +1601,21 @@ export default function CampaignDetailPage() {
         href: appMountable.appUrl || undefined,
         icon: "app",
         key: appMountable.mountableInstanceId || `${appMountable.appId}:${appMountable.installationId}`,
+        logoUrl: appMountable.logoUrl || appMountable.iconUrl,
         metadata,
         proofInstructions: appMountable.adminNotice?.trim() || undefined,
         title: appMountable.appName || appMountable.appId || "Mounted app",
       });
     });
 
-    return items;
+    return items.sort((left, right) => left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" }));
   }, [formsMountableActions, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
   const commentsLocked = !canAccessLockMountable(selectedRecord?.mountables?.lock, currentUserProfile?.fbars, freightCreatorProfile?.fbars);
   const commentsLockBypassFbars = getLockMountableThresholdFbars(selectedRecord?.mountables?.lock);
   const detailCampaignType = selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? 0;
   const detailTypeLabel = TYPE_LABELS[detailCampaignType] ?? `Type ${detailCampaignType}`;
-  const detailUsesRaffleRandomness = detailCampaignType === 4;
+  const detailUsesRaffleRandomness = detailCampaignType === CampaignType.Raffle || detailCampaignType === CampaignType.RecurringRaffle;
   const detailRewardCountValue = selectedCampaign
     ? Number(selectedCampaign.data.rewardCount)
     : Number.parseInt(selectedRecord?.argsDraft?.rewardCount ?? "0", 10);
@@ -2166,6 +2169,11 @@ export default function CampaignDetailPage() {
         >
           <div className="campaign-detail-column-scroll campaign-detail-column-scroll-right">
             <CampaignMountablesPanel items={mountableItems} />
+            <CampaignParticipantsStack
+              campaignId={selectedRecord?.campaignId ?? null}
+              walletAddress={walletAddress}
+              walletPhotoUpdatedAt={currentUserProfile?.photoUpdatedAt ?? null}
+            />
           </div>
         </section>
       </div>

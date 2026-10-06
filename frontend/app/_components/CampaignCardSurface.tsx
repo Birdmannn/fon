@@ -14,6 +14,7 @@ import {
   deriveRaffleSettlementUiState,
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
+import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { CampaignStatus, CampaignType } from "@/lib/contract";
 import { isWinningCampaignType } from "@/lib/fbars";
@@ -24,8 +25,8 @@ import type { CampaignCell } from "@/lib/transactions";
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
-const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
-const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
+const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled", "Sleeping", "Finished"];
+const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const CAMPAIGN_CARD_PREVIEW_MAX_CHARS = 280;
 
 function formatCountdownSegment(value: number) {
@@ -33,10 +34,14 @@ function formatCountdownSegment(value: number) {
 }
 
 function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
-  const createdAtMs = Number(campaign.data.createdAt);
+  const recurring = campaign.data.campaignType === CampaignType.RecurringRaffle;
+  const createdAtMs = recurring ? Number(campaign.data.roundStartedAt ?? campaign.data.createdAt) : Number(campaign.data.createdAt);
   const startDelayMs = Math.max(0, Number(campaign.data.startDurationSecs) * 1000);
-  const durationMs = Math.max(0, Number(campaign.data.taskDurationSecs) * 1000);
-  const startsAtMs = createdAtMs + startDelayMs;
+  const sleeping = recurring && campaign.data.status === CampaignStatus.Sleeping;
+  const durationMs = Math.max(0, Number(sleeping ? campaign.data.sleepDurationSecs ?? 0n : campaign.data.taskDurationSecs) * 1000);
+  const startsAtMs = sleeping
+    ? createdAtMs + Number(campaign.data.taskDurationSecs) * 1000
+    : recurring ? createdAtMs : createdAtMs + startDelayMs;
   const endsAtMs = startsAtMs + durationMs;
 
   let remainingMs = 0;
@@ -115,10 +120,12 @@ function getStatusClassName(status: CampaignStatus) {
     case CampaignStatus.Active:
       return "active";
     case CampaignStatus.Completed:
+    case CampaignStatus.Finished:
       return "completed";
     case CampaignStatus.Cancelled:
       return "cancelled";
     case CampaignStatus.Created:
+    case CampaignStatus.Sleeping:
     default:
       return "created";
   }
@@ -158,11 +165,13 @@ export default function CampaignCardSurface({
   const { data, outPoint } = campaign;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
-  const isRaffleCampaign = data.campaignType === 4;
+  const isRaffleCampaign = data.campaignType === CampaignType.Raffle || data.campaignType === CampaignType.RecurringRaffle;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
   const rawDescription = record?.description?.trim() || decodeSummary(data.summary);
-  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
+  const displayDescription = compactDescriptionBlankLines(
+    sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription))
+  );
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const creatorPhotoUrl = creatorPhotoUpdatedAt
@@ -198,6 +207,7 @@ export default function CampaignCardSurface({
     : timedCountdown;
   const countdownTitle = isSimpleTask
     ? countdown.text
+    : campaign.data.campaignType === CampaignType.RecurringRaffle && displayStatus === CampaignStatus.Sleeping ? "Cash-out ends in"
     : timedCountdown.phase === "start" ? "Starts in" : timedCountdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");

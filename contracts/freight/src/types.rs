@@ -7,6 +7,7 @@ pub enum CampaignType {
     Crowdfunding = 2,   // Deposit-based with funding goal
     TimedChallenge = 3, // Time-sensitive with deposits
     Raffle = 4,         // Ticket-based raffle; ticket_price stored in aux_amount
+    RecurringRaffle = 5, // Multi-round raffle with winner claim windows
 }
 
 impl TryFrom<u8> for CampaignType {
@@ -19,6 +20,7 @@ impl TryFrom<u8> for CampaignType {
             2 => Ok(CampaignType::Crowdfunding),
             3 => Ok(CampaignType::TimedChallenge),
             4 => Ok(CampaignType::Raffle),
+            5 => Ok(CampaignType::RecurringRaffle),
             _ => Err(value),
         }
     }
@@ -32,6 +34,8 @@ pub enum CampaignStatus {
     Active = 1,    // Started and running
     Completed = 2, // Duration elapsed
     Cancelled = 3, // Cancelled by creator
+    Sleeping = 4,  // Recurring raffle winners may claim
+    Finished = 5,  // Recurring raffle has reached its final winner
 }
 
 impl TryFrom<u8> for CampaignStatus {
@@ -43,6 +47,8 @@ impl TryFrom<u8> for CampaignStatus {
             1 => Ok(CampaignStatus::Active),
             2 => Ok(CampaignStatus::Completed),
             3 => Ok(CampaignStatus::Cancelled),
+            4 => Ok(CampaignStatus::Sleeping),
+            5 => Ok(CampaignStatus::Finished),
             _ => Err(value),
         }
     }
@@ -95,12 +101,14 @@ pub struct ParticipantData {
 pub const PARTICIPANT_DATA_LEN: usize = 66;
 
 #[repr(u8)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ParticipantStatus {
     Pending = 0,
     Verified = 1,
     Rewarded = 2,
     Refunded = 3,
+    Winner = 4,
+    Eliminated = 5,
 }
 
 impl TryFrom<u8> for ParticipantStatus {
@@ -112,6 +120,8 @@ impl TryFrom<u8> for ParticipantStatus {
             1 => Ok(ParticipantStatus::Verified),
             2 => Ok(ParticipantStatus::Rewarded),
             3 => Ok(ParticipantStatus::Refunded),
+            4 => Ok(ParticipantStatus::Winner),
+            5 => Ok(ParticipantStatus::Eliminated),
             _ => Err(val),
         }
     }
@@ -120,6 +130,34 @@ impl TryFrom<u8> for ParticipantStatus {
 // Campaign cell data format (total: 198 bytes)
 // Layout: [8][8][8][20][1][8][8][1][8][32][64][8][8][8][8]
 pub const CAMPAIGN_DATA_LEN: usize = 198;
+pub const RECURRING_CAMPAIGN_DATA_LEN: usize = 254;
+pub const RECURRING_PARTICIPANT_DATA_LEN: usize = 82;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecurringRaffleState {
+    pub sleep_duration_in_seconds: u64,
+    pub winner_reduction_bps: u64,
+    pub round: u64,
+    pub round_started_at: u64,
+    pub round_reward_per_winner: u64,
+    pub round_winner_count: u64,
+    pub prize_pool: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecurringParticipantState {
+    pub round: u64,
+    pub claimable_amount: u64,
+}
+
+pub fn next_recurring_winner_count(current: u64, reduction_bps: u64) -> Option<u64> {
+    if current == 0 || reduction_bps == 0 || reduction_bps > 10_000 {
+        return None;
+    }
+    let retained_bps = 10_000u64.checked_sub(reduction_bps)?;
+    let numerator = current.checked_mul(retained_bps)?;
+    Some(core::cmp::max(1, numerator.checked_add(9_999)? / 10_000))
+}
 
 impl Campaign {
     pub fn accepts_deposits(&self) -> bool {
@@ -133,6 +171,11 @@ impl Campaign {
 
     pub fn is_raffle(&self) -> bool {
         self.campaign_type == CampaignType::Raffle
+            || self.campaign_type == CampaignType::RecurringRaffle
+    }
+
+    pub fn is_recurring_raffle(&self) -> bool {
+        self.campaign_type == CampaignType::RecurringRaffle
     }
 
     pub fn ticket_price(&self) -> u64 {

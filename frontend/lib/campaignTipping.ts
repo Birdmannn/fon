@@ -3,7 +3,7 @@ import { CampaignType } from "@/lib/contract";
 export type CampaignDepositKind = "campaign_deposit" | "simple_task_tip";
 export type CampaignSupportMode = "campaign_escrow" | "direct_creator";
 
-const CONTROL_TAG_PATTERN = /(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|mounted|non-tippable)\b/gi;
+const CONTROL_TAG_PATTERN = /(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|recurringraffle|mounted|non-tippable)\b/gi;
 const NON_TIPPABLE_TAG_PATTERN = /(^|\s)#non-tippable\b/i;
 
 export function stripCampaignControlTags(text: string) {
