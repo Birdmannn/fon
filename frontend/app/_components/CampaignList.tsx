@@ -5,6 +5,7 @@ import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import type { CampaignRecord, MergedCampaign } from "@/app/_hooks/useCampaignFeed";
 import type { SettlementModalData } from "@/app/_types/settlement";
+import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import { getCampaignStableId } from "@/lib/campaignIdentity";
 import type { CampaignCell } from "@/lib/transactions";
 
@@ -21,6 +22,7 @@ type CampaignListProps = {
   onMountablesClick: (record: CampaignRecord) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
+  onSupportRequest: (request: CampaignSupportRequest) => void;
   onSettlementCompleted: (
     campaignId: string,
     settlementTxHash: string,
@@ -54,6 +56,7 @@ export default function CampaignList({
   onScrolledToNewest,
   onSettlementCompleted,
   onSettlementInfoRequest,
+  onSupportRequest,
   onStartDetailTransition,
   onWithdrawalCompleted,
   onTicketBought,
@@ -147,6 +150,7 @@ export default function CampaignList({
             commentDiscardDecision={commentDiscardDecision}
             onOpenDetail={() => onStartDetailTransition(`/campaign/${getCampaignStableId(campaign)}`)}
             onMountablesClick={onMountablesClick}
+            onSupportRequest={onSupportRequest}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
             onSettlementCompleted={onSettlementCompleted}

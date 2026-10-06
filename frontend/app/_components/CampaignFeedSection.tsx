@@ -8,6 +8,7 @@ import CampaignFeedHeaderBar from "@/app/_components/CampaignFeedHeaderBar";
 import CampaignList from "@/app/_components/CampaignList";
 import { useCampaignFeed, type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import type { SettlementModalData } from "@/app/_types/settlement";
+import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignFeedSectionProps = {
@@ -18,6 +19,7 @@ type CampaignFeedSectionProps = {
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onErrorChange: (message: string) => void;
   onMountablesClick: (record: CampaignRecord) => void;
+  onSupportRequest: (request: CampaignSupportRequest) => void;
   onProfileDataChanged?: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
@@ -30,6 +32,7 @@ export default function CampaignFeedSection({
   onTicketPurchaseRequest,
   onErrorChange,
   onMountablesClick,
+  onSupportRequest,
   onProfileDataChanged,
   onSettlementInfoRequest,
 }: CampaignFeedSectionProps) {
@@ -92,6 +95,7 @@ export default function CampaignFeedSection({
         onScrolledToNewest={clearShouldScrollToNewest}
         onCommentDiscardRequest={onCommentDiscardRequest}
         onMountablesClick={onMountablesClick}
+        onSupportRequest={onSupportRequest}
         commentDiscardDecision={commentDiscardDecision}
         onStartDetailTransition={(href) => {
           sessionStorage.setItem("freight:detail-expanding", "1");

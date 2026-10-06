@@ -672,6 +672,21 @@
   outline: none;
 }
 
+.create-info-section-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+}
+
+.create-info-inline-status {
+  max-width: 70%;
+  margin-left: auto;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 .create-info-ticket-input-wrap {
   position: relative;
   flex: 1;

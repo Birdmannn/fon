@@ -17,6 +17,7 @@ import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { SettlementModalData } from "@/app/_types/settlement";
+import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import { CampaignStatus } from "@/lib/contract";
 import { decodeCreatedByAddress } from "@/lib/campaignDisplay";
 import type { CampaignCell } from "@/lib/transactions";
@@ -35,6 +36,7 @@ type CampaignCardProps = {
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onOpenDetail: () => void;
   onMountablesClick: (record: CampaignRecord) => void;
+  onSupportRequest: (request: CampaignSupportRequest) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
   onSettlementCompleted: (
@@ -69,6 +71,7 @@ export default function CampaignCard({
   commentDiscardDecision,
   onOpenDetail,
   onMountablesClick,
+  onSupportRequest,
   onTicketPurchaseRequest,
   onTicketBought,
   onSettlementCompleted,
@@ -84,11 +87,9 @@ export default function CampaignCard({
     commentError,
     commentInputRef,
     comments,
-    depositAmount,
     giftDeliverable,
     handleBookmark,
     handleComment,
-    handleDepositClick,
     handleDepositSubmit,
     handleGiftApprove,
     handleGiftClaim,
@@ -102,7 +103,6 @@ export default function CampaignCard({
     isCampaignInactive,
     isCommentComposerOpen,
     isConnected,
-    isDepositing,
     isLockedForInteractions,
     isSupportLocked,
     isWithdrawing,
@@ -119,13 +119,10 @@ export default function CampaignCard({
     remainingTickets,
     reshares,
     setCommentDraft,
-    setDepositAmount,
-    setShowDepositModal,
     shouldGlowSettlement,
     showCreatorWithdrawAction,
     creatorWithdrawAmountCkb,
     supportDisplayCkb,
-    showDepositModal,
     showSettlementAction,
     soldTickets,
     userBookmarked,
@@ -202,7 +199,7 @@ export default function CampaignCard({
           {hasNotStartedRaffle && (
             <button
               type="button"
-              onClick={handleDepositClick}
+              onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
               disabled={isSupportDisabled}
               className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
               data-tooltip={
@@ -264,7 +261,7 @@ export default function CampaignCard({
               <div className="ml-auto flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleDepositClick}
+                  onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
                   disabled={isSupportDisabled}
                   className={`campaign-action-btn ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
                   data-tooltip={
@@ -320,7 +317,7 @@ export default function CampaignCard({
               </div>
             ) : (
               <button
-                onClick={handleDepositClick}
+                onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
                 disabled={isSupportDisabled}
                 className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
                 data-tooltip={
@@ -428,51 +425,6 @@ export default function CampaignCard({
         </div>
       </div>
 
-      {showDepositModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4">
-            <h3 className="text-lg font-semibold mb-4">{supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"}</h3>
-            <form onSubmit={handleDepositSubmit} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Amount (CKB)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0.00"
-                  disabled={isDepositing || isSupportDisabled}
-                />
-                {supportState.supportMode === "direct_creator" ? (
-                  <p className="text-xs text-gray-500 mt-1">SimpleTask tips go straight to the creator address.</p>
-                ) : null}
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDepositModal(false);
-                    setDepositAmount("");
-                  }}
-                  disabled={isDepositing}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isDepositing || !depositAmount || isSupportDisabled}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isDepositing ? "Processing..." : supportState.supportMode === "direct_creator" ? "Send tip" : "Deposit"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

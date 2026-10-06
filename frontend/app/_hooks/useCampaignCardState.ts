@@ -263,9 +263,6 @@ export function useCampaignCardState({
   const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const actionFeedbackTimerRef = useRef<number | null>(null);
-  const [showDepositModal, setShowDepositModal] = useState(false);
-  const [depositAmount, setDepositAmount] = useState("");
-  const [isDepositing, setIsDepositing] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   const showActionFeedback = (
@@ -717,83 +714,59 @@ export function useCampaignCardState({
     }
   };
 
-  const handleDepositClick = () => {
-    if (isSupportDisabled) {
-      return;
-    }
-    setShowDepositModal(true);
-  };
+  const handleDepositSubmit = async (depositAmount: string) => {
+    if (!signer) throw new Error("Connect your wallet first");
+    if (isSupportDisabled) throw new Error("Support is unavailable for this freight");
 
-  const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
-    e.preventDefault();
-    if (!signer || !depositAmount || isSupportDisabled) {
-      return;
-    }
-
-    const parsedDepositAmount = Number.parseFloat(depositAmount);
+    const parsedDepositAmount = Number(depositAmount.trim());
     if (!Number.isFinite(parsedDepositAmount) || parsedDepositAmount <= 0) {
-      alert("Please enter a valid amount");
-      return;
+      throw new Error("Enter a valid amount");
     }
 
     const amountShannons = BigInt(Math.floor(parsedDepositAmount * 100_000_000));
     if (amountShannons <= 0n) {
-      alert("Please enter at least 0.01 CKB");
-      return;
+      throw new Error("Enter at least 0.01 CKB");
     }
 
-    setIsDepositing(true);
-    try {
-      const txHash = supportState.supportMode === "direct_creator"
-        ? await sendCreatorTipShannons(signer, c, amountShannons)
-        : await sendDepositShannons(signer, c, amountShannons);
-      await fetch("/api/campaign-deposits", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amountShannons: amountShannons.toString(),
-          campaignId: getCampaignStableId(c),
-          campaignRecordId: record?._id ?? null,
-          depositedAt: new Date().toISOString(),
-          depositorAddress: await signer.getRecommendedAddress(),
-          kind: supportState.depositKind,
-          supportMode: supportState.supportMode,
-          txHash,
-        }),
-      }).catch(() => {
-        // Non-fatal — transaction history can miss this row, but the on-chain deposit still succeeded.
-      });
+    const txHash = supportState.supportMode === "direct_creator"
+      ? await sendCreatorTipShannons(signer, c, amountShannons)
+      : await sendDepositShannons(signer, c, amountShannons);
+    await fetch("/api/campaign-deposits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountShannons: amountShannons.toString(),
+        campaignId: getCampaignStableId(c),
+        campaignRecordId: record?._id ?? null,
+        depositedAt: new Date().toISOString(),
+        depositorAddress: await signer.getRecommendedAddress(),
+        kind: supportState.depositKind,
+        supportMode: supportState.supportMode,
+        txHash,
+      }),
+    }).catch(() => {
+      // Non-fatal — transaction history can miss this row, but the on-chain deposit still succeeded.
+    });
 
-      const signed = await withSignedNonce("deposit");
-      const depositResponse = await fetch("/api/fbars/deposit", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...signed,
-          recordId: record?._id,
-          txHash,
-          amountCkb: Number(amountShannons) / 1e8,
-          kind: supportState.depositKind,
-          supportMode: supportState.supportMode,
-        }),
-      });
-      const depositPayload = await depositResponse.json().catch(() => null);
-      if (!depositResponse.ok) {
-        throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
-      }
-
-      alert(`${supportState.supportMode === "direct_creator" ? "Tip" : "Deposit"} sent! Tx: ${txHash}`);
-      setShowDepositModal(false);
-      setDepositAmount("");
-    } catch (error) {
-      alert(`${supportState.supportMode === "direct_creator" ? "Tip" : "Deposit"} failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsDepositing(false);
+    const signed = await withSignedNonce("deposit");
+    const depositResponse = await fetch("/api/fbars/deposit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...signed,
+        recordId: record?._id,
+        txHash,
+        amountCkb: Number(amountShannons) / 1e8,
+        kind: supportState.depositKind,
+        supportMode: supportState.supportMode,
+      }),
+    });
+    const depositPayload = await depositResponse.json().catch(() => null);
+    if (!depositResponse.ok) {
+      throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
     }
+
+    return txHash;
   };
 
   const handleGiftApprove = async () => {
@@ -1210,13 +1183,11 @@ export function useCampaignCardState({
     comments,
     creatorAddress,
     creatorHandle,
-    depositAmount,
     displayDescription,
     displayTitle,
     giftDeliverable,
     handleBookmark,
     handleComment,
-    handleDepositClick,
     handleDepositSubmit,
     handleGiftApprove,
     handleGiftClaim,
@@ -1233,7 +1204,6 @@ export function useCampaignCardState({
     isConnected,
     canGiftApprove,
     canGiftClaim,
-    isDepositing,
     isLockedForInteractions,
     isSupportLocked,
     isPurchaseDisabled,
@@ -1248,10 +1218,7 @@ export function useCampaignCardState({
     reshares,
     rewardCountValue,
     setCommentDraft,
-    setDepositAmount,
     setIsCommentComposerOpen,
-    setShowDepositModal,
-    showDepositModal,
     shouldGlowSettlement,
     showCreatorWithdrawAction,
     creatorWithdrawAmountCkb,

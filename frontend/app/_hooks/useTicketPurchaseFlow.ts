@@ -70,6 +70,10 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       return;
     }
 
+    setIsPurchasingTickets(true);
+    setTicketPurchaseError("");
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
     const [liveViewerFbars, creatorCurrentFbars] = await Promise.all([
       signer.getRecommendedAddress().then((address) => fetchCurrentFbars(address)).catch(() => currentViewerFbars ?? null),
       fetchCurrentFbars(ticketPurchaseRecord?.creatorAddress).catch(() => null),
@@ -77,12 +81,14 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     const effectiveViewerFbars = liveViewerFbars ?? currentViewerFbars;
     if (!canAccessLockMountable(ticketPurchaseRecord?.mountables?.lock, effectiveViewerFbars, creatorCurrentFbars)) {
       setTicketPurchaseError(lockMountableAccessMessage(ticketPurchaseRecord?.mountables?.lock, creatorCurrentFbars));
+      setIsPurchasingTickets(false);
       return;
     }
 
     const quantity = Number(ticketPurchaseQuantity.trim());
     if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 100) {
       setTicketPurchaseError("Enter a valid number of tickets");
+      setIsPurchasingTickets(false);
       return;
     }
 
@@ -91,6 +97,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     const remainingTickets = ticketPurchaseAvailability?.remainingTickets ?? 0n;
     if (remainingTickets >= 0n && requestedTickets > remainingTickets) {
       setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
+      setIsPurchasingTickets(false);
       return;
     }
 
@@ -100,15 +107,14 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       const perUserLimit = getRaffleTicketsPerUser(ticketPurchaseCampaign);
       if (BigInt(priorEntries.length) + requestedTickets > perUserLimit) {
         setTicketPurchaseError(`This raffle allows ${String(perUserLimit)} ticket${perUserLimit === 1n ? "" : "s"} per wallet`);
+        setIsPurchasingTickets(false);
         return;
       }
     } catch (error) {
       setTicketPurchaseError(error instanceof Error ? error.message : "Could not check existing tickets");
+      setIsPurchasingTickets(false);
       return;
     }
-
-    setIsPurchasingTickets(true);
-    setTicketPurchaseError("");
 
     try {
       const needsActivation =
@@ -176,6 +182,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       });
       const nextSoldTickets = (ticketPurchaseAvailability?.liveSoldTickets ?? 0n) + requestedTickets;
       ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount, nextSoldTickets);
+      setIsPurchasingTickets(false);
       onTicketBuySuccess(txHash);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to buy tickets";
