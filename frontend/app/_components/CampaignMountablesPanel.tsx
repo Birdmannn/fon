@@ -1,13 +1,13 @@
 "use client";
 
-import { Blocks, LockKeyhole, Scroll, Signature } from "lucide-react";
+import { Blocks, HandCoins, LockKeyhole, Scroll, Signature } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type CampaignMountableItem = {
   actions?: ReactNode;
   description: string;
   href?: string;
-  icon?: "app" | "forms" | "lock" | "signable";
+  icon?: "app" | "forms" | "lock" | "rewardable" | "signable";
   key: string;
   metadata?: string[];
   proofInstructions?: string;
@@ -38,8 +38,8 @@ export default function CampaignMountablesPanel({
               <div className="campaign-detail-mountable-heading-row">
                 <span
                   className="campaign-card-mounted-icon"
-                  title={item.icon === "signable" ? "Signable" : `${item.title} mounted`}
-                  aria-label={item.icon === "signable" ? "Signable" : `${item.title} mounted`}
+                  title={item.icon === "signable" || item.icon === "rewardable" ? item.title : `${item.title} mounted`}
+                  aria-label={item.icon === "signable" || item.icon === "rewardable" ? item.title : `${item.title} mounted`}
                 >
                   {item.icon === "lock" ? (
                     <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
@@ -47,6 +47,8 @@ export default function CampaignMountablesPanel({
                     <Blocks size={22} strokeWidth={2} aria-hidden="true" />
                   ) : item.icon === "signable" ? (
                     <Signature size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : item.icon === "rewardable" ? (
+                    <HandCoins size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <Scroll size={22} strokeWidth={2} aria-hidden="true" />
                   )}

@@ -1,12 +1,13 @@
 "use client";
 
-import { Blocks, LockKeyhole, Scroll, Signature } from "lucide-react";
+import { Blocks, HandCoins, LockKeyhole, Scroll, Signature } from "lucide-react";
 import Image from "next/image";
 
 import { appMountableSummary, isAppMountableEnabled, normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
 import { formsMountableSummary, isFormsMountableEnabled } from "@/app/_lib/formsMountable";
 import { isLockMountableEnabled, lockMountableSummary } from "@/app/_lib/lockMountable";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
+import { isWinningCampaignType } from "@/lib/fbars";
 
 type FreightMountablesInfoProps = {
   record: CampaignRecord | null;
@@ -15,7 +16,7 @@ type FreightMountablesInfoProps = {
 type FreightMountableEntry = {
   description: string;
   key: string;
-  kind: "app" | "forms" | "lock" | "signable";
+  kind: "app" | "forms" | "lock" | "rewardable" | "signable";
   logoUrl?: string;
   title: string;
 };
@@ -35,6 +36,12 @@ export default function FreightMountablesInfo({ record }: FreightMountablesInfoP
       key: "lock",
       kind: "lock" as const,
       title: "Lock",
+    }] : []),
+    ...(isWinningCampaignType(record?.campaignType ?? -1) ? [{
+      description: "May reward participants with CKB.",
+      key: "rewardable",
+      kind: "rewardable" as const,
+      title: "Rewardable",
     }] : []),
     ...((record?.giftDeliverable?.approvers?.length ?? 0) > 0 ? [{
       description: "Requires signing to deliver.",
@@ -68,6 +75,8 @@ export default function FreightMountablesInfo({ record }: FreightMountablesInfoP
                 <LockKeyhole size={18} strokeWidth={2} />
               ) : entry.kind === "signable" ? (
                 <Signature size={18} strokeWidth={2} />
+              ) : entry.kind === "rewardable" ? (
+                <HandCoins size={18} strokeWidth={2} />
               ) : (
                 <Blocks size={18} strokeWidth={2} />
               )}

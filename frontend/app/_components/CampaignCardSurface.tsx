@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Blocks, Copy, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
+import { Blocks, Copy, HandCoins, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/campaignDisplay";
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { CampaignStatus, CampaignType } from "@/lib/contract";
+import { isWinningCampaignType } from "@/lib/fbars";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
 import { decodeSummary, hasSplitSupportAccounting } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
@@ -205,6 +206,7 @@ export default function CampaignCardSurface({
   const mountedIcons = [
     ...(record?.mountables?.forms?.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
     ...(record?.mountables?.lock?.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(isWinningCampaignType(campaign.data.campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
     ...(isSignable ? [{ key: "signable", name: "Signable", kind: "signable" as const, logoUrl: "" }] : []),
     ...(record?.mountables?.apps ?? []).filter((entry) => entry.enabled).map((entry) => ({
       key: entry.mountableInstanceId || entry.appId,
@@ -392,6 +394,8 @@ export default function CampaignCardSurface({
                     <Scroll size={22} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "signable" ? (
                     <Signature size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "rewardable" ? (
+                    <HandCoins size={22} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
                   )}

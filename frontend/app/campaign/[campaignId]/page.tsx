@@ -44,6 +44,7 @@ import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
+import { isWinningCampaignType } from "@/lib/fbars";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -1576,6 +1577,15 @@ export default function CampaignDetailPage() {
       });
     }
 
+    if (isWinningCampaignType(selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? -1)) {
+      items.push({
+        description: "May reward participants with CKB.",
+        icon: "rewardable",
+        key: "rewardable",
+        title: "Rewardable",
+      });
+    }
+
     appMountables.forEach((appMountable) => {
       const metadata = [
         appMountable.installationLabel ? `Install ${appMountable.installationLabel}` : "",
@@ -1596,7 +1606,7 @@ export default function CampaignDetailPage() {
     });
 
     return items;
-  }, [formsMountableActions, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
+  }, [formsMountableActions, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
   const commentsLocked = !canAccessLockMountable(selectedRecord?.mountables?.lock, currentUserProfile?.fbars, freightCreatorProfile?.fbars);
   const commentsLockBypassFbars = getLockMountableThresholdFbars(selectedRecord?.mountables?.lock);

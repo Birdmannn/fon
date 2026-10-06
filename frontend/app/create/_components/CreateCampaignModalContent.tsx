@@ -1,7 +1,7 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -20,6 +20,7 @@ import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import { CampaignType } from "@/lib/contract";
+import { isWinningCampaignType } from "@/lib/fbars";
 import type { VerifyMountableAppCampaignContext } from "@/lib/fonMountablesSdk";
 import type { GoogleFormsAccessVerification } from "@/lib/googleFormsApi";
 import {
@@ -569,6 +570,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const reviewMountedIcons = [
     ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
     ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(isWinningCampaignType(campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
     ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
       key: entry.mountableInstanceId || entry.appId,
       name: entry.appName || entry.appId,
@@ -3220,6 +3222,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
                   ) : mountable.kind === "forms" ? (
                     <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "rewardable" ? (
+                    <HandCoins size={18} strokeWidth={2} aria-hidden="true" />
                   ) : (
                     <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
                   )}
