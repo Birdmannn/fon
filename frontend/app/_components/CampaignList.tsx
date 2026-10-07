@@ -148,7 +148,7 @@ export default function CampaignList({
             isHighlighted={index === 99 && !!signer}
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
-            onOpenDetail={() => onStartDetailTransition(`/campaign/${getCampaignStableId(campaign)}`)}
+            onOpenDetail={() => onStartDetailTransition(`/freight/${getCampaignStableId(campaign)}`)}
             onMountablesClick={onMountablesClick}
             onSupportRequest={onSupportRequest}
             onTicketPurchaseRequest={onTicketPurchaseRequest}

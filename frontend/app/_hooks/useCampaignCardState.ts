@@ -707,7 +707,7 @@ export function useCampaignCardState({
   };
 
   const handleReshare = async () => {
-    const freightUrl = `${window.location.origin}/campaign/${getCampaignStableId(c)}`;
+    const freightUrl = `${window.location.origin}/freight/${getCampaignStableId(c)}`;
 
     try {
       await copyText(freightUrl);

@@ -140,7 +140,7 @@ That means:
 The app already uses CCC as the wallet abstraction throughout:
 - `frontend/app/providers.tsx`
 - `frontend/app/page.tsx`
-- `frontend/app/campaign/[campaignId]/page.tsx`
+- `frontend/app/freight/[campaignId]/page.tsx`
 - `frontend/lib/transactions.ts`
 
 So a dev-only signer can fit under the existing abstraction instead of requiring a second transaction stack.

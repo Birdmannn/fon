@@ -65,7 +65,7 @@ The goal is to keep using CCC’s abstraction while adding a development-only si
 
 ### Wallet / signer usage
 - `frontend/app/page.tsx`
-- `frontend/app/campaign/[campaignId]/page.tsx`
+- `frontend/app/freight/[campaignId]/page.tsx`
 - `frontend/lib/transactions.ts`
 
 ### Local chain tooling
