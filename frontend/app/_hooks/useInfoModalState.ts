@@ -46,27 +46,25 @@ export function useInfoModalState({ animationMs, onResetState }: UseInfoModalSta
   }, [clearInfoCloseTimer, clearInfoHideTimer, onResetState]);
 
   const openInfoModalFromHover = useCallback((preventHoverOpen: boolean) => {
+    if (infoHideTimerRef.current || isInfoModalClosing) return;
     clearInfoCloseTimer();
-    clearInfoHideTimer();
 
     if (preventHoverOpen) {
       return;
     }
 
-    if (showInfoModal && infoModalInteraction === "click" && !isInfoModalClosing) {
+    if (showInfoModal && infoModalInteraction === "click") {
       return;
     }
 
     showInfoModalForInteraction("hover");
-  }, [clearInfoCloseTimer, clearInfoHideTimer, infoModalInteraction, isInfoModalClosing, showInfoModal, showInfoModalForInteraction]);
+  }, [clearInfoCloseTimer, infoModalInteraction, isInfoModalClosing, showInfoModal, showInfoModalForInteraction]);
 
   const keepInfoModalOpen = useCallback(() => {
+    if (infoHideTimerRef.current || isInfoModalClosing) return;
     clearInfoCloseTimer();
-    clearInfoHideTimer();
     clearSubmissionSuccessTimer();
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer]);
+  }, [clearInfoCloseTimer, clearSubmissionSuccessTimer, isInfoModalClosing]);
 
   const closeInfoModal = useCallback((onBeforeHide?: () => void) => {
     clearInfoCloseTimer();
@@ -87,7 +85,7 @@ export function useInfoModalState({ animationMs, onResetState }: UseInfoModalSta
   }, [animationMs, clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, isInfoModalClosing, onResetState, showInfoModal]);
 
   const scheduleCloseInfoModal = useCallback((preventAutoClose: boolean, onBeforeHide?: () => void) => {
-    if (preventAutoClose) {
+    if (preventAutoClose || infoHideTimerRef.current || isInfoModalClosing) {
       return;
     }
 
@@ -95,7 +93,7 @@ export function useInfoModalState({ animationMs, onResetState }: UseInfoModalSta
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal(onBeforeHide);
     }, 120);
-  }, [clearInfoCloseTimer, closeInfoModal]);
+  }, [clearInfoCloseTimer, closeInfoModal, isInfoModalClosing]);
 
   const toggleInfoModal = useCallback((preventToggleClose: boolean) => {
     if (preventToggleClose) {

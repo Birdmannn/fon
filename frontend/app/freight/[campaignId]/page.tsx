@@ -13,6 +13,7 @@ import CampaignMountablesPanel, { CampaignMountableIcon, type CampaignMountableI
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
 import type { FreightTree } from "@/app/_components/FreightTreeInfo";
 import FreightTreeDiagram from "@/app/_components/FreightTreeDiagram";
+import FreightTreeZoomActions from "@/app/_components/FreightTreeZoomActions";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
@@ -50,6 +51,7 @@ import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
+import { FREIGHT_CREATION_FBARS_COST } from "@/lib/fbars";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { isWinningCampaignType } from "@/lib/fbars";
 import { CampaignType } from "@/lib/contract";
@@ -211,6 +213,9 @@ export default function CampaignDetailPage() {
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [selectedFreightOption, setSelectedFreightOption] = useState<FreightOption | null>(null);
+  const [isFreightTreeClosing, setIsFreightTreeClosing] = useState(false);
+  const [freightTreeZoom, setFreightTreeZoom] = useState(1);
+  const freightTreeCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [freightRelationChoice, setFreightRelationChoice] = useState<FreightRelationChoice | null>(null);
   const [isCreatingRelatedFreight, setIsCreatingRelatedFreight] = useState(false);
   const [ownedFreights, setOwnedFreights] = useState<OwnedFreight[]>([]);
@@ -377,14 +382,14 @@ export default function CampaignDetailPage() {
   }, [clearInfoCloseTimer, clearInfoHideTimer, isInfoModalClosing, showInfoModal]);
 
   const openInfoModalFromHover = useCallback((preventHoverOpen: boolean = false) => {
+    if (infoHideTimerRef.current || isInfoModalClosing) return;
     clearInfoCloseTimer();
-    clearInfoHideTimer();
 
     if (preventHoverOpen) {
       return;
     }
 
-    if (showInfoModal && infoModalInteraction === "click" && !isInfoModalClosing) {
+    if (showInfoModal && infoModalInteraction === "click") {
       return;
     }
 
@@ -392,17 +397,15 @@ export default function CampaignDetailPage() {
     setInfoModalInteraction("hover");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
-  }, [clearInfoCloseTimer, clearInfoHideTimer, infoModalInteraction, isInfoModalClosing, showInfoModal]);
+  }, [clearInfoCloseTimer, infoModalInteraction, isInfoModalClosing, showInfoModal]);
 
   const keepInfoModalOpen = useCallback(() => {
+    if (infoHideTimerRef.current || isInfoModalClosing) return;
     clearInfoCloseTimer();
-    clearInfoHideTimer();
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-  }, [clearInfoCloseTimer, clearInfoHideTimer]);
+  }, [clearInfoCloseTimer, isInfoModalClosing]);
 
   const scheduleCloseInfoModal = useCallback((preventAutoClose: boolean = false, onBeforeHide?: () => void) => {
-    if (preventAutoClose) {
+    if (preventAutoClose || infoHideTimerRef.current || isInfoModalClosing) {
       return;
     }
 
@@ -410,7 +413,7 @@ export default function CampaignDetailPage() {
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal(onBeforeHide);
     }, 120);
-  }, [clearInfoCloseTimer, closeInfoModal]);
+  }, [clearInfoCloseTimer, closeInfoModal, isInfoModalClosing]);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -623,7 +626,7 @@ export default function CampaignDetailPage() {
 
   const isCreateStyleModalOpen = showCreateModal || selectedFreightOption !== null;
   const activeShellWidthClass = isCreateStyleModalOpen ? "campaign-shell-width" : shellWidthClass;
-  const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const shouldHideWalletAction = (showCreateModal && !isCreateModalClosing) || (selectedFreightOption === "view-tree" && !isFreightTreeClosing);
 
   const resetInfoModalState = useCallback(() => {
     resetCreateInfoModalState();
@@ -728,12 +731,15 @@ export default function CampaignDetailPage() {
   const handleSelectFreightOption = useCallback((option: FreightOption) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    setShowInfoModal(false);
-    setIsInfoModalClosing(false);
-    setInfoModalMode("about");
-    setInfoModalInteraction("hover");
-    setSelectedFreightOption(option);
-  }, [clearInfoCloseTimer, clearInfoHideTimer]);
+    const openFreightOption = () => {
+      setInfoModalMode("about");
+      setIsFreightTreeClosing(false);
+      setFreightTreeZoom(1);
+      setSelectedFreightOption(option);
+    };
+    if (showInfoModal) closeInfoModal(openFreightOption);
+    else openFreightOption();
+  }, [clearInfoCloseTimer, clearInfoHideTimer, closeInfoModal, showInfoModal]);
 
   const handleViewFreightTree = useCallback(async () => {
     const campaignId = selectedRecord?.campaignId;
@@ -789,14 +795,28 @@ export default function CampaignDetailPage() {
     };
   }, [selectedRecord?.campaignId]);
 
+  const closeFreightTree = useCallback(() => {
+    if (selectedFreightOption !== "view-tree" || isFreightTreeClosing) return;
+    setIsFreightTreeClosing(true);
+    freightTreeCloseTimerRef.current = setTimeout(() => {
+      setSelectedFreightOption(null);
+      setIsFreightTreeClosing(false);
+      freightTreeCloseTimerRef.current = null;
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [isFreightTreeClosing, selectedFreightOption]);
+
+  useEffect(() => () => {
+    if (freightTreeCloseTimerRef.current) clearTimeout(freightTreeCloseTimerRef.current);
+  }, []);
+
   useEffect(() => {
-    if (!selectedFreightOption) return;
+    if (selectedFreightOption !== "view-tree") return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedFreightOption(null);
+      if (event.key === "Escape") closeFreightTree();
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedFreightOption]);
+  }, [closeFreightTree, selectedFreightOption]);
 
   useEffect(() => {
     const campaignId = selectedRecord?.campaignId;
@@ -835,16 +855,20 @@ export default function CampaignDetailPage() {
     };
   }, [currentUserProfile?.fbars, freightCreatorProfile?.fbars, infoModalMode, isInfoModalClosing, selectedRecord, showInfoModal, walletAddress]);
 
-  const openInsufficientFbarsInfoModal = useCallback(() => {
+  const openInsufficientFbarsInfoModal = useCallback((fromFreightRelationChoice = false) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
-    setInfoModalMode("insufficient-fbars");
-    setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
+    if (fromFreightRelationChoice) {
+      transitionFreightInfoModal("insufficient-fbars");
+    } else {
+      setInfoModalMode("insufficient-fbars");
+      setInfoModalInteraction("click");
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+    }
     infoCloseTimerRef.current = setTimeout(() => {
       closeInfoModal(resetInfoModalState);
-    }, 3000);
+    }, 3000 + (fromFreightRelationChoice ? Math.max(120, INFO_MODAL_ANIMATION_MS - 500) : 0));
   }, [
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -853,6 +877,7 @@ export default function CampaignDetailPage() {
     setInfoModalInteraction,
     setIsInfoModalClosing,
     setShowInfoModal,
+    transitionFreightInfoModal,
   ]);
 
   const preventInfoHover = infoModalMode === "create-error"
@@ -2054,6 +2079,15 @@ export default function CampaignDetailPage() {
   const directChildCount = freightTree && freightTree.currentCampaignId.toLowerCase() === currentFreightId
     ? countDirectChildren(currentFreightId, freightTree.nodes)
     : null;
+  const latestDirectChildId = freightTree && freightTree.currentCampaignId.toLowerCase() === currentFreightId
+    ? freightTree.nodes
+        .filter((node) => node.parentCampaignId?.trim().toLowerCase() === currentFreightId)
+        .sort((left, right) => {
+          const leftCreatedAt = Number(left.chainCreatedAt) || Date.parse(left.chainCreatedAt ?? "") || 0;
+          const rightCreatedAt = Number(right.chainCreatedAt) || Date.parse(right.chainCreatedAt ?? "") || 0;
+          return rightCreatedAt - leftCreatedAt || right.campaignId.localeCompare(left.campaignId);
+        })[0]?.campaignId ?? null
+    : null;
   const infoModalBody = infoModalMode === "tag-suggestions" ? (
     <TagSuggestionsInfo initialQuery={tagSuggestionQuery} onContinue={handleTagSuggestionContinue} />
   ) : infoModalMode === "freight-options" ? (
@@ -2400,6 +2434,10 @@ export default function CampaignDetailPage() {
       }}>Select Existing</button>
       <button type="button" className="create-info-confirm-btn" onClick={() => {
         if (!freightRelationChoice) return;
+        if (typeof currentUserProfile?.fbars === "number" && currentUserProfile.fbars < FREIGHT_CREATION_FBARS_COST) {
+          openInsufficientFbarsInfoModal(true);
+          return;
+        }
         setIsCreatingRelatedFreight(true);
         setShowInfoModal(false);
         setInfoModalMode("about");
@@ -2738,8 +2776,10 @@ export default function CampaignDetailPage() {
           onProfileDataChanged={markCurrentProfileDataDirty}
           onViewerAvatarClick={() => void handleViewerAvatarClick()}
           onFreightOptionsClick={handleOpenFreightOptions}
+          onFreightTreeClick={() => void handleViewFreightTree()}
           threadRole={selectedRecord.parentCampaignId ? "child" : "parent"}
           directChildCount={directChildCount}
+          threadNodeTargetId={selectedRecord.parentCampaignId ?? latestDirectChildId}
           onSupportRequest={handleOpenSupportInfoModal}
           onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
         />
@@ -2807,6 +2847,18 @@ export default function CampaignDetailPage() {
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
           onConnect={openWalletWithSeed}
+          onContainerClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (showInfoModal) {
+              if (infoModalMode !== "create-error" && infoModalMode !== "freight-link-pending" && !freightLinkBusy && !(infoModalMode === "ticket-purchase" && isPurchasingTickets) && !(infoModalMode === "support-deposit" && isProcessingSupport)) {
+                closeInfoModal(resetInfoModalState);
+              }
+            } else if (selectedFreightOption === "view-tree") {
+              closeFreightTree();
+            } else if (showCreateModal) {
+              requestCloseCreateModal();
+            }
+          }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
@@ -2834,6 +2886,8 @@ export default function CampaignDetailPage() {
               onReset={resetCreateModal}
               onSecondaryAction={handleCreateTopRightAction}
             />
+          ) : selectedFreightOption === "view-tree" ? (
+            <FreightTreeZoomActions isClosing={isFreightTreeClosing} zoom={freightTreeZoom} setZoom={setFreightTreeZoom} />
           ) : undefined}
           canEditLightModePrimaryColor={canEditLightModePrimaryColor}
           currentLightModePrimaryColor={currentUserProfile?.lightModePrimaryColor ?? null}
@@ -2885,9 +2939,9 @@ export default function CampaignDetailPage() {
         />
         {selectedFreightOption === "view-tree" && selectedRecord?.campaignId ? (
           <>
-            <button type="button" className="create-campaign-backdrop" aria-label="Close freight tree modal" onClick={() => setSelectedFreightOption(null)} />
-            <div className="create-campaign-modal campaign-freight-tree-modal campaign-freight-tree-modal-diagram" role="dialog" aria-modal="true" aria-label="Freight tree">
-              {freightTree ? <FreightTreeDiagram tree={freightTree} /> : null}
+            <button type="button" className={`create-campaign-backdrop ${isFreightTreeClosing ? "create-campaign-backdrop-closing" : ""}`} aria-label="Close freight tree modal" onClick={closeFreightTree} />
+            <div className={`create-campaign-modal campaign-freight-tree-modal campaign-freight-tree-modal-diagram ${isFreightTreeClosing ? "create-campaign-modal-closing" : ""}`} role="dialog" aria-modal="true" aria-label="Freight tree">
+              {freightTree ? <FreightTreeDiagram tree={freightTree} zoom={freightTreeZoom} /> : null}
             </div>
           </>
         ) : null}

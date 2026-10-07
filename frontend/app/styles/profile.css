@@ -488,6 +488,9 @@
 }
 
 .profile-header-replacement-actions {
+  position: absolute;
+  top: calc(50% - 1.3rem);
+  right: 0;
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;

@@ -12,6 +12,7 @@ import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
 import FreightMountablesInfo from "@/app/_components/FreightMountablesInfo";
 import FreightTreeDiagram from "@/app/_components/FreightTreeDiagram";
+import FreightTreeZoomActions from "@/app/_components/FreightTreeZoomActions";
 import type { FreightTree } from "@/app/_components/FreightTreeInfo";
 import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
@@ -41,6 +42,7 @@ import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { SettlementModalData } from "@/app/_types/settlement";
 import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
+import { FREIGHT_CREATION_FBARS_COST } from "@/lib/fbars";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { type CampaignCell } from "@/lib/transactions";
 
@@ -90,6 +92,9 @@ export default function Home() {
   const [freightTreeError, setFreightTreeError] = useState(false);
   const [isLoadingFreightTree, setIsLoadingFreightTree] = useState(false);
   const [showFreightTree, setShowFreightTree] = useState(false);
+  const [isFreightTreeClosing, setIsFreightTreeClosing] = useState(false);
+  const [freightTreeZoom, setFreightTreeZoom] = useState(1);
+  const freightTreeCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const freightTreeRequestRef = useRef<AbortController | null>(null);
   const [commentDiscardDecision, setCommentDiscardDecision] = useState<{ cardId: string; discard: boolean } | null>(null);
@@ -641,11 +646,12 @@ export default function Home() {
         return;
       }
       setFreightTree(payload);
-      setShowInfoModal(false);
-      setIsInfoModalClosing(false);
-      setInfoModalMode("about");
-      setInfoModalInteraction("hover");
-      setShowFreightTree(true);
+      closeInfoModal(() => {
+        setInfoModalMode("about");
+        setIsFreightTreeClosing(false);
+        setFreightTreeZoom(1);
+        setShowFreightTree(true);
+      });
     } catch (error) {
       if (!controller.signal.aborted) {
         setFreightTreeError(true);
@@ -657,7 +663,21 @@ export default function Home() {
         setIsLoadingFreightTree(false);
       }
     }
-  }, [isLoadingFreightTree, selectedFreightOptionsId, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal]);
+  }, [closeInfoModal, isLoadingFreightTree, selectedFreightOptionsId]);
+
+  const closeFreightTree = useCallback(() => {
+    if (!showFreightTree || isFreightTreeClosing) return;
+    setIsFreightTreeClosing(true);
+    freightTreeCloseTimerRef.current = setTimeout(() => {
+      setShowFreightTree(false);
+      setIsFreightTreeClosing(false);
+      freightTreeCloseTimerRef.current = null;
+    }, INFO_MODAL_ANIMATION_MS);
+  }, [isFreightTreeClosing, showFreightTree]);
+
+  useEffect(() => () => {
+    if (freightTreeCloseTimerRef.current) clearTimeout(freightTreeCloseTimerRef.current);
+  }, []);
 
   const createSignedFreightTreeAction = useCallback(async () => {
     if (!signer) {
@@ -733,17 +753,21 @@ export default function Home() {
     }
   }, [freightRelationChoice, linkFreightFromFeed, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, transitionFreightInfoModal]);
 
-  const openInsufficientFbarsInfoModal = useCallback(() => {
+  const openInsufficientFbarsInfoModal = useCallback((fromFreightRelationChoice = false) => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
-    setInfoModalMode("insufficient-fbars");
-    setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
+    if (fromFreightRelationChoice) {
+      transitionFreightInfoModal("insufficient-fbars");
+    } else {
+      setInfoModalMode("insufficient-fbars");
+      setInfoModalInteraction("click");
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+    }
     submissionSuccessTimerRef.current = setTimeout(() => {
       closeInfoModal(resetHomeInfoModalState);
-    }, 3000);
+    }, 3000 + (fromFreightRelationChoice ? Math.max(120, INFO_MODAL_ANIMATION_MS - 500) : 0));
   }, [
     clearInfoCloseTimer,
     clearInfoHideTimer,
@@ -754,6 +778,7 @@ export default function Home() {
     setIsInfoModalClosing,
     setShowInfoModal,
     submissionSuccessTimerRef,
+    transitionFreightInfoModal,
   ]);
 
   const handleCommentDiscardChoice = useCallback((discard: boolean) => {
@@ -811,7 +836,7 @@ export default function Home() {
       }
 
       if (showFreightTree) {
-        setShowFreightTree(false);
+        closeFreightTree();
         return;
       }
 
@@ -824,9 +849,9 @@ export default function Home() {
     return () => {
       window.removeEventListener("keydown", handleEscapeClose);
     };
-  }, [closeInfoModal, freightLinkBusy, infoModalMode, isProcessingSupport, isPurchasingTickets, requestCloseCreateModal, resetHomeInfoModalState, showCreateModal, showFreightTree, showInfoModal]);
+  }, [closeFreightTree, closeInfoModal, freightLinkBusy, infoModalMode, isProcessingSupport, isPurchasingTickets, requestCloseCreateModal, resetHomeInfoModalState, showCreateModal, showFreightTree, showInfoModal]);
 
-  const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const shouldHideWalletAction = (showCreateModal && !isCreateModalClosing) || (showFreightTree && !isFreightTreeClosing);
   const isFreightOptionsFlow = infoModalMode === "freight-options" || infoModalMode === "freight-relation-choice" || infoModalMode === "freight-existing" || infoModalMode === "freight-link-pending" || infoModalMode === "freight-link-success" || infoModalMode === "freight-link-error";
   const infoModalBody = infoModalMode === "freight-options" ? (
     <div className="create-info-constraints-copy campaign-freight-options-heading-row">
@@ -1291,6 +1316,10 @@ export default function Home() {
       }}>Select Existing</button>
       <button type="button" className="create-info-confirm-btn" onClick={() => {
         if (!freightRelationChoice) return;
+        if (typeof currentUserProfile?.fbars === "number" && currentUserProfile.fbars < FREIGHT_CREATION_FBARS_COST) {
+          openInsufficientFbarsInfoModal(true);
+          return;
+        }
         setIsCreatingRelatedFreight(true);
         setShowInfoModal(false);
         setInfoModalMode("about");
@@ -1645,7 +1674,7 @@ export default function Home() {
     <main className="flex flex-col items-center min-h-screen gap-6 p-4 sm:p-8">
       <div className={`${shellWidthClass} flex flex-col gap-6 pt-[3.75rem] sm:pt-[2.625rem]`.trim()}>
         <AppShellHeader
-          className={`campaign-shell-header ${shellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header ${shellWidthClass} ${showCreateModal || showFreightTree ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "freight-mountables" ? "Freight mountables" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "support-deposit" ? (supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB") : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
@@ -1656,11 +1685,18 @@ export default function Home() {
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
           onConnect={openWalletWithSeed}
-          onContainerClick={showCreateModal ? (event) => {
-            if (event.target === event.currentTarget) {
+          onContainerClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (showInfoModal) {
+              if (infoModalMode !== "create-error" && infoModalMode !== "freight-link-pending" && !freightLinkBusy && !(infoModalMode === "ticket-purchase" && isPurchasingTickets) && !(infoModalMode === "support-deposit" && isProcessingSupport)) {
+                closeInfoModal(resetHomeInfoModalState);
+              }
+            } else if (showFreightTree) {
+              closeFreightTree();
+            } else if (showCreateModal) {
               requestCloseCreateModal();
             }
-          } : undefined}
+          }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
@@ -1686,6 +1722,8 @@ export default function Home() {
               onReset={resetCreateModal}
               onSecondaryAction={handleCreateTopRightAction}
             />
+          ) : showFreightTree ? (
+            <FreightTreeZoomActions isClosing={isFreightTreeClosing} zoom={freightTreeZoom} setZoom={setFreightTreeZoom} />
           ) : undefined}
           canEditLightModePrimaryColor={canEditLightModePrimaryColor}
           currentLightModePrimaryColor={currentUserProfile?.lightModePrimaryColor ?? null}
@@ -1766,9 +1804,9 @@ export default function Home() {
       />
       {showFreightTree && freightTree ? (
         <>
-          <button type="button" className="create-campaign-backdrop" aria-label="Close freight tree modal" onClick={() => setShowFreightTree(false)} />
-          <div className="create-campaign-modal campaign-freight-tree-modal campaign-freight-tree-modal-diagram" role="dialog" aria-modal="true" aria-label="Freight tree">
-            <FreightTreeDiagram tree={freightTree} />
+          <button type="button" className={`create-campaign-backdrop ${isFreightTreeClosing ? "create-campaign-backdrop-closing" : ""}`} aria-label="Close freight tree modal" onClick={closeFreightTree} />
+          <div className={`create-campaign-modal campaign-freight-tree-modal campaign-freight-tree-modal-diagram ${isFreightTreeClosing ? "create-campaign-modal-closing" : ""}`} role="dialog" aria-modal="true" aria-label="Freight tree">
+            <FreightTreeDiagram tree={freightTree} zoom={freightTreeZoom} />
           </div>
         </>
       ) : null}

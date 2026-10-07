@@ -1581,6 +1581,16 @@
   background: #ffffff;
 }
 
+.campaign-thread-connector-node-link {
+  padding: 0;
+  cursor: pointer;
+}
+
+.campaign-thread-connector-node-link:focus-visible {
+  outline: 2px solid #961cac;
+  outline-offset: 2px;
+}
+
 .campaign-thread-actions {
   display: flex;
   align-items: center;

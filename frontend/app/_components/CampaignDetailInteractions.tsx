@@ -30,17 +30,19 @@ type Props = {
   onProfileDataChanged: () => void;
   onViewerAvatarClick: () => void;
   onFreightOptionsClick: () => void;
+  onFreightTreeClick: () => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   threadRole?: CampaignThreadRole;
   directChildCount: number | null;
+  threadNodeTargetId: string | null;
 };
 
 type Modal = "settlement" | null;
 
 export default function CampaignDetailInteractions({
   campaign, record: initialRecord, client, signer, walletAddress, viewerFbars, creatorFbars,
-  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onFreightOptionsClick, onSupportRequest, onTicketPurchaseRequest, threadRole, directChildCount,
+  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onFreightOptionsClick, onFreightTreeClick, onSupportRequest, onTicketPurchaseRequest, threadRole, directChildCount, threadNodeTargetId,
 }: Props) {
   const [record, setRecord] = useState(initialRecord);
   const onRecordChange = (update: Partial<CampaignRecord>) => setRecord((current) => ({ ...current, ...update }));
@@ -104,7 +106,7 @@ export default function CampaignDetailInteractions({
           <div className="campaign-detail-card-shell">
             <CampaignDetailSurface campaign={campaign} record={record} nowMs={nowMs} />
           </div>
-          <CampaignThreadConnector role={threadRole} directChildCount={directChildCount} onOpenOptions={onFreightOptionsClick}
+          <CampaignThreadConnector role={threadRole} directChildCount={directChildCount} nodeTargetId={threadNodeTargetId} onOpenOptions={onFreightOptionsClick} onOpenTree={onFreightTreeClick}
             settlementAction={state.showSettlementAction ? (
               <button type="button" className={`campaign-action-btn campaign-thread-settlement-action action-winners ${state.shouldGlowSettlement ? "campaign-action-active" : ""}`}
                 onClick={() => void state.handleSettlementClick()} data-tooltip={state.isRecurringRaffle ? state.recurringActionLabel ?? "Recurring raffle action" : state.shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}>

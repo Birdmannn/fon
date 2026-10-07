@@ -9,6 +9,7 @@ export type FreightNode = {
   title?: string;
   description?: string;
   creatorAddress?: string;
+  chainCreatedAt?: string;
   depth?: number;
 };
 

@@ -1,17 +1,28 @@
 "use client";
 
 import { Ellipsis } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 export type CampaignThreadRole = "parent" | "child";
 
-export default function CampaignThreadConnector({ role = "parent", directChildCount, onOpenOptions, settlementAction }: { role?: CampaignThreadRole; directChildCount: number | null; onOpenOptions: () => void; settlementAction?: ReactNode }) {
+export default function CampaignThreadConnector({ role = "parent", directChildCount, onOpenOptions, onOpenTree, settlementAction, nodeTargetId }: { role?: CampaignThreadRole; directChildCount: number | null; onOpenOptions: () => void; onOpenTree: () => void; settlementAction?: ReactNode; nodeTargetId?: string | null }) {
   return (
     <div className="campaign-thread-controls">
       <div className={`campaign-thread-connector campaign-thread-connector-${role}`}>
         <span className="campaign-thread-connector-line" aria-hidden="true" />
         <span className="campaign-thread-connector-node-row">
-          <span className="campaign-thread-connector-node" aria-hidden="true" />
+          {directChildCount !== null && directChildCount > 1 ? (
+            <button type="button" className="campaign-thread-connector-node campaign-thread-connector-node-link"
+              onClick={onOpenTree} aria-label="View freight tree" aria-haspopup="dialog" data-tooltip="Freight is a parent" />
+          ) : nodeTargetId ? (
+            <Link className="campaign-thread-connector-node campaign-thread-connector-node-link"
+              href={`/freight/${encodeURIComponent(nodeTargetId)}`}
+              aria-label={role === "child" ? "Go to parent freight" : "Go to child freight"}
+              data-tooltip={role === "child" ? "Freight is a child" : "Freight is a parent"} />
+          ) : (
+            <span className="campaign-thread-connector-node" data-tooltip={role === "child" ? "Freight is a child" : "Freight is a parent"} />
+          )}
           {directChildCount !== null ? (
             <span className="campaign-thread-connector-count" aria-label={`${directChildCount} direct children`}>{directChildCount}</span>
           ) : null}

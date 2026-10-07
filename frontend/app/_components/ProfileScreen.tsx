@@ -460,7 +460,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     };
   }, [closeInfoModal, closeLeaderboardModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal, showLeaderboardModal]);
 
-  const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const shouldHideWalletAction = (showCreateModal && !isCreateModalClosing) || (showLeaderboardModal && !isLeaderboardClosing);
   const canEditDisplayName = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
   const isViewingAnotherUserProfile = Boolean(
     signer
@@ -1255,11 +1255,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
           onConnect={openWalletWithSeed}
-          onContainerClick={showCreateModal ? (event) => {
-            if (event.target === event.currentTarget) {
+          onContainerClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (showInfoModal) {
+              if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
+            } else if (showLeaderboardModal) {
+              closeLeaderboardModal();
+            } else if (showCreateModal) {
               requestCloseCreateModal();
             }
-          } : undefined}
+          }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
@@ -1285,8 +1290,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               onReset={resetCreateModal}
               onSecondaryAction={handleCreateTopRightAction}
             />
-          ) : undefined}
-          replaceWalletAction={showLeaderboardModal ? (
+          ) : showLeaderboardModal ? (
             <div className={`profile-header-replacement-actions ${isLeaderboardClosing ? "profile-header-replacement-actions-closing" : ""}`}>
               <button
                 type="button"
