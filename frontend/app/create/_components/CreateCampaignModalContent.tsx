@@ -386,7 +386,7 @@ type CreateCampaignModalContentProps = {
   onPreviewErrorChange?: (message: string) => void;
   onDraftListOpenChange?: (isOpen: boolean) => void;
   onDraftSelectionRequest?: (draftId: string) => void;
-  onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
+  onPublishSuccess?: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
   onMountableSelectionRequired?: () => void;
   onTagSuggestionsRequested?: (query: string) => void;
   onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
@@ -2637,7 +2637,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     try {
       if (pendingPublishedRecordSync) {
         await finalizePublishedRecordSync(pendingPublishedRecordSync);
-        onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage);
+        onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage, pendingPublishedRecordSync.campaignId);
         setStatus("success");
         return;
       }
@@ -2805,7 +2805,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         await finalizePublishedRecordSync(pendingSync);
       }
 
-      onPublishSuccess?.(publishResult.txHash, randomnessPreimageHex);
+      onPublishSuccess?.(publishResult.txHash, randomnessPreimageHex, publishResult.campaignId);
       setStatus("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

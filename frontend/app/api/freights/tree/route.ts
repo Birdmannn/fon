@@ -138,8 +138,25 @@ async function refreshSubtree(campaignId: string, rows: Map<string, FreightRow>,
 
 export async function GET(request: Request) {
   try {
-    const campaignId = requiredString(new URL(request.url).searchParams.get("campaignId"), "campaignId").toLowerCase();
-    const tree = treeFor(campaignId, await loadFreights());
+    const params = new URL(request.url).searchParams;
+    const campaignId = requiredString(params.get("campaignId"), "campaignId").toLowerCase();
+    const rows = await loadFreights();
+    const ownedBy = normalizeAddress(params.get("ownedBy"));
+    if (ownedBy) {
+      const owned = await Promise.all([...rows.values()]
+        .filter((row) => normalizeAddress(row.creatorAddress) === ownedBy && row.campaignId.toLowerCase() !== campaignId)
+        .map(async (row) => {
+          try {
+            return await verifiedCreatorAddress(row) === ownedBy
+              ? { campaignId: row.campaignId, title: row.title?.trim() || "Untitled freight" }
+              : null;
+          } catch {
+            return null;
+          }
+        }));
+      return NextResponse.json({ freights: owned.filter((row) => row !== null).sort((a, b) => a.title.localeCompare(b.title)) });
+    }
+    const tree = treeFor(campaignId, rows);
     return tree ? NextResponse.json(tree) : errorResponse("Freight not found", 404);
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to load freight tree", 500);
@@ -179,6 +196,10 @@ export async function POST(request: Request) {
     const currentCreator = await verifiedCreatorAddress(current);
     const otherCreator = other ? await verifiedCreatorAddress(other) : "";
     const collection = await getMongoCollection();
+
+    if ((relation === "parent" || relation === "child") && otherCreator !== address) {
+      return errorResponse("Select a freight created by the signing wallet", 403);
+    }
 
     if (relation === "require-linked") {
       if (currentCreator !== address || typeof body.required !== "boolean") {

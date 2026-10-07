@@ -3,6 +3,11 @@ export type FreightTreeRecord = {
   parentCampaignId?: string | null;
 };
 
+export function countDirectChildren(campaignId: string, nodes: Array<Pick<FreightTreeRecord, "parentCampaignId">>) {
+  const normalizedId = campaignId.trim().toLowerCase();
+  return nodes.filter((node) => node.parentCampaignId?.trim().toLowerCase() === normalizedId).length;
+}
+
 export function canEncroach(actorFbars: number, creatorFbars: number) {
   return Number.isFinite(actorFbars) && Number.isFinite(creatorFbars)
     && actorFbars >= 0 && creatorFbars >= 0 && actorFbars >= creatorFbars * 10;

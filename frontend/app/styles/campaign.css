@@ -1480,11 +1480,32 @@
 }
 
 .campaign-thread-connector-node {
+  display: block;
   width: var(--campaign-thread-node-size, 1rem);
   height: var(--campaign-thread-node-size, 1rem);
   border: 1px solid var(--campaign-card-border);
   border-radius: 50%;
   background: #000000;
+}
+
+.campaign-thread-connector-node-row {
+  position: relative;
+  display: block;
+  width: var(--campaign-thread-node-size, 1rem);
+  height: var(--campaign-thread-node-size, 1rem);
+}
+
+.campaign-thread-connector-count {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 0.4rem);
+  transform: translateY(-50%);
+  color: #000000;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .campaign-thread-connector-child .campaign-thread-connector-node {

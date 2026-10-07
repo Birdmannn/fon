@@ -449,13 +449,161 @@
   width: 100%;
 }
 
+.create-info-confirm-actions > .create-info-confirm-btn:not(:first-child) {
+  margin-left: -2px;
+}
+
+.create-info-confirm-actions > .create-info-ticket-input:hover,
+.create-info-confirm-actions > .create-info-ticket-input-wrap:hover {
+  position: relative;
+  z-index: 1;
+}
+
+.create-info-confirm-actions > .create-info-ticket-input:focus,
+.create-info-confirm-actions > .create-info-ticket-input-wrap:focus-within {
+  position: relative;
+  z-index: 2;
+}
+
 .campaign-freight-options-heading {
   color: #6b7280;
   font-weight: 700;
 }
 
+.campaign-freight-options-heading-row {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.campaign-freight-options-feedback {
+  min-width: 0;
+  color: #6b7280;
+  font-weight: 400;
+  text-align: right;
+}
+
+.campaign-freight-options-feedback-error {
+  color: #dc2626;
+}
+
 .campaign-freight-tree-modal {
   padding: 1.5rem;
+}
+
+.campaign-freight-tree-modal-diagram {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+
+.campaign-freight-tree-viewport {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 2rem;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.campaign-freight-tree-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.campaign-freight-tree-level {
+  display: flex;
+  justify-content: center;
+  width: max-content;
+  padding: 1.5rem 0 0;
+  margin: 0;
+  position: relative;
+  list-style: none;
+}
+
+.campaign-freight-tree-root {
+  padding-top: 0;
+  margin: auto;
+}
+
+.campaign-freight-tree-level .campaign-freight-tree-level::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 1.5rem;
+  border-left: 1px solid #9ca3af;
+}
+
+.campaign-freight-tree-branch {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 0.6rem 0;
+}
+
+.campaign-freight-tree-root > .campaign-freight-tree-branch {
+  padding-top: 0;
+}
+
+.campaign-freight-tree-branch::before,
+.campaign-freight-tree-branch::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: 1.5rem;
+  border-top: 1px solid #9ca3af;
+}
+
+.campaign-freight-tree-branch::before {
+  right: 50%;
+}
+
+.campaign-freight-tree-branch::after {
+  left: 50%;
+  border-left: 1px solid #9ca3af;
+}
+
+.campaign-freight-tree-branch:last-child::before {
+  border-right: 1px solid #9ca3af;
+}
+
+.campaign-freight-tree-branch:first-child::before,
+.campaign-freight-tree-branch:last-child::after,
+.campaign-freight-tree-branch:only-child::before,
+.campaign-freight-tree-branch:only-child::after,
+.campaign-freight-tree-root > .campaign-freight-tree-branch::before,
+.campaign-freight-tree-root > .campaign-freight-tree-branch::after {
+  display: none;
+}
+
+.campaign-freight-tree-node {
+  display: grid;
+  place-items: center;
+  min-width: 8rem;
+  max-width: 12rem;
+  min-height: 3.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #9ca3af;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.campaign-freight-tree-node-current {
+  border-color: #7c3aed;
+}
+
+.campaign-freight-tree-node:hover,
+.campaign-freight-tree-node:focus-visible {
+  border-color: #7c3aed;
+  text-decoration: underline;
 }
 
 .campaign-freight-tree-modal-header {
@@ -493,8 +641,47 @@
   white-space: nowrap;
 }
 
-.campaign-freight-options-actions .create-info-confirm-btn + .create-info-confirm-btn {
-  border-left-width: 0;
+.campaign-owned-freights {
+  display: flex;
+  flex-direction: column;
+  max-height: min(40vh, 18rem);
+  overflow-y: auto;
+  border: 1px solid #d1d5db;
+}
+
+.campaign-owned-freight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 0;
+  background: var(--background);
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+}
+
+.campaign-owned-freight + .campaign-owned-freight {
+  border-top: 1px solid #d1d5db;
+}
+
+.campaign-owned-freight:is(:hover, :focus-visible) {
+  background: var(--tertiary-background);
+  color: #7c3aed;
+}
+
+.campaign-owned-freight:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.campaign-owned-freight small {
+  overflow: hidden;
+  color: #6b7280;
+  font-family: var(--font-mono, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .create-info-confirm-actions.create-info-confirm-actions-tight {
@@ -503,6 +690,7 @@
 }
 
 .create-info-confirm-btn {
+  position: relative;
   margin: 0;
   flex: 1;
   width: 100%;
@@ -522,9 +710,14 @@
 
 .create-info-confirm-btn:hover,
 .create-info-confirm-btn:focus-visible {
+  z-index: 1;
   /* transform: translateY(-1px); */
   color: #dc2626;
   border-color: #dc2626;
+}
+
+.create-info-confirm-btn:focus-visible {
+  z-index: 2;
 }
 
 .create-info-confirm-btn-primary {
@@ -583,6 +776,22 @@
   display: flex;
   width: 100%;
   flex-direction: column;
+}
+
+.create-info-mountable-app-actions > .create-info-confirm-actions {
+  position: relative;
+}
+
+.create-info-mountable-app-actions > .create-info-confirm-actions:is(:hover, :focus-within) {
+  z-index: 1;
+}
+
+.create-info-mountable-app-actions > .create-info-confirm-actions:focus-within {
+  z-index: 2;
+}
+
+.create-info-mountable-app-actions > .create-info-confirm-btn-ignore {
+  margin-top: -2px;
 }
 
 .create-info-confirm-btn-ignore {

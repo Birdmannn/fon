@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ancestorIds, canEncroach, effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, wouldCreateCycle } from "../lib/freightTree.ts";
+import { ancestorIds, canEncroach, countDirectChildren, effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, wouldCreateCycle } from "../lib/freightTree.ts";
+
+test("counts only immediate children of the current freight", () => {
+  const nodes = [
+    { parentCampaignId: null },
+    { parentCampaignId: "ROOT" },
+    { parentCampaignId: "root" },
+    { parentCampaignId: "child" },
+  ];
+  assert.equal(countDirectChildren("root", nodes), 2);
+  assert.equal(countDirectChildren("child", nodes), 1);
+});
 
 test("encroachment requires ten times the creator's current FBARS", () => {
   assert.equal(canEncroach(99, 10), false);

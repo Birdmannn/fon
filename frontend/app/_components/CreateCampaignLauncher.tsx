@@ -25,7 +25,7 @@ type CreateCampaignLauncherProps = {
   onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
   onOpenCreateModal: () => void;
   onPreviewErrorChange: (message: string) => void;
-  onPublishSuccess: (txHash: string, randomnessPreimage: string | null) => void;
+  onPublishSuccess: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
   onRequestCloseCreateModal: () => void;
   onStepChange: (step: CreateModalStep) => void;
   showCreateModal: boolean;

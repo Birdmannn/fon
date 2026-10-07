@@ -289,6 +289,20 @@
   margin-top: 0.5rem;
 }
 
+.profile-display-name-edit-row > .create-info-confirm-btn {
+  margin-left: -2px;
+}
+
+.profile-display-name-input:hover {
+  position: relative;
+  z-index: 1;
+}
+
+.profile-display-name-input:focus {
+  position: relative;
+  z-index: 2;
+}
+
 .profile-display-name-input,
 .profile-display-name-confirm-btn {
   flex: 1;

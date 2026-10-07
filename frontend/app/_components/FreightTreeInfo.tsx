@@ -3,7 +3,7 @@
 import { GitBranch, Link2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-type FreightNode = {
+export type FreightNode = {
   campaignId: string;
   parentCampaignId?: string | null;
   title?: string;
@@ -12,7 +12,7 @@ type FreightNode = {
   depth?: number;
 };
 
-type FreightTree = {
+export type FreightTree = {
   currentCampaignId: string;
   requiresLinkedFreight: boolean;
   nodes: FreightNode[];

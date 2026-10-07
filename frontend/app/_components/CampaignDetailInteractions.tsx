@@ -33,13 +33,14 @@ type Props = {
   onSupportRequest: (request: CampaignSupportRequest) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   threadRole?: CampaignThreadRole;
+  directChildCount: number | null;
 };
 
 type Modal = "settlement" | null;
 
 export default function CampaignDetailInteractions({
   campaign, record: initialRecord, client, signer, walletAddress, viewerFbars, creatorFbars,
-  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onFreightOptionsClick, onSupportRequest, onTicketPurchaseRequest, threadRole,
+  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onFreightOptionsClick, onSupportRequest, onTicketPurchaseRequest, threadRole, directChildCount,
 }: Props) {
   const [record, setRecord] = useState(initialRecord);
   const onRecordChange = (update: Partial<CampaignRecord>) => setRecord((current) => ({ ...current, ...update }));
@@ -103,7 +104,7 @@ export default function CampaignDetailInteractions({
           <div className="campaign-detail-card-shell">
             <CampaignDetailSurface campaign={campaign} record={record} nowMs={nowMs} />
           </div>
-          <CampaignThreadConnector role={threadRole} onOpenOptions={onFreightOptionsClick} />
+          <CampaignThreadConnector role={threadRole} directChildCount={directChildCount} onOpenOptions={onFreightOptionsClick} />
         </section>
 
         <section className="campaign-detail-comments-column campaign-card-entry">
