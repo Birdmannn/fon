@@ -19,6 +19,7 @@ type CampaignFeedSectionProps = {
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onErrorChange: (message: string) => void;
   onMountablesClick: (record: CampaignRecord) => void;
+  onFreightOptionsClick: (campaignId: string) => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
   onProfileDataChanged?: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
@@ -32,6 +33,7 @@ export default function CampaignFeedSection({
   onTicketPurchaseRequest,
   onErrorChange,
   onMountablesClick,
+  onFreightOptionsClick,
   onSupportRequest,
   onProfileDataChanged,
   onSettlementInfoRequest,
@@ -95,6 +97,7 @@ export default function CampaignFeedSection({
         onScrolledToNewest={clearShouldScrollToNewest}
         onCommentDiscardRequest={onCommentDiscardRequest}
         onMountablesClick={onMountablesClick}
+        onFreightOptionsClick={onFreightOptionsClick}
         onSupportRequest={onSupportRequest}
         commentDiscardDecision={commentDiscardDecision}
         onStartDetailTransition={(href) => {

@@ -174,6 +174,13 @@
   color: #6b7280;
 }
 
+.campaign-card-creator-photo-wrap {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 2.75rem;
+}
+
 .campaign-card-creator-photo {
   position: relative;
   width: 2.75rem;
@@ -186,6 +193,68 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+.campaign-card-creator-photo::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #00000055;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.campaign-card-creator-photo-source,
+.campaign-card-creator-photo-fallback-inner {
+  transition: filter 180ms ease;
+}
+
+.campaign-card-creator-photo-wrap:has(.campaign-card-creator-options):is(:hover, :focus-within) .campaign-card-creator-photo::after {
+  opacity: 1;
+}
+
+.campaign-card-creator-photo-wrap:has(.campaign-card-creator-options):is(:hover, :focus-within) :is(.campaign-card-creator-photo-source, .campaign-card-creator-photo-fallback-inner) {
+  filter: blur(0.8px);
+}
+
+.campaign-card-creator-options {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #ffffff;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition: opacity 180ms ease;
+}
+
+.campaign-card-creator-photo-wrap:is(:hover, :focus-within) .campaign-card-creator-options {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.campaign-card-creator-options:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: -3px;
+}
+
+@media (hover: none) {
+  .campaign-card-creator-photo-wrap .campaign-card-creator-options {
+    opacity: 1;
+    pointer-events: auto;
+    background: #00000066;
+  }
 }
 
 .campaign-card-creator-photo:hover,
@@ -1512,9 +1581,19 @@
   background: #ffffff;
 }
 
+.campaign-thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: -0.25rem;
+}
+
+.campaign-thread-settlement-action {
+  height: 1.5rem;
+}
+
 .campaign-thread-more-wrap {
   position: relative;
-  margin-bottom: -0.25rem;
 }
 
 .campaign-thread-more-button {

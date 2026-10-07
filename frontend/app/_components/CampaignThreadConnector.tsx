@@ -1,10 +1,11 @@
 "use client";
 
 import { Ellipsis } from "lucide-react";
+import type { ReactNode } from "react";
 
 export type CampaignThreadRole = "parent" | "child";
 
-export default function CampaignThreadConnector({ role = "parent", directChildCount, onOpenOptions }: { role?: CampaignThreadRole; directChildCount: number | null; onOpenOptions: () => void }) {
+export default function CampaignThreadConnector({ role = "parent", directChildCount, onOpenOptions, settlementAction }: { role?: CampaignThreadRole; directChildCount: number | null; onOpenOptions: () => void; settlementAction?: ReactNode }) {
   return (
     <div className="campaign-thread-controls">
       <div className={`campaign-thread-connector campaign-thread-connector-${role}`}>
@@ -16,11 +17,14 @@ export default function CampaignThreadConnector({ role = "parent", directChildCo
           ) : null}
         </span>
       </div>
-      <div className="campaign-thread-more-wrap">
-        <button type="button" className="campaign-thread-more-button" aria-label="More freight options"
-          aria-haspopup="dialog" data-tooltip="More options" onClick={onOpenOptions}>
-          <Ellipsis size={16} strokeWidth={1} aria-hidden="true" />
-        </button>
+      <div className="campaign-thread-actions">
+        {settlementAction}
+        <div className="campaign-thread-more-wrap">
+          <button type="button" className="campaign-thread-more-button" aria-label="More freight options"
+            aria-haspopup="dialog" data-tooltip="More options" onClick={onOpenOptions}>
+            <Ellipsis size={16} strokeWidth={1} aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </div>
   );

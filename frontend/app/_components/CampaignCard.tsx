@@ -6,6 +6,7 @@ import {
   Check,
   Coins,
   Heart,
+  Infinity,
   MessageSquare,
   Repeat2,
   Share2,
@@ -36,6 +37,7 @@ type CampaignCardProps = {
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onOpenDetail: () => void;
   onMountablesClick: (record: CampaignRecord) => void;
+  onFreightOptionsClick: () => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
@@ -71,6 +73,7 @@ export default function CampaignCard({
   commentDiscardDecision,
   onOpenDetail,
   onMountablesClick,
+  onFreightOptionsClick,
   onSupportRequest,
   onTicketPurchaseRequest,
   onTicketBought,
@@ -154,10 +157,12 @@ export default function CampaignCard({
         record={record}
         creatorPhotoUpdatedAt={creatorProfile?.photoUpdatedAt}
         displayStatus={displayStatus}
+        shouldGlowSettlement={shouldGlowSettlement}
         nowMs={nowMs}
         isHighlighted={isHighlighted}
         onOpenDetail={onOpenDetail}
         onMountablesClick={record ? () => onMountablesClick(record) : undefined}
+        onFreightOptionsClick={onFreightOptionsClick}
       />
 
       <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
@@ -253,7 +258,9 @@ export default function CampaignCard({
                 data-tooltip={!isConnected ? "Connect wallet to enter raffle" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
               >
                 <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{remainingTickets < 0n ? "Unlimited" : `${String(remainingTickets)} left`}</span>
+                <span className="campaign-action-count font-mono inline-flex items-center" aria-label={remainingTickets < 0n ? "Unlimited tickets" : undefined}>
+                  {remainingTickets < 0n ? <Infinity size={22} strokeWidth={2} aria-hidden="true" /> : `${String(remainingTickets)} left`}
+                </span>
               </button>
             </div>
           )}
@@ -314,7 +321,9 @@ export default function CampaignCard({
                   }
                 >
                   <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{remainingTickets < 0n ? "Unlimited" : `${String(remainingTickets)} left`}</span>
+                  <span className="campaign-action-count font-mono inline-flex items-center" aria-label={remainingTickets < 0n ? "Unlimited tickets" : undefined}>
+                    {remainingTickets < 0n ? <Infinity size={22} strokeWidth={2} aria-hidden="true" /> : `${String(remainingTickets)} left`}
+                  </span>
                 </button>
               </div>
             ) : (

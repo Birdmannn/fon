@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Blocks, Copy, HandCoins, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
+import { Blocks, Copy, EllipsisVertical, HandCoins, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
@@ -11,7 +11,6 @@ import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
   decodeCreatedByAddress,
-  deriveRaffleSettlementUiState,
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
 import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
@@ -143,10 +142,12 @@ type CampaignCardSurfaceProps = {
   campaign: CampaignCell;
   creatorPhotoUpdatedAt?: string | null;
   displayStatus: CampaignStatus;
+  shouldGlowSettlement: boolean;
   isHighlighted?: boolean;
   nowMs: number;
   onOpenDetail?: () => void;
   onMountablesClick?: () => void;
+  onFreightOptionsClick?: () => void;
   record: CampaignRecord | null;
   variant?: "feed" | "detail";
 };
@@ -155,10 +156,12 @@ export default function CampaignCardSurface({
   campaign,
   creatorPhotoUpdatedAt,
   displayStatus,
+  shouldGlowSettlement,
   isHighlighted = false,
   nowMs,
   onOpenDetail,
   onMountablesClick,
+  onFreightOptionsClick,
   record,
   variant = "feed",
 }: CampaignCardSurfaceProps) {
@@ -186,12 +189,6 @@ export default function CampaignCardSurface({
       ?? (hasSplitSupportAccounting(data) ? String(Number(data.supportPoolBps / 100n)) : "0"),
     10
   );
-  const shouldGlowSettlement = deriveRaffleSettlementUiState({
-    campaign,
-    displayStatus,
-    settlementTxHash: record?.settlementTxHash ?? null,
-    soldTicketCount: record?.soldTicketCount ?? null,
-  }).shouldGlowSettlement;
   const collapsedDescription = useMemo(
     () => truncateCampaignDescription(displayDescription, variant === "detail" ? 1200 : CAMPAIGN_CARD_PREVIEW_MAX_CHARS),
     [displayDescription, variant]
@@ -305,28 +302,44 @@ export default function CampaignCardSurface({
               )}
             </div>
           </div>
-          <Link
-            href={`/user/${encodeURIComponent(creatorHandle)}`}
-            className={`campaign-card-creator-photo ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-image" : "campaign-card-creator-photo-fallback"}`.trim()}
-            aria-label={`View ${creatorHandle} profile`}
-            onClick={(event) => event.stopPropagation()}
-          >
-            {!isCreatorPhotoLoaded ? (
-              <span className="campaign-card-creator-photo-fallback-inner" aria-hidden="true" />
+          <div className="campaign-card-creator-photo-wrap">
+            <Link
+              href={`/user/${encodeURIComponent(creatorHandle)}`}
+              className={`campaign-card-creator-photo ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-image" : "campaign-card-creator-photo-fallback"}`.trim()}
+              aria-label={`View ${creatorHandle} profile`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {!isCreatorPhotoLoaded ? (
+                <span className="campaign-card-creator-photo-fallback-inner" aria-hidden="true" />
+              ) : null}
+              {creatorPhotoUrl ? (
+                <Image
+                  src={creatorPhotoUrl}
+                  alt=""
+                  width={44}
+                  height={44}
+                  unoptimized
+                  className={`campaign-card-creator-photo-source ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-source-loaded" : ""}`.trim()}
+                  onLoad={() => setLoadedCreatorPhotoUrl(creatorPhotoUrl)}
+                  onError={() => setLoadedCreatorPhotoUrl((current) => current === creatorPhotoUrl ? null : current)}
+                />
+              ) : null}
+            </Link>
+            {onFreightOptionsClick ? (
+              <button
+                type="button"
+                className="campaign-card-creator-options"
+                aria-label="Freight options"
+                data-tooltip="Freight options"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onFreightOptionsClick();
+                }}
+              >
+                <EllipsisVertical size={20} strokeWidth={2} aria-hidden="true" />
+              </button>
             ) : null}
-            {creatorPhotoUrl ? (
-              <Image
-                src={creatorPhotoUrl}
-                alt=""
-                width={44}
-                height={44}
-                unoptimized
-                className={`campaign-card-creator-photo-source ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-source-loaded" : ""}`.trim()}
-                onLoad={() => setLoadedCreatorPhotoUrl(creatorPhotoUrl)}
-                onError={() => setLoadedCreatorPhotoUrl((current) => current === creatorPhotoUrl ? null : current)}
-              />
-            ) : null}
-          </Link>
+          </div>
         </div>
 
         <div className="campaign-card-content campaign-card-content-feed">

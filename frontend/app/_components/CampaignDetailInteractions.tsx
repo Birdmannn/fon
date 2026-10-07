@@ -104,7 +104,13 @@ export default function CampaignDetailInteractions({
           <div className="campaign-detail-card-shell">
             <CampaignDetailSurface campaign={campaign} record={record} nowMs={nowMs} />
           </div>
-          <CampaignThreadConnector role={threadRole} directChildCount={directChildCount} onOpenOptions={onFreightOptionsClick} />
+          <CampaignThreadConnector role={threadRole} directChildCount={directChildCount} onOpenOptions={onFreightOptionsClick}
+            settlementAction={state.showSettlementAction ? (
+              <button type="button" className={`campaign-action-btn campaign-thread-settlement-action action-winners ${state.shouldGlowSettlement ? "campaign-action-active" : ""}`}
+                onClick={() => void state.handleSettlementClick()} data-tooltip={state.isRecurringRaffle ? state.recurringActionLabel ?? "Recurring raffle action" : state.shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}>
+                <Share2 size={18} aria-hidden="true" /><span className="campaign-action-count">{String(state.soldTickets)}</span>
+              </button>
+            ) : null} />
         </section>
 
         <section className="campaign-detail-comments-column campaign-card-entry">
@@ -138,12 +144,6 @@ export default function CampaignDetailInteractions({
               onClick={() => void state.handleReshare()} data-tooltip="Share">
               <Repeat2 size={21} aria-hidden="true" /><span className="campaign-action-count">{state.reshares}</span>
             </button>
-            {state.showSettlementAction ? (
-              <button type="button" className={`campaign-action-btn action-winners ${state.shouldGlowSettlement ? "campaign-action-active" : ""}`}
-                onClick={() => void state.handleSettlementClick()} data-tooltip={state.isRecurringRaffle ? state.recurringActionLabel ?? "Recurring raffle action" : state.shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}>
-                <Share2 size={18} aria-hidden="true" /><span className="campaign-action-count">{String(state.soldTickets)}</span>
-              </button>
-            ) : null}
             {!state.isRaffleCampaign ? supportButton : null}
             {state.giftDeliverable.enabled ? (
               <>

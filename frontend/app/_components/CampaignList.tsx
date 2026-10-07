@@ -20,6 +20,7 @@ type CampaignListProps = {
   loading: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
   onMountablesClick: (record: CampaignRecord) => void;
+  onFreightOptionsClick: (campaignId: string) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
@@ -53,6 +54,7 @@ export default function CampaignList({
   loading,
   onCommentDiscardRequest,
   onMountablesClick,
+  onFreightOptionsClick,
   onScrolledToNewest,
   onSettlementCompleted,
   onSettlementInfoRequest,
@@ -150,6 +152,7 @@ export default function CampaignList({
             commentDiscardDecision={commentDiscardDecision}
             onOpenDetail={() => onStartDetailTransition(`/freight/${getCampaignStableId(campaign)}`)}
             onMountablesClick={onMountablesClick}
+            onFreightOptionsClick={() => onFreightOptionsClick(getCampaignStableId(campaign))}
             onSupportRequest={onSupportRequest}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
