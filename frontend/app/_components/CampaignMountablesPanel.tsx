@@ -23,7 +23,7 @@ export function CampaignMountableIcon({ item, className = "", style }: {
 }) {
   return (
     <span className={`campaign-card-mounted-icon ${item.icon === "app" && item.logoUrl ? "campaign-card-mounted-icon-logo" : ""} ${className}`.trim()}
-      title={item.title} aria-label={item.title} style={style}>
+      data-tooltip={item.title} aria-label={item.title} style={style}>
       {item.icon === "app" ? (
         item.logoUrl ? <Image src={item.logoUrl} alt="" width={38} height={38} unoptimized /> : <Blocks size={20} strokeWidth={2} aria-hidden="true" />
       ) : item.icon === "forms" ? (
@@ -53,7 +53,7 @@ export default function CampaignMountablesPanel({ items }: { items: CampaignMoun
       {hiddenCount > 0 ? (
         <span
           className="campaign-card-mounted-icon campaign-card-mounted-icon-overflow"
-          title={`${hiddenCount} more ${hiddenCount === 1 ? "mountable" : "mountables"}`}
+          data-tooltip={`${hiddenCount} more ${hiddenCount === 1 ? "mountable" : "mountables"}`}
           aria-label={`${hiddenCount} more ${hiddenCount === 1 ? "mountable" : "mountables"}`}
           style={{ zIndex: visibleItems.length + 1 }}
         >

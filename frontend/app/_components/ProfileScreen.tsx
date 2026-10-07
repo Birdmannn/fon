@@ -1291,7 +1291,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <button
                 type="button"
                 className="create-modal-action-btn"
-                title="Scroll to top"
+                data-tooltip="Scroll to top"
                 onClick={() => {
                   const leaderboardList = document.querySelector<HTMLElement>(".profile-leaderboard-list");
                   leaderboardList?.scrollTo({ top: 0, behavior: "smooth" });
@@ -1303,7 +1303,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               <button
                 type="button"
                 className="create-modal-action-btn"
-                title="Search users"
+                data-tooltip="Search users"
                 aria-label="Search users coming soon"
               >
                 <Search className="campaign-action-icon" size={22} strokeWidth={2} aria-hidden="true" />
@@ -1361,7 +1361,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     className="profile-avatar-placeholder profile-avatar-editable"
                     onClick={() => photoInputRef.current?.click()}
                     aria-label={isUploadingPhoto ? "Uploading profile photo" : photoUrl ? "Change profile photo" : "Upload profile photo"}
-                    title="Upload photo (max 4 MB)"
+                    data-tooltip="Upload photo (max 4 MB)"
                     disabled={isUploadingPhoto}
                   >
                     {isUploadingPhoto ? (
@@ -1422,7 +1422,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                         type="button"
                         className="wallet-info-copy-btn profile-address-copy-btn"
                         onClick={() => void handleCopyWalletAddress()}
-                        title={walletAddress}
+                        data-tooltip={walletAddress}
                         aria-label="Copy full wallet address"
                       >
                         {walletCopyFeedback === "copied" ? (

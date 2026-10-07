@@ -10,6 +10,11 @@ type ParticipantRow = {
   status?: unknown;
 };
 
+type PublicProfile = {
+  address?: unknown;
+  displayName?: unknown;
+};
+
 function ParticipantAvatar({ address, title, photoVersion, status }: {
   address: string;
   title: string;
@@ -22,7 +27,7 @@ function ParticipantAvatar({ address, title, photoVersion, status }: {
   return (
     <span
       className={`campaign-participant-avatar${status ? ` campaign-participant-avatar-${status}` : ""}`}
-      title={title}
+      data-tooltip={title}
       aria-label={title}
     >
       {!photoFailed ? (
@@ -41,6 +46,7 @@ export default function CampaignParticipantsStack({ campaignId, walletAddress, w
   onViewerAvatarClick?: () => void;
 }) {
   const [verifiedAddresses, setVerifiedAddresses] = useState<string[]>([]);
+  const [displayNamesByAddress, setDisplayNamesByAddress] = useState<Record<string, string>>({});
   const [loadedCampaignId, setLoadedCampaignId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,10 +68,31 @@ export default function CampaignParticipantsStack({ campaignId, walletAddress, w
           const address = row.participantAddress.trim().toLowerCase();
           if (address) addresses.add(address);
         }
+        const verified = [...addresses];
         if (!controller.signal.aborted && request === latestRequest) {
-          setVerifiedAddresses([...addresses]);
+          setVerifiedAddresses(verified);
           setLoadedCampaignId(campaignId);
         }
+        const viewer = walletAddress?.trim().toLowerCase() ?? "";
+        const profileAddresses = verified.slice(0, 3);
+        if (viewer && addresses.has(viewer) && !profileAddresses.includes(viewer)) profileAddresses.push(viewer);
+        if (profileAddresses.length === 0) {
+          if (!controller.signal.aborted && request === latestRequest) setDisplayNamesByAddress({});
+          return;
+        }
+        const profileResponse = await fetch(`/api/user-profiles?addresses=${encodeURIComponent(profileAddresses.join(","))}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!profileResponse.ok) throw new Error("Unable to load participant profiles");
+        const profilePayload = await profileResponse.json() as { profiles?: PublicProfile[] };
+        const names: Record<string, string> = {};
+        for (const profile of profilePayload.profiles ?? []) {
+          if (typeof profile.address !== "string" || typeof profile.displayName !== "string") continue;
+          const name = profile.displayName.trim();
+          if (name) names[profile.address.trim().toLowerCase()] = name;
+        }
+        if (!controller.signal.aborted && request === latestRequest) setDisplayNamesByAddress(names);
       } catch {
         // Keep the last known state until the next poll succeeds.
       }
@@ -77,9 +104,10 @@ export default function CampaignParticipantsStack({ campaignId, walletAddress, w
       controller.abort();
       window.clearInterval(interval);
     };
-  }, [campaignId]);
+  }, [campaignId, walletAddress]);
 
   const participants = loadedCampaignId === campaignId ? verifiedAddresses : [];
+  const participantNames = loadedCampaignId === campaignId ? displayNamesByAddress : {};
   const viewerAddress = walletAddress?.trim().toLowerCase() ?? "";
   const viewerStatus = loadedCampaignId === campaignId
     ? participants.includes(viewerAddress) ? "verified" : "pending"
@@ -94,14 +122,14 @@ export default function CampaignParticipantsStack({ campaignId, walletAddress, w
       <div className="campaign-participant-stack" role="group" aria-label={`${participants.length} verified participants`}>
         {visibleParticipants.map((address, index) => (
           <span className="campaign-participant-stack-item" key={address} style={{ zIndex: index + 1 }}>
-            <ParticipantAvatar address={address} title={address} />
+            <ParticipantAvatar address={address} title={participantNames[address] || "Verified participant"} />
           </span>
         ))}
         {hiddenCount > 0 ? (
           <span
             className="campaign-participant-avatar campaign-participant-overflow campaign-participant-stack-item"
             style={{ zIndex: 4, fontSize: hiddenCount > 999 ? "0.58rem" : hiddenCount > 99 ? "0.7rem" : undefined }}
-            title={`${hiddenCount} more verified participants`}
+            data-tooltip={`${hiddenCount} more verified participants`}
           >
             +{hiddenCount}
           </span>
@@ -110,11 +138,11 @@ export default function CampaignParticipantsStack({ campaignId, walletAddress, w
       {viewerAddress ? (
         <button type="button" className="campaign-participant-avatar-button" onClick={onViewerAvatarClick}
           disabled={!onViewerAvatarClick} aria-label="View criteria status"
-          title="View criteria status">
+          data-tooltip="View criteria status">
           <ParticipantAvatar
             key={`${viewerAddress}:${walletPhotoUpdatedAt ?? ""}`}
             address={viewerAddress}
-            title={viewerStatus === "verified" ? "Your criteria are fulfilled" : viewerStatus === "pending" ? "Your criteria are not yet fulfilled" : "Checking your criteria"}
+            title={viewerStatus === "verified" ? participantNames[viewerAddress] || "Verified participant" : viewerStatus === "pending" ? "Your criteria are not yet fulfilled" : "Checking your criteria"}
             photoVersion={walletPhotoUpdatedAt}
             status={viewerStatus}
           />

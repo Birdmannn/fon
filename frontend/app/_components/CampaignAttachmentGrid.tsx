@@ -51,7 +51,7 @@ export default function CampaignAttachmentGrid({ attachments, editable = false, 
                 className="campaign-attachment-remove"
                 onClick={() => onRemove?.(attachment)}
                 aria-label={`Remove ${attachment.name || `attachment ${index + 1}`}`}
-                title="Remove photo"
+                data-tooltip="Remove photo"
               >
                 <X size={16} strokeWidth={2.5} aria-hidden="true" />
               </button>

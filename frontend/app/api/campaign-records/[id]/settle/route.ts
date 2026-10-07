@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 
 import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
-import { getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
+import { getPublicCkbClient } from "@/lib/ckbClient";
+import { awardFbarsEvent, computeRewardFbars, getCurrentWeekKey } from "@/lib/fbars";
+import { getFbarEventsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
+import { verifyRaffleSettlement } from "@/lib/raffleWinProof";
 
 export const dynamic = "force-dynamic";
 
@@ -99,17 +102,35 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       ? body.settledParticipantCount.trim()
       : null;
     const settledRecipients = ensureOptionalRecipients(body?.settledRecipients);
+    if (!settledRecipients?.length) {
+      return badRequest("settledRecipients must list the paid raffle winners");
+    }
 
     const collection = await getMongoCollection();
     const existingRecord = await collection.findOne(
       { _id: new ObjectId(id) },
-      { projection: { _id: 1, settlementTxHash: 1 } },
+      { projection: { _id: 1, settlementTxHash: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1 } },
     );
     if (!existingRecord) {
       return badRequest("Campaign record not found", 404);
     }
+    const normalizedTxHash = settlementTxHash.trim().toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(normalizedTxHash)) {
+      return badRequest("Invalid settlement transaction hash");
+    }
+    if (typeof existingRecord.settlementTxHash === "string"
+      && existingRecord.settlementTxHash.toLowerCase() !== normalizedTxHash) {
+      return badRequest("This freight already has a different settlement transaction", 409);
+    }
 
-    const settlementCreditKey = `${id}:${settlementTxHash.trim().toLowerCase()}`;
+    const client = getPublicCkbClient();
+    const confirmed = await client.waitTransaction(normalizedTxHash, 0, 15_000);
+    if (!confirmed || confirmed.status !== "committed") {
+      return badRequest("Settlement transaction is not confirmed on chain", 409);
+    }
+    const verifiedAwards = await verifyRaffleSettlement(client, confirmed.transaction, existingRecord, settledRecipients);
+
+    const settlementCreditKey = `${id}:${normalizedTxHash}`;
     let usdPerCkb: number | null = null;
     if (settledRecipients && settledRecipients.length > 0) {
       try {
@@ -194,7 +215,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       { _id: new ObjectId(id) },
       {
         $set: {
-          settlementTxHash: settlementTxHash.trim(),
+          settlementTxHash: normalizedTxHash,
           settledAt,
           settledByAddress,
           soldTicketCount,
@@ -209,10 +230,32 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       return badRequest("Campaign record not found", 404);
     }
 
+    const [profilesCollection, eventsCollection] = await Promise.all([
+      getUserProfilesCollection(),
+      getFbarEventsCollection(),
+    ]);
+    await eventsCollection.createIndex(
+      { eventKey: 1 },
+      { name: "unique_win_event_key", unique: true, partialFilterExpression: { kind: "win" } },
+    );
+    const weekKey = getCurrentWeekKey(new Date());
+    for (const award of verifiedAwards) {
+      await awardFbarsEvent({
+        address: award.address,
+        weekKey,
+        eventKey: `win:${normalizedTxHash}:${award.outputIndex}`,
+        kind: "win",
+        delta: computeRewardFbars(award.amountShannons),
+        metadata: { recordId: id, txHash: normalizedTxHash, amountShannons: award.amountShannons.toString() },
+        profilesCollection,
+        eventsCollection,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       settledAt,
-      settlementTxHash: settlementTxHash.trim(),
+      settlementTxHash: normalizedTxHash,
       settledRecipients: nextSettledRecipients,
     });
   } catch (error) {

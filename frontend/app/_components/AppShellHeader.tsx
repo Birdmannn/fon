@@ -198,7 +198,7 @@ export default function AppShellHeader({
                             type="button"
                             className="wallet-info-copy-btn"
                             onClick={() => void onCopyWalletAddress()}
-                            title={walletAddress}
+                            data-tooltip={walletAddress}
                             aria-label="Copy wallet address"
                           >
                             <Copy size={14} strokeWidth={2} aria-hidden="true" />
@@ -254,7 +254,7 @@ export default function AppShellHeader({
                           className="wallet-info-introspect-btn"
                           onClick={onWalletActionClick}
                           aria-label={walletActionLabel ?? "Introspect"}
-                          title={walletActionLabel ?? "Introspect"}
+                          data-tooltip={walletActionLabel ?? "Introspect"}
                           scroll={false}
                         >
                           {walletActionIcon ?? <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />}

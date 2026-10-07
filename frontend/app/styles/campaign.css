@@ -596,6 +596,23 @@
   transition: var(--campaign-shell-transition);
 }
 
+.campaign-shell-tooltip {
+  position: fixed;
+  z-index: 1000;
+  visibility: hidden;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  padding: 0.09rem;
+  border-radius: 0;
+  background: #171717;
+  color: #ffffff;
+  font-size: 0.75rem;
+  line-height: 1.1;
+  text-align: center;
+  width: max-content;
+  box-shadow: 0 2px 8px #00000026;
+}
+
 .campaign-shell-width-expanded {
   max-width: var(--campaign-expanded-width);
 }

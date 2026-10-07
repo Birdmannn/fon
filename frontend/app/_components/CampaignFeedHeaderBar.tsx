@@ -51,7 +51,7 @@ export default function CampaignFeedHeaderBar({
           onClick={onRefresh}
           disabled={isRefreshing}
           className="campaign-action-btn"
-          title="Refresh freights"
+          data-tooltip="Refresh freights"
         >
           <span className={`campaign-refresh-icon-wrap ${isRefreshing ? "refreshing" : ""}`}>
             <RefreshCw className="campaign-action-icon" size={24} strokeWidth={2} aria-hidden="true" />
@@ -70,7 +70,7 @@ export default function CampaignFeedHeaderBar({
         <button
           onClick={onSearchClick}
           className="campaign-action-btn"
-          title="Search freights"
+          data-tooltip="Search freights"
         >
           <Search className="campaign-action-icon" size={24} strokeWidth={2} aria-hidden="true" />
         </button>

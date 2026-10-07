@@ -75,7 +75,7 @@ export default function MountablesPanel() {
         onClick={handleMarqueeClick}
         disabled={!canEditMarquee}
         aria-label={canEditMarquee ? "Edit weekly marquee message" : "Weekly marquee display"}
-        title={canEditMarquee ? `Click to edit weekly marquee — ${remainingLabel}` : undefined}
+        data-tooltip={canEditMarquee ? `Click to edit weekly marquee — ${remainingLabel}` : undefined}
       >
         <div className="retro-marquee-track">
           <span>{marqueeText}</span>

@@ -1847,7 +1847,7 @@ export default function CampaignDetailPage() {
                 <span className="campaign-criteria-description">{criterion.description}</span>
               </span>
               <span className={`campaign-criteria-status ${criterion.cleared ? "campaign-criteria-status-cleared" : "campaign-criteria-status-pending"}`}
-                role="img" aria-label={criterion.cleared ? "Cleared" : "Pending"} title={criterion.cleared ? "Cleared" : "Pending"} />
+                role="img" aria-label={criterion.cleared ? "Cleared" : "Pending"} data-tooltip={criterion.cleared ? "Cleared" : "Pending"} />
             </>
           );
           const rowClassName = `create-info-constraint-item campaign-criteria-row${criterion.cleared ? " campaign-criteria-row-cleared" : ""}`;

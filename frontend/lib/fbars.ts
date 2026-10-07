@@ -246,7 +246,14 @@ export async function awardFbarsEvent(params: FbarAwardParams & {
 
   const nextLifetimeFbars = Math.max(0, parseNonNegativeInteger(currentProfile?.fbars) + params.delta);
 
-  await params.eventsCollection.insertOne(insertedEvent);
+  try {
+    await params.eventsCollection.insertOne(insertedEvent);
+  } catch (error) {
+    if (params.kind === "win" && error && typeof error === "object" && "code" in error && error.code === 11000) {
+      return { applied: false, event: insertedEvent };
+    }
+    throw error;
+  }
   await params.profilesCollection.updateOne(
     { address: normalizedAddress },
     {

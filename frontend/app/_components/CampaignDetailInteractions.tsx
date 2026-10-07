@@ -81,14 +81,14 @@ export default function CampaignDetailInteractions({
   const supportButton = (
     <button type="button" className="campaign-action-btn campaign-detail-icon-action" onClick={openSupport} disabled={state.isSupportDisabled}
       aria-label={state.supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"}
-      title={state.isSupportDisabled ? state.isSupportLocked ? state.lockAccessMessage : "Support unavailable" : state.supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"}>
+      data-tooltip={state.isSupportDisabled ? state.isSupportLocked ? state.lockAccessMessage : "Support unavailable" : state.supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"}>
       <Coins className="campaign-action-icon" size={30} aria-hidden="true" />
     </button>
   );
   const ticketButton = (
     <button type="button" className="campaign-action-btn campaign-detail-icon-action" onClick={openTickets} disabled={state.isPurchaseDisabled}
       aria-label={campaign.data.auxAmount === 0n ? "Enter raffle" : "Buy tickets"}
-      title={state.isPurchaseDisabled ? "Raffle entry unavailable" : campaign.data.auxAmount === 0n ? "Enter raffle" : "Buy tickets"}>
+      data-tooltip={state.isPurchaseDisabled ? "Raffle entry unavailable" : campaign.data.auxAmount === 0n ? "Enter raffle" : "Buy tickets"}>
       <Ticket className="campaign-action-icon" size={30} aria-hidden="true" />
     </button>
   );
@@ -111,7 +111,7 @@ export default function CampaignDetailInteractions({
                 {state.showCreatorWithdrawAction ? (
                   <button type="button" className="campaign-action-btn campaign-detail-icon-action" onClick={() => void state.handleWithdrawClick()} disabled={state.isWithdrawing}
                     aria-label="Withdraw creator support"
-                    title={`Withdraw ${state.creatorWithdrawAmountCkb} CKB creator support`}>
+                    data-tooltip={`Withdraw ${state.creatorWithdrawAmountCkb} CKB creator support`}>
                     <Coins size={30} aria-hidden="true" />
                   </button>
                 ) : null}
@@ -122,31 +122,31 @@ export default function CampaignDetailInteractions({
           <CampaignParticipantsStack campaignId={record.campaignId ?? null} walletAddress={walletAddress} walletPhotoUpdatedAt={walletPhotoUpdatedAt} onViewerAvatarClick={onViewerAvatarClick} />
           <div className="campaign-detail-action-rail" aria-label="Freight actions">
             <button type="button" className={`campaign-action-btn action-like ${state.userLiked ? "campaign-action-active" : ""}`}
-              onClick={() => void state.handleLike()} title={!state.isConnected ? "Connect wallet to like" : "Like"}>
+              onClick={() => void state.handleLike()} data-tooltip={!state.isConnected ? "Connect wallet to like" : "Like"}>
               <Heart size={18} aria-hidden="true" /><span className="campaign-action-count">{state.likes}</span>
             </button>
             <button type="button" className={`campaign-action-btn action-bookmark ${state.userBookmarked ? "campaign-action-active" : ""}`}
-              onClick={state.handleBookmark} title={!state.isConnected ? "Connect wallet to bookmark" : "Bookmark"}>
+              onClick={state.handleBookmark} data-tooltip={!state.isConnected ? "Connect wallet to bookmark" : "Bookmark"}>
               <Bookmark size={18} aria-hidden="true" /><span className="campaign-action-count">{state.bookmarks}</span>
             </button>
             <button type="button" className={`campaign-action-btn action-reshare ${state.userReshared ? "campaign-action-active" : ""}`}
-              onClick={() => void state.handleReshare()} title="Share">
+              onClick={() => void state.handleReshare()} data-tooltip="Share">
               <Repeat2 size={21} aria-hidden="true" /><span className="campaign-action-count">{state.reshares}</span>
             </button>
             {state.showSettlementAction ? (
               <button type="button" className={`campaign-action-btn action-winners ${state.shouldGlowSettlement ? "campaign-action-active" : ""}`}
-                onClick={() => void state.handleSettlementClick()} title={state.isRecurringRaffle ? state.recurringActionLabel ?? "Recurring raffle action" : state.shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}>
+                onClick={() => void state.handleSettlementClick()} data-tooltip={state.isRecurringRaffle ? state.recurringActionLabel ?? "Recurring raffle action" : state.shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}>
                 <Share2 size={18} aria-hidden="true" /><span className="campaign-action-count">{String(state.soldTickets)}</span>
               </button>
             ) : null}
             {!state.isRaffleCampaign ? supportButton : null}
             {state.giftDeliverable.enabled ? (
               <>
-                <button type="button" className="campaign-action-btn action-gift" onClick={state.handleGiftInfoClick} title="Gift details">
+                <button type="button" className="campaign-action-btn action-gift" onClick={state.handleGiftInfoClick} data-tooltip="Gift details">
                   <Share2 size={18} aria-hidden="true" /><span className="campaign-action-count">gift</span>
                 </button>
-                {state.canGiftApprove ? <button type="button" className="campaign-action-btn action-gift-approve" onClick={() => void state.handleGiftApprove()} title="Approve gift"><Check size={18} aria-hidden="true" /><span className="campaign-action-count">approve</span></button> : null}
-                {state.canGiftClaim ? <button type="button" className="campaign-action-btn action-gift-claim" onClick={() => void state.handleGiftClaim()} title="Claim gift"><Coins size={18} aria-hidden="true" /><span className="campaign-action-count">claim</span></button> : null}
+                {state.canGiftApprove ? <button type="button" className="campaign-action-btn action-gift-approve" onClick={() => void state.handleGiftApprove()} data-tooltip="Approve gift"><Check size={18} aria-hidden="true" /><span className="campaign-action-count">approve</span></button> : null}
+                {state.canGiftClaim ? <button type="button" className="campaign-action-btn action-gift-claim" onClick={() => void state.handleGiftClaim()} data-tooltip="Claim gift"><Coins size={18} aria-hidden="true" /><span className="campaign-action-count">claim</span></button> : null}
               </>
             ) : null}
             {state.actionFeedback ? <p className={`campaign-action-feedback campaign-action-feedback-${state.actionFeedback.tone}`} role="status">{state.actionFeedback.message}</p> : null}

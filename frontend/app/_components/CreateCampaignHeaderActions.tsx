@@ -31,7 +31,7 @@ export default function CreateCampaignHeaderActions({
       <button
         type="button"
         className="create-modal-action-btn"
-        title="Reset form"
+        data-tooltip="Reset form"
         onClick={onReset}
         aria-label="Reset create campaign form"
       >
@@ -40,7 +40,7 @@ export default function CreateCampaignHeaderActions({
       <button
         type="button"
         className="create-modal-action-btn"
-        title={createTopActionTitle}
+        data-tooltip={createTopActionTitle}
         onClick={onSecondaryAction}
         aria-label={createTopActionLabel}
       >

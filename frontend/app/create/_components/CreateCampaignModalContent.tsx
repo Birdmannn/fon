@@ -3290,7 +3290,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           {reviewMountedIcons.length > 0 ? (
             <div className="create-review-mountable-icons" aria-label="Mounted apps">
               {visibleReviewMountedIcons.map((mountable, index) => (
-                <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : ""}`.trim()} title={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
+                <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : ""}`.trim()} data-tooltip={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
                   {mountable.kind === "app" && mountable.logoUrl ? (
                     <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
                   ) : mountable.kind === "forms" ? (
@@ -3305,7 +3305,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               {hiddenReviewMountedIconCount > 0 ? (
                 <span
                   className="create-review-mountable-icon create-mountable-option-icon-bg create-review-mountable-icon-overflow"
-                  title={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  data-tooltip={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
                   aria-label={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
                   style={{ zIndex: visibleReviewMountedIcons.length + 1 }}
                 >
@@ -3507,7 +3507,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       onClick={() => attachmentInputRef.current?.click()}
                       disabled={isUploadingAttachments}
                       aria-label="Attach photos"
-                      title={`Attach photos (1 photo per 20 FBARS; ${Math.max(0, Math.floor((availableFbars ?? 0) / 20))} allowed)`}
+                      data-tooltip={`Attach photos (1 photo per 20 FBARS; ${Math.max(0, Math.floor((availableFbars ?? 0) / 20))} allowed)`}
                     >
                       {isUploadingAttachments ? <LoaderCircle className="create-modal-send-spinner" size={23} strokeWidth={2} aria-hidden="true" /> : <Paperclip size={24} strokeWidth={2} aria-hidden="true" />}
                     </button>
@@ -3553,7 +3553,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                             : "Publish campaign"
                       : "Next"
                   }
-                  title={
+                  data-tooltip={
                     isReviewStep
                       ? draftSaveStatus === "saving"
                         ? "Saving preview..."
@@ -3588,7 +3588,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("bold")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-bold text-sm theme-fg"
-                    title="Bold (Ctrl/Cmd+B)"
+                    data-tooltip="Bold (Ctrl/Cmd+B)"
                   >
                     B
                   </button>
@@ -3596,7 +3596,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("italic")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors italic text-sm theme-fg"
-                    title="Italic (Ctrl/Cmd+I)"
+                    data-tooltip="Italic (Ctrl/Cmd+I)"
                   >
                     I
                   </button>
@@ -3604,7 +3604,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("underline")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors underline text-sm theme-fg"
-                    title="Underline (Ctrl/Cmd+U)"
+                    data-tooltip="Underline (Ctrl/Cmd+U)"
                   >
                     U
                   </button>
@@ -3613,7 +3613,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("insertUnorderedList")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm theme-fg"
-                    title="Bullet List"
+                    data-tooltip="Bullet List"
                   >
                     • List
                   </button>
@@ -3621,7 +3621,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("insertOrderedList")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm theme-fg"
-                    title="Numbered List"
+                    data-tooltip="Numbered List"
                   >
                     1. List
                   </button>
@@ -3630,7 +3630,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("strikeThrough")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors line-through text-sm theme-fg"
-                    title="Strikethrough"
+                    data-tooltip="Strikethrough"
                   >
                     S
                   </button>
@@ -3638,7 +3638,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     type="button"
                     onClick={() => applyFormat("removeFormat")}
                     className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-xs theme-fg"
-                    title="Clear Formatting"
+                    data-tooltip="Clear Formatting"
                   >
                     ✕ Clear
                   </button>

@@ -257,14 +257,13 @@ export default function CampaignCardSurface({
             <div className="campaign-card-creator-primary-line">
               <span
                 className={`status-indicator status-${getStatusClassName(displayStatus)}`}
-                title={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
+                data-tooltip={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
                 aria-label={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
               />
               <button
                 type="button"
                 onClick={handleCopyAddress}
                 className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
-                title={creatorAddress}
                 aria-label="Copy creator address"
               >
                 <Copy size={14} strokeWidth={2} aria-hidden="true" />
@@ -389,7 +388,7 @@ export default function CampaignCardSurface({
               {visibleMountedIcons.map((mountable, index) => (
                 <span
                   className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : ""}`.trim()}
-                  title={mountable.name}
+                  data-tooltip={mountable.name}
                   aria-label={mountable.name}
                   key={mountable.key}
                   style={{ zIndex: index + 1 }}
@@ -414,7 +413,7 @@ export default function CampaignCardSurface({
               {hiddenMountedIconCount > 0 ? (
                 <span
                   className="campaign-card-mounted-icon campaign-card-mounted-icon-overflow"
-                  title={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  data-tooltip={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
                   aria-label={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
                   style={{ zIndex: visibleMountedIcons.length + 1 }}
                 >
@@ -436,7 +435,7 @@ export default function CampaignCardSurface({
           </span>
           <span className="campaign-card-created-date">Created {createdAtDate}</span>
         </div>
-        <span className={countdownClassName} title={countdownTitle} aria-label={isSimpleTask ? countdown.text : `${countdownTitle} ${countdown.text}`}>
+        <span className={countdownClassName} data-tooltip={countdownTitle} aria-label={isSimpleTask ? countdown.text : `${countdownTitle} ${countdown.text}`}>
           {countdown.text}
         </span>
       </div>

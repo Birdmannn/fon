@@ -48,6 +48,24 @@ import {
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
+const pendingWinRequests = new Set<string>();
+
+async function postPendingWin(key: string, url: string, body: Record<string, unknown>) {
+  if (pendingWinRequests.has(key)) return null;
+  pendingWinRequests.add(key);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) window.localStorage.removeItem(key);
+    return response;
+  } finally {
+    pendingWinRequests.delete(key);
+  }
+}
+
 function parseOptionalBigInt(value: string | null | undefined) {
   if (typeof value !== "string") {
     return null;
@@ -147,6 +165,35 @@ export function useCampaignCardState({
   const cardId = getCampaignStableId(c);
   const isRecurringRaffle = data.campaignType === CampaignType.RecurringRaffle;
   const isRaffleCampaign = data.campaignType === CampaignType.Raffle || isRecurringRaffle;
+
+  useEffect(() => {
+    if (!record?._id || !isRaffleCampaign) return;
+    const retry = () => {
+      try {
+        const prefix = `fon:pending-win:${record._id}:`;
+        for (let index = 0; index < window.localStorage.length; index += 1) {
+          const key = window.localStorage.key(index);
+          if (!key?.startsWith(prefix)) continue;
+          try {
+            const pending = JSON.parse(window.localStorage.getItem(key) ?? "null") as {
+              url?: unknown;
+              body?: unknown;
+            } | null;
+            if (typeof pending?.url === "string" && pending.body && typeof pending.body === "object") {
+              void postPendingWin(key, pending.url, pending.body as Record<string, unknown>).catch(() => undefined);
+            }
+          } catch {
+            window.localStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // Some browsers disable storage; the initial award request still runs.
+      }
+    };
+    retry();
+    const interval = window.setInterval(retry, 20_000);
+    return () => window.clearInterval(interval);
+  }, [record?._id, isRaffleCampaign]);
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const totalTickets = isRaffleCampaign
     ? ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : data.maximumAmount
@@ -1003,7 +1050,18 @@ export function useCampaignCardState({
           const winners = ownedRoundCells
             .filter((entry) => (entry.data.round ?? 0n) === round);
           if (winners.length > 0 && Date.now() <= recurringSleepEndsAt) {
-            await sendClaimRecurringRaffle(signer, c, winners[0]);
+            const txHash = await sendClaimRecurringRaffle(signer, c, winners[0]);
+            if (record?._id) {
+              const key = `fon:pending-win:${record._id}:${txHash.toLowerCase()}`;
+              const body = { address: walletAddress, recordId: record._id, txHash };
+              const url = "/api/fbars/win";
+              try {
+                window.localStorage.setItem(key, JSON.stringify({ url, body }));
+              } catch {
+                // The award request can still complete without a browser retry cache.
+              }
+              void postPendingWin(key, url, body).catch(() => undefined);
+            }
             showActionFeedback("reshare", "success", "Reward cashed out.");
           } else if (Date.now() > recurringSleepEndsAt) {
             await sendRolloverRecurringRaffle(signer, c);
@@ -1186,26 +1244,28 @@ export function useCampaignCardState({
           let settledAt = new Date().toISOString();
 
           if (record?._id) {
+            const key = `fon:pending-win:${record._id}:${distributionTxHash.toLowerCase()}`;
+            const url = `/api/campaign-records/${record._id}/settle`;
+            const body = {
+              settlementTxHash: distributionTxHash,
+              settledAt,
+              settledByAddress: currentWalletAddress,
+              soldTicketCount: String(soldTickets),
+              settledParticipantCount: participantCountText,
+              settledRecipients: recipients,
+            };
             try {
-              const settleResponse = await fetch(`/api/campaign-records/${record._id}/settle`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  settlementTxHash: distributionTxHash,
-                  settledAt,
-                  settledByAddress: currentWalletAddress,
-                  soldTicketCount: String(soldTickets),
-                  settledParticipantCount: participantCountText,
-                  settledRecipients: recipients,
-                }),
-              });
-              const settlePayload = await settleResponse.json().catch(() => null);
-              if (settleResponse.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
+              window.localStorage.setItem(key, JSON.stringify({ url, body }));
+            } catch {
+              // The award request can still complete without a browser retry cache.
+            }
+            try {
+              const settleResponse = await postPendingWin(key, url, body);
+              const settlePayload = await settleResponse?.json().catch(() => null);
+              if (settleResponse?.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
                 settledAt = settlePayload.settledAt.trim();
               }
-              if (settleResponse.ok && Array.isArray(settlePayload?.settledRecipients)) {
+              if (settleResponse?.ok && Array.isArray(settlePayload?.settledRecipients)) {
                 recipients.splice(0, recipients.length, ...settlePayload.settledRecipients);
               }
             } catch {
