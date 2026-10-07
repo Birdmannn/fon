@@ -875,6 +875,8 @@ export async function activateMountedAppsForCampaignRecord(record: CampaignRecor
       {
         $set: {
           "mountables.apps.$.installationSecretHash": secretHash,
+          "mountables.apps.$.startsAt": freight.startsAt,
+          "mountables.apps.$.endsAt": freight.endsAt,
           "mountables.apps.$.webhookSecretExpiresAt": freight.endsAt,
           "mountables.apps.$.webhookSecretRevokedAt": "",
         },
@@ -947,10 +949,11 @@ export async function pollMountedApps(params: {
         );
       }
     }
+    const freightWindow = buildFreightContext(record);
     const mountedApps = allMountedApps.filter((mountedApp) => (
       mountedApp.enabled
       && (mountedApp.syncMode === "poll" || mountedApp.syncMode === "both")
-      && mountedAppWindowState({ startsAt: mountedApp.startsAt, endsAt: mountedApp.endsAt, at: now }) === "active"
+      && mountedAppWindowState({ startsAt: mountedApp.startsAt || freightWindow.startsAt, endsAt: mountedApp.endsAt || freightWindow.endsAt, at: now }) === "active"
       && (!requestedAppId || mountedApp.appId === requestedAppId)
       && (!requestedInstanceId || mountedApp.mountableInstanceId === requestedInstanceId)
       && isMountedAppPollDue({

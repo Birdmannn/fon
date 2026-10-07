@@ -131,6 +131,28 @@ function DirectionIcon({ direction }: Pick<FlowLog, "direction">) {
   return <ArrowLeftRight size={16} aria-hidden="true" />;
 }
 
+function describeLogRoute(log: FlowLog) {
+  const fonSource = log.source === "FON" || log.source === "FON/client";
+  const fonTarget = log.target === "FON" || log.target === "FON/client" || /^https?:\/\//.test(log.target);
+
+  if (fonSource) {
+    return { label: `${log.source === "FON/client" ? "FON or client" : "FON"} → Demo app`, tone: "fon-inbound" };
+  }
+  if (fonTarget) {
+    return { label: `Demo app → ${log.target === "FON/client" ? "FON or client" : "FON"}`, tone: "fon-outbound" };
+  }
+  if (log.source === "JoyID") {
+    return { label: "JoyID → Demo app", tone: "external-inbound" };
+  }
+  if (log.direction === "inbound") {
+    return { label: "Wallet → Demo app", tone: "external-inbound" };
+  }
+  if (log.target === "browser" || /^(ckb|ckt)/i.test(log.target)) {
+    return { label: "Demo app → Wallet", tone: "internal" };
+  }
+  return { label: "Inside demo app", tone: "internal" };
+}
+
 export default function Home() {
   const [walletAddress, setWalletAddress] = useState("");
   const [checked, setChecked] = useState<string[]>([]);
@@ -400,12 +422,14 @@ export default function Home() {
           </div>
           {logsError ? <p className="log-error">{logsError}</p> : null}
           <div className="flow-log-list">
-            {logs.length === 0 ? <div className="empty-state log-empty">Requests, responses, polls, and webhooks will appear here.</div> : logs.map((log) => (
-              <details className={`flow-log-row direction-${log.direction}`} key={log.id}>
+            {logs.length === 0 ? <div className="empty-state log-empty">Requests, responses, polls, and webhooks will appear here.</div> : logs.map((log) => {
+              const route = describeLogRoute(log);
+              return <details className={`flow-log-row direction-${log.direction}`} key={log.id}>
                 <summary>
                   <span className={`direction-icon ${log.direction}`}><DirectionIcon direction={log.direction} /></span>
                   <span className="log-main">
                     <span className="log-meta">
+                      <span className={`log-route ${route.tone}`}>{route.label}</span>
                       <span className={`log-kind ${log.kind}`}>{log.kind}</span>
                       {log.method ? <span>{log.method}</span> : null}
                       {log.status ? <span className={log.status >= 400 ? "log-status failed" : "log-status"}>{log.status}</span> : null}
@@ -439,7 +463,7 @@ export default function Home() {
                   </div>
                 ) : <p className="no-payload">No payload recorded.</p>}
               </details>
-            ))}
+            })}
           </div>
         </section>
       </section>

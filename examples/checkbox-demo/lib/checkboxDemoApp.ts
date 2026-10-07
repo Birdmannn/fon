@@ -192,6 +192,31 @@ globalThis.__fonCheckboxDemoInstallations = installations;
 
 const registrationCredentialPath = process.env.FON_REGISTRATION_CREDENTIAL_PATH?.trim()
   || join(process.cwd(), ".fon", "registration.json");
+const installationsPath = join(dirname(registrationCredentialPath), "installations.json");
+
+if (installations.size === 0) {
+  try {
+    const stored = JSON.parse(readFileSync(installationsPath, "utf8")) as unknown;
+    if (Array.isArray(stored)) {
+      for (const entry of stored) {
+        if (entry && typeof entry === "object"
+          && typeof entry.mountableInstanceId === "string"
+          && typeof entry.sharedSecret === "string") {
+          installations.set(entry.mountableInstanceId, entry as DemoInstallation);
+        }
+      }
+    }
+  } catch {
+    // A fresh demo has no saved installations yet.
+  }
+}
+
+function persistInstallations() {
+  mkdirSync(dirname(installationsPath), { recursive: true, mode: 0o700 });
+  writeFileSync(installationsPath, `${JSON.stringify([...installations.values()], null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+}
+
+if (installations.size > 0) persistInstallations();
 
 export function getRegistrationSecret() {
   const configured = process.env.FON_REGISTRATION_SECRET?.trim();
@@ -246,6 +271,7 @@ export function isValidRegistrationSecret(request: Request) {
 
 export function saveInstallation(installation: DemoInstallation) {
   installations.set(installation.mountableInstanceId, installation);
+  persistInstallations();
 }
 
 export function listInstallations() {
@@ -265,6 +291,7 @@ export function activateInstallation(input: {
     return false;
   }
   installations.set(input.mountableInstanceId, { ...existing, ...input });
+  persistInstallations();
   return true;
 }
 

@@ -47,7 +47,9 @@ export function deriveMountableWindow(args: {
     ? baseCandidate
     : baseCandidate === null || baseCandidate === undefined
       ? null
-      : new Date(baseCandidate);
+      : typeof baseCandidate === "number" || (typeof baseCandidate === "string" && /^\d{10,}$/.test(baseCandidate.trim()))
+        ? new Date(Number(baseCandidate))
+        : new Date(baseCandidate);
 
   if (!baseDate || Number.isNaN(baseDate.getTime())) {
     return {

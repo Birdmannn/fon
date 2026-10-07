@@ -213,7 +213,7 @@ button:disabled {
   background: var(--accent);
 }
 
-code {
+.session-strip code {
   max-width: 220px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -388,7 +388,7 @@ code {
 }
 
 .flow-log-row {
-  border: 1px solid var(--line);
+  border: 1px solid #b8c9c2;
   border-left: 3px solid #aab3af;
   border-radius: 6px;
   background: #fff;
@@ -404,7 +404,7 @@ code {
 }
 
 .flow-log-row[open] {
-  border-color: #9caaa4;
+  border-color: #778b82;
   box-shadow: 0 8px 22px rgba(35, 52, 45, 0.08);
 }
 
@@ -470,10 +470,39 @@ code {
   color: var(--muted);
   font-size: 0.72rem;
   text-transform: uppercase;
+  flex-wrap: wrap;
 }
 
 .log-meta time {
   text-transform: none;
+}
+
+.log-route {
+  border: 1px solid #c3d3cb;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: #f2f6f3;
+  color: #294137;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.log-route.fon-inbound {
+  border-color: #b8d3e5;
+  background: #eaf4fb;
+  color: #155f88;
+}
+
+.log-route.fon-outbound {
+  border-color: #b7d9c7;
+  background: #e9f6ee;
+  color: #176f4b;
+}
+
+.log-route.external-inbound {
+  border-color: #d6c9e4;
+  background: #f4effa;
+  color: #65428a;
 }
 
 .log-kind,
@@ -521,9 +550,17 @@ code {
 .payload-panel {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #2d3b35;
+  border: 1px solid #b7c8c1;
   border-radius: 6px;
-  background: #111815;
+  background: #ffffff;
+}
+
+.payload-panel.request {
+  border-top: 3px solid #2477a6;
+}
+
+.payload-panel.response {
+  border-top: 3px solid #21845d;
 }
 
 .payload-heading,
@@ -538,9 +575,9 @@ code {
   gap: 12px;
   min-height: 38px;
   padding: 0 10px 0 12px;
-  border-bottom: 1px solid #2d3b35;
-  background: #1a2520;
-  color: #dce7e2;
+  border-bottom: 1px solid #d5e0da;
+  background: #eef4f1;
+  color: #283a32;
 }
 
 .payload-heading > span,
@@ -555,15 +592,15 @@ code {
 }
 
 .payload-panel.request .payload-heading > span:first-child {
-  color: #79c7ff;
+  color: #155f88;
 }
 
 .payload-panel.response .payload-heading > span:first-child {
-  color: #71d6ac;
+  color: #176f4b;
 }
 
 .payload-tools > span:first-child {
-  color: #8fa199;
+  color: #536960;
   font-size: 0.68rem;
 }
 
@@ -573,53 +610,62 @@ code {
   min-height: 28px;
   place-items: center;
   padding: 0;
-  border-color: #3b4b44;
+  border-color: #b4c6bd;
   border-radius: 4px;
-  background: transparent;
-  color: #cbd8d2;
+  background: #ffffff;
+  color: #2e493d;
 }
 
 .payload-tools button:hover {
-  border-color: #667a71;
-  background: #26342e;
+  border-color: #819b8d;
+  background: #e3eee8;
 }
 
 .payload-panel pre {
+  min-width: 0;
   max-height: 320px;
   margin: 0;
   overflow: auto;
   padding: 14px;
-  background: #111815;
-  color: #d7e0dc;
+  background: #ffffff;
+  color: #293b32;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.75rem;
-  line-height: 1.65;
+  font-size: 0.8rem;
+  line-height: 1.6;
   tab-size: 2;
 }
 
 .payload-panel code {
+  display: block;
+  max-width: none;
+  overflow: visible;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-overflow: clip;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 .json-key {
-  color: #79c7ff;
+  color: #155f88;
 }
 
 .json-string {
-  color: #9ee6b8;
+  color: #176f4b;
 }
 
 .json-number {
-  color: #ffd479;
+  color: #8b5300;
 }
 
 .json-boolean {
-  color: #e7a6ff;
+  color: #6f4394;
 }
 
 .json-null {
-  color: #ff9c9c;
+  color: #aa3145;
   font-style: italic;
 }
 
@@ -629,9 +675,9 @@ code {
 }
 
 .payload-panel pre::-webkit-scrollbar-thumb {
-  border: 2px solid #111815;
+  border: 2px solid #ffffff;
   border-radius: 8px;
-  background: #4c5f56;
+  background: #a3b7ad;
 }
 
 .no-payload {

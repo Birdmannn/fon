@@ -17,6 +17,8 @@ type CampaignCommentsPanelProps = {
   lockedMessage?: string;
   title?: string;
   variant?: "card" | "inline";
+  showHeader?: boolean;
+  showEmptyState?: boolean;
 };
 
 export default function CampaignCommentsPanel({
@@ -27,13 +29,16 @@ export default function CampaignCommentsPanel({
   lockedMessage = "Comments are locked by mounted criteria.",
   title = "Comments",
   variant = "card",
+  showHeader = true,
+  showEmptyState = true,
 }: CampaignCommentsPanelProps) {
+  if (!locked && comments.length === 0 && !showEmptyState) return null;
   return (
     <div className={variant === "inline" ? "campaign-detail-comments-panel campaign-detail-comments-panel-inline" : "campaign-detail-comments-panel campaign-detail-card-shell campaign-detail-comments-card"}>
-      <div className="campaign-detail-comments-header">
+      {showHeader ? <div className="campaign-detail-comments-header">
         <h2 className="campaign-detail-comments-title">{title}</h2>
         <span className="campaign-detail-comments-count">{locked ? "—" : comments.length}</span>
-      </div>
+      </div> : null}
       {locked ? (
         <p className="campaign-detail-comments-empty">{lockedMessage}</p>
       ) : comments.length > 0 ? (
@@ -48,9 +53,9 @@ export default function CampaignCommentsPanel({
             </article>
           ))}
         </div>
-      ) : (
+      ) : showEmptyState ? (
         <p className="campaign-detail-comments-empty">{emptyMessage}</p>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -8,7 +8,8 @@ import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, u
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
-import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
+import CampaignDetailInteractions from "@/app/_components/CampaignDetailInteractions";
+import CampaignMountablesPanel, { CampaignMountableIcon, type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
@@ -33,20 +34,24 @@ import {
   normalizeAppMountableConfigs,
 } from "@/app/_lib/appMountable";
 import { formsMountableSummary, isFormsMountableEnabled, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
-import { canAccessLockMountable, getLockMountableThresholdFbars, getLockMountableValidationState, isLockMountableEnabled, lockMountableAccessMessage, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
+import { getMountableCriteriaStatus, type MountableCriterionStatus, type ParticipantCriterionRow } from "@/app/_lib/mountableCriteriaStatus";
+import { getLockMountableValidationState, isLockMountableEnabled, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
 import { markProfileFreightsDirty } from "@/app/_hooks/useProfileFreights";
 import { markProfileTransactionsDirty } from "@/app/_hooks/useProfileTransactions";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
+import { useTicketPurchaseFlow } from "@/app/_hooks/useTicketPurchaseFlow";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
+import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { isWinningCampaignType } from "@/lib/fbars";
 import { CampaignType } from "@/lib/contract";
+import { isGiftApprovalSatisfied } from "@/lib/giftDeliverables";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -164,7 +169,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "criteria-status";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -199,6 +204,15 @@ export default function CampaignDetailPage() {
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
+  const [supportRequest, setSupportRequest] = useState<CampaignSupportRequest | null>(null);
+  const [supportAmount, setSupportAmount] = useState("");
+  const [supportError, setSupportError] = useState("");
+  const [isProcessingSupport, setIsProcessingSupport] = useState(false);
+  const [detailActionSuccessTxHash, setDetailActionSuccessTxHash] = useState("");
+  const [criteriaStatuses, setCriteriaStatuses] = useState<MountableCriterionStatus[]>([]);
+  const [isLoadingCriteria, setIsLoadingCriteria] = useState(false);
+  const [criteriaError, setCriteriaError] = useState("");
+  const detailActionSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
   const [isWalletInfoClosing, setIsWalletInfoClosing] = useState(false);
   const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -498,12 +512,154 @@ export default function CampaignDetailPage() {
     setShowInfoModal,
   });
 
+  const clearDetailActionSuccessTimer = useCallback(() => {
+    if (detailActionSuccessTimerRef.current) {
+      clearTimeout(detailActionSuccessTimerRef.current);
+      detailActionSuccessTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearDetailActionSuccessTimer, [clearDetailActionSuccessTimer]);
+
+  const openDetailActionSuccess = useCallback((txHash: string, mode: "ticket-buy-success" | "support-deposit-success") => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearDetailActionSuccessTimer();
+    markCurrentProfileDataDirty();
+    setDetailActionSuccessTxHash(txHash);
+    setInfoModalMode(mode);
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+    detailActionSuccessTimerRef.current = setTimeout(() => closeInfoModal(() => setInfoModalMode("about")), 3000);
+  }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer, closeInfoModal, markCurrentProfileDataDirty]);
+
+  const {
+    handleTicketPurchaseSubmit,
+    isPurchasingTickets,
+    openTicketPurchaseInfoModal,
+    resetTicketPurchaseState,
+    setTicketPurchaseError,
+    setTicketPurchaseQuantity,
+    ticketPurchaseError,
+    ticketPurchaseQuantity,
+  } = useTicketPurchaseFlow({
+    currentViewerFbars: currentUserProfile?.fbars,
+    onSubmissionError: () => {},
+    onTicketBuySuccess: (txHash) => openDetailActionSuccess(txHash, "ticket-buy-success"),
+  });
+
+  const handleOpenTicketPurchaseInfoModal = useCallback((
+    campaign: CampaignCell,
+    record: CampaignRecord,
+    liveSoldTickets: bigint,
+    remainingTickets: bigint,
+    onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void,
+  ) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearDetailActionSuccessTimer();
+    openTicketPurchaseInfoModal(campaign, record, { liveSoldTickets, remainingTickets }, onTicketBought);
+    setInfoModalMode("ticket-purchase");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer, openTicketPurchaseInfoModal]);
+
+  const handleOpenSupportInfoModal = useCallback((request: CampaignSupportRequest) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearDetailActionSuccessTimer();
+    setSupportRequest(request);
+    setSupportAmount("");
+    setSupportError("");
+    setIsProcessingSupport(false);
+    setInfoModalMode("support-deposit");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer]);
+
+  const handleSupportSubmit = useCallback(async () => {
+    if (!supportRequest || isProcessingSupport) return;
+    setIsProcessingSupport(true);
+    setSupportError("");
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    try {
+      const txHash = await supportRequest.submit(supportAmount);
+      openDetailActionSuccess(txHash, "support-deposit-success");
+    } catch (error) {
+      setSupportError(error instanceof Error ? error.message : "Transaction failed");
+    } finally {
+      setIsProcessingSupport(false);
+    }
+  }, [isProcessingSupport, openDetailActionSuccess, supportAmount, supportRequest]);
+
   const activeShellWidthClass = showCreateModal ? "campaign-shell-width" : shellWidthClass;
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
 
   const resetInfoModalState = useCallback(() => {
     resetCreateInfoModalState();
-  }, [resetCreateInfoModalState]);
+    resetTicketPurchaseState();
+    setSupportRequest(null);
+    setSupportAmount("");
+    setSupportError("");
+    setCriteriaStatuses([]);
+    setCriteriaError("");
+    setIsLoadingCriteria(false);
+    clearDetailActionSuccessTimer();
+  }, [clearDetailActionSuccessTimer, resetCreateInfoModalState, resetTicketPurchaseState]);
+
+  const handleViewerAvatarClick = useCallback(() => {
+    if (!selectedRecord?.campaignId || !walletAddress) return;
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    clearDetailActionSuccessTimer();
+    setCriteriaStatuses([]);
+    setCriteriaError("");
+    setIsLoadingCriteria(true);
+    setInfoModalMode("criteria-status");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer, selectedRecord?.campaignId, walletAddress]);
+
+  useEffect(() => {
+    const campaignId = selectedRecord?.campaignId;
+    if (!showInfoModal || isInfoModalClosing || infoModalMode !== "criteria-status" || !campaignId || !walletAddress) return;
+    const controller = new AbortController();
+    let latestRequest = 0;
+    const loadCriteria = async () => {
+      const request = ++latestRequest;
+      try {
+        const query = new URLSearchParams({ campaignId, participantAddress: walletAddress });
+        const response = await fetch(`/api/campaign-participants?${query}`, { cache: "no-store", signal: controller.signal });
+        const payload = await response.json().catch(() => null) as { participants?: ParticipantCriterionRow[]; error?: string } | null;
+        if (!response.ok) throw new Error(payload?.error ?? "Unable to load criteria");
+        if (controller.signal.aborted || request !== latestRequest) return;
+        setCriteriaStatuses(getMountableCriteriaStatus({
+          record: selectedRecord,
+          rows: Array.isArray(payload?.participants) ? payload.participants : [],
+          viewerFbars: currentUserProfile?.fbars,
+          creatorFbars: freightCreatorProfile?.fbars,
+          signableCleared: isGiftApprovalSatisfied(selectedRecord.giftDeliverable),
+        }));
+        setCriteriaError("");
+      } catch (error) {
+        if (!controller.signal.aborted && request === latestRequest) {
+          setCriteriaError(error instanceof Error ? error.message : "Unable to load criteria");
+        }
+      } finally {
+        if (!controller.signal.aborted && request === latestRequest) setIsLoadingCriteria(false);
+      }
+    };
+    void loadCriteria();
+    const intervalId = window.setInterval(() => void loadCriteria(), 15_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(intervalId);
+    };
+  }, [currentUserProfile?.fbars, freightCreatorProfile?.fbars, infoModalMode, isInfoModalClosing, selectedRecord, showInfoModal, walletAddress]);
 
   const openInsufficientFbarsInfoModal = useCallback(() => {
     clearInfoCloseTimer();
@@ -532,7 +688,12 @@ export default function CampaignDetailPage() {
     || infoModalMode === "mountables-lock"
     || infoModalMode === "mountables-forms"
     || infoModalMode === "mountables-apps"
-    || infoModalMode === "submission-success";
+    || infoModalMode === "submission-success"
+    || infoModalMode === "support-deposit"
+    || infoModalMode === "support-deposit-success"
+    || infoModalMode === "ticket-purchase"
+    || infoModalMode === "ticket-buy-success"
+    || infoModalMode === "criteria-status";
 
   useLayoutEffect(() => {
     const isExpandingFromFeed = sessionStorage.getItem(DETAIL_EXPANDING_FLAG) === "1";
@@ -1611,8 +1772,6 @@ export default function CampaignDetailPage() {
     return items.sort((left, right) => left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" }));
   }, [formsMountableActions, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
-  const commentsLocked = !canAccessLockMountable(selectedRecord?.mountables?.lock, currentUserProfile?.fbars, freightCreatorProfile?.fbars);
-  const commentsLockBypassFbars = getLockMountableThresholdFbars(selectedRecord?.mountables?.lock);
   const detailCampaignType = selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? 0;
   const detailTypeLabel = TYPE_LABELS[detailCampaignType] ?? `Type ${detailCampaignType}`;
   const detailUsesRaffleRandomness = detailCampaignType === CampaignType.Raffle || detailCampaignType === CampaignType.RecurringRaffle;
@@ -1660,8 +1819,51 @@ export default function CampaignDetailPage() {
     </div>
   );
 
+  const passedCriteriaCount = criteriaStatuses.filter((criterion) => criterion.cleared).length;
   const infoModalBody = infoModalMode === "tag-suggestions" ? (
     <TagSuggestionsInfo initialQuery={tagSuggestionQuery} onContinue={handleTagSuggestionContinue} />
+  ) : infoModalMode === "criteria-status" ? (
+    <div className="create-info-constraints-copy">
+      <div className="campaign-criteria-heading">
+        <p className="create-review-section-label text-gray-900">Participation Constraints:</p>
+        <span className={`create-review-section-label campaign-criteria-progress${criteriaStatuses.length > 0 && passedCriteriaCount === criteriaStatuses.length ? " campaign-criteria-progress-complete" : ""}`}>
+          {passedCriteriaCount}/{criteriaStatuses.length}
+        </span>
+      </div>
+      {isLoadingCriteria ? (
+        <div className="create-info-skeleton-list" role="status" aria-label="Loading criteria">
+          <span className="create-info-skeleton-line" />
+          <span className="create-info-skeleton-line" />
+        </div>
+      ) : criteriaError ? (
+        <p className="create-info-constraint-item text-red-500" role="alert"><span>{criteriaError}</span></p>
+      ) : criteriaStatuses.length > 0 ? (
+        criteriaStatuses.map((criterion) => {
+          const content = (
+            <>
+              <CampaignMountableIcon item={{ icon: criterion.icon, logoUrl: criterion.logoUrl, title: criterion.mountable }} className="campaign-criteria-mountable-icon" />
+              <span className="campaign-criteria-copy">
+                <span className="campaign-criteria-name">{criterion.mountable} / {criterion.principle}</span>
+                <span className="campaign-criteria-description">{criterion.description}</span>
+              </span>
+              <span className={`campaign-criteria-status ${criterion.cleared ? "campaign-criteria-status-cleared" : "campaign-criteria-status-pending"}`}
+                role="img" aria-label={criterion.cleared ? "Cleared" : "Pending"} title={criterion.cleared ? "Cleared" : "Pending"} />
+            </>
+          );
+          const rowClassName = `create-info-constraint-item campaign-criteria-row${criterion.cleared ? " campaign-criteria-row-cleared" : ""}`;
+          return criterion.href ? (
+            <a key={criterion.key} href={criterion.href} target="_blank" rel="noopener noreferrer"
+              className={`${rowClassName} campaign-criteria-row-link`} aria-label={`Open ${criterion.mountable}: ${criterion.principle}`}>
+              {content}
+            </a>
+          ) : (
+            <div key={criterion.key} className={rowClassName}>{content}</div>
+          );
+        })
+      ) : (
+        <p className="create-info-constraint-item text-gray-500"><span>No clearable criteria.</span></p>
+      )}
+    </div>
   ) : infoModalMode === "create-error" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 text-red-500 font-semibold">Errors:</p>
@@ -1680,6 +1882,39 @@ export default function CampaignDetailPage() {
           {submissionSuccessTxHash}
         </a>
       </p>
+    </div>
+  ) : infoModalMode === "ticket-buy-success" || infoModalMode === "support-deposit-success" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>
+        {infoModalMode === "ticket-buy-success" ? "Buy successful" : supportRequest?.supportMode === "direct_creator" ? "Tip successful" : "Deposit successful"}
+      </p>
+      <p className="create-info-constraint-item text-gray-500 font-mono break-all">
+        <span className="text-gray-400">txhash: </span>
+        <a href={`https://pudge.explorer.nervos.org/transaction/${detailActionSuccessTxHash}`} target="_blank" rel="noopener noreferrer" className="underline">
+          {detailActionSuccessTxHash}
+        </a>
+      </p>
+    </div>
+  ) : infoModalMode === "ticket-purchase" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-section-heading-row mt-3">
+        <p className="create-review-section-label text-gray-900">How many tickets?</p>
+        {ticketPurchaseError ? (
+          <p className={`create-review-section-label create-info-inline-status ${isPurchasingTickets ? "text-gray-500" : "text-red-500"}`} role={isPurchasingTickets ? "status" : "alert"}>
+            {ticketPurchaseError}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  ) : infoModalMode === "support-deposit" ? (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-section-heading-row mt-3">
+        <p className="create-review-section-label text-gray-900">
+          {supportRequest?.supportMode === "direct_creator" ? "Tip amount" : "Deposit amount"}
+        </p>
+        {supportError ? <p className="create-review-section-label create-info-inline-status text-red-500" role="alert">{supportError}</p> : null}
+      </div>
+      {supportRequest?.supportMode === "direct_creator" ? <p className="create-info-constraint-item text-gray-500"><span>Tips go directly to the freight creator.</span></p> : null}
     </div>
   ) : infoModalMode === "insufficient-fbars" ? (
     <div className="create-info-constraints-copy">
@@ -1858,6 +2093,29 @@ export default function CampaignDetailPage() {
         Continue
       </button>
     </div>
+  ) : infoModalMode === "support-deposit" ? (
+    <form className="create-info-confirm-actions" onSubmit={(event) => { event.preventDefault(); void handleSupportSubmit(); }}>
+      <div className="create-info-ticket-input-wrap">
+        <input type="number" min="0.01" step="0.01" inputMode="decimal" value={supportAmount}
+          onChange={(event) => { setSupportAmount(event.target.value); if (supportError) setSupportError(""); }}
+          onFocus={(event) => { if (event.currentTarget.value.length > 0) event.currentTarget.select(); }}
+          className="create-info-ticket-input create-info-ticket-input-with-suffix" aria-label="Amount in CKB" placeholder="0.00" disabled={isProcessingSupport} autoFocus />
+        <span className="create-info-ticket-input-suffix">CKB</span>
+      </div>
+      <button type="submit" className="create-info-confirm-btn create-info-confirm-btn-primary" disabled={isProcessingSupport}>
+        {isProcessingSupport ? "Processing..." : "Continue"}
+      </button>
+    </form>
+  ) : infoModalMode === "ticket-purchase" ? (
+    <form className="create-info-confirm-actions" onSubmit={(event) => { event.preventDefault(); void handleTicketPurchaseSubmit(); }}>
+      <input type="number" min="1" step="1" inputMode="numeric" value={ticketPurchaseQuantity}
+        onChange={(event) => { setTicketPurchaseQuantity(event.target.value); if (ticketPurchaseError) setTicketPurchaseError(""); }}
+        onFocus={(event) => { if (event.currentTarget.value.length > 0) event.currentTarget.select(); }}
+        className="create-info-ticket-input" aria-label="Number of tickets" disabled={isPurchasingTickets} />
+      <button type="submit" className="create-info-confirm-btn create-info-confirm-btn-primary" disabled={isPurchasingTickets}>
+        {isPurchasingTickets ? "Processing..." : "Continue"}
+      </button>
+    </form>
   ) : showCreateModal && infoModalMode === "save-draft-confirm" ? (
     <div className="create-info-confirm-actions">
       <button
@@ -2137,6 +2395,27 @@ export default function CampaignDetailPage() {
       || selectedRecord.createdByHash?.trim()
       || (selectedCampaign ? decodeCreatedByAddress(selectedCampaign) : ZERO_ADDRESS);
 
+    if (selectedCampaign) {
+      return (
+        <CampaignDetailInteractions
+          campaign={selectedCampaign}
+          record={selectedRecord}
+          client={client}
+          signer={signer ?? null}
+          walletAddress={walletAddress}
+          viewerFbars={currentUserProfile?.fbars}
+          creatorFbars={freightCreatorProfile?.fbars}
+          walletPhotoUpdatedAt={currentUserProfile?.photoUpdatedAt ?? null}
+          nowMs={nowMs}
+          mountableItems={mountableItems}
+          onProfileDataChanged={markCurrentProfileDataDirty}
+          onViewerAvatarClick={() => void handleViewerAvatarClick()}
+          onSupportRequest={handleOpenSupportInfoModal}
+          onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
+        />
+      );
+    }
+
     return (
       <div className="campaign-detail-content">
         <section
@@ -2156,8 +2435,8 @@ export default function CampaignDetailPage() {
             <CampaignCommentsPanel
               comments={comments}
               fallbackAddress={creatorAddress}
-              locked={commentsLocked}
-              lockedMessage={commentsLockBypassFbars === null ? "Comments are locked by mounted criteria." : lockMountableAccessMessage(selectedRecord?.mountables?.lock, freightCreatorProfile?.fbars)}
+              showHeader={false}
+              showEmptyState={false}
               variant="inline"
             />
           </div>
@@ -2173,6 +2452,7 @@ export default function CampaignDetailPage() {
               campaignId={selectedRecord?.campaignId ?? null}
               walletAddress={walletAddress}
               walletPhotoUpdatedAt={currentUserProfile?.photoUpdatedAt ?? null}
+              onViewerAvatarClick={() => void handleViewerAvatarClick()}
             />
           </div>
         </section>
@@ -2186,8 +2466,8 @@ export default function CampaignDetailPage() {
         <AppShellHeader
           className={`campaign-shell-header ${activeShellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
-          infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
+          infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
           infoModalActions={infoModalActions}
@@ -2202,7 +2482,7 @@ export default function CampaignDetailPage() {
           onInfoButtonFocus={() => openInfoModalFromHover(preventInfoHover)}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => {
-            if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
+            if (infoModalMode !== "create-error" && !(infoModalMode === "ticket-purchase" && isPurchasingTickets) && !(infoModalMode === "support-deposit" && isProcessingSupport)) closeInfoModal(resetInfoModalState);
           }}
           onInfoModalScheduleClose={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
           onInfoMouseEnter={() => openInfoModalFromHover(preventInfoHover)}

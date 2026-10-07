@@ -124,6 +124,7 @@ type UseCampaignCardStateArgs = {
     withdrawnAmountShannons: string,
   ) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
+  persistentCommentComposer?: boolean;
 };
 
 export function useCampaignCardState({
@@ -140,6 +141,7 @@ export function useCampaignCardState({
   onSettlementCompleted,
   onWithdrawalCompleted,
   onSettlementInfoRequest,
+  persistentCommentComposer = false,
 }: UseCampaignCardStateArgs) {
   const { data, outPoint } = c;
   const cardId = getCampaignStableId(c);
@@ -254,7 +256,7 @@ export function useCampaignCardState({
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
   const [resharedByAddresses, setResharedByAddresses] = useState<string[]>(initialResharedByAddresses);
   const [userBookmarked, setUserBookmarked] = useState(false);
-  const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
+  const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(persistentCommentComposer);
   const [commentDraft, setCommentDraft] = useState("");
   const [isSavingLike, setIsSavingLike] = useState(false);
   const [isSavingComment, setIsSavingComment] = useState(false);
@@ -542,7 +544,7 @@ export function useCampaignCardState({
   };
 
   useEffect(() => {
-    if (!isCommentComposerOpen) {
+    if (!isCommentComposerOpen || persistentCommentComposer) {
       return;
     }
 
@@ -572,7 +574,7 @@ export function useCampaignCardState({
     return () => {
       document.removeEventListener("mousedown", handleOutsidePointerDown);
     };
-  }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest]);
+  }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest, persistentCommentComposer]);
 
   const handleSubmitComment = async () => {
     const nextCommentText = commentDraft.trim();
@@ -649,7 +651,7 @@ export function useCampaignCardState({
       if (commentInputRef.current) {
         commentInputRef.current.style.height = "32px";
       }
-      setIsCommentComposerOpen(false);
+      if (!persistentCommentComposer) setIsCommentComposerOpen(false);
     } catch (error) {
       setCommentError(error instanceof Error ? error.message : "Failed to save comment");
     } finally {
@@ -1256,6 +1258,7 @@ export function useCampaignCardState({
     commentDraft,
     commentError,
     commentInputRef,
+    commentList,
     comments,
     creatorAddress,
     creatorHandle,

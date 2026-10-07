@@ -34,10 +34,11 @@ function ParticipantAvatar({ address, title, photoVersion, status }: {
   );
 }
 
-export default function CampaignParticipantsStack({ campaignId, walletAddress, walletPhotoUpdatedAt }: {
+export default function CampaignParticipantsStack({ campaignId, walletAddress, walletPhotoUpdatedAt, onViewerAvatarClick }: {
   campaignId: string | null;
   walletAddress: string | null;
   walletPhotoUpdatedAt: string | null;
+  onViewerAvatarClick?: () => void;
 }) {
   const [verifiedAddresses, setVerifiedAddresses] = useState<string[]>([]);
   const [loadedCampaignId, setLoadedCampaignId] = useState<string | null>(null);
@@ -107,13 +108,17 @@ export default function CampaignParticipantsStack({ campaignId, walletAddress, w
         ) : null}
       </div>
       {viewerAddress ? (
-        <ParticipantAvatar
-          key={`${viewerAddress}:${walletPhotoUpdatedAt ?? ""}`}
-          address={viewerAddress}
-          title={viewerStatus === "verified" ? "Your criteria are fulfilled" : viewerStatus === "pending" ? "Your criteria are not yet fulfilled" : "Checking your criteria"}
-          photoVersion={walletPhotoUpdatedAt}
-          status={viewerStatus}
-        />
+        <button type="button" className="campaign-participant-avatar-button" onClick={onViewerAvatarClick}
+          disabled={!onViewerAvatarClick} aria-label="View criteria status"
+          title="View criteria status">
+          <ParticipantAvatar
+            key={`${viewerAddress}:${walletPhotoUpdatedAt ?? ""}`}
+            address={viewerAddress}
+            title={viewerStatus === "verified" ? "Your criteria are fulfilled" : viewerStatus === "pending" ? "Your criteria are not yet fulfilled" : "Checking your criteria"}
+            photoVersion={walletPhotoUpdatedAt}
+            status={viewerStatus}
+          />
+        </button>
       ) : null}
     </div>
   );
