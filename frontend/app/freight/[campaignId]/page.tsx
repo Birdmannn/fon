@@ -1,7 +1,7 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, X } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -11,6 +11,7 @@ import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import CampaignDetailInteractions from "@/app/_components/CampaignDetailInteractions";
 import CampaignMountablesPanel, { CampaignMountableIcon, type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
+import FreightTreeInfo from "@/app/_components/FreightTreeInfo";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
@@ -169,7 +170,8 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "criteria-status";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "criteria-status" | "freight-options";
+type FreightOption = "create-parent" | "create-child" | "link-freight" | "view-tree";
 
 export default function CampaignDetailPage() {
   const { open, disconnect, client } = ccc.useCcc();
@@ -204,6 +206,7 @@ export default function CampaignDetailPage() {
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
+  const [selectedFreightOption, setSelectedFreightOption] = useState<FreightOption | null>(null);
   const [supportRequest, setSupportRequest] = useState<CampaignSupportRequest | null>(null);
   const [supportAmount, setSupportAmount] = useState("");
   const [supportError, setSupportError] = useState("");
@@ -595,7 +598,8 @@ export default function CampaignDetailPage() {
     }
   }, [isProcessingSupport, openDetailActionSuccess, supportAmount, supportRequest]);
 
-  const activeShellWidthClass = showCreateModal ? "campaign-shell-width" : shellWidthClass;
+  const isCreateStyleModalOpen = showCreateModal || selectedFreightOption !== null;
+  const activeShellWidthClass = isCreateStyleModalOpen ? "campaign-shell-width" : shellWidthClass;
   const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
 
   const resetInfoModalState = useCallback(() => {
@@ -623,6 +627,34 @@ export default function CampaignDetailPage() {
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
   }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer, selectedRecord?.campaignId, walletAddress]);
+
+  const handleOpenFreightOptions = useCallback(() => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setInfoModalMode("freight-options");
+    setInfoModalInteraction("click");
+    setIsInfoModalClosing(false);
+    setShowInfoModal(true);
+  }, [clearInfoCloseTimer, clearInfoHideTimer]);
+
+  const handleSelectFreightOption = useCallback((option: FreightOption) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    setShowInfoModal(false);
+    setIsInfoModalClosing(false);
+    setInfoModalMode("about");
+    setInfoModalInteraction("hover");
+    setSelectedFreightOption(option);
+  }, [clearInfoCloseTimer, clearInfoHideTimer]);
+
+  useEffect(() => {
+    if (!selectedFreightOption) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedFreightOption(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedFreightOption]);
 
   useEffect(() => {
     const campaignId = selectedRecord?.campaignId;
@@ -682,6 +714,7 @@ export default function CampaignDetailPage() {
   ]);
 
   const preventInfoHover = infoModalMode === "create-error"
+    || infoModalMode === "freight-options"
     || infoModalMode === "tag-suggestions"
     || infoModalMode === "save-draft-confirm"
     || infoModalMode === "mountables"
@@ -1822,6 +1855,10 @@ export default function CampaignDetailPage() {
   const passedCriteriaCount = criteriaStatuses.filter((criterion) => criterion.cleared).length;
   const infoModalBody = infoModalMode === "tag-suggestions" ? (
     <TagSuggestionsInfo initialQuery={tagSuggestionQuery} onContinue={handleTagSuggestionContinue} />
+  ) : infoModalMode === "freight-options" ? (
+    <div className="create-info-constraints-copy">
+      <p className="create-review-section-label campaign-freight-options-heading">Freight Options:</p>
+    </div>
   ) : infoModalMode === "criteria-status" ? (
     <div className="create-info-constraints-copy">
       <div className="campaign-criteria-heading">
@@ -2092,6 +2129,15 @@ export default function CampaignDetailPage() {
       <button type="submit" form="tag-suggestions-form" className="create-info-confirm-btn create-info-confirm-btn-primary">
         Continue
       </button>
+    </div>
+  ) : infoModalMode === "freight-options" ? (
+    <div className="create-info-confirm-actions campaign-freight-options-actions">
+      {([ ["create-parent", "Add Parent"], ["create-child", "Add child"], ["link-freight", "Link freight"], ["view-tree", "View Tree"] ] as const).map(([option, label]) => (
+        <button key={option} type="button" data-option={option} className="create-info-confirm-btn"
+          onClick={() => handleSelectFreightOption(option)}>
+          {label}
+        </button>
+      ))}
     </div>
   ) : infoModalMode === "support-deposit" ? (
     <form className="create-info-confirm-actions" onSubmit={(event) => { event.preventDefault(); void handleSupportSubmit(); }}>
@@ -2410,6 +2456,7 @@ export default function CampaignDetailPage() {
           mountableItems={mountableItems}
           onProfileDataChanged={markCurrentProfileDataDirty}
           onViewerAvatarClick={() => void handleViewerAvatarClick()}
+          onFreightOptionsClick={handleOpenFreightOptions}
           onSupportRequest={handleOpenSupportInfoModal}
           onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
         />
@@ -2434,6 +2481,8 @@ export default function CampaignDetailPage() {
             </div>
             <CampaignCommentsPanel
               comments={comments}
+              campaignId={selectedRecord.campaignId}
+              walletAddress={walletAddress}
               fallbackAddress={creatorAddress}
               showHeader={false}
               showEmptyState={false}
@@ -2464,9 +2513,9 @@ export default function CampaignDetailPage() {
     <main className="campaign-detail-page">
       <div className={`campaign-detail-shell ${activeShellWidthClass}`.trim()}>
         <AppShellHeader
-          className={`campaign-shell-header ${activeShellWidthClass} ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header ${activeShellWidthClass} ${isCreateStyleModalOpen ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -2547,6 +2596,32 @@ export default function CampaignDetailPage() {
           isCreateModalClosing={isCreateModalClosing}
           availableFbars={currentUserProfile?.fbars}
         />
+        {selectedFreightOption && selectedRecord?.campaignId ? (
+          <>
+            <button type="button" className="create-campaign-backdrop" aria-label="Close freight tree modal" onClick={() => setSelectedFreightOption(null)} />
+            <div className="create-campaign-modal campaign-freight-tree-modal" role="dialog" aria-modal="true" aria-label={selectedFreightOption === "view-tree" ? "Freight tree" : "Freight relation"}>
+              {selectedFreightOption === "view-tree" ? (
+                <h2 className="create-review-section-label text-gray-900">{selectedRecord.title?.trim() || "Untitled freight"}</h2>
+              ) : (
+                <>
+                  <div className="campaign-freight-tree-modal-header">
+                    <h2 className="create-review-section-label text-gray-900">
+                      {selectedFreightOption === "create-parent" ? "Add parent:" : selectedFreightOption === "create-child" ? "Add child:" : "Link freight:"}
+                    </h2>
+                    <button type="button" className="campaign-freight-tree-modal-close" aria-label="Close" onClick={() => setSelectedFreightOption(null)}><X size={20} aria-hidden="true" /></button>
+                  </div>
+                  <FreightTreeInfo
+                    campaignId={selectedRecord.campaignId}
+                    mode={selectedFreightOption === "create-parent" ? "parent" : selectedFreightOption === "create-child" ? "child" : "linked"}
+                    walletAddress={walletAddress}
+                    isCreator={isCampaignCreator}
+                    signAction={createSignedWalletAction}
+                  />
+                </>
+              )}
+            </div>
+          </>
+        ) : null}
       </div>
     </main>
   );

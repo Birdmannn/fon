@@ -127,6 +127,9 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       {
         projection: {
           campaignId: 1,
+          parentCampaignId: 1,
+          linkedCampaignIds: 1,
+          requiresLinkedFreight: 1,
           createdByHash: 1,
           chainCreatedAt: 1,
           campaignType: 1,

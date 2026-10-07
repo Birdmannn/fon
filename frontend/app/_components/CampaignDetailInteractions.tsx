@@ -8,6 +8,7 @@ import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
+import CampaignThreadConnector, { type CampaignThreadRole } from "@/app/_components/CampaignThreadConnector";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
 import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
@@ -28,15 +29,17 @@ type Props = {
   mountableItems: CampaignMountableItem[];
   onProfileDataChanged: () => void;
   onViewerAvatarClick: () => void;
+  onFreightOptionsClick: () => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
+  threadRole?: CampaignThreadRole;
 };
 
 type Modal = "settlement" | null;
 
 export default function CampaignDetailInteractions({
   campaign, record: initialRecord, client, signer, walletAddress, viewerFbars, creatorFbars,
-  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onSupportRequest, onTicketPurchaseRequest,
+  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onFreightOptionsClick, onSupportRequest, onTicketPurchaseRequest, threadRole,
 }: Props) {
   const [record, setRecord] = useState(initialRecord);
   const onRecordChange = (update: Partial<CampaignRecord>) => setRecord((current) => ({ ...current, ...update }));
@@ -100,6 +103,7 @@ export default function CampaignDetailInteractions({
           <div className="campaign-detail-card-shell">
             <CampaignDetailSurface campaign={campaign} record={record} nowMs={nowMs} />
           </div>
+          <CampaignThreadConnector role={threadRole} onOpenOptions={onFreightOptionsClick} />
         </section>
 
         <section className="campaign-detail-comments-column campaign-card-entry">
@@ -171,7 +175,7 @@ export default function CampaignDetailInteractions({
             <div className="campaign-comment-meta-row"><span className="campaign-comment-count">{300 - state.commentDraft.length}</span></div>
             {state.commentError ? <p className="campaign-comment-error" role="alert">{state.commentError}</p> : null}
           </div>
-          <CampaignCommentsPanel comments={state.commentList} fallbackAddress={creatorAddress} showHeader={false} showEmptyState={false} variant="inline" />
+          <CampaignCommentsPanel comments={state.commentList} campaignId={record.campaignId} walletAddress={walletAddress} fallbackAddress={creatorAddress} showHeader={false} showEmptyState={false} variant="inline" />
         </div>
       </div>
 

@@ -365,6 +365,7 @@ export type CreateCampaignModalContentHandle = {
   persistCurrentDraft: () => Promise<void>;
   advanceToReviewAfterMountableSelection: () => Promise<void>;
   insertTagSuggestion: (tag: string) => void;
+  insertReferenceQuote: (quote: string) => void;
 };
 
 export type CreateConstraintStatus = {
@@ -2553,6 +2554,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     },
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
     insertTagSuggestion,
+    insertReferenceQuote: (quote) => {
+      setModalDescription(quote);
+      setSummary(quote);
+      syncEditorsFromState(modalTitle, quote);
+      modalDescriptionRef.current?.focus();
+    },
   }), [
     appMountables,
     currentAppMountableCampaignContext,
@@ -2571,7 +2578,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     hasDraftableChanges,
     insertTagSuggestion,
     lockMountable,
+    modalTitle,
     persistDraftRecord,
+    syncEditorsFromState,
   ]);
 
   useEffect(() => {

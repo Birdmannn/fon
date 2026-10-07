@@ -19,11 +19,15 @@ import {
   normalizeMountedAppPrincipleStates,
 } from "@/lib/fonMountablesSdk";
 import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMountableAppDeliveriesCollection, getMountableAppsCollection, getMountableAppUpdatesCollection, getMongoCollection } from "@/lib/mongodb";
+import { effectiveParticipantStatus, hasParticipantCreatedLinkedFreight } from "@/lib/freightTree";
 import { deriveMountableWindow, mountableWindowDurationSeconds } from "@/lib/mountableTiming";
 import { areRequiredPrinciplesSatisfied, isCanonicalParticipantVerified, isMountedAppPollDue, mountedAppWindowState } from "@/lib/mountableAppRuntimeRules";
 
 export type CampaignRecordMountableRuntime = {
   campaignId?: unknown;
+  parentCampaignId?: unknown;
+  linkedCampaignIds?: unknown;
+  requiresLinkedFreight?: unknown;
   createdByHash?: unknown;
   chainCreatedAt?: unknown;
   campaignType?: unknown;
@@ -147,6 +151,9 @@ async function loadCampaignRecordByCampaignId(campaignId: string) {
       projection: {
         _id: 0,
         campaignId: 1,
+        parentCampaignId: 1,
+        linkedCampaignIds: 1,
+        requiresLinkedFreight: 1,
         createdByHash: 1,
         chainCreatedAt: 1,
         campaignType: 1,
@@ -161,6 +168,8 @@ export async function finalizeCampaignParticipant(params: {
   campaignId: string;
   participantAddress: string;
   record?: CampaignRecordMountableRuntime | null;
+  visitedCampaignIds?: Set<string>;
+  propagateDescendants?: boolean;
 }) {
   const campaignId = normalizeString(params.campaignId).toLowerCase();
   const participantAddress = normalizeAddress(params.participantAddress);
@@ -172,6 +181,11 @@ export async function finalizeCampaignParticipant(params: {
   if (!record) {
     return null;
   }
+  const visitedCampaignIds = params.visitedCampaignIds ?? new Set<string>();
+  if (visitedCampaignIds.has(campaignId) || visitedCampaignIds.size >= 64) {
+    throw new Error("Freight parent tree contains a cycle or is too deep");
+  }
+  visitedCampaignIds.add(campaignId);
 
   const participantsCollection = await getCampaignParticipantsCollection();
   const finalizationsCollection = await getCampaignParticipantFinalizationsCollection();
@@ -213,6 +227,23 @@ export async function finalizeCampaignParticipant(params: {
   });
   const formsSatisfied = !formsMountable.enabled || rows.some((row) => normalizeString(row.participantKind) === "forms_claim" && normalizeString(row.status) === "verified");
   const appPrinciplesSatisfied = enabledMountedApps.length === 0 || enabledMountedApps.every((mountable) => rows.some((row) => normalizeString(row.mountableType) === "app" && normalizeString(row.mountableInstanceId) === mountable.mountableInstanceId && row.childSatisfied === true));
+  const linkedIds = Array.isArray(record.linkedCampaignIds)
+    ? record.linkedCampaignIds.map((id) => normalizeString(id).toLowerCase()).filter(Boolean)
+    : [];
+  const linkedRecords = record.requiresLinkedFreight === true && linkedIds.length > 0
+    ? await (await getMongoCollection()).find({
+        campaignId: { $in: linkedIds },
+        status: "published",
+      }, { projection: { _id: 0, creatorAddress: 1 } }).toArray()
+    : [];
+  const linkedFreightSatisfied = record.requiresLinkedFreight !== true
+    || hasParticipantCreatedLinkedFreight(participantAddress, linkedRecords.map((linked) => ({ creatorAddress: linked.creatorAddress })));
+  const parentCampaignId = normalizeString(record.parentCampaignId).toLowerCase();
+  const parentVerification = parentCampaignId
+    ? await finalizeCampaignParticipant({ campaignId: parentCampaignId, participantAddress, visitedCampaignIds, propagateDescendants: false })
+    : null;
+  const freightParentSatisfied = !parentCampaignId || parentVerification?.status === "verified";
+  visitedCampaignIds.delete(campaignId);
 
   const reasons: string[] = [];
   if (!hasBaseParticipation) {
@@ -224,17 +255,24 @@ export async function finalizeCampaignParticipant(params: {
   if (!appPrinciplesSatisfied) {
     reasons.push("Mounted app principles are not all fulfilled yet");
   }
+  if (!linkedFreightSatisfied) {
+    reasons.push("A linked freight created by this participant is required");
+  }
+  if (!freightParentSatisfied) {
+    reasons.push("Parent freight constraints are still pending");
+  }
 
   const previousFinalization = await finalizationsCollection.findOne(
     { campaignId, participantAddress },
     { projection: { _id: 0, canonicalVerification: 1 } },
   ) as { canonicalVerification?: MountedAppCanonicalVerificationSnapshot } | null;
   const nowIso = new Date().toISOString();
-  const isVerified = isCanonicalParticipantVerified({
+  const ownSatisfied = isCanonicalParticipantVerified({
     baseParticipationSatisfied: hasBaseParticipation,
     formsSatisfied,
     appPrinciplesSatisfied,
   });
+  const isVerified = effectiveParticipantStatus(ownSatisfied, [freightParentSatisfied, linkedFreightSatisfied]) === "verified";
   const previousVerifiedAt = previousFinalization?.canonicalVerification?.status === "verified"
     ? normalizeString(previousFinalization.canonicalVerification.verifiedAt)
     : "";
@@ -279,7 +317,7 @@ export async function finalizeCampaignParticipant(params: {
         participantKind: "canonical_verification",
         mountableType: null,
         childSatisfied: snapshot.appPrinciplesSatisfied,
-        parentSatisfied: snapshot.appPrinciplesSatisfied,
+        parentSatisfied: freightParentSatisfied,
         statusMessage: reasons.join("; "),
         effectiveAt: nowIso,
         sourceUpdatedAt: nowIso,
@@ -291,6 +329,40 @@ export async function finalizeCampaignParticipant(params: {
     },
     { upsert: true },
   );
+
+  if (params.propagateDescendants !== false && previousFinalization?.canonicalVerification?.status !== snapshot.status) {
+    const recordsCollection = await getMongoCollection();
+    const queue = [campaignId];
+    const refreshed = new Set<string>();
+    while (queue.length && refreshed.size < 256) {
+      const parentId = queue.shift();
+      if (!parentId || refreshed.has(parentId)) continue;
+      refreshed.add(parentId);
+      const children = await recordsCollection.find(
+        { parentCampaignId: parentId, status: "published" },
+        { projection: { _id: 0, campaignId: 1 } },
+      ).toArray();
+      for (const child of children) {
+        const childId = normalizeString(child.campaignId).toLowerCase();
+        if (!childId || refreshed.has(childId)) continue;
+        queue.push(childId);
+        const childVerification = await finalizeCampaignParticipant({
+          campaignId: childId,
+          participantAddress,
+          propagateDescendants: false,
+        });
+        if (childVerification) {
+          await dispatchMountedAppRequestsForParticipant({
+            campaignId: childId,
+            participantAddress,
+            canonicalVerification: childVerification,
+            eventType: childVerification.status === "verified" ? "participant.finalized" : "participant.updated",
+            source: "parent-freight-updated",
+          }).catch(() => undefined);
+        }
+      }
+    }
+  }
 
   return snapshot;
 }
@@ -349,7 +421,7 @@ export async function ingestMountedAppUpdate(params: {
   const recordsCollection = await getMongoCollection();
   const record = await recordsCollection.findOne(
     { campaignId, "mountables.apps.mountableInstanceId": mountableInstanceId },
-    { projection: { campaignId: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 } },
+    { projection: { campaignId: 1, parentCampaignId: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 } },
   ) as CampaignRecordMountableRuntime | null;
   if (!record) {
     throw new MountableAppRuntimeError("Mounted app record not found", 404);
@@ -927,7 +999,7 @@ export async function pollMountedApps(params: {
     query.campaignId = requestedCampaignId;
   }
   const records = await recordsCollection.find(query, {
-    projection: { _id: 0, campaignId: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 },
+    projection: { _id: 0, campaignId: 1, parentCampaignId: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 },
   }).toArray() as CampaignRecordMountableRuntime[];
   const results: Array<Record<string, unknown>> = [];
   const now = new Date();

@@ -82,6 +82,7 @@ export default function Home() {
   const [supportAmount, setSupportAmount] = useState("");
   const [supportError, setSupportError] = useState("");
   const [isProcessingSupport, setIsProcessingSupport] = useState(false);
+  const [referenceQuote, setReferenceQuote] = useState<string | null>(null);
   const handleFreightsLoadError = useCallback((message: string) => {
     setSubmissionErrorMessage(message);
   }, []);
@@ -291,6 +292,20 @@ export default function Home() {
     setIsInfoModalClosing,
     setShowInfoModal,
   });
+
+  useEffect(() => {
+    const quote = sessionStorage.getItem("freight:reference-quote");
+    if (!quote) return;
+    sessionStorage.removeItem("freight:reference-quote");
+    setReferenceQuote(quote);
+    openCreateModal();
+  }, [openCreateModal]);
+
+  useEffect(() => {
+    if (!showCreateModal || !referenceQuote) return;
+    createModalContentRef.current?.insertReferenceQuote(referenceQuote);
+    setReferenceQuote(null);
+  }, [createModalContentRef, referenceQuote, showCreateModal]);
 
   const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
     markCurrentProfileDataDirty();

@@ -307,6 +307,15 @@ export async function GET(request: Request) {
       query.mountableInstanceId = mountableInstanceId;
     }
 
+    if (participantKind === "canonical_verification") {
+      const knownAddresses = await collection.distinct("participantAddress", query);
+      for (const address of knownAddresses) {
+        if (typeof address === "string" && address.trim()) {
+          await finalizeCampaignParticipant({ campaignId, participantAddress: address });
+        }
+      }
+    }
+
     const participants = await collection
       .find(query, { sort: { joinedAt: 1 } })
       .toArray();

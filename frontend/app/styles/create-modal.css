@@ -449,6 +449,54 @@
   width: 100%;
 }
 
+.campaign-freight-options-heading {
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.campaign-freight-tree-modal {
+  padding: 1.5rem;
+}
+
+.campaign-freight-tree-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.campaign-freight-tree-modal-close {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.campaign-freight-tree-modal-close:hover,
+.campaign-freight-tree-modal-close:focus-visible {
+  color: var(--foreground);
+}
+
+.campaign-freight-options-actions {
+  gap: 0;
+}
+
+.campaign-freight-options-actions .create-info-confirm-btn {
+  min-width: 0;
+  padding-inline: 0.3rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.campaign-freight-options-actions .create-info-confirm-btn + .create-info-confirm-btn {
+  border-left-width: 0;
+}
+
 .create-info-confirm-actions.create-info-confirm-actions-tight {
   margin-top: 0;
   padding-top: 0;
@@ -511,6 +559,24 @@
   background: #16a34a;
   color: #ffffff;
   border-color: #16a34a;
+}
+
+.campaign-freight-options-actions .create-info-confirm-btn[data-option="create-parent"]:is(:hover, :focus-visible) {
+  background: #9333ea;
+  color: #ffffff;
+  border-color: #9333ea;
+}
+
+.campaign-freight-options-actions .create-info-confirm-btn[data-option="create-child"]:is(:hover, :focus-visible) {
+  background: #16a34a;
+  color: #ffffff;
+  border-color: #16a34a;
+}
+
+.campaign-freight-options-actions .create-info-confirm-btn[data-option="view-tree"]:is(:hover, :focus-visible) {
+  background: #111111;
+  color: #ffffff;
+  border-color: #111111;
 }
 
 .create-info-mountable-app-actions {
