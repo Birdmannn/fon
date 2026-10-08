@@ -24,6 +24,14 @@ export type MountableCriterionStatus = {
   logoUrl?: string;
 };
 
+export function hasRaffleTicketParticipation(rows: ParticipantCriterionRow[]): boolean {
+  return rows.some((row) => row.status === "verified" && (
+    row.participantKind === "raffle_ticket"
+    || ((row.participantKind === null || row.participantKind === undefined)
+      && (row.mountableType === null || row.mountableType === undefined))
+  ));
+}
+
 export function getMountableCriteriaStatus({
   record,
   rows,

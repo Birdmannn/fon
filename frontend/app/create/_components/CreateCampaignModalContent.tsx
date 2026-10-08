@@ -2685,12 +2685,34 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [persistDraftRecord]
   );
 
+  const applyFreightCreateCost = async (txHash: string, campaignId: string) => {
+    if (!signer) throw new Error("Connect the creator wallet to finish publishing");
+    const address = await signer.getRecommendedAddress();
+    if (!address) throw new Error("Unable to resolve wallet address for FBARS update");
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const response = await fetch("/api/fbars/freight-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, txHash, campaignId }),
+      });
+      if (response.ok) return;
+      if (response.status === 409 && attempt < 29) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        continue;
+      }
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error ?? "Failed to apply freight creation FBARS cost");
+    }
+  };
+
   const handleRetryDraftSave = async () => {
     setStatus("idle");
     setErrorMsg("");
 
     try {
       if (pendingPublishedRecordSync) {
+        await applyFreightCreateCost(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.campaignId);
         await finalizePublishedRecordSync(pendingPublishedRecordSync);
         onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage, pendingPublishedRecordSync.campaignId);
         setStatus("success");
@@ -2805,43 +2827,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         winnerReductionBps: normalizedParams.winnerReductionBps,
       });
 
-      const creatorAddress = await signer.getRecommendedAddress();
-      if (!creatorAddress) {
-        throw new Error("Unable to resolve wallet address for FBARS update");
-      }
-      const nonceResponse = await fetch("/api/wallet/nonce", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ address: creatorAddress, purpose: "freight-create" }),
-      });
-      const noncePayload = await nonceResponse.json().catch(() => null);
-      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
-        throw new Error(noncePayload?.error ?? "Failed to create freight FBARS nonce");
-      }
-      const signature = await signer.signMessage(noncePayload.nonce);
-      const freightFbarsResponse = await fetch("/api/fbars/freight-create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          address: creatorAddress,
-          nonce: noncePayload.nonce,
-          txHash: publishResult.txHash,
-          nonceSignature: {
-            signature: signature.signature,
-            identity: signature.identity,
-            signType: signature.signType,
-          },
-        }),
-      });
-      const freightFbarsPayload = await freightFbarsResponse.json().catch(() => null);
-      if (!freightFbarsResponse.ok) {
-        throw new Error(freightFbarsPayload?.error ?? "Failed to apply freight creation FBARS cost");
-      }
-
       if (isModal) {
         const draftRecordId = stagedDraftRecordId ?? activeDraftRecordId;
         if (!draftRecordId) {
@@ -2857,6 +2842,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           chainCreatedAt: publishResult.chainCreatedAt,
           randomnessPreimage: randomnessPreimageHex,
         };
+      }
+
+      await applyFreightCreateCost(publishResult.txHash, publishResult.campaignId);
+
+      if (pendingSync) {
         await finalizePublishedRecordSync(pendingSync);
       }
 
@@ -2868,7 +2858,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       if (pendingSync) {
         setPendingPublishedRecordSync(pendingSync);
         setDraftSaveStatus("error");
-        setDraftSaveError(`Campaign published on-chain, but saving the published record failed: ${message}`);
+        setDraftSaveError(`Campaign published on-chain, but finalizing it failed: ${message}`);
         setErrorMsg("");
         setStatus("error");
         return;
@@ -3066,16 +3056,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             </>
           ) : null}
         </>
-      ) : (
-        <div className="create-review-arg-field">
-          <label className="create-review-arg-label">Social</label>
-          <div className="create-review-social-control" aria-label="Social actions enabled">
-            <span>Like</span>
-            <span>Reply</span>
-            <span>Share</span>
-          </div>
-        </div>
-      )}
+      ) : null}
     </div>
   );
 
@@ -3607,7 +3588,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                         ? "Saving preview"
                         : draftSaveStatus === "error"
                           ? pendingPublishedRecordSync
-                            ? "Retry saving published record"
+                            ? "Retry finalizing published freight"
                             : "Retry saving preview"
                           : status === "pending"
                             ? "Publishing"
@@ -3620,7 +3601,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                         ? "Saving preview..."
                         : draftSaveStatus === "error"
                           ? pendingPublishedRecordSync
-                            ? "Retry saving published record"
+                            ? "Retry finalizing published freight"
                             : "Retry saving preview"
                           : status === "pending"
                             ? "Publishing..."

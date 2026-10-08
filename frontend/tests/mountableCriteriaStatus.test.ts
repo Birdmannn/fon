@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getMountableCriteriaStatus } from "../app/_lib/mountableCriteriaStatus.ts";
+import { getMountableCriteriaStatus, hasRaffleTicketParticipation } from "../app/_lib/mountableCriteriaStatus.ts";
 import type { CampaignRecord } from "../app/_types/campaignRecords.ts";
 
 const record = {
@@ -57,4 +57,12 @@ test("shows pending built-in and app criteria before they clear", () => {
 
   assert.equal(criteria.length, 5);
   assert.equal(criteria.every(({ cleared }) => !cleared), true);
+});
+
+test("raffle ticket participation requires a verified ticket row", () => {
+  assert.equal(hasRaffleTicketParticipation([{ participantKind: "raffle_ticket", status: "verified" }]), true);
+  assert.equal(hasRaffleTicketParticipation([{ participantKind: "raffle_ticket", status: "pending" }]), false);
+  assert.equal(hasRaffleTicketParticipation([{ participantKind: "forms_claim", status: "verified" }]), false);
+  assert.equal(hasRaffleTicketParticipation([{ participantKind: "canonical_verification", status: "verified" }]), false);
+  assert.equal(hasRaffleTicketParticipation([{ participantKind: null, mountableType: null, status: "verified" }]), true);
 });

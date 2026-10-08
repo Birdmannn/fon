@@ -460,6 +460,19 @@ export default function Home() {
     setMountablesPromptError("");
   }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
 
+  const transitionFreightInfoModal = useCallback((mode: InfoModalMode) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    if (infoStepTimerRef.current) clearTimeout(infoStepTimerRef.current);
+    setIsInfoModalClosing(true);
+    infoStepTimerRef.current = setTimeout(() => {
+      setInfoModalMode(mode);
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+      infoStepTimerRef.current = null;
+    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
+  }, [clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
+
   const handleOpenTicketPurchaseInfoModal = useCallback((
     campaign: CampaignCell,
     record: CampaignRecord | null,
@@ -511,14 +524,14 @@ export default function Home() {
       markCurrentProfileDataDirty();
       setSubmissionSuccessTxHash(txHash);
       setIsProcessingSupport(false);
-      setInfoModalMode("support-deposit-success");
+      transitionFreightInfoModal("support-deposit-success");
       clearSubmissionSuccessTimer();
-      submissionSuccessTimerRef.current = setTimeout(() => closeInfoModal(), 3000);
+      submissionSuccessTimerRef.current = setTimeout(() => closeInfoModal(), 3000 + Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
     } catch (error) {
       setSupportError(error instanceof Error ? error.message : "Transaction failed");
       setIsProcessingSupport(false);
     }
-  }, [clearSubmissionSuccessTimer, closeInfoModal, isProcessingSupport, markCurrentProfileDataDirty, setSubmissionSuccessTxHash, submissionSuccessTimerRef, supportAmount, supportRequest]);
+  }, [clearSubmissionSuccessTimer, closeInfoModal, isProcessingSupport, markCurrentProfileDataDirty, setSubmissionSuccessTxHash, submissionSuccessTimerRef, supportAmount, supportRequest, transitionFreightInfoModal]);
 
   const handleCommentDiscardRequest = useCallback((cardId: string) => {
     setPendingCommentDiscardId(cardId);
@@ -590,19 +603,6 @@ export default function Home() {
     setIsProcessingSupport(false);
     resetTicketPurchaseState();
   }, [infoModalMode, isCreateModalClosing, isCreatingRelatedFreight, resetCreateInfoModalState, resetTicketPurchaseState, showCreateModal]);
-
-  const transitionFreightInfoModal = useCallback((mode: InfoModalMode) => {
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    if (infoStepTimerRef.current) clearTimeout(infoStepTimerRef.current);
-    setIsInfoModalClosing(true);
-    infoStepTimerRef.current = setTimeout(() => {
-      setInfoModalMode(mode);
-      setIsInfoModalClosing(false);
-      setShowInfoModal(true);
-      infoStepTimerRef.current = null;
-    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
-  }, [clearInfoCloseTimer, clearInfoHideTimer, setIsInfoModalClosing, setShowInfoModal]);
 
   useEffect(() => () => {
     if (infoStepTimerRef.current) clearTimeout(infoStepTimerRef.current);
@@ -1001,7 +1001,7 @@ export default function Home() {
     </div>
   ) : infoModalMode === "support-deposit" ? (
     <div className="create-info-constraints-copy">
-      <div className="create-info-section-heading-row mt-3">
+      <div className="create-info-section-heading-row">
         <p className="create-review-section-label text-gray-900">
           {supportRequest?.supportMode === "direct_creator" ? "Tip amount" : "Deposit amount"}
         </p>
@@ -1009,9 +1009,6 @@ export default function Home() {
           <p className="create-review-section-label create-info-inline-status text-red-500" role="alert">{supportError}</p>
         ) : null}
       </div>
-      {supportRequest?.supportMode === "direct_creator" ? (
-        <p className="create-info-constraint-item text-gray-500"><span>Tips go directly to the freight creator.</span></p>
-      ) : null}
     </div>
   ) : infoModalMode === "raffle-settlement" ? (
     <RaffleSettlementInfo data={settlementModalData} isLoading={isLoadingSettlementModal} walletAddress={walletAddress} />

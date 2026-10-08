@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { SignerSignType } from "@ckb-ccc/core";
 
+import { reconcileAdsfForAddress } from "@/lib/adsf";
 import {
   getCurrentWeekKey,
   getWeeklyMarqueeEditsRemaining,
@@ -504,16 +505,20 @@ export async function GET(request: Request) {
         return badRequest("User profile not found", 404);
       }
 
-      const profile = buildUserProfileResponse(normalizeAddress(rawProfile.address), bundle, rawProfile);
+      const adsf = await reconcileAdsfForAddress(rawProfile.address);
+      if (adsf.complete) rawProfile.adsfUsdCents = adsf.cents;
+      else rawProfile.adsfUsdCents = Math.max(parseAdsfUsdCents(rawProfile.adsfUsdCents), adsf.cents);
+      const updatedBundle = buildLeaderboardBundle(profiles);
+      const profile = buildUserProfileResponse(normalizeAddress(rawProfile.address), updatedBundle, rawProfile);
       if (!profile) {
         return badRequest("User profile not found", 404);
       }
 
       return NextResponse.json({
         profile: includePrivate ? attachGoogleAccountToProfile(profile, sanitizeGoogleAccount(rawProfile.googleAccount)) : profile,
-        leaderboard: bundle.weeklyLeaderboard,
-        weeklyLeaderboard: bundle.weeklyLeaderboard,
-        overallLeaderboard: bundle.overallLeaderboard,
+        leaderboard: updatedBundle.weeklyLeaderboard,
+        weeklyLeaderboard: updatedBundle.weeklyLeaderboard,
+        overallLeaderboard: updatedBundle.overallLeaderboard,
         ...activeWeeklyMarquee,
       });
     }
@@ -596,6 +601,7 @@ export async function POST(request: Request) {
       { upsert: true }
     );
 
+    await reconcileAdsfForAddress(address);
     const profiles = await loadAllProfiles();
     const bundle = buildLeaderboardBundle(profiles, now);
     const profilesByAddress = buildProfilesByAddress(profiles);
@@ -641,11 +647,7 @@ export async function PATCH(request: Request) {
       nextSet.displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
     }
 
-    if (typeof payload.adsfUsdCents === "number" && Number.isInteger(payload.adsfUsdCents) && payload.adsfUsdCents >= 0) {
-      nextSet.adsfUsdCents = payload.adsfUsdCents;
-    } else {
-      nextSetOnInsert.adsfUsdCents = 0;
-    }
+    nextSetOnInsert.adsfUsdCents = 0;
 
     if (payload.lightModePrimaryColor !== undefined) {
       nextSet.lightModePrimaryColor = sanitizeLightModePrimaryColor(payload.lightModePrimaryColor);

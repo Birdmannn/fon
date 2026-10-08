@@ -40,7 +40,7 @@ import {
   normalizeAppMountableConfigs,
 } from "@/app/_lib/appMountable";
 import { formsMountableSummary, isFormsMountableEnabled, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
-import { getMountableCriteriaStatus, type MountableCriterionStatus, type ParticipantCriterionRow } from "@/app/_lib/mountableCriteriaStatus";
+import { getMountableCriteriaStatus, hasRaffleTicketParticipation, type MountableCriterionStatus, type ParticipantCriterionRow } from "@/app/_lib/mountableCriteriaStatus";
 import { childFreightMountableSummary } from "@/app/_lib/childFreightMountable";
 import { getLockMountableValidationState, isLockMountableEnabled, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
@@ -242,6 +242,7 @@ export default function CampaignDetailPage() {
   const [isProcessingSupport, setIsProcessingSupport] = useState(false);
   const [detailActionSuccessTxHash, setDetailActionSuccessTxHash] = useState("");
   const [criteriaStatuses, setCriteriaStatuses] = useState<MountableCriterionStatus[]>([]);
+  const [hasRaffleTicket, setHasRaffleTicket] = useState<boolean | null>(null);
   const [isLoadingCriteria, setIsLoadingCriteria] = useState(false);
   const [criteriaError, setCriteriaError] = useState("");
   const detailActionSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -566,18 +567,38 @@ export default function CampaignDetailPage() {
 
   useEffect(() => clearDetailActionSuccessTimer, [clearDetailActionSuccessTimer]);
 
+  const transitionFreightInfoModal = useCallback((mode: InfoModalMode) => {
+    clearInfoCloseTimer();
+    clearInfoHideTimer();
+    if (infoStepTimerRef.current) clearTimeout(infoStepTimerRef.current);
+    setIsInfoModalClosing(true);
+    infoStepTimerRef.current = setTimeout(() => {
+      setInfoModalMode(mode);
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+      infoStepTimerRef.current = null;
+    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
+  }, [clearInfoCloseTimer, clearInfoHideTimer]);
+
   const openDetailActionSuccess = useCallback((txHash: string, mode: "ticket-buy-success" | "support-deposit-success" | "creator-withdraw-success") => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearDetailActionSuccessTimer();
     markCurrentProfileDataDirty();
     setDetailActionSuccessTxHash(txHash);
-    setInfoModalMode(mode);
+    if (mode === "support-deposit-success") {
+      transitionFreightInfoModal(mode);
+    } else {
+      setInfoModalMode(mode);
+      setIsInfoModalClosing(false);
+      setShowInfoModal(true);
+    }
     setInfoModalInteraction("click");
-    setIsInfoModalClosing(false);
-    setShowInfoModal(true);
-    detailActionSuccessTimerRef.current = setTimeout(() => closeInfoModal(() => setInfoModalMode("about")), 3000);
-  }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer, closeInfoModal, markCurrentProfileDataDirty]);
+    detailActionSuccessTimerRef.current = setTimeout(
+      () => closeInfoModal(() => setInfoModalMode("about")),
+      3000 + (mode === "support-deposit-success" ? Math.max(120, INFO_MODAL_ANIMATION_MS - 500) : 0),
+    );
+  }, [clearDetailActionSuccessTimer, clearInfoCloseTimer, clearInfoHideTimer, closeInfoModal, markCurrentProfileDataDirty, transitionFreightInfoModal]);
 
   const {
     handleTicketPurchaseSubmit,
@@ -651,6 +672,7 @@ export default function CampaignDetailPage() {
     setSupportAmount("");
     setSupportError("");
     setCriteriaStatuses([]);
+    setHasRaffleTicket(null);
     setCriteriaError("");
     setIsLoadingCriteria(false);
     setSettlementModalData(null);
@@ -664,6 +686,7 @@ export default function CampaignDetailPage() {
     clearInfoHideTimer();
     clearDetailActionSuccessTimer();
     setCriteriaStatuses([]);
+    setHasRaffleTicket(null);
     setCriteriaError("");
     setIsLoadingCriteria(true);
     setInfoModalMode("criteria-status");
@@ -699,19 +722,6 @@ export default function CampaignDetailPage() {
     setIsCreatingRelatedFreight(false);
     setFreightRelationChoice(null);
   }, [infoModalMode, isCreateModalClosing, isCreatingRelatedFreight, showCreateModal]);
-
-  const transitionFreightInfoModal = useCallback((mode: InfoModalMode) => {
-    clearInfoCloseTimer();
-    clearInfoHideTimer();
-    if (infoStepTimerRef.current) clearTimeout(infoStepTimerRef.current);
-    setIsInfoModalClosing(true);
-    infoStepTimerRef.current = setTimeout(() => {
-      setInfoModalMode(mode);
-      setIsInfoModalClosing(false);
-      setShowInfoModal(true);
-      infoStepTimerRef.current = null;
-    }, Math.max(120, INFO_MODAL_ANIMATION_MS - 500));
-  }, [clearInfoCloseTimer, clearInfoHideTimer]);
 
   useEffect(() => () => {
     if (infoStepTimerRef.current) clearTimeout(infoStepTimerRef.current);
@@ -849,9 +859,11 @@ export default function CampaignDetailPage() {
         const payload = await response.json().catch(() => null) as { participants?: ParticipantCriterionRow[]; childFreightSatisfied?: boolean; error?: string } | null;
         if (!response.ok) throw new Error(payload?.error ?? "Unable to load criteria");
         if (controller.signal.aborted || request !== latestRequest) return;
+        const participantRows = Array.isArray(payload?.participants) ? payload.participants : [];
+        setHasRaffleTicket(hasRaffleTicketParticipation(participantRows));
         setCriteriaStatuses(getMountableCriteriaStatus({
           record: selectedRecord,
-          rows: Array.isArray(payload?.participants) ? payload.participants : [],
+          rows: participantRows,
           viewerFbars: currentUserProfile?.fbars,
           creatorFbars: freightCreatorProfile?.fbars,
           signableCleared: isGiftApprovalSatisfied(selectedRecord.giftDeliverable),
@@ -2207,6 +2219,11 @@ export default function CampaignDetailPage() {
       ) : (
         <p className="create-info-constraint-item text-gray-500"><span>No clearable criteria.</span></p>
       )}
+      {!isLoadingCriteria && !criteriaError && detailUsesRaffleRandomness && hasRaffleTicket === false ? (
+        <p className="create-info-constraint-item campaign-criteria-ticket-missing" role="status">
+          <span>{selectedCampaign?.data.auxAmount === 0n ? "You haven't entered this raffle yet." : "You haven't bought a raffle ticket yet."}</span>
+        </p>
+      ) : null}
     </div>
   ) : infoModalMode === "create-error" ? (
     <div className="create-info-constraints-copy">
@@ -2252,13 +2269,12 @@ export default function CampaignDetailPage() {
     </div>
   ) : infoModalMode === "support-deposit" ? (
     <div className="create-info-constraints-copy">
-      <div className="create-info-section-heading-row mt-3">
+      <div className="create-info-section-heading-row">
         <p className="create-review-section-label text-gray-900">
           {supportRequest?.supportMode === "direct_creator" ? "Tip amount" : "Deposit amount"}
         </p>
         {supportError ? <p className="create-review-section-label create-info-inline-status text-red-500" role="alert">{supportError}</p> : null}
       </div>
-      {supportRequest?.supportMode === "direct_creator" ? <p className="create-info-constraint-item text-gray-500"><span>Tips go directly to the freight creator.</span></p> : null}
     </div>
   ) : infoModalMode === "insufficient-fbars" ? (
     <div className="create-info-constraints-copy">

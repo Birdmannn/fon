@@ -798,7 +798,7 @@ export function useCampaignCardState({
     }
 
     const txHash = supportState.supportMode === "direct_creator"
-      ? await sendCreatorTipShannons(signer, c, amountShannons)
+      ? await sendCreatorTipShannons(signer, c, amountShannons, record?.creatorAddress)
       : await sendDepositShannons(signer, c, amountShannons);
     await fetch("/api/campaign-deposits", {
       method: "POST",
@@ -817,21 +817,28 @@ export function useCampaignCardState({
       // Non-fatal — transaction history can miss this row, but the on-chain deposit still succeeded.
     });
 
-    const signed = await withSignedNonce("deposit");
-    const depositResponse = await fetch("/api/fbars/deposit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...signed,
-        recordId: record?._id,
-        txHash,
-        amountCkb: Number(amountShannons) / 1e8,
-        kind: supportState.depositKind,
-        supportMode: supportState.supportMode,
-      }),
-    });
-    const depositPayload = await depositResponse.json().catch(() => null);
-    if (!depositResponse.ok) {
+    const signed = supportState.supportMode === "direct_creator" ? null : await withSignedNonce("deposit");
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const depositResponse = await fetch("/api/fbars/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...signed,
+          address: await signer.getRecommendedAddress(),
+          recordId: record?._id,
+          txHash,
+          amountCkb: Number(amountShannons) / 1e8,
+          amountShannons: amountShannons.toString(),
+          kind: supportState.depositKind,
+          supportMode: supportState.supportMode,
+        }),
+      });
+      if (depositResponse.ok) break;
+      if (supportState.supportMode === "direct_creator" && depositResponse.status === 409 && attempt < 29) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        continue;
+      }
+      const depositPayload = await depositResponse.json().catch(() => null);
       throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
     }
 

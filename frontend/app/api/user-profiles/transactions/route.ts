@@ -7,6 +7,7 @@ import {
 } from "@/app/api/user-profiles/_lib/profileTarget";
 import type { ProfileTransactionRow, ProfileTransactionsCoverage } from "@/app/_types/profileTabs";
 import { buildStableCampaignId, normalizeHash } from "@/lib/campaignIdentity";
+import { shannonsToUsdCents } from "@/lib/adsf";
 import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
 import { getAddressNetDeltaMap } from "@/lib/txBalanceDelta";
 import {
@@ -355,7 +356,7 @@ export async function GET(request: Request) {
       fbarEventsCollection.find(
         {
           address: targetAddress,
-          kind: { $in: ["wallet-seed", "freight-create", "deposit"] },
+          kind: { $in: ["wallet-seed", "freight-create", "deposit", "creator-non-winning-interaction"] },
         },
         {
           projection: {
@@ -497,6 +498,29 @@ export async function GET(request: Request) {
           txHash: resolvedTxHash,
         });
         return;
+      }
+
+      if (kind === "creator-non-winning-interaction" && asString(metadata.supportMode) === "direct_creator") {
+        const amountShannons = asString(metadata.amountShannons);
+        const cents = asPositiveInteger(metadata.adsfUsdCents) ?? shannonsToUsdCents(amountShannons, usdPerCkb);
+        const record = createdRecords.find((entry) => entry._id?.toString() === asString(metadata.recordId));
+        fbarRows.push({
+          adsfUsdCentsDelta: cents,
+          amountLabel: amountLabelFromShannons(amountShannons),
+          campaignId: record ? deriveCampaignId(record) : null,
+          campaignRecordId: asString(metadata.recordId) || null,
+          campaignTitle: record ? normalizeTitle(record.title) : null,
+          ckbUsdCentsDelta: cents,
+          channel: "onchain",
+          fbarsDelta: null,
+          id: buildRowId(["creator-tip", resolvedTxHash ?? asString(event.eventKey)]),
+          kind: "simple_task_tip",
+          occurredAt,
+          onchainNetDeltaShannons: amountShannons || null,
+          role: "recipient",
+          summary: "Received creator tip",
+          txHash: resolvedTxHash,
+        });
       }
 
     });
@@ -691,8 +715,10 @@ export async function GET(request: Request) {
       }
 
       const amountShannons = matchingRecipients.reduce((sum, recipient) => sum + BigInt(recipient.amountShannons), 0n).toString();
-      const adsfUsdCentsDelta = matchingRecipients.reduce((sum, recipient) => sum + (recipient.creditedUsdCents ?? 0), 0);
-      if (matchingRecipients.some((recipient) => recipient.creditedUsdCents === null || recipient.creditedUsdCents === undefined)) {
+      const creditedCents = matchingRecipients.map((recipient) => recipient.creditedUsdCents
+        ?? shannonsToUsdCents(recipient.amountShannons, usdPerCkb));
+      const adsfUsdCentsDelta = creditedCents.reduce<number>((sum, cents) => sum + (cents ?? 0), 0);
+      if (creditedCents.some((cents) => cents === null)) {
         hasMissingRewardCredits = true;
       }
 
@@ -720,7 +746,7 @@ export async function GET(request: Request) {
       coverageNotes.push("Some older raffle activations may be missing because activation metadata was not always recorded.");
     }
     if (hasMissingRewardCredits) {
-      coverageNotes.push("Some older reward rows may be missing ADSF deltas because recipient credit amounts were not yet persisted.");
+      coverageNotes.push("Some older reward rows may be missing ADSF deltas until a CKB price is available.");
     }
 
     const coverage: ProfileTransactionsCoverage = {

@@ -486,7 +486,7 @@
   display: inline-flex;
   align-items: baseline;
   justify-content: flex-start;
-  gap: 0.05rem;
+  gap: 0.25em;
   margin-top: 0;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
   font-size: clamp(1.25rem, 3.4vw, 1.7rem);

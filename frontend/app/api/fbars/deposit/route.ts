@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { SignerSignType } from "@ckb-ccc/core";
 
+import { reconcileAdsfForAddress, shannonsToUsdCents } from "@/lib/adsf";
+import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
 import {
   awardFbarsEvent,
   computeDepositFbars,
@@ -10,6 +12,8 @@ import {
 } from "@/lib/fbars";
 import { verifyWalletSignature } from "@/lib/googleAuth";
 import { getPublicCkbClient } from "@/lib/ckbClient";
+import { verifyCreatorTip } from "@/lib/creatorTipProof";
+import { CampaignType } from "@/lib/contract";
 import { getFbarEventsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
 type WalletSignaturePayload = {
@@ -25,6 +29,7 @@ type DepositPayload = {
   recordId?: unknown;
   txHash?: unknown;
   amountCkb?: unknown;
+  amountShannons?: unknown;
   kind?: unknown;
   supportMode?: unknown;
 };
@@ -32,6 +37,9 @@ type DepositPayload = {
 type CampaignRecordShape = {
   creatorAddress?: unknown;
   campaignType?: unknown;
+  campaignId?: unknown;
+  createdByHash?: unknown;
+  chainCreatedAt?: unknown;
 };
 
 function badRequest(message: string, status = 400) {
@@ -84,9 +92,12 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as DepositPayload;
     const address = normalizeAddress(ensureString(payload.address, "address"));
-    const nonce = ensureString(payload.nonce, "nonce");
-    const nonceSignature = parseVerifiedSignature(payload.nonceSignature);
-    await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+    const isDirectTip = payload.supportMode === "direct_creator";
+    if (!isDirectTip) {
+      const nonce = ensureString(payload.nonce, "nonce");
+      const nonceSignature = parseVerifiedSignature(payload.nonceSignature);
+      await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+    }
 
     const recordId = ensureString(payload.recordId, "recordId");
     if (!ObjectId.isValid(recordId)) {
@@ -94,20 +105,18 @@ export async function POST(request: Request) {
     }
 
     const txHash = ensureString(payload.txHash, "txHash").toLowerCase();
-    const amountCkb = ensureFinitePositiveNumber(payload.amountCkb, "amountCkb");
-    const amountShannons = BigInt(Math.floor(amountCkb * 100_000_000));
-    const depositKind = typeof payload.kind === "string" && payload.kind.trim()
+    if (!/^0x[0-9a-f]{64}$/.test(txHash)) return badRequest("Invalid transaction hash");
+    const amountShannons = isDirectTip
+      ? BigInt(ensureString(payload.amountShannons, "amountShannons"))
+      : BigInt(Math.floor(ensureFinitePositiveNumber(payload.amountCkb, "amountCkb") * 100_000_000));
+    if (amountShannons <= 0n) return badRequest("Support amount must be positive");
+    const amountCkb = Number(amountShannons) / 100_000_000;
+    const depositKind = isDirectTip ? "simple_task_tip" : typeof payload.kind === "string" && payload.kind.trim()
       ? payload.kind.trim()
       : "campaign_deposit";
     const supportMode = typeof payload.supportMode === "string" && payload.supportMode.trim()
       ? payload.supportMode.trim()
       : "campaign_escrow";
-
-    const client = getPublicCkbClient();
-    const tx = await client.getTransaction(txHash);
-    if (!tx) {
-      return badRequest("Deposit transaction not found on chain", 404);
-    }
 
     const recordsCollection = await getMongoCollection();
     const record = await recordsCollection.findOne(
@@ -117,6 +126,9 @@ export async function POST(request: Request) {
           _id: 0,
           creatorAddress: 1,
           campaignType: 1,
+          campaignId: 1,
+          createdByHash: 1,
+          chainCreatedAt: 1,
         },
       },
     ) as CampaignRecordShape | null;
@@ -126,13 +138,36 @@ export async function POST(request: Request) {
 
     const creatorAddress = typeof record.creatorAddress === "string" ? normalizeAddress(record.creatorAddress) : "";
     const campaignType = typeof record.campaignType === "number" ? record.campaignType : Number(record.campaignType ?? 0);
+    if (isDirectTip !== (campaignType === CampaignType.SimpleTask)) return badRequest("Support mode does not match this freight");
+    const client = getPublicCkbClient();
+    if (isDirectTip) {
+      const confirmed = await verifyCreatorTip(client, txHash, address, {
+        campaignId: typeof record.campaignId === "string" ? record.campaignId : null,
+        createdByHash: typeof record.createdByHash === "string" ? record.createdByHash : null,
+        chainCreatedAt: typeof record.chainCreatedAt === "string" ? record.chainCreatedAt : null,
+        campaignType,
+        creatorAddress,
+      }, amountShannons);
+      if (!confirmed) return badRequest("Tip transaction is not confirmed yet", 409);
+    } else if (!await client.getTransaction(txHash)) {
+      return badRequest("Deposit transaction not found on chain", 404);
+    }
+
     const creatorEventKind = isWinningCampaignType(campaignType) ? "creator-winning-interaction" : "creator-non-winning-interaction";
     const depositFbars = computeDepositFbars(amountShannons);
+    const tipUsdPerCkb = isDirectTip ? await fetchCkbUsdPrice({ allowStaleOnFailure: true }).catch(() => null) : null;
+    const tipAdsfUsdCents = isDirectTip ? shannonsToUsdCents(amountShannons.toString(), tipUsdPerCkb) : null;
     const weekKey = getCurrentWeekKey(new Date());
     const [profilesCollection, eventsCollection] = await Promise.all([
       getUserProfilesCollection(),
       getFbarEventsCollection(),
     ]);
+    if (isDirectTip) {
+      await eventsCollection.createIndex(
+        { eventKey: 1 },
+        { name: "unique_direct_tip_event_key", unique: true, partialFilterExpression: { "metadata.supportMode": "direct_creator" } },
+      );
+    }
 
     const depositResult = await awardFbarsEvent({
       address,
@@ -187,11 +222,19 @@ export async function POST(request: Request) {
           supportMode,
           txHash,
           campaignType,
+          ...(isDirectTip ? { adsfUsdCents: tipAdsfUsdCents } : {}),
         },
         profilesCollection,
         eventsCollection,
       });
       creatorApplied = creatorResult.applied;
+      if (isDirectTip) {
+        try {
+          await reconcileAdsfForAddress(creatorAddress);
+        } catch (error) {
+          console.error("Failed to refresh creator ADSF after tip", error);
+        }
+      }
     }
 
     return NextResponse.json({

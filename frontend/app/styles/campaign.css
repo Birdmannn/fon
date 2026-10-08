@@ -1193,6 +1193,11 @@
   color: #16a34a;
 }
 
+.campaign-criteria-ticket-missing {
+  margin-top: 0.75rem;
+  color: #ef4444;
+}
+
 .campaign-criteria-row {
   display: flex;
   align-items: center;

@@ -271,6 +271,29 @@ export async function sendDepositShannons(
 
 export const SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS = 61n * 100_000_000n;
 
+export async function resolveCreatorTipLock(
+  client: ccc.Client,
+  campaignCell: CampaignCell,
+  creatorAddress: string | null | undefined,
+): Promise<ccc.Script> {
+  let creatorLock: ccc.Script;
+  if (creatorAddress?.trim()) {
+    try {
+      creatorLock = (await ccc.Address.fromString(creatorAddress.trim(), client)).script;
+    } catch {
+      throw new Error("The freight creator's wallet address is invalid. Unable to send a direct tip.");
+    }
+  } else {
+    creatorLock = ccc.Script.from(campaignCell.lock);
+  }
+
+  const lockArgs = hexToBytes(creatorLock.args);
+  if (lockArgs.length < 20 || bytesToHex(lockArgs.slice(0, 20)) !== bytesToHex(campaignCell.data.createdBy)) {
+    throw new Error("The freight creator's wallet address is unavailable or does not match this freight.");
+  }
+  return creatorLock;
+}
+
 export async function sendDeposit(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
@@ -282,10 +305,17 @@ export async function sendDeposit(
 export async function sendCreatorTipShannons(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
-  amountShannons: bigint
+  amountShannons: bigint,
+  creatorAddress?: string | null,
 ): Promise<string> {
   if (amountShannons < SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS) {
     throw new Error(`SimpleTask tips must be at least ${Number(SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS / 100_000_000n)} CKB so the creator can receive a standalone CKB cell.`);
+  }
+
+  const creatorLock = await resolveCreatorTipLock(signer.client, campaignCell, creatorAddress);
+  const minimumCapacity = BigInt(ccc.CellOutput.from({ lock: creatorLock }, "0x").capacity);
+  if (amountShannons < minimumCapacity) {
+    throw new Error(`Tips to this creator must be at least ${minimumCapacity / 100_000_000n} CKB to create a wallet cell.`);
   }
 
   const tx = ccc.Transaction.default();
@@ -322,7 +352,7 @@ export async function sendCreatorTipShannons(
 
   tx.addOutput({
     capacity: amountShannons,
-    lock: campaignCell.lock,
+    lock: creatorLock,
   }, "0x");
 
   await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
@@ -337,9 +367,10 @@ export async function sendCreatorTipShannons(
 export async function sendCreatorTip(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
-  amountCkb: bigint
+  amountCkb: bigint,
+  creatorAddress?: string | null,
 ): Promise<string> {
-  return sendCreatorTipShannons(signer, campaignCell, amountCkb * 100_000_000n);
+  return sendCreatorTipShannons(signer, campaignCell, amountCkb * 100_000_000n, creatorAddress);
 }
 
 export async function sendVerifyParticipantRaffle(

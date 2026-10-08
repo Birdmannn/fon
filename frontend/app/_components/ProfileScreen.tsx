@@ -1460,7 +1460,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
                     <div className="profile-usd-balance" aria-live="polite">
-                      <span>{adsfUsdParts?.whole ?? "--"} </span>
+                      <span>{adsfUsdParts?.whole ?? "--"}</span>
                       <span className="profile-usd-suffix">USD</span>
                     </div>
                   </div>
