@@ -95,7 +95,7 @@ export default function Home() {
   const [isLoadingFreightTree, setIsLoadingFreightTree] = useState(false);
   const [showFreightTree, setShowFreightTree] = useState(false);
   const [isFreightTreeClosing, setIsFreightTreeClosing] = useState(false);
-  const [freightTreeZoom, setFreightTreeZoom] = useState(1);
+  const [freightTreeZoom, setFreightTreeZoom] = useState(0.75);
   const freightTreeCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const infoStepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const freightTreeRequestRef = useRef<AbortController | null>(null);
@@ -659,7 +659,7 @@ export default function Home() {
       closeInfoModal(() => {
         setInfoModalMode("about");
         setIsFreightTreeClosing(false);
-        setFreightTreeZoom(1);
+        setFreightTreeZoom(0.75);
         setShowFreightTree(true);
       });
     } catch (error) {

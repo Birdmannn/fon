@@ -168,7 +168,7 @@ export default function CampaignCard({
         onFreightOptionsClick={onFreightOptionsClick}
       />
 
-      <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
+      <div className="flex flex-col gap-[0.45rem] pt-2 pb-[0.45rem] text-xs">
         <div className="flex items-center gap-2">
           <button
             onClick={() => void handleLike()}

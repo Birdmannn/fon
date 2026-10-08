@@ -5,13 +5,13 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FreightTree } from "@/app/_components/FreightTreeInfo";
 import { parentIds } from "@/lib/freightTree";
 
-const NODE_WIDTH = 168;
-const NODE_HEIGHT = 64;
-const COLUMN_GAP = 96;
-const ROW_GAP = 80;
-const PADDING = 48;
+const NODE_WIDTH = 126;
+const NODE_HEIGHT = 48;
+const COLUMN_GAP = 21.6;
+const ROW_GAP = 18;
+const PADDING = 36;
 
-export default function FreightTreeDiagram({ tree, zoom = 1 }: { tree: FreightTree; zoom?: number }) {
+export default function FreightTreeDiagram({ tree, zoom = 0.75 }: { tree: FreightTree; zoom?: number }) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const graph = useMemo(() => {
@@ -80,8 +80,13 @@ export default function FreightTreeDiagram({ tree, zoom = 1 }: { tree: FreightTr
               const parent = graph.positions.get(parentId);
               const child = graph.positions.get(childId);
               if (!parent || !child) return null;
-              return <line key={`${parentId}:${childId}`} x1={parent.x + NODE_WIDTH / 2} y1={parent.y + NODE_HEIGHT}
-                x2={child.x + NODE_WIDTH / 2} y2={child.y}
+              const parentX = parent.x + NODE_WIDTH / 2;
+              const childX = child.x + NODE_WIDTH / 2;
+              const parentBottom = parent.y + NODE_HEIGHT;
+              const childTop = child.y;
+              const bendY = (parentBottom + childTop) / 2;
+              return <path key={`${parentId}:${childId}`}
+                d={`M ${parentX} ${parentBottom} V ${bendY} H ${childX} V ${childTop}`}
                 className={highlighted.edges.has(`${parentId}:${childId}`) ? "campaign-freight-tree-edge-highlighted" : undefined} />;
             })}
           </svg>
@@ -90,7 +95,6 @@ export default function FreightTreeDiagram({ tree, zoom = 1 }: { tree: FreightTr
             const position = graph.positions.get(id);
             if (!position) return null;
             return <a key={id} href={`/freight/${encodeURIComponent(node.campaignId)}`}
-              title={node.title?.trim() || "Untitled freight"}
               className={`campaign-freight-tree-node${id === tree.currentCampaignId.toLowerCase() ? " campaign-freight-tree-node-current" : ""}${highlighted.nodes.has(id) ? " campaign-freight-tree-node-highlighted" : ""}`}
               style={{ left: position.x, top: position.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
               onMouseEnter={() => setHoveredId(id)} onMouseLeave={() => setHoveredId(null)}

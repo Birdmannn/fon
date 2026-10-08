@@ -220,7 +220,7 @@ export default function CampaignDetailPage() {
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [selectedFreightOption, setSelectedFreightOption] = useState<FreightOption | null>(null);
   const [isFreightTreeClosing, setIsFreightTreeClosing] = useState(false);
-  const [freightTreeZoom, setFreightTreeZoom] = useState(1);
+  const [freightTreeZoom, setFreightTreeZoom] = useState(0.75);
   const freightTreeCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [freightRelationChoice, setFreightRelationChoice] = useState<FreightRelationChoice | null>(null);
   const [isCreatingRelatedFreight, setIsCreatingRelatedFreight] = useState(false);
@@ -762,7 +762,7 @@ export default function CampaignDetailPage() {
     const openFreightOption = () => {
       setInfoModalMode("about");
       setIsFreightTreeClosing(false);
-      setFreightTreeZoom(1);
+      setFreightTreeZoom(0.75);
       setSelectedFreightOption(option);
     };
     if (showInfoModal) closeInfoModal(openFreightOption);

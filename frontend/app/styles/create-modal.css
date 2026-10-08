@@ -538,7 +538,8 @@
   pointer-events: none;
 }
 
-.campaign-freight-tree-edges line {
+.campaign-freight-tree-edges path {
+  fill: none;
   stroke: #9ca3af;
   stroke-width: 1;
 }
@@ -615,11 +616,11 @@
   position: absolute;
   display: grid;
   place-items: center;
-  padding: 0.6rem 0.8rem;
+  padding: 0.25rem 0.4rem;
   border: 1px solid #9ca3af;
   background: var(--background);
   color: var(--foreground);
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   line-height: 1.35;
   text-align: center;
   overflow-wrap: anywhere;
@@ -635,7 +636,7 @@
   max-width: 100%;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 
 .campaign-freight-tree-node::before {

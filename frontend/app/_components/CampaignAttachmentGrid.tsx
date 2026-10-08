@@ -35,7 +35,7 @@ export default function CampaignAttachmentGrid({ attachments, editable = false, 
                 alt=""
                 aria-hidden="true"
                 fill
-                sizes="12rem"
+                sizes="(max-width: 639px) 33vw, 17rem"
                 unoptimized
               />
             ) : null}
@@ -44,7 +44,7 @@ export default function CampaignAttachmentGrid({ attachments, editable = false, 
               src={`/api/campaign-attachments/${encodeURIComponent(attachment.id)}`}
               alt={attachment.name || `Freight attachment ${index + 1}`}
               fill
-              sizes={isFeed ? "12rem" : "(max-width: 639px) 50vw, 24rem"}
+              sizes={isFeed ? "(max-width: 639px) 33vw, 17rem" : "(max-width: 639px) 50vw, 24rem"}
               unoptimized
             />
             {expandable ? (

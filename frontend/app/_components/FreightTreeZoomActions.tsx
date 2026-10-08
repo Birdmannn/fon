@@ -13,11 +13,11 @@ export default function FreightTreeZoomActions({ isClosing, zoom, setZoom }: Pro
   return (
     <div className={`create-modal-top-actions campaign-freight-tree-zoom-actions ${isClosing ? "create-modal-top-actions-closing" : ""}`} role="group" aria-label="Freight tree zoom controls">
       <button type="button" className="create-modal-action-btn" onClick={() => setZoom((current) => Math.min(2, current + 0.25))}
-        disabled={isClosing || zoom >= 2} aria-label="Zoom in freight tree" data-tooltip="Zoom in">
+        disabled={isClosing || zoom >= 2} aria-label="Zoom in freight tree">
         <ZoomIn size={22} strokeWidth={2} aria-hidden="true" />
       </button>
       <button type="button" className="create-modal-action-btn" onClick={() => setZoom((current) => Math.max(0.5, current - 0.25))}
-        disabled={isClosing || zoom <= 0.5} aria-label="Zoom out freight tree" data-tooltip="Zoom out">
+        disabled={isClosing || zoom <= 0.5} aria-label="Zoom out freight tree">
         <ZoomOut size={22} strokeWidth={2} aria-hidden="true" />
       </button>
     </div>

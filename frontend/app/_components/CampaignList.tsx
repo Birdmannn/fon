@@ -132,7 +132,7 @@ export default function CampaignList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-[0.45rem]">
       {campaigns.map(({ campaign, record, displayStatus }, index) => (
         <div
           key={getCampaignStableId(campaign)}

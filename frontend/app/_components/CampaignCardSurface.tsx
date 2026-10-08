@@ -6,6 +6,7 @@ import { Blocks, Copy, EllipsisVertical, GitBranchPlus, HandCoins, LockKeyhole, 
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import CampaignFeedDescription from "@/app/_components/CampaignFeedDescription";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
@@ -346,22 +347,28 @@ export default function CampaignCardSurface({
 
         <div className="campaign-card-content campaign-card-content-feed">
           <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
-          <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
-            <div className="campaign-card-description campaign-card-description-feed">
-              <CampaignDescriptionContent lines={descriptionLines} />
-            </div>
-          </div>
-          {shouldShowReadMore && (
-            <button
-              type="button"
-              className="campaign-card-read-more"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsDescriptionExpanded((current) => !current);
-              }}
-            >
-              {isDescriptionExpanded ? "Show less" : "Read more..."}
-            </button>
+          {variant === "feed" ? (
+            <CampaignFeedDescription text={displayDescription} onOpenDetail={onOpenDetail} />
+          ) : (
+            <>
+                <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
+                  <div className="campaign-card-description campaign-card-description-feed">
+                    <CampaignDescriptionContent lines={descriptionLines} />
+                  </div>
+                </div>
+                {shouldShowReadMore && (
+                  <button
+                    type="button"
+                    className="campaign-card-read-more"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsDescriptionExpanded((current) => !current);
+                    }}
+                  >
+                    {isDescriptionExpanded ? "Show less" : "Read more..."}
+                  </button>
+                )}
+            </>
           )}
         </div>
 

@@ -646,17 +646,21 @@
 }
 
 .campaign-card-surface {
-  transition: border-width 220ms ease, border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
+  transition: border-color 220ms ease, transform 220ms ease, box-shadow 220ms ease;
 }
 
 .campaign-card-surface-bordered {
   border: 1px solid var(--campaign-card-border);
+  box-shadow: inset 0 0 0 0 var(--campaign-card-border);
 }
 
 .campaign-card-surface-interactive:hover {
-  border-width: 2px;
   transform: scale(1.008);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.08);
+}
+
+.campaign-card-surface-bordered.campaign-card-surface-interactive:hover {
+  box-shadow: inset 0 0 0 1px var(--campaign-card-border), 0 10px 26px rgba(0, 0, 0, 0.08);
 }
 
 .campaign-shell-width {
@@ -719,6 +723,38 @@
 
 .campaign-card-surface-sized {
   max-height: 50dvh;
+  overflow: hidden;
+}
+
+.campaign-card-surface-sized > .campaign-card-footer,
+.campaign-card-surface-sized .campaign-card-creator-header,
+.campaign-card-surface-sized .campaign-card-read-more {
+  flex-shrink: 0;
+}
+
+.campaign-card-surface-sized .campaign-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.campaign-card-description-wrap-clamped {
+  flex: 0 1 auto;
+  overflow: hidden;
+  position: relative;
+}
+
+.campaign-card-description-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  gap: 0;
+}
+
+.campaign-card-description-clamped > * + * {
+  margin-top: 0.075rem;
 }
 
 .campaign-card-surface-interactive {
@@ -763,6 +799,15 @@
   gap: 0.25rem;
 }
 
+.campaign-card-surface-feed .campaign-card-creator-header + .campaign-card-content-feed {
+  /* Match the creator metadata's 0.45rem gap without changing other body gaps. */
+  margin-top: -0.15rem;
+}
+
+.campaign-card-surface-feed .campaign-card-title + .campaign-card-description-wrap {
+  margin-top: 0.2rem;
+}
+
 .campaign-card-content-detail {
   gap: 0.35rem;
 }
@@ -789,7 +834,14 @@
 }
 
 .campaign-card-description-feed {
-  gap: 0.15rem;
+  gap: 0.075rem;
+  /* Halve the leading above the 0.875rem font size, keeping lines readable. */
+  line-height: 1.1875rem;
+}
+
+.campaign-card-description-feed .campaign-card-description-spacer,
+.campaign-card-description-feed .campaign-card-description-quote-spacer {
+  min-height: 0.75rem;
 }
 
 .campaign-card-description-detail {
@@ -830,7 +882,6 @@
 .campaign-attachment-grid-feed {
   /* Reserve three equal slots so photo count never changes the square size. */
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  max-width: 36rem;
   gap: 0;
   flex-shrink: 0;
   align-self: flex-start;

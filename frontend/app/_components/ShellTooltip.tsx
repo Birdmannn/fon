@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type ActiveTooltip = { target: HTMLElement; text: string; addedLabel: boolean };
+const TOOLTIP_SHOW_DELAY_MS = 1000;
 
 export default function ShellTooltip() {
   const tooltipRef = useRef<HTMLSpanElement>(null);
@@ -11,35 +12,50 @@ export default function ShellTooltip() {
 
   useEffect(() => {
     let current: ActiveTooltip | null = null;
+    let pending: { target: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
 
     const close = () => {
-      if (!current) return;
-      if (current.addedLabel) current.target.removeAttribute("aria-label");
+      if (pending) {
+        clearTimeout(pending.timer);
+        pending = null;
+      }
+      if (current?.addedLabel) current.target.removeAttribute("aria-label");
       current = null;
       setActive(null);
     };
     const open = (node: EventTarget | null) => {
       if (!(node instanceof Element)) return;
       if (current?.target.contains(node)) return;
+      if (pending?.target.contains(node)) return;
       const target = node.closest<HTMLElement>("[data-tooltip]");
       if (!target || target.getAttribute("data-tooltip") === "") return;
       if (current?.target === target) return;
       close();
-      const text = target.getAttribute("data-tooltip") || "";
-      const addedLabel = !target.hasAttribute("aria-label");
-      if (addedLabel) target.setAttribute("aria-label", text);
-      current = { target, text, addedLabel };
-      setActive(current);
+      pending = {
+        target,
+        timer: setTimeout(() => {
+          pending = null;
+          if (!target.isConnected) return;
+          const text = target.getAttribute("data-tooltip") || "";
+          if (!text) return;
+          const addedLabel = !target.hasAttribute("aria-label");
+          if (addedLabel) target.setAttribute("aria-label", text);
+          current = { target, text, addedLabel };
+          setActive(current);
+        }, TOOLTIP_SHOW_DELAY_MS),
+      };
     };
     const onPointerOver = (event: PointerEvent) => {
       if (event.pointerType === "mouse" || event.pointerType === "pen") open(event.target);
     };
     const onPointerOut = (event: PointerEvent) => {
-      if (current && !current.target.contains(event.relatedTarget as Node | null)) close();
+      const target = current?.target ?? pending?.target;
+      if (target && !target.contains(event.relatedTarget as Node | null)) close();
     };
     const onFocusIn = (event: FocusEvent) => open(event.target);
     const onFocusOut = (event: FocusEvent) => {
-      if (current && !current.target.contains(event.relatedTarget as Node | null)) close();
+      const target = current?.target ?? pending?.target;
+      if (target && !target.contains(event.relatedTarget as Node | null)) close();
     };
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
