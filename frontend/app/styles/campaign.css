@@ -477,6 +477,18 @@
   gap: 0.75rem;
 }
 
+.campaign-header-bar-sticky {
+  position: sticky;
+  top: calc(var(--campaign-feed-sticky-top, 0px) - 1px);
+  z-index: 60;
+  background-color: var(--background);
+  padding-bottom: 1.8rem;
+}
+
+.campaign-feed-list > .campaign-card-entry {
+  scroll-margin-top: var(--campaign-feed-scroll-offset, 0px);
+}
+
 .campaign-header-actions {
   display: flex;
   align-items: center;
