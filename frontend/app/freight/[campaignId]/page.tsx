@@ -9,15 +9,18 @@ import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import CampaignDetailInteractions from "@/app/_components/CampaignDetailInteractions";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CampaignMountablesPanel, { CampaignMountableIcon, type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
 import type { FreightTree } from "@/app/_components/FreightTreeInfo";
 import FreightTreeDiagram from "@/app/_components/FreightTreeDiagram";
+import FreightTreeHelpInfo from "@/app/_components/FreightTreeHelpInfo";
 import FreightTreeZoomActions from "@/app/_components/FreightTreeZoomActions";
+import RaffleSettlementInfo from "@/app/_components/RaffleSettlementInfo";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
-import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
+import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
@@ -38,6 +41,7 @@ import {
 } from "@/app/_lib/appMountable";
 import { formsMountableSummary, isFormsMountableEnabled, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { getMountableCriteriaStatus, type MountableCriterionStatus, type ParticipantCriterionRow } from "@/app/_lib/mountableCriteriaStatus";
+import { childFreightMountableSummary } from "@/app/_lib/childFreightMountable";
 import { getLockMountableValidationState, isLockMountableEnabled, lockMountableSummary, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
 import { markProfileFreightsDirty } from "@/app/_hooks/useProfileFreights";
@@ -49,6 +53,7 @@ import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
 import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
+import type { SettlementModalData } from "@/app/_types/settlement";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { FREIGHT_CREATION_FBARS_COST } from "@/lib/fbars";
@@ -174,7 +179,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "criteria-status" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "creator-withdraw-success" | "raffle-settlement" | "criteria-status" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error";
 type FreightOption = "view-tree";
 type FreightRelationChoice = "parent" | "child";
 type OwnedFreight = { campaignId: string; title: string };
@@ -211,6 +216,7 @@ export default function CampaignDetailPage() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [isInfoModalClosing, setIsInfoModalClosing] = useState(false);
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
+  const [settlementModalData, setSettlementModalData] = useState<SettlementModalData | null>(null);
   const [infoModalInteraction, setInfoModalInteraction] = useState<"hover" | "click">("hover");
   const [selectedFreightOption, setSelectedFreightOption] = useState<FreightOption | null>(null);
   const [isFreightTreeClosing, setIsFreightTreeClosing] = useState(false);
@@ -296,6 +302,12 @@ export default function CampaignDetailPage() {
   const [participantFormsActionError, setParticipantFormsActionError] = useState("");
   const [participantFormsActionNotice, setParticipantFormsActionNotice] = useState("");
   const [creatorFormsActionError, setCreatorFormsActionError] = useState("");
+  useInfoError(error);
+  useInfoError(chainSyncError);
+  useInfoError(formsClaimsError);
+  useInfoError(participantFormsActionError);
+  useInfoError(creatorFormsActionError);
+  useInfoError(googleLinkError);
   const [creatorFormsActionNotice, setCreatorFormsActionNotice] = useState("");
   const [activeFormsReviewAddress, setActiveFormsReviewAddress] = useState<string | null>(null);
   const walletActionHref = useMemo(() => {
@@ -468,6 +480,7 @@ export default function CampaignDetailPage() {
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    childFreightMountableSelected,
     lockMountableSelected,
     handleCreateTopRightAction,
     handleCreateErrorChange,
@@ -490,6 +503,7 @@ export default function CampaignDetailPage() {
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableChildFreightTitle,
     mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
@@ -510,6 +524,7 @@ export default function CampaignDetailPage() {
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setChildFreightMountableSelected,
     setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
@@ -517,6 +532,7 @@ export default function CampaignDetailPage() {
     setIsMountablesContinuing,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableChildFreightTitle,
     setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,
@@ -550,7 +566,7 @@ export default function CampaignDetailPage() {
 
   useEffect(() => clearDetailActionSuccessTimer, [clearDetailActionSuccessTimer]);
 
-  const openDetailActionSuccess = useCallback((txHash: string, mode: "ticket-buy-success" | "support-deposit-success") => {
+  const openDetailActionSuccess = useCallback((txHash: string, mode: "ticket-buy-success" | "support-deposit-success" | "creator-withdraw-success") => {
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearDetailActionSuccessTimer();
@@ -637,8 +653,10 @@ export default function CampaignDetailPage() {
     setCriteriaStatuses([]);
     setCriteriaError("");
     setIsLoadingCriteria(false);
+    setSettlementModalData(null);
+    if (infoModalMode === "raffle-settlement") setInfoModalMode("about");
     clearDetailActionSuccessTimer();
-  }, [clearDetailActionSuccessTimer, resetCreateInfoModalState, resetTicketPurchaseState]);
+  }, [clearDetailActionSuccessTimer, infoModalMode, resetCreateInfoModalState, resetTicketPurchaseState]);
 
   const handleViewerAvatarClick = useCallback(() => {
     if (!selectedRecord?.campaignId || !walletAddress) return;
@@ -826,9 +844,9 @@ export default function CampaignDetailPage() {
     const loadCriteria = async () => {
       const request = ++latestRequest;
       try {
-        const query = new URLSearchParams({ campaignId, participantAddress: walletAddress });
+        const query = new URLSearchParams({ campaignId, participantAddress: walletAddress, includeChildFreight: "1" });
         const response = await fetch(`/api/campaign-participants?${query}`, { cache: "no-store", signal: controller.signal });
-        const payload = await response.json().catch(() => null) as { participants?: ParticipantCriterionRow[]; error?: string } | null;
+        const payload = await response.json().catch(() => null) as { participants?: ParticipantCriterionRow[]; childFreightSatisfied?: boolean; error?: string } | null;
         if (!response.ok) throw new Error(payload?.error ?? "Unable to load criteria");
         if (controller.signal.aborted || request !== latestRequest) return;
         setCriteriaStatuses(getMountableCriteriaStatus({
@@ -837,6 +855,7 @@ export default function CampaignDetailPage() {
           viewerFbars: currentUserProfile?.fbars,
           creatorFbars: freightCreatorProfile?.fbars,
           signableCleared: isGiftApprovalSatisfied(selectedRecord.giftDeliverable),
+          childFreightSatisfied: payload?.childFreightSatisfied,
         }));
         setCriteriaError("");
       } catch (error) {
@@ -881,6 +900,7 @@ export default function CampaignDetailPage() {
   ]);
 
   const preventInfoHover = infoModalMode === "create-error"
+    || infoModalMode === "raffle-settlement"
     || infoModalMode === "freight-options"
     || infoModalMode === "freight-relation-choice"
     || infoModalMode === "freight-existing"
@@ -890,6 +910,7 @@ export default function CampaignDetailPage() {
     || infoModalMode === "tag-suggestions"
     || infoModalMode === "save-draft-confirm"
     || infoModalMode === "mountables"
+    || infoModalMode === "mountables-child-freight"
     || infoModalMode === "mountables-lock"
     || infoModalMode === "mountables-forms"
     || infoModalMode === "mountables-apps"
@@ -898,6 +919,7 @@ export default function CampaignDetailPage() {
     || infoModalMode === "support-deposit-success"
     || infoModalMode === "ticket-purchase"
     || infoModalMode === "ticket-buy-success"
+    || infoModalMode === "creator-withdraw-success"
     || infoModalMode === "criteria-status";
 
   useLayoutEffect(() => {
@@ -1694,8 +1716,6 @@ export default function CampaignDetailPage() {
       return null;
     }
 
-    const participantErrorMessage = participantFormsActionError || (!isCampaignCreator ? googleLinkError : "");
-    const creatorErrorMessage = creatorFormsActionError || (isCampaignCreator ? googleLinkError : "");
     const currentClaimUpdatedAt = currentWalletFormsClaim?.updatedAt ?? currentWalletFormsClaim?.submittedAt ?? null;
     const creatorReady = hasVerifiedFormsResponseAccess && !linkedGrantDiffersFromVerifiedAccess;
 
@@ -1740,12 +1760,6 @@ export default function CampaignDetailPage() {
           </div>
           {creatorFormsActionNotice ? (
             <p className="text-xs text-green-600">{creatorFormsActionNotice}</p>
-          ) : null}
-          {creatorErrorMessage ? (
-            <p className="text-xs text-red-500">{creatorErrorMessage}</p>
-          ) : null}
-          {formsClaimsError ? (
-            <p className="text-xs text-red-500">{formsClaimsError}</p>
           ) : null}
           <div className="create-info-confirm-actions create-info-confirm-actions-tight">
             <button
@@ -1882,12 +1896,6 @@ export default function CampaignDetailPage() {
         {participantFormsActionNotice ? (
           <p className="text-xs text-green-600">{participantFormsActionNotice}</p>
         ) : null}
-        {participantErrorMessage ? (
-          <p className="text-xs text-red-500">{participantErrorMessage}</p>
-        ) : null}
-        {formsClaimsError ? (
-          <p className="text-xs text-red-500">{formsClaimsError}</p>
-        ) : null}
         <div className="create-info-confirm-actions create-info-confirm-actions-tight">
           <button
             type="button"
@@ -1952,6 +1960,7 @@ export default function CampaignDetailPage() {
     const items: CampaignMountableItem[] = [];
     const formsMountable = selectedRecord?.mountables?.forms;
     const lockMountable = selectedRecord?.mountables?.lock;
+    const childFreightMountable = selectedRecord?.mountables?.childFreight;
     const appMountables = normalizeAppMountableConfigs(selectedRecord?.mountables?.apps ?? null)
       .filter((entry) => isAppMountableEnabled(entry));
 
@@ -1983,6 +1992,15 @@ export default function CampaignDetailPage() {
         key: "lock",
         metadata: ["Criterion: FBARS"],
         title: "Lock",
+      });
+    }
+
+    if (childFreightMountable?.enabled) {
+      items.push({
+        description: childFreightMountableSummary(childFreightMountable),
+        icon: "child-freight",
+        key: "child-freight",
+        title: "Child Freight",
       });
     }
 
@@ -2025,7 +2043,7 @@ export default function CampaignDetailPage() {
     });
 
     return items.sort((left, right) => left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" }));
-  }, [formsMountableActions, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
+  }, [formsMountableActions, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.childFreight, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
   const detailCampaignType = selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? 0;
   const detailTypeLabel = TYPE_LABELS[detailCampaignType] ?? `Type ${detailCampaignType}`;
@@ -2088,8 +2106,12 @@ export default function CampaignDetailPage() {
           return rightCreatedAt - leftCreatedAt || right.campaignId.localeCompare(left.campaignId);
         })[0]?.campaignId ?? null
     : null;
-  const infoModalBody = infoModalMode === "tag-suggestions" ? (
+  const infoModalBody = selectedFreightOption === "view-tree" && infoModalMode === "about" ? (
+    <FreightTreeHelpInfo />
+  ) : infoModalMode === "tag-suggestions" ? (
     <TagSuggestionsInfo initialQuery={tagSuggestionQuery} onContinue={handleTagSuggestionContinue} />
+  ) : infoModalMode === "raffle-settlement" ? (
+    <RaffleSettlementInfo data={settlementModalData} walletAddress={walletAddress} />
   ) : infoModalMode === "freight-options" ? (
     <div className="create-info-constraints-copy campaign-freight-options-heading-row">
       <p className="create-review-section-label campaign-freight-options-heading">Freight Options:</p>
@@ -2205,10 +2227,10 @@ export default function CampaignDetailPage() {
         </a>
       </p>
     </div>
-  ) : infoModalMode === "ticket-buy-success" || infoModalMode === "support-deposit-success" ? (
+  ) : infoModalMode === "ticket-buy-success" || infoModalMode === "support-deposit-success" || infoModalMode === "creator-withdraw-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>
-        {infoModalMode === "ticket-buy-success" ? "Buy successful" : supportRequest?.supportMode === "direct_creator" ? "Tip successful" : "Deposit successful"}
+        {infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : supportRequest?.supportMode === "direct_creator" ? "Tip successful" : "Deposit successful"}
       </p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">
         <span className="text-gray-400">txhash: </span>
@@ -2258,6 +2280,7 @@ export default function CampaignDetailPage() {
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
       <MountableOptionsCatalog
+        childFreightMountableSelected={childFreightMountableSelected}
         formsMountableSelected={formsMountableSelected}
         lockMountableSelected={lockMountableSelected}
         registeredMountableApps={registeredMountableApps}
@@ -2268,6 +2291,12 @@ export default function CampaignDetailPage() {
             setFormsMountableSelected(nextSelected);
             setMountableFormLinks((current) => current.length > 0 ? current : [""]);
             setMountablesPromptError("");
+        }}
+        onToggleChildFreight={() => {
+          const enabled = !childFreightMountableSelected;
+          createModalContentRef.current?.setChildFreightMountableEnabled(enabled);
+          setChildFreightMountableSelected(enabled);
+          setMountablesPromptError("");
         }}
         onToggleLock={() => {
             const nextSelected = !lockMountableSelected;
@@ -2284,6 +2313,14 @@ export default function CampaignDetailPage() {
         </p>
       ) : null}
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <ChildFreightMountableConfigurator
+      title={mountableChildFreightTitle}
+      onTitleChange={(title) => {
+        setMountableChildFreightTitle(title);
+        createModalContentRef.current?.updateChildFreightMountableConfig({ title });
+      }}
+    />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <LockMountableConfigurator
       errorMessage={mountablesPromptError}
@@ -2333,6 +2370,8 @@ export default function CampaignDetailPage() {
         <>
           <p>{CREATE_INFO_PREVIEW_HEADING}</p>
           <CreateReviewMountablesInfo
+            childFreightEnabled={childFreightMountableSelected}
+            childFreightTitle={mountableChildFreightTitle}
             appMountables={mountedAppConfigs}
             formsEnabled={formsMountableSelected}
             formsUrl={mountableFormLinks[mountableFormLinks.length - 1] ?? ""}
@@ -2509,6 +2548,25 @@ export default function CampaignDetailPage() {
       >
         Continue
       </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button type="button" className="create-info-confirm-btn" disabled={isMountablesContinuing} onClick={() => goBackMountableSetup("child-freight")}>Back</button>
+      <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" disabled={isMountablesContinuing} onClick={() => {
+        void (async () => {
+          try {
+            if (advanceMountableSetup("child-freight")) return;
+            setIsMountablesContinuing(true);
+            await createModalContentRef.current?.persistCurrentDraft();
+            closeInfoModal(resetInfoModalState);
+            await createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+          } catch (error) {
+            setMountablesPromptError(error instanceof Error ? error.message : "Failed to save child freight mountable");
+          } finally {
+            setIsMountablesContinuing(false);
+          }
+        })();
+      }}>Continue</button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-mountable-app-actions">
@@ -2736,7 +2794,6 @@ export default function CampaignDetailPage() {
       });
       return (
         <div className="campaign-detail-status campaign-card-entry">
-          <p className="text-sm text-gray-400">{error}</p>
         </div>
       );
     }
@@ -2774,9 +2831,19 @@ export default function CampaignDetailPage() {
           nowMs={nowMs}
           mountableItems={mountableItems}
           onProfileDataChanged={markCurrentProfileDataDirty}
+          onWithdrawalSuccess={(txHash) => openDetailActionSuccess(txHash, "creator-withdraw-success")}
           onViewerAvatarClick={() => void handleViewerAvatarClick()}
           onFreightOptionsClick={handleOpenFreightOptions}
           onFreightTreeClick={() => void handleViewFreightTree()}
+          onSettlementInfoRequest={(data) => {
+            clearInfoCloseTimer();
+            clearInfoHideTimer();
+            setSettlementModalData(data);
+            setInfoModalMode("raffle-settlement");
+            setInfoModalInteraction("click");
+            setIsInfoModalClosing(false);
+            setShowInfoModal(true);
+          }}
           threadRole={selectedRecord.parentCampaignId ? "child" : "parent"}
           directChildCount={directChildCount}
           threadNodeTargetId={selectedRecord.parentCampaignId ?? latestDirectChildId}
@@ -2838,7 +2905,7 @@ export default function CampaignDetailPage() {
         <AppShellHeader
           className={`campaign-shell-header ${activeShellWidthClass} ${isCreateStyleModalOpen ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
+          infoModalAriaLabel={selectedFreightOption === "view-tree" && infoModalMode === "about" ? "Linked freight information" : infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={((infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success") && infoModalMode !== "freight-link-pending" && !freightLinkBusy}
           infoModalBody={infoModalBody}

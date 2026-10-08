@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { after, NextResponse } from "next/server";
 import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
+import { parseChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
@@ -30,6 +31,7 @@ type CampaignRecordPayload = {
     winnerReductionPercent?: unknown;
   };
   mountables?: {
+    childFreight?: unknown;
     forms?: unknown;
     lock?: unknown;
     apps?: unknown;
@@ -381,6 +383,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
       ...(ticketsPerUser === undefined ? {} : { ticketsPerUser }),
     },
     mountables: {
+      childFreight: parseChildFreightMountableConfig(payload.mountables?.childFreight),
       forms: formsMountable,
       lock: lockMountable,
       apps: appMountables,

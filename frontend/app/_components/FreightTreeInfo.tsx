@@ -35,11 +35,10 @@ function parseFreightId(value: string) {
   }
 }
 
-export default function FreightTreeInfo({ campaignId, mode, walletAddress, isCreator, signAction }: {
+export default function FreightTreeInfo({ campaignId, mode, walletAddress, signAction }: {
   campaignId: string;
   mode: FreightTreeMode;
   walletAddress: string | null;
-  isCreator: boolean;
   signAction: (purpose: string) => Promise<{ address: string; nonce: string; nonceSignature: { signature: string; identity: string; signType: string } }>;
 }) {
   const [tree, setTree] = useState<FreightTree | null>(null);
@@ -92,27 +91,6 @@ export default function FreightTreeInfo({ campaignId, mode, walletAddress, isCre
     }
   };
 
-  const toggleRequirement = async () => {
-    if (!tree || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const signed = await signAction("freight-tree");
-      const response = await fetch("/api/freights/tree", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...signed, campaignId, relation: "require-linked", required: !tree.requiresLinkedFreight }),
-      });
-      const payload = await response.json() as FreightTree & { error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Unable to update requirement");
-      setTree(payload);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to update requirement");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="create-info-constraints-copy">
       {mode === "view" && loading ? <p className="create-info-constraint-item text-gray-500">Loading...</p> : null}
@@ -144,13 +122,6 @@ export default function FreightTreeInfo({ campaignId, mode, walletAddress, isCre
             </a>
           ))}
         </div>
-      ) : null}
-      {mode === "view" && isCreator && tree ? (
-        <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
-          <input type="checkbox" checked={tree.requiresLinkedFreight} disabled={busy}
-            onChange={() => void toggleRequirement()} />
-          Require each participant to create a linked freight
-        </label>
       ) : null}
       {mode && mode !== "view" ? (
         <form onSubmit={(event) => void submit(event)} className="mt-3 flex flex-col gap-2">

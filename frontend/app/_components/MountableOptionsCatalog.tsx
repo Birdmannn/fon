@@ -1,14 +1,16 @@
 "use client";
 
-import { Blocks, Check, DollarSign, LockKeyhole, Scroll } from "lucide-react";
+import { Blocks, Check, DollarSign, GitBranchPlus, LockKeyhole, Scroll } from "lucide-react";
 import Image from "next/image";
 
 import type { RegisteredMountableApp } from "@/app/_types/appMountable";
 
 type MountableOptionsCatalogProps = {
+  childFreightMountableSelected: boolean;
   formsMountableSelected: boolean;
   lockMountableSelected: boolean;
   onToggleApp: (appId: string) => void;
+  onToggleChildFreight: () => void;
   onToggleForms: () => void;
   onToggleLock: () => void;
   registeredMountableApps: RegisteredMountableApp[];
@@ -18,7 +20,7 @@ type MountableOptionsCatalogProps = {
 type CatalogItem = {
   id: string;
   label: string;
-  kind: "forms" | "lock" | "payable" | "registered";
+  kind: "child-freight" | "forms" | "lock" | "payable" | "registered";
   app?: RegisteredMountableApp;
 };
 
@@ -30,15 +32,18 @@ function groupForLabel(label: string) {
 }
 
 export default function MountableOptionsCatalog({
+  childFreightMountableSelected,
   formsMountableSelected,
   lockMountableSelected,
   onToggleApp,
+  onToggleChildFreight,
   onToggleForms,
   onToggleLock,
   registeredMountableApps,
   selectedMountableAppIds,
 }: MountableOptionsCatalogProps) {
   const builtInItems: CatalogItem[] = [
+    { id: "builtin:child-freight", label: "Child Freight", kind: "child-freight" },
     { id: "builtin:forms", label: "Forms", kind: "forms" },
     { id: "builtin:lock", label: "Lock", kind: "lock" },
     { id: "builtin:payable", label: "Payable", kind: "payable" },
@@ -73,11 +78,15 @@ export default function MountableOptionsCatalog({
                   : false;
                 const selected = item.kind === "forms"
                   ? formsMountableSelected
+                  : item.kind === "child-freight"
+                    ? childFreightMountableSelected
                   : item.kind === "lock"
                     ? lockMountableSelected
                     : isRegisteredAppSelected;
                 const ariaLabel = item.kind === "forms"
                   ? `${selected ? "Deselect" : "Select"} forms mountable`
+                  : item.kind === "child-freight"
+                    ? `${selected ? "Deselect" : "Select"} child freight mountable`
                   : item.kind === "lock"
                     ? `${selected ? "Deselect" : "Select"} lock mountable`
                     : item.kind === "payable"
@@ -95,6 +104,8 @@ export default function MountableOptionsCatalog({
                     disabled={item.kind === "payable"}
                     onClick={item.kind === "forms"
                       ? onToggleForms
+                      : item.kind === "child-freight"
+                        ? onToggleChildFreight
                       : item.kind === "lock"
                         ? onToggleLock
                         : app
@@ -102,11 +113,13 @@ export default function MountableOptionsCatalog({
                           : undefined}
                   >
                     <span className="create-mountable-option-icon-wrap">
-                      <span className={`create-mountable-option-icon-bg ${app ? "create-mountable-option-logo-bg" : ""}`.trim()}>
+                      <span className={`create-mountable-option-icon-bg ${app ? "create-mountable-option-logo-bg" : item.kind === "child-freight" ? "create-mountable-option-child-freight" : ""}`.trim()}>
                         {app ? (
                           <Image src={app.logoUrl} alt="" width={38} height={38} unoptimized />
                         ) : item.kind === "forms" ? (
                           <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+                        ) : item.kind === "child-freight" ? (
+                          <GitBranchPlus size={18} strokeWidth={2} aria-hidden="true" />
                         ) : item.kind === "lock" ? (
                           <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
                         ) : item.kind === "payable" ? (

@@ -1229,6 +1229,11 @@ button.create-mountable-principle.create-mountable-principle-selected:focus-visi
   background: #ffffff;
 }
 
+.create-mountable-option-child-freight {
+  background: #ffffff;
+  color: #000000;
+}
+
 .create-mountable-option-logo-bg img {
   width: 100%;
   height: 100%;

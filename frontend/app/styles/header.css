@@ -87,6 +87,14 @@
   animation: header-info-modal-reveal 620ms ease forwards;
 }
 
+.global-info-error-anchor {
+  position: fixed;
+  top: 4rem;
+  left: max(1rem, calc(50% - 21rem));
+  width: min(42rem, calc(100vw - 2rem));
+  z-index: 90;
+}
+
 .header-info-modal-header {
   flex-shrink: 0;
 }

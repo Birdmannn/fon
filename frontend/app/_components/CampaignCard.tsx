@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
@@ -149,6 +150,8 @@ export default function CampaignCard({
     onWithdrawalCompleted,
     onSettlementInfoRequest,
   });
+  useInfoError(actionFeedback?.tone === "error" ? actionFeedback.message : null);
+  useInfoError(commentError);
 
   return (
     <div className="campaign-card-shell flex flex-col gap-0">
@@ -386,8 +389,8 @@ export default function CampaignCard({
           ) : null}
         </div>
 
-        {actionFeedback ? (
-          <p className={`campaign-action-feedback ${actionFeedback.tone === "error" ? "campaign-action-feedback-error" : "campaign-action-feedback-success"}`.trim()}>
+        {actionFeedback?.tone === "success" ? (
+          <p className="campaign-action-feedback campaign-action-feedback-success">
             {actionFeedback.message}
           </p>
         ) : null}
@@ -432,7 +435,6 @@ export default function CampaignCard({
           <div className="campaign-comment-meta-row">
             <span className={`campaign-comment-count ${commentDraft.length >= 300 ? "campaign-comment-count-limit" : commentDraft.length >= 250 ? "campaign-comment-count-warn" : ""}`}>{300 - commentDraft.length}</span>
           </div>
-          {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
         </div>
       </div>
 

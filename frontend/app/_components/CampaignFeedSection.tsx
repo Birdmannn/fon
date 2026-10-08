@@ -21,6 +21,7 @@ type CampaignFeedSectionProps = {
   onMountablesClick: (record: CampaignRecord) => void;
   onFreightOptionsClick: (campaignId: string) => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
+  onWithdrawalSuccess: (txHash: string) => void;
   onProfileDataChanged?: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
@@ -35,6 +36,7 @@ export default function CampaignFeedSection({
   onMountablesClick,
   onFreightOptionsClick,
   onSupportRequest,
+  onWithdrawalSuccess,
   onProfileDataChanged,
   onSettlementInfoRequest,
 }: CampaignFeedSectionProps) {
@@ -116,6 +118,7 @@ export default function CampaignFeedSection({
         onWithdrawalCompleted={(campaignId, withdrawalTxHash, withdrawnAt, withdrawnByAddress, withdrawnAmountShannons) => {
           handleWithdrawalCompleted(campaignId, withdrawalTxHash, withdrawnAt, withdrawnByAddress, withdrawnAmountShannons);
           onProfileDataChanged?.();
+          onWithdrawalSuccess(withdrawalTxHash);
         }}
         onSettlementInfoRequest={onSettlementInfoRequest}
       />

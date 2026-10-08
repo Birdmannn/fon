@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { ccc } from "@ckb-ccc/connector-react";
 
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 
 const MOUNTABLES_PLACEHOLDER_MESSAGE = "Raffle · Forms · Locks · Public Payment Streaming ·   ";
 const MAX_WEEKLY_MARQUEE_MESSAGE_LENGTH = 120;
@@ -46,6 +47,7 @@ export default function MountablesPanel() {
   const editorLabel = ownerLabel || "Weekly winner";
   const remainingLabel = `${activeWeeklyMarqueeEditsRemaining}/${activeWeeklyMarqueeMaxEdits} edits left this week`;
   const displayError = marqueeError || userProfileError;
+  useInfoError(displayError);
 
   const handleMarqueeClick = () => {
     if (!canEditMarquee || isSavingUserProfile) {
@@ -122,7 +124,6 @@ export default function MountablesPanel() {
               Cancel
             </button>
           </div>
-          {displayError ? <p className="retro-marquee-editor-error">{displayError}</p> : null}
         </div>
       ) : null}
     </div>

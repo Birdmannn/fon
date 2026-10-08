@@ -21,6 +21,7 @@ export type ProfileTransactionKind =
   | "campaign_participation"
   | "campaign_deposit"
   | "simple_task_tip"
+  | "campaign_withdrawal"
   | "campaign_settlement"
   | "campaign_reward";
 

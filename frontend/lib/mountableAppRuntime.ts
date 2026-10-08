@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
+import { hasParticipantCreatedChildFreight, normalizeChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import {
   type MountedAppActivityEvent,
@@ -36,6 +37,7 @@ export type CampaignRecordMountableRuntime = {
     taskDurationHours?: unknown;
   } | null;
   mountables?: {
+    childFreight?: unknown;
     forms?: unknown;
     apps?: unknown;
   } | null;
@@ -238,6 +240,14 @@ export async function finalizeCampaignParticipant(params: {
     : [];
   const linkedFreightSatisfied = record.requiresLinkedFreight !== true
     || hasParticipantCreatedLinkedFreight(participantAddress, linkedRecords.map((linked) => ({ creatorAddress: linked.creatorAddress })));
+  const childFreightConfig = normalizeChildFreightMountableConfig(record.mountables?.childFreight);
+  const participantChildren = childFreightConfig.enabled
+      ? await (await getMongoCollection()).find({
+        parentCampaignId: campaignId,
+        status: "published",
+      }, { projection: { _id: 0, creatorAddress: 1, title: 1 } }).toArray()
+    : [];
+  const childFreightSatisfied = hasParticipantCreatedChildFreight(participantAddress, childFreightConfig, participantChildren);
   const parentCampaignId = normalizeString(record.parentCampaignId).toLowerCase();
   const parentVerification = parentCampaignId
     ? await finalizeCampaignParticipant({ campaignId: parentCampaignId, participantAddress, visitedCampaignIds, propagateDescendants: false })
@@ -258,6 +268,11 @@ export async function finalizeCampaignParticipant(params: {
   if (!linkedFreightSatisfied) {
     reasons.push("A linked freight created by this participant is required");
   }
+  if (!childFreightSatisfied) {
+    reasons.push(childFreightConfig.title
+      ? `Create a direct child freight titled "${childFreightConfig.title}"`
+      : "Create a direct child freight");
+  }
   if (!freightParentSatisfied) {
     reasons.push("Parent freight constraints are still pending");
   }
@@ -272,7 +287,7 @@ export async function finalizeCampaignParticipant(params: {
     formsSatisfied,
     appPrinciplesSatisfied,
   });
-  const isVerified = effectiveParticipantStatus(ownSatisfied, [freightParentSatisfied, linkedFreightSatisfied]) === "verified";
+  const isVerified = effectiveParticipantStatus(ownSatisfied, [freightParentSatisfied, linkedFreightSatisfied, childFreightSatisfied]) === "verified";
   const previousVerifiedAt = previousFinalization?.canonicalVerification?.status === "verified"
     ? normalizeString(previousFinalization.canonicalVerification.verifiedAt)
     : "";

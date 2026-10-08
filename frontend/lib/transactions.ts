@@ -606,6 +606,11 @@ export async function sendCreatorWithdraw(
     throw new Error("No creator-withdrawable escrow is available for this freight.");
   }
 
+  const creatorLock = (await signer.getRecommendedAddressObj()).script;
+  if (bytesToHex(lockScriptToAddressBytes(creatorLock)) !== bytesToHex(campaignCell.data.createdBy)) {
+    throw new Error("Connect the freight creator's wallet to withdraw support.");
+  }
+
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
 
@@ -641,7 +646,7 @@ export async function sendCreatorWithdraw(
 
   tx.addOutput({
     capacity: withdrawAmount,
-    lock: campaignCell.lock,
+    lock: creatorLock,
   }, "0x");
 
   await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));

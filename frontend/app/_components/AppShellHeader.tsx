@@ -5,6 +5,7 @@ import Link from "next/link";
 import { type MouseEventHandler, type ReactNode, type RefObject, useCallback } from "react";
 
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { useLightModePrimaryColor } from "@/app/providers";
 import {
   LIGHT_MODE_PRIMARY_COLOR_OPTIONS,
@@ -119,6 +120,8 @@ export default function AppShellHeader({
   walletActionLabel,
   walletActionOnly = false,
 }: AppShellHeaderProps) {
+  useInfoError(walletCopyFeedback === "error" ? "Copy failed" : null);
+  useInfoError(walletInfoError);
   const { lightModePrimaryColor, setLightModePrimaryColor } = useLightModePrimaryColor();
   const activeLightModePrimaryColor = currentLightModePrimaryColor ?? lightModePrimaryColor;
 
@@ -205,7 +208,6 @@ export default function AppShellHeader({
                           </button>
                         </div>
                         {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
-                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                       </div>
                       <div className="wallet-info-section">
                         <span className="wallet-info-label">Balance</span>
@@ -219,7 +221,6 @@ export default function AppShellHeader({
                           </span>
                         </div>
                       </div>
-                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
                     </>
                   ) : null}
                   {canEditLightModePrimaryColor || walletActionHref ? (

@@ -14,6 +14,6 @@ Published freights can have one direct parent and any number of direct children.
 
 `linkedCampaignIds` are tracking links, separate from the parent tree. The freight detail view shows outgoing and incoming links. By default, a link does not affect completion.
 
-The freight creator can enable **Require each participant to create a linked freight**. With this enabled, the participant may link a published freight they created to this freight. The participant's canonical verification stays pending until at least one such linked freight exists. The source freight's creator may also add a tracking link; only links to a freight created by the participant satisfy that participant's requirement.
+During creation, the creator can select the built-in **Child Freight** mountable and optionally set a required title. A participant's canonical verification stays pending until they publish a direct child freight linked to this freight. When a title is set, that child's title must match it (case-insensitively). Tracking links do not satisfy this mountable. Older freights with the legacy linked-freight requirement continue to use their stored setting.
 
 Relationships and settings are managed by the wallet-signed `/api/freights/tree` endpoint. Participant completion remains in MongoDB; these relationships do not create on-chain completion records.

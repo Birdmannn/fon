@@ -272,6 +272,7 @@ export async function POST(request: Request) {
 
     const refreshedRows = await loadFreights();
     await refreshSubtree(childId, refreshedRows);
+    await refreshSubtree(parentId, refreshedRows, childCreator);
     return NextResponse.json(treeFor(campaignId, refreshedRows));
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to update freight tree", 500);

@@ -5,6 +5,41 @@ import type { LockMountableRule } from "@/app/_types/lockMountable";
 
 type ValidationState = "idle" | "valid" | "invalid" | "validating";
 
+export function ChildFreightMountableConfigurator({ title, onTitleChange }: {
+  title: string;
+  onTitleChange: (title: string) => void;
+}) {
+  return (
+    <div className="create-info-constraints-copy">
+      <div className="create-info-forms-config create-info-forms-config-tight">
+        <MountableConfigHeader
+          kind="child-freight"
+          name="Child Freight"
+          description="Require each participant to publish a direct child freight linked to this freight."
+        />
+        <div className="create-mountable-principles">
+          <p className="create-review-section-label text-gray-900">Principle:</p>
+          <div className="create-mountable-principle create-mountable-principle-selected">
+            <span>Create a child freight</span>
+          </div>
+        </div>
+        <div className="create-mountable-params">
+          <p className="create-review-section-label text-gray-900">Params:</p>
+          <input
+            type="text"
+            maxLength={30}
+            value={title}
+            onChange={(event) => onTitleChange(event.target.value)}
+            placeholder="Required child title (optional)"
+            className="create-info-ticket-input"
+            aria-label="Required child freight title, optional"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type LockConfiguratorProps = {
   errorMessage?: string;
   fbars: string;

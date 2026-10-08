@@ -1,5 +1,6 @@
 import { canAccessLockMountable, isLockMountableEnabled, lockMountableAccessMessage } from "./lockMountable.ts";
 import { isFormsMountableEnabled } from "./formsMountable.ts";
+import { childFreightMountableSummary } from "./childFreightMountable.ts";
 import { formatMountableAppPrincipleSelection, normalizeMountableUrl } from "../../lib/fonMountablesSdk.ts";
 import type { CampaignRecord } from "../_types/campaignRecords";
 
@@ -19,7 +20,7 @@ export type MountableCriterionStatus = {
   description: string;
   cleared: boolean;
   href?: string;
-  icon: "app" | "forms" | "lock" | "signable";
+  icon: "app" | "child-freight" | "forms" | "lock" | "signable";
   logoUrl?: string;
 };
 
@@ -29,14 +30,26 @@ export function getMountableCriteriaStatus({
   viewerFbars,
   creatorFbars,
   signableCleared,
+  childFreightSatisfied,
 }: {
   record: CampaignRecord;
   rows: ParticipantCriterionRow[];
   viewerFbars?: number | null;
   creatorFbars?: number | null;
   signableCleared: boolean;
+  childFreightSatisfied?: boolean;
 }): MountableCriterionStatus[] {
   const criteria: MountableCriterionStatus[] = [];
+  if (record.mountables?.childFreight?.enabled) {
+    criteria.push({
+      key: "child-freight",
+      mountable: "Child Freight",
+      principle: "Create a child freight",
+      description: childFreightMountableSummary(record.mountables.childFreight),
+      cleared: childFreightSatisfied === true,
+      icon: "child-freight",
+    });
+  }
   const lock = record.mountables?.lock;
   if (isLockMountableEnabled(lock)) {
     criteria.push({

@@ -1,6 +1,6 @@
 "use client";
 
-import { Blocks, HandCoins, LockKeyhole, Scroll, Signature } from "lucide-react";
+import { Blocks, GitBranchPlus, HandCoins, LockKeyhole, Scroll, Signature } from "lucide-react";
 import Image from "next/image";
 import type { CSSProperties, ReactNode } from "react";
 
@@ -8,7 +8,7 @@ export type CampaignMountableItem = {
   actions?: ReactNode;
   description: string;
   href?: string;
-  icon?: "app" | "forms" | "lock" | "rewardable" | "signable";
+  icon?: "app" | "child-freight" | "forms" | "lock" | "rewardable" | "signable";
   key: string;
   logoUrl?: string;
   metadata?: string[];
@@ -22,10 +22,12 @@ export function CampaignMountableIcon({ item, className = "", style }: {
   style?: CSSProperties;
 }) {
   return (
-    <span className={`campaign-card-mounted-icon ${item.icon === "app" && item.logoUrl ? "campaign-card-mounted-icon-logo" : ""} ${className}`.trim()}
+    <span className={`campaign-card-mounted-icon ${item.icon === "app" && item.logoUrl ? "campaign-card-mounted-icon-logo" : item.icon === "child-freight" ? "campaign-card-mounted-icon-child-freight" : ""} ${className}`.trim()}
       data-tooltip={item.title} aria-label={item.title} style={style}>
       {item.icon === "app" ? (
         item.logoUrl ? <Image src={item.logoUrl} alt="" width={38} height={38} unoptimized /> : <Blocks size={20} strokeWidth={2} aria-hidden="true" />
+      ) : item.icon === "child-freight" ? (
+        <GitBranchPlus size={22} strokeWidth={2} aria-hidden="true" />
       ) : item.icon === "forms" ? (
         <Scroll size={22} strokeWidth={2} aria-hidden="true" />
       ) : item.icon === "signable" ? (

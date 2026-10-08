@@ -12,9 +12,11 @@ import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
 import FreightMountablesInfo from "@/app/_components/FreightMountablesInfo";
 import FreightTreeDiagram from "@/app/_components/FreightTreeDiagram";
+import FreightTreeHelpInfo from "@/app/_components/FreightTreeHelpInfo";
 import FreightTreeZoomActions from "@/app/_components/FreightTreeZoomActions";
+import RaffleSettlementInfo from "@/app/_components/RaffleSettlementInfo";
 import type { FreightTree } from "@/app/_components/FreightTreeInfo";
-import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
+import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import MountablesPanel from "@/app/_components/MountablesPanel";
@@ -47,7 +49,7 @@ import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { type CampaignCell } from "@/lib/transactions";
 
 const HOME_INFO_MOUNTABLES_HEADING = "Mountables:";
-const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights. Coming soon."];
+const HOME_INFO_MOUNTABLES_ITEMS = ["These are apps mounted on (or as) freights."];
 const HOME_INFO_TYPES_HEADING = "Freight types:";
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 const HOME_INFO_TYPE_ITEMS = [
@@ -61,7 +63,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "freight-mountables" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "support-deposit" | "support-deposit-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "freight-mountables" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "creator-withdraw-success" | "support-deposit" | "support-deposit-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
 type FreightRelationChoice = "parent" | "child";
 type OwnedFreight = { campaignId: string; title: string };
 
@@ -242,6 +244,7 @@ export default function Home() {
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    childFreightMountableSelected,
     handleCreateTopRightAction,
     handleCreateErrorChange,
     handleDraftSelectionRequest,
@@ -264,6 +267,7 @@ export default function Home() {
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableChildFreightTitle,
     mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
@@ -284,6 +288,7 @@ export default function Home() {
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setChildFreightMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
     setIsMountableLockFocused,
@@ -291,6 +296,7 @@ export default function Home() {
     setLockMountableSelected,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableChildFreightTitle,
     setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,
@@ -331,14 +337,14 @@ export default function Home() {
     setReferenceQuote(null);
   }, [createModalContentRef, referenceQuote, showCreateModal]);
 
-  const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
+  const openTransactionSuccessInfoModal = useCallback((txHash: string, mode: "ticket-buy-success" | "creator-withdraw-success") => {
     markCurrentProfileDataDirty();
     clearInfoCloseTimer();
     clearInfoHideTimer();
     clearSubmissionSuccessTimer();
     setSubmissionErrorMessage("");
     setSubmissionSuccessTxHash(txHash);
-    setInfoModalMode("ticket-buy-success");
+    setInfoModalMode(mode);
     setInfoModalInteraction("click");
     setIsInfoModalClosing(false);
     setShowInfoModal(true);
@@ -346,6 +352,10 @@ export default function Home() {
       closeInfoModal();
     }, 3000);
   }, [clearInfoCloseTimer, clearInfoHideTimer, clearSubmissionSuccessTimer, closeInfoModal, markCurrentProfileDataDirty, setInfoModalInteraction, setIsInfoModalClosing, setShowInfoModal, setSubmissionSuccessTxHash, submissionSuccessTimerRef]);
+
+  const openTicketBuySuccessInfoModal = useCallback((txHash: string) => {
+    openTransactionSuccessInfoModal(txHash, "ticket-buy-success");
+  }, [openTransactionSuccessInfoModal]);
 
   const {
     handleTicketPurchaseSubmit,
@@ -853,7 +863,9 @@ export default function Home() {
 
   const shouldHideWalletAction = (showCreateModal && !isCreateModalClosing) || (showFreightTree && !isFreightTreeClosing);
   const isFreightOptionsFlow = infoModalMode === "freight-options" || infoModalMode === "freight-relation-choice" || infoModalMode === "freight-existing" || infoModalMode === "freight-link-pending" || infoModalMode === "freight-link-success" || infoModalMode === "freight-link-error";
-  const infoModalBody = infoModalMode === "freight-options" ? (
+  const infoModalBody = showFreightTree && infoModalMode === "about" ? (
+    <FreightTreeHelpInfo />
+  ) : infoModalMode === "freight-options" ? (
     <div className="create-info-constraints-copy campaign-freight-options-heading-row">
       <p className="create-review-section-label campaign-freight-options-heading">Freight Options:</p>
       {freightTreeFeedback ? (
@@ -928,9 +940,11 @@ export default function Home() {
         </a>
       </p>
     </div>
-  ) : infoModalMode === "ticket-buy-success" ? (
+  ) : infoModalMode === "ticket-buy-success" || infoModalMode === "creator-withdraw-success" ? (
     <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Buy Successful</p>
+      <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>
+        {infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : "Buy Successful"}
+      </p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">
         <span className="text-gray-400">txhash: </span>
         <a
@@ -1013,91 +1027,12 @@ export default function Home() {
       ) : null}
     </div>
   ) : infoModalMode === "raffle-settlement" ? (
-    <div className="create-info-constraints-copy">
-      <p className="mt-3 create-review-section-label text-gray-900">{settlementModalData?.campaignTitle ?? "Raffle settlement"}</p>
-      <p className="mt-3 text-gray-900 font-semibold">Evidence:</p>
-      {isLoadingSettlementModal ? (
-        <div className="create-info-skeleton-list" aria-hidden="true">
-          <span className="create-info-skeleton-line" />
-          <span className="create-info-skeleton-line" />
-          <span className="create-info-skeleton-line" />
-        </div>
-      ) : (
-        <>
-          <table className="create-info-settlement-evidence-table text-gray-500">
-            <tbody>
-              {(settlementModalData?.evidenceItems ?? []).map((item, index) => {
-                const separatorIndex = item.indexOf(": ");
-                const key = separatorIndex === -1 ? item : item.slice(0, separatorIndex);
-                const value = separatorIndex === -1 ? "" : item.slice(separatorIndex + 2);
-
-                return (
-                  <tr
-                    key={item}
-                    className="create-info-settlement-evidence-row create-info-typed-line"
-                    style={{ animationDelay: `${index * 90}ms` }}
-                  >
-                    <td className="create-info-settlement-evidence-key">{value ? `${key}:` : key}</td>
-                    <td className="create-info-settlement-evidence-value">{value}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <p className="mt-3 text-gray-900 font-semibold">Recipients:</p>
-          {(settlementModalData?.recipients ?? []).length > 0 ? (
-            (settlementModalData?.recipients ?? []).map((recipient, index) => {
-              const isConnectedRecipient = walletAddress.trim().toLowerCase() === recipient.address.trim().toLowerCase();
-
-              return (
-                <div
-                  key={`${recipient.address}-${index}`}
-                  className={`create-info-constraint-item create-info-settlement-recipient-row font-mono create-info-typed-line ${isConnectedRecipient ? "create-info-settlement-recipient-current" : "text-gray-500"}`}
-                  style={{ animationDelay: `${((settlementModalData?.evidenceItems ?? []).length + index) * 90}ms` }}
-                >
-                  <span className="create-info-settlement-recipient-handle">
-                    {recipient.handle}
-                    {isConnectedRecipient ? <span className="create-info-settlement-recipient-you"> (You)</span> : null}
-                  </span>
-                  <span className="create-info-settlement-recipient-amount">{recipient.amountLabel}</span>
-                </div>
-              );
-            })
-          ) : (
-            <p className="create-info-constraint-item text-gray-500">
-              <span>No recipients found.</span>
-            </p>
-          )}
-          {settlementModalData?.errorMessage ? (
-            <>
-              <p className="mt-3 text-red-500 font-semibold">Errors:</p>
-              <p className="create-info-constraint-item text-red-500 break-words">
-                <span>{settlementModalData.errorMessage}</span>
-              </p>
-            </>
-          ) : null}
-        </>
-      )}
-      {settlementModalData?.distributionTxHash ? (
-        <>
-          <p className="mt-3 text-gray-900 font-semibold">Distribution tx:</p>
-          <p className="create-info-constraint-item text-gray-500 font-mono break-all">
-            <a
-              href={`https://pudge.explorer.nervos.org/transaction/${settlementModalData.distributionTxHash}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline"
-            >
-              {settlementModalData.distributionTxHash}
-            </a>
-          </p>
-        </>
-      ) : null}
-    </div>
+    <RaffleSettlementInfo data={settlementModalData} isLoading={isLoadingSettlementModal} walletAddress={walletAddress} />
   ) : showCreateModal && infoModalMode === "mountables" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
       <MountableOptionsCatalog
+        childFreightMountableSelected={childFreightMountableSelected}
         formsMountableSelected={formsMountableSelected}
         lockMountableSelected={lockMountableSelected}
         registeredMountableApps={registeredMountableApps}
@@ -1108,6 +1043,12 @@ export default function Home() {
             setFormsMountableSelected(nextSelected);
             setMountableFormLinks((current) => current.length > 0 ? current : [""]);
             setMountablesPromptError("");
+        }}
+        onToggleChildFreight={() => {
+          const enabled = !childFreightMountableSelected;
+          createModalContentRef.current?.setChildFreightMountableEnabled(enabled);
+          setChildFreightMountableSelected(enabled);
+          setMountablesPromptError("");
         }}
         onToggleLock={() => {
             const nextSelected = !lockMountableSelected;
@@ -1124,6 +1065,14 @@ export default function Home() {
         </p>
       ) : null}
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <ChildFreightMountableConfigurator
+      title={mountableChildFreightTitle}
+      onTitleChange={(title) => {
+        setMountableChildFreightTitle(title);
+        createModalContentRef.current?.updateChildFreightMountableConfig({ title });
+      }}
+    />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <LockMountableConfigurator
       errorMessage={mountablesPromptError}
@@ -1180,6 +1129,8 @@ export default function Home() {
         <>
           <p>{CREATE_INFO_PREVIEW_HEADING}</p>
           <CreateReviewMountablesInfo
+            childFreightEnabled={childFreightMountableSelected}
+            childFreightTitle={mountableChildFreightTitle}
             appMountables={mountedAppConfigs}
             formsEnabled={formsMountableSelected}
             formsUrl={mountableFormLinks[mountableFormLinks.length - 1] ?? ""}
@@ -1446,6 +1397,25 @@ export default function Home() {
         Continue
       </button>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button type="button" className="create-info-confirm-btn" disabled={isMountablesContinuing} onClick={() => goBackMountableSetup("child-freight")}>Back</button>
+      <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" disabled={isMountablesContinuing} onClick={() => {
+        void (async () => {
+          try {
+            if (advanceMountableSetup("child-freight")) return;
+            setIsMountablesContinuing(true);
+            await createModalContentRef.current?.persistCurrentDraft();
+            closeInfoModal(resetHomeInfoModalState);
+            await createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+          } catch (error) {
+            setMountablesPromptError(error instanceof Error ? error.message : "Failed to save child freight mountable");
+          } finally {
+            setIsMountablesContinuing(false);
+          }
+        })();
+      }}>Continue</button>
+    </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-mountable-app-actions">
       <div className="create-info-confirm-actions create-info-confirm-actions-tight">
@@ -1676,7 +1646,7 @@ export default function Home() {
         <AppShellHeader
           className={`campaign-shell-header ${shellWidthClass} ${showCreateModal || showFreightTree ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "freight-mountables" ? "Freight mountables" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "support-deposit" ? (supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB") : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
+          infoModalAriaLabel={showFreightTree && infoModalMode === "about" ? "Linked freight information" : infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "freight-mountables" ? "Freight mountables" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "support-deposit" ? (supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB") : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={((infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "support-deposit" || infoModalMode === "raffle-settlement") && infoModalMode !== "freight-link-pending" && !freightLinkBusy}
           infoModalBody={infoModalBody}
@@ -1699,16 +1669,16 @@ export default function Home() {
           }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoButtonFocus={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => {
             if (infoModalMode !== "create-error" && infoModalMode !== "freight-link-pending" && !freightLinkBusy && !(infoModalMode === "ticket-purchase" && isPurchasingTickets) && !(infoModalMode === "support-deposit" && isProcessingSupport)) closeInfoModal(resetHomeInfoModalState);
           }}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
@@ -1757,6 +1727,7 @@ export default function Home() {
           commentDiscardDecision={commentDiscardDecision}
           onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
           onSupportRequest={handleOpenSupportInfoModal}
+          onWithdrawalSuccess={(txHash) => openTransactionSuccessInfoModal(txHash, "creator-withdraw-success")}
           onErrorChange={handleFreightsLoadError}
           onMountablesClick={handleFreightMountablesClick}
           onFreightOptionsClick={handleFreightOptionsClick}

@@ -33,6 +33,7 @@ type UseCreateCampaignFlowArgs<TMode extends string> = {
 
 type MountableSelectionState = {
   hasMountedHashtag: boolean;
+  childFreightSelected: boolean;
   formsSelected: boolean;
   lockSelected: boolean;
   appMountablesSelected: number;
@@ -41,7 +42,7 @@ type MountableSelectionState = {
 type MountableSetupStep = {
   key: string;
   label: string;
-  mode: "mountables-forms" | "mountables-lock" | "mountables-apps";
+  mode: "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps";
   appId?: string;
 };
 
@@ -82,6 +83,7 @@ export function useCreateCampaignFlow<TMode extends string>({
   });
   const [previewError, setPreviewError] = useState("");
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
+  const [childFreightMountableSelected, setChildFreightMountableSelected] = useState(false);
   const [lockMountableSelected, setLockMountableSelected] = useState(false);
   const [appsMountableSelected, setAppsMountableSelected] = useState(false);
   const [appMountablesSelected, setAppMountablesSelected] = useState(0);
@@ -96,6 +98,7 @@ export function useCreateCampaignFlow<TMode extends string>({
   const [isVerifyingMountableApp, setIsVerifyingMountableApp] = useState(false);
   const [mountableFormLinks, setMountableFormLinks] = useState<string[]>([""]);
   const [mountableLockFbars, setMountableLockFbars] = useState("");
+  const [mountableChildFreightTitle, setMountableChildFreightTitle] = useState("");
   const [mountableLockRule, setMountableLockRule] = useState<LockMountableRule>("block_below");
   const [mountableFormValidationState, setMountableFormValidationState] = useState<"idle" | "validating" | "valid" | "invalid">("idle");
   const [mountableLockValidationState, setMountableLockValidationState] = useState<"idle" | "valid" | "invalid">("idle");
@@ -198,12 +201,15 @@ export function useCreateCampaignFlow<TMode extends string>({
   }, []);
 
   const openMountablesModal = useCallback(() => {
+    const nextChildFreightMountable = createModalContentRef.current?.getChildFreightMountableConfig();
     const nextFormsMountable = createModalContentRef.current?.getFormsMountableConfig();
     const nextLockMountable = createModalContentRef.current?.getLockMountableConfig();
     const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
     const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
 
     setFormsMountableSelected(Boolean(nextFormsMountable?.enabled));
+    setChildFreightMountableSelected(Boolean(nextChildFreightMountable?.enabled));
+    setMountableChildFreightTitle(nextChildFreightMountable?.title ?? "");
     setLockMountableSelected(Boolean(nextLockMountable?.enabled));
     setAppsMountableSelected(nextEnabledAppMountables.length > 0);
     setAppMountablesSelected(nextEnabledAppMountables.length);
@@ -331,6 +337,8 @@ export function useCreateCampaignFlow<TMode extends string>({
     const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
 
     setFormsMountableSelected(state.formsSelected);
+    setChildFreightMountableSelected(state.childFreightSelected);
+    setMountableChildFreightTitle(createModalContentRef.current?.getChildFreightMountableConfig().title ?? "");
     setLockMountableSelected(state.lockSelected);
     setAppsMountableSelected(state.appMountablesSelected > 0);
     setAppMountablesSelected(state.appMountablesSelected);
@@ -441,6 +449,7 @@ export function useCreateCampaignFlow<TMode extends string>({
   }, [animationMs, clearInfoCloseTimer, clearInfoHideTimer, setInfoModalMode, setIsInfoModalClosing, setShowInfoModal]);
 
   const mountableSetupSteps = useMemo<MountableSetupStep[]>(() => [
+    ...(childFreightMountableSelected ? [{ key: "child-freight", label: "Child Freight", mode: "mountables-child-freight" as const }] : []),
     ...(formsMountableSelected ? [{ key: "forms", label: "Forms", mode: "mountables-forms" as const }] : []),
     ...(lockMountableSelected ? [{ key: "lock", label: "Lock", mode: "mountables-lock" as const }] : []),
     ...selectedMountableAppIds.map((appId) => {
@@ -452,7 +461,7 @@ export function useCreateCampaignFlow<TMode extends string>({
         appId,
       };
     }),
-  ].sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })), [formsMountableSelected, lockMountableSelected, registeredMountableApps, selectedMountableAppIds]);
+  ].sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })), [childFreightMountableSelected, formsMountableSelected, lockMountableSelected, registeredMountableApps, selectedMountableAppIds]);
 
   const openMountableSetupStep = useCallback((step: (typeof mountableSetupSteps)[number]) => {
     if (step.appId) {
@@ -745,6 +754,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    childFreightMountableSelected,
     handleCreateTopRightAction,
     handleCreateErrorChange,
     handleDraftSelectionRequest,
@@ -770,6 +780,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableChildFreightTitle,
     mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
@@ -792,6 +803,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setChildFreightMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
     setIsMountableLockFocused,
@@ -801,6 +813,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     setMountableAppsError,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableChildFreightTitle,
     setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,

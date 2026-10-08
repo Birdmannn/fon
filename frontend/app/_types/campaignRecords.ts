@@ -1,4 +1,5 @@
 import type { AppMountableConfig } from "@/app/_types/appMountable";
+import type { ChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
@@ -42,6 +43,7 @@ export type CampaignRecord = {
     winnerReductionPercent?: string;
   };
   mountables?: {
+    childFreight?: ChildFreightMountableConfig | null;
     forms?: FormsMountableConfig | null;
     lock?: LockMountableConfig | null;
     apps?: AppMountableConfig[];

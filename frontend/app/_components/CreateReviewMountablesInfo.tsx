@@ -1,15 +1,18 @@
 "use client";
 
-import { LockKeyhole, Scroll } from "lucide-react";
+import { GitBranchPlus, LockKeyhole, Scroll } from "lucide-react";
 import Image from "next/image";
 
 import { appMountableSummary } from "@/app/_lib/appMountable";
+import { childFreightMountableSummary } from "@/app/_lib/childFreightMountable";
 import { lockMountableSummary } from "@/app/_lib/lockMountable";
 import type { AppMountableConfig } from "@/app/_types/appMountable";
 import type { LockMountableRule } from "@/app/_types/lockMountable";
 
 type CreateReviewMountablesInfoProps = {
   appMountables: AppMountableConfig[];
+  childFreightEnabled: boolean;
+  childFreightTitle: string;
   formsEnabled: boolean;
   formsUrl: string;
   lockEnabled: boolean;
@@ -20,7 +23,7 @@ type CreateReviewMountablesInfoProps = {
 type MountableInfoEntry = {
   detail: string;
   key: string;
-  kind: "app" | "forms" | "lock";
+  kind: "app" | "child-freight" | "forms" | "lock";
   logoUrl?: string;
   name: string;
   principles: string[];
@@ -28,6 +31,8 @@ type MountableInfoEntry = {
 
 export default function CreateReviewMountablesInfo({
   appMountables,
+  childFreightEnabled,
+  childFreightTitle,
   formsEnabled,
   formsUrl,
   lockEnabled,
@@ -35,6 +40,13 @@ export default function CreateReviewMountablesInfo({
   lockRule,
 }: CreateReviewMountablesInfoProps) {
   const entries: MountableInfoEntry[] = [
+    ...(childFreightEnabled ? [{
+      detail: childFreightMountableSummary({ enabled: true, title: childFreightTitle }),
+      key: "child-freight",
+      kind: "child-freight" as const,
+      name: "Child Freight",
+      principles: ["Create a child freight"],
+    }] : []),
     ...(formsEnabled ? [{
       detail: formsUrl.trim() || "Google Forms responder link pending",
       key: "forms",
@@ -63,9 +75,11 @@ export default function CreateReviewMountablesInfo({
     <div className="create-review-info-mountables">
       {entries.length > 0 ? entries.map((entry) => (
         <div className="create-review-info-mountable" key={entry.key}>
-          <span className={`create-mountable-option-icon-bg ${entry.kind === "app" && entry.logoUrl ? "create-mountable-option-logo-bg" : ""}`.trim()} aria-hidden="true">
+          <span className={`create-mountable-option-icon-bg ${entry.kind === "app" && entry.logoUrl ? "create-mountable-option-logo-bg" : entry.kind === "child-freight" ? "create-mountable-option-child-freight" : ""}`.trim()} aria-hidden="true">
             {entry.kind === "app" && entry.logoUrl ? (
               <Image src={entry.logoUrl} alt="" width={38} height={38} unoptimized />
+            ) : entry.kind === "child-freight" ? (
+              <GitBranchPlus size={18} strokeWidth={2} />
             ) : entry.kind === "forms" ? (
               <Scroll size={18} strokeWidth={2} />
             ) : (

@@ -17,10 +17,11 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
-import { FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
+import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
@@ -59,7 +60,7 @@ const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 const MAX_PROFILE_PHOTO_BYTES = 4 * 1024 * 1024;
 
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "edit-display-name" | "mountables" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "edit-display-name" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
 
 const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
@@ -225,6 +226,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    childFreightMountableSelected,
     lockMountableSelected,
     handleCreateTopRightAction,
     handleCreateErrorChange,
@@ -247,6 +249,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableChildFreightTitle,
     mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
@@ -267,6 +270,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setChildFreightMountableSelected,
     setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
@@ -274,6 +278,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsMountablesContinuing,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableChildFreightTitle,
     setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,
@@ -548,6 +553,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const profileLoadErrorMessage = hasProfileErrors
     ? "Sorry, an error occurred. Hover on info for more."
     : "";
+  useInfoError(userProfileError);
+  useInfoError(photoUploadError);
   const hasCurrentProfile = Boolean(currentUserProfile);
   const currentProfileAddress = currentUserProfile?.address ?? "";
   const isProfileAvatarVisible = revealedProfileHeroCount >= 1;
@@ -769,6 +776,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
       <MountableOptionsCatalog
+        childFreightMountableSelected={childFreightMountableSelected}
         formsMountableSelected={formsMountableSelected}
         lockMountableSelected={lockMountableSelected}
         registeredMountableApps={registeredMountableApps}
@@ -779,6 +787,12 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             setFormsMountableSelected(nextSelected);
             setMountableFormLinks((current) => current.length > 0 ? current : [""]);
             setMountablesPromptError("");
+        }}
+        onToggleChildFreight={() => {
+          const enabled = !childFreightMountableSelected;
+          createModalContentRef.current?.setChildFreightMountableEnabled(enabled);
+          setChildFreightMountableSelected(enabled);
+          setMountablesPromptError("");
         }}
         onToggleLock={() => {
             const nextSelected = !lockMountableSelected;
@@ -795,6 +809,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         </p>
       ) : null}
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <ChildFreightMountableConfigurator
+      title={mountableChildFreightTitle}
+      onTitleChange={(title) => {
+        setMountableChildFreightTitle(title);
+        createModalContentRef.current?.updateChildFreightMountableConfig({ title });
+      }}
+    />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <LockMountableConfigurator
       errorMessage={mountablesPromptError}
@@ -844,6 +866,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <>
           <p>{CREATE_INFO_PREVIEW_HEADING}</p>
           <CreateReviewMountablesInfo
+            childFreightEnabled={childFreightMountableSelected}
+            childFreightTitle={mountableChildFreightTitle}
             appMountables={mountedAppConfigs}
             formsEnabled={formsMountableSelected}
             formsUrl={mountableFormLinks[mountableFormLinks.length - 1] ?? ""}
@@ -906,12 +930,22 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   ) : showLeaderboardModal ? (
     <div className="create-info-constraints-copy">
-      <p>{activeLeaderboardTitle}:</p>
-      {activeLeaderboard.slice(0, 5).map((entry) => (
-        <p key={entry.address} className="create-info-constraint-item text-gray-500">
-          <span>#{entry.rank} {entry.handle} — {entry.fbars} FBARS</span>
-        </p>
-      ))}
+      <p className="profile-leaderboard-info-heading">{activeLeaderboardTitle}:</p>
+      {activeLeaderboard.length > 0 ? (
+        <ol className="profile-leaderboard-info-list">
+          {activeLeaderboard.slice(0, 5).map((entry) => (
+            <li key={entry.address} className="profile-leaderboard-info-row">
+              <span className="profile-leaderboard-info-rank">#{entry.rank}</span>
+              <span className="profile-leaderboard-info-handle">{entry.handle}</span>
+              <span className="profile-leaderboard-info-fbars">{entry.fbars} FBARS</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="create-info-constraint-item">No ranked users yet.</p>
+      )}
+      <p className="profile-leaderboard-info-heading mt-3">Perquisites:</p>
+      <p className="create-info-constraint-item">Weekly #1 can edit the marquee message up to twice per week.</p>
       {profilePageErrorMessages.length > 0 ? (
         <>
           <p className="mt-3 text-red-500 font-semibold">Errors:</p>
@@ -1032,6 +1066,25 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       >
         Continue
       </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+      <button type="button" className="create-info-confirm-btn" disabled={isMountablesContinuing} onClick={() => goBackMountableSetup("child-freight")}>Back</button>
+      <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" disabled={isMountablesContinuing} onClick={() => {
+        void (async () => {
+          try {
+            if (advanceMountableSetup("child-freight")) return;
+            setIsMountablesContinuing(true);
+            await createModalContentRef.current?.persistCurrentDraft();
+            closeInfoModal(resetInfoModalState);
+            await createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+          } catch (error) {
+            setMountablesPromptError(error instanceof Error ? error.message : "Failed to save child freight mountable");
+          } finally {
+            setIsMountablesContinuing(false);
+          }
+        })();
+      }}>Continue</button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-mountable-app-actions">
@@ -1267,16 +1320,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => {
             if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
           }}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
@@ -1340,7 +1393,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             <ThreeDotLoader label="Loading profile" />
           </div>
         ) : profileLoadErrorMessage ? (
-          <p className="profile-load-error">{profileLoadErrorMessage}</p>
+          null
         ) : (
           <>
             <div className="profile-hero-row">
@@ -1381,7 +1434,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     {photoUrl ? <Image src={photoUrl} alt={`${currentUserProfile?.displayName ?? "User"}'s profile photo`} fill unoptimized className="profile-avatar-image" /> : <span>Profile photo</span>}
                   </div>
                 )}
-                {photoUploadError ? <p className="profile-photo-error" role="alert">{photoUploadError}</p> : null}
                 {canEditDisplayName ? (
                   <button
                     type="button"
@@ -1438,7 +1490,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     ) : null}
                   </div>
                   <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
-                  {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                 </div>
               </section>
             </div>

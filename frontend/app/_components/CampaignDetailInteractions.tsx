@@ -1,10 +1,11 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { Bookmark, Check, Coins, Heart, Repeat2, Share2, Ticket, X } from "lucide-react";
+import { Bookmark, Check, Coins, Heart, Repeat2, Share2, Ticket } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
@@ -28,9 +29,11 @@ type Props = {
   nowMs: number;
   mountableItems: CampaignMountableItem[];
   onProfileDataChanged: () => void;
+  onWithdrawalSuccess: (txHash: string) => void;
   onViewerAvatarClick: () => void;
   onFreightOptionsClick: () => void;
   onFreightTreeClick: () => void;
+  onSettlementInfoRequest: (data: SettlementModalData) => void;
   onSupportRequest: (request: CampaignSupportRequest) => void;
   onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   threadRole?: CampaignThreadRole;
@@ -38,17 +41,13 @@ type Props = {
   threadNodeTargetId: string | null;
 };
 
-type Modal = "settlement" | null;
-
 export default function CampaignDetailInteractions({
   campaign, record: initialRecord, client, signer, walletAddress, viewerFbars, creatorFbars,
-  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onViewerAvatarClick, onFreightOptionsClick, onFreightTreeClick, onSupportRequest, onTicketPurchaseRequest, threadRole, directChildCount, threadNodeTargetId,
+  walletPhotoUpdatedAt, nowMs, mountableItems, onProfileDataChanged, onWithdrawalSuccess, onViewerAvatarClick, onFreightOptionsClick, onFreightTreeClick, onSettlementInfoRequest, onSupportRequest, onTicketPurchaseRequest, threadRole, directChildCount, threadNodeTargetId,
 }: Props) {
   const [record, setRecord] = useState(initialRecord);
   const onRecordChange = (update: Partial<CampaignRecord>) => setRecord((current) => ({ ...current, ...update }));
   useEffect(() => setRecord(initialRecord), [initialRecord]);
-  const [modal, setModal] = useState<Modal>(null);
-  const [settlement, setSettlement] = useState<SettlementModalData | null>(null);
   const state = useCampaignCardState({
     campaign,
     record,
@@ -68,12 +67,12 @@ export default function CampaignDetailInteractions({
     onWithdrawalCompleted: (_id, withdrawalTxHash, withdrawnAt, withdrawnByAddress, withdrawnAmountShannons) => {
       onRecordChange({ withdrawalTxHash, withdrawnAt, withdrawnByAddress, withdrawnAmountShannons });
       onProfileDataChanged();
+      onWithdrawalSuccess(withdrawalTxHash);
     },
-    onSettlementInfoRequest: (data) => {
-      setSettlement(data);
-      setModal("settlement");
-    },
+    onSettlementInfoRequest,
   });
+  useInfoError(state.actionFeedback?.tone === "error" ? state.actionFeedback.message : null);
+  useInfoError(state.commentError);
 
   const creatorAddress = record.creatorAddress || decodeCreatedByAddress(campaign);
   const openSupport = () => {
@@ -91,6 +90,14 @@ export default function CampaignDetailInteractions({
       <Coins className="campaign-action-icon" size={30} aria-hidden="true" />
     </button>
   );
+  const creatorWithdrawButton = (
+    <button type="button" className="campaign-action-btn campaign-detail-icon-action" onClick={() => void state.handleWithdrawClick()} disabled={state.isWithdrawing}
+      aria-label="Withdraw creator support"
+      data-tooltip={state.isWithdrawing ? "Withdrawing creator support" : `Withdraw ${state.creatorWithdrawAmountCkb} CKB creator support`}>
+      <Coins className="campaign-action-icon" size={30} aria-hidden="true" />
+    </button>
+  );
+  const supportOrWithdrawButton = state.showCreatorWithdrawAction ? creatorWithdrawButton : supportButton;
   const ticketButton = (
     <button type="button" className="campaign-action-btn campaign-detail-icon-action" onClick={openTickets} disabled={state.isPurchaseDisabled}
       aria-label={campaign.data.auxAmount === 0n ? "Enter raffle" : "Buy tickets"}
@@ -120,14 +127,7 @@ export default function CampaignDetailInteractions({
             <CampaignMountablesPanel items={mountableItems} />
             {state.isRaffleCampaign ? (
               <div className="campaign-detail-raffle-actions">
-                {supportButton}
-                {state.showCreatorWithdrawAction ? (
-                  <button type="button" className="campaign-action-btn campaign-detail-icon-action" onClick={() => void state.handleWithdrawClick()} disabled={state.isWithdrawing}
-                    aria-label="Withdraw creator support"
-                    data-tooltip={`Withdraw ${state.creatorWithdrawAmountCkb} CKB creator support`}>
-                    <Coins size={30} aria-hidden="true" />
-                  </button>
-                ) : null}
+                {supportOrWithdrawButton}
                 {ticketButton}
               </div>
             ) : null}
@@ -146,7 +146,7 @@ export default function CampaignDetailInteractions({
               onClick={() => void state.handleReshare()} data-tooltip="Share">
               <Repeat2 size={21} aria-hidden="true" /><span className="campaign-action-count">{state.reshares}</span>
             </button>
-            {!state.isRaffleCampaign ? supportButton : null}
+            {!state.isRaffleCampaign ? supportOrWithdrawButton : null}
             {state.giftDeliverable.enabled ? (
               <>
                 <button type="button" className="campaign-action-btn action-gift" onClick={state.handleGiftInfoClick} data-tooltip="Gift details">
@@ -156,7 +156,7 @@ export default function CampaignDetailInteractions({
                 {state.canGiftClaim ? <button type="button" className="campaign-action-btn action-gift-claim" onClick={() => void state.handleGiftClaim()} data-tooltip="Claim gift"><Coins size={18} aria-hidden="true" /><span className="campaign-action-count">claim</span></button> : null}
               </>
             ) : null}
-            {state.actionFeedback ? <p className={`campaign-action-feedback campaign-action-feedback-${state.actionFeedback.tone}`} role="status">{state.actionFeedback.message}</p> : null}
+            {state.actionFeedback?.tone === "success" ? <p className="campaign-action-feedback campaign-action-feedback-success" role="status">{state.actionFeedback.message}</p> : null}
           </div>
         </section>
 
@@ -176,26 +176,11 @@ export default function CampaignDetailInteractions({
               </button>
             </div>
             <div className="campaign-comment-meta-row"><span className="campaign-comment-count">{300 - state.commentDraft.length}</span></div>
-            {state.commentError ? <p className="campaign-comment-error" role="alert">{state.commentError}</p> : null}
           </div>
           <CampaignCommentsPanel comments={state.commentList} campaignId={record.campaignId} walletAddress={walletAddress} fallbackAddress={creatorAddress} showHeader={false} showEmptyState={false} variant="inline" />
         </div>
       </div>
 
-      {modal ? (
-        <div className="campaign-detail-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setModal(null); }}>
-          <div className="campaign-detail-modal" role="dialog" aria-modal="true" aria-label="Freight details">
-            <button type="button" className="campaign-detail-modal-close" onClick={() => setModal(null)} aria-label="Close"><X size={18} /></button>
-              <div><h2>{settlement?.campaignTitle ?? "Freight details"}</h2>
-                {settlement?.gift ? <p>{settlement.gift.claimantsLabel} | {settlement.gift.approvalCount}/{settlement.gift.requiredApprovalCount ?? 0} approvals</p> : null}
-                {(settlement?.evidenceItems ?? []).map((item) => <p key={item}>{item}</p>)}
-                {(settlement?.recipients ?? []).map((recipient, index) => <p key={`${recipient.handle}-${index}`}>{recipient.handle}: {recipient.amountLabel}</p>)}
-                {settlement?.errorMessage ? <p className="campaign-comment-error">{settlement.errorMessage}</p> : null}
-                {settlement?.distributionTxHash ? <a href={`https://pudge.explorer.nervos.org/transaction/${settlement.distributionTxHash}`} target="_blank" rel="noopener noreferrer" className="break-all underline">{settlement.distributionTxHash}</a> : null}
-              </div>
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }

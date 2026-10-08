@@ -11,26 +11,40 @@ type CampaignAttachmentGridProps = {
   attachments: CampaignAttachment[];
   editable?: boolean;
   expandable?: boolean;
+  variant?: "default" | "feed";
   onRemove?: (attachment: CampaignAttachment) => void;
 };
 
-export default function CampaignAttachmentGrid({ attachments, editable = false, expandable = false, onRemove }: CampaignAttachmentGridProps) {
+export default function CampaignAttachmentGrid({ attachments, editable = false, expandable = false, variant = "default", onRemove }: CampaignAttachmentGridProps) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   if (attachments.length === 0) return null;
 
-  const visible = attachments.slice(0, 4);
+  const isFeed = variant === "feed";
+  const visible = attachments.slice(0, isFeed ? 3 : 4);
   const remaining = Math.max(0, attachments.length - visible.length);
 
   return (
     <>
-      <div className={`campaign-attachment-grid campaign-attachment-grid-${Math.min(visible.length, 4)}`}>
+      <div className={`campaign-attachment-grid campaign-attachment-grid-${visible.length}${isFeed ? " campaign-attachment-grid-feed" : ""}`}>
         {visible.map((attachment, index) => (
           <div className="campaign-attachment-tile" key={attachment.id}>
+            {isFeed ? (
+              <Image
+                className="campaign-attachment-fill"
+                src={`/api/campaign-attachments/${encodeURIComponent(attachment.id)}`}
+                alt=""
+                aria-hidden="true"
+                fill
+                sizes="12rem"
+                unoptimized
+              />
+            ) : null}
             <Image
+              className={isFeed ? "campaign-attachment-photo" : undefined}
               src={`/api/campaign-attachments/${encodeURIComponent(attachment.id)}`}
               alt={attachment.name || `Freight attachment ${index + 1}`}
               fill
-              sizes="(max-width: 639px) 50vw, 24rem"
+              sizes={isFeed ? "12rem" : "(max-width: 639px) 50vw, 24rem"}
               unoptimized
             />
             {expandable ? (
@@ -56,7 +70,7 @@ export default function CampaignAttachmentGrid({ attachments, editable = false, 
                 <X size={16} strokeWidth={2.5} aria-hidden="true" />
               </button>
             ) : null}
-            {index === 3 && remaining > 0 ? (
+            {index === visible.length - 1 && remaining > 0 ? (
               <span className="campaign-attachment-overflow" aria-label={`${remaining} more photos`}>+{remaining}</span>
             ) : null}
           </div>

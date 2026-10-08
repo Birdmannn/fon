@@ -2,10 +2,11 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Blocks, Copy, EllipsisVertical, HandCoins, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
+import { Blocks, Copy, EllipsisVertical, GitBranchPlus, HandCoins, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
@@ -208,9 +209,11 @@ export default function CampaignCardSurface({
     : timedCountdown.phase === "start" ? "Starts in" : timedCountdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  useInfoError(copyFeedback === "error" ? "Copy failed" : null);
   const [loadedCreatorPhotoUrl, setLoadedCreatorPhotoUrl] = useState<string | null>(null);
   const isCreatorPhotoLoaded = creatorPhotoUrl !== null && loadedCreatorPhotoUrl === creatorPhotoUrl;
   const mountedIcons = [
+    ...(record?.mountables?.childFreight?.enabled ? [{ key: "child-freight", name: "Child Freight", kind: "child-freight" as const, logoUrl: "" }] : []),
     ...(record?.mountables?.forms?.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
     ...(record?.mountables?.lock?.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
     ...(isWinningCampaignType(campaign.data.campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
@@ -276,7 +279,6 @@ export default function CampaignCardSurface({
                 {creatorHandle}
               </Link>
               {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
-              {copyFeedback === "error" && <span className="text-[11px] text-red-500">Copy failed</span>}
             </div>
 
             <div className="campaign-card-creator-secondary-line">
@@ -363,7 +365,7 @@ export default function CampaignCardSurface({
           )}
         </div>
 
-        <CampaignAttachmentGrid attachments={record?.attachments ?? []} />
+        <CampaignAttachmentGrid attachments={record?.attachments ?? []} variant="feed" />
 
         {mentions.length > 0 && (
           <div className="flex flex-wrap gap-2 text-xs">
@@ -400,7 +402,7 @@ export default function CampaignCardSurface({
             >
               {visibleMountedIcons.map((mountable, index) => (
                 <span
-                  className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : ""}`.trim()}
+                  className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : mountable.kind === "child-freight" ? "campaign-card-mounted-icon-child-freight" : ""}`.trim()}
                   data-tooltip={mountable.name}
                   aria-label={mountable.name}
                   key={mountable.key}
@@ -412,6 +414,8 @@ export default function CampaignCardSurface({
                     ) : (
                       <Blocks size={20} strokeWidth={2} aria-hidden="true" />
                     )
+                  ) : mountable.kind === "child-freight" ? (
+                    <GitBranchPlus size={22} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "forms" ? (
                     <Scroll size={22} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "signable" ? (

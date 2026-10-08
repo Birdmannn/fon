@@ -4,6 +4,7 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import type { CampaignRecord, MergedCampaign } from "@/app/_hooks/useCampaignFeed";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import type { SettlementModalData } from "@/app/_types/settlement";
 import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import { getCampaignStableId } from "@/lib/campaignIdentity";
@@ -69,6 +70,7 @@ export default function CampaignList({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
+  useInfoError(error);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -122,7 +124,7 @@ export default function CampaignList({
   }
 
   if (error) {
-    return <p className="text-sm text-gray-400">Sorry, an error occurred while loading freights</p>;
+    return null;
   }
 
   if (campaigns.length === 0) {

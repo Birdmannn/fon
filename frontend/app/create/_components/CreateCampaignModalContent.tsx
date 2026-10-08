@@ -1,13 +1,15 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, GitBranchPlus, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
 
 import Image from "next/image";
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
+import { DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG, normalizeChildFreightMountableConfig, type ChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import {
   DEFAULT_LOCK_MOUNTABLE_CONFIG,
@@ -281,6 +283,7 @@ type DraftRecord = {
     winnerReductionPercent?: string;
   };
   mountables?: {
+    childFreight?: ChildFreightMountableConfig | null;
     forms?: FormsMountableConfig | null;
     lock?: LockMountableConfig | null;
     apps?: AppMountableConfig[] | null;
@@ -319,6 +322,7 @@ type DraftSnapshot = {
   giftDeliverable: GiftDeliverable;
   attachments: CampaignAttachment[];
   formsMountable?: FormsMountableConfig;
+  childFreightMountable?: ChildFreightMountableConfig;
   lockMountable?: LockMountableConfig;
   appMountables?: AppMountableConfig[];
 };
@@ -354,10 +358,13 @@ export type CreateCampaignModalContentHandle = {
   toggleDraftList: () => Promise<boolean>;
   applyDraftSelection: (draftId: string) => void;
   getFormsMountableConfig: () => FormsMountableConfig;
+  getChildFreightMountableConfig: () => ChildFreightMountableConfig;
   getLockMountableConfig: () => LockMountableConfig;
   getAppMountableConfigs: () => AppMountableConfig[];
   getAppMountableCampaignContext: () => VerifyMountableAppCampaignContext;
   setFormsMountableEnabled: (enabled: boolean) => void;
+  setChildFreightMountableEnabled: (enabled: boolean) => void;
+  updateChildFreightMountableConfig: (updates: Partial<ChildFreightMountableConfig>) => void;
   setLockMountableEnabled: (enabled: boolean) => void;
   setAppMountableConfigs: (mountables: AppMountableConfig[]) => void;
   updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
@@ -389,7 +396,7 @@ type CreateCampaignModalContentProps = {
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
   onMountableSelectionRequired?: () => void;
   onTagSuggestionsRequested?: (query: string) => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
   availableFbars?: number;
 };
 
@@ -477,6 +484,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const previousShowDraftsPaneRef = useRef(false);
   const hasRestoredResumeStateRef = useRef(false);
   const formsMountableRef = useRef<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const childFreightMountableRef = useRef<ChildFreightMountableConfig>(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
   const lockMountableRef = useRef<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
   const appMountablesRef = useRef<AppMountableConfig[]>([]);
 
@@ -499,6 +507,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [recurringSleepHours, setRecurringSleepHours] = useState("1");
   const [winnerReductionPercent, setWinnerReductionPercent] = useState("50");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const [childFreightMountable, setChildFreightMountable] = useState<ChildFreightMountableConfig>(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
   const [appMountables, setAppMountables] = useState<AppMountableConfig[]>([]);
   const [giftApprovalMode, setGiftApprovalMode] = useState<GiftApprovalMode>("all");
@@ -576,6 +585,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const title = "Create a Campaign";
   const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
   const reviewMountedIcons = [
+    ...(childFreightMountable.enabled ? [{ key: "child-freight", name: "Child Freight", kind: "child-freight" as const, logoUrl: "" }] : []),
     ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
     ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
     ...(isWinningCampaignType(campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
@@ -589,6 +599,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const visibleReviewMountedIcons = reviewMountedIcons.length >= 4 ? reviewMountedIcons.slice(0, 3) : reviewMountedIcons;
   const hiddenReviewMountedIconCount = reviewMountedIcons.length - visibleReviewMountedIcons.length;
   const activeModalError = draftSaveError || errorMsg;
+  useInfoError(draftListError);
+  useInfoError(!isModal && status === "error" ? errorMsg : null);
   const isNextDisabled = status === "pending" || !constraintsPassed;
   const startDelayParts = useMemo(() => splitTimingParts(taskStartDelayHours, 0), [taskStartDelayHours]);
   const durationParts = useMemo(() => splitTimingParts(taskDurationHours, MIN_TASK_DURATION_MINUTES), [taskDurationHours]);
@@ -773,6 +785,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftDeliverable: giftDeliverableDraft,
     attachments,
     formsMountable,
+    childFreightMountable,
     lockMountable,
     appMountables,
   }), [
@@ -785,6 +798,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftDeliverableDraft,
     maxAmountCkb,
     formsMountable,
+    childFreightMountable,
     lockMountable,
     rewardCount,
     raffleSupportPoolPercent,
@@ -843,6 +857,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const activeFormsResponseAccessError = formsResponseAccessError
     || formsResponseAccessMismatchError
     || (formsMountable.enabled && !hasFormsResponseAccess ? googleLinkError : "");
+  useInfoError(activeFormsResponseAccessError);
+  useInfoError(giftPreviewState.error);
   const formsResponseAccessHelperMessage = !formsMountable.enabled
     ? ""
     : !hasMountedFormValidation
@@ -867,6 +883,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   useEffect(() => {
     formsMountableRef.current = formsMountable;
   }, [formsMountable]);
+
+  useEffect(() => {
+    childFreightMountableRef.current = childFreightMountable;
+  }, [childFreightMountable]);
 
   useEffect(() => {
     lockMountableRef.current = lockMountable;
@@ -1132,9 +1152,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setAttachments([]);
     attachmentGroupIdRef.current = "";
     formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
+    childFreightMountableRef.current = DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
     lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
     appMountablesRef.current = [];
     setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+    setChildFreightMountable(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
     setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
     setAppMountables([]);
     setModalStep("compose");
@@ -1680,10 +1702,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextCampaignType = nextSnapshot.campaignType;
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
     const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
+    const nextChildFreightMountable = normalizeChildFreightMountableConfig(nextSnapshot.childFreightMountable);
     const nextLockMountable = normalizeLockMountableConfig(nextSnapshot.lockMountable);
     const nextAppMountables = normalizeAppMountableConfigs(nextSnapshot.appMountables);
 
     formsMountableRef.current = nextFormsMountable;
+    childFreightMountableRef.current = nextChildFreightMountable;
     lockMountableRef.current = nextLockMountable;
     appMountablesRef.current = nextAppMountables;
     setModalTitle(nextSnapshot.title);
@@ -1714,6 +1738,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setWinnerReductionPercent(nextSnapshot.winnerReductionPercent ?? "50");
     setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
     setFormsMountable(nextFormsMountable);
+    setChildFreightMountable(nextChildFreightMountable);
     setLockMountable(nextLockMountable);
     setAppMountables(nextAppMountables);
     setActiveDraftRecordId(resumeState.activeDraftRecordId);
@@ -1838,15 +1863,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRecurringSleepHours(nextRecurringSleepHours);
     setWinnerReductionPercent(nextWinnerReductionPercent);
     const nextFormsMountable = normalizeFormsMountableConfig(record.mountables?.forms);
+    const nextChildFreightMountable = normalizeChildFreightMountableConfig(record.mountables?.childFreight);
     const nextLockMountable = normalizeLockMountableConfig(record.mountables?.lock);
     const nextAppMountables = normalizeAppMountableConfigs(record.mountables?.apps);
 
     formsMountableRef.current = nextFormsMountable;
+    childFreightMountableRef.current = nextChildFreightMountable;
     lockMountableRef.current = nextLockMountable;
     appMountablesRef.current = nextAppMountables;
 
     setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
     setFormsMountable(nextFormsMountable);
+    setChildFreightMountable(nextChildFreightMountable);
     setLockMountable(nextLockMountable);
     setAppMountables(nextAppMountables);
     setActiveDraftRecordId(record._id ?? null);
@@ -1878,6 +1906,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       giftDeliverable: nextGiftDeliverable,
       attachments: nextAttachments,
       formsMountable: nextFormsMountable,
+      childFreightMountable: nextChildFreightMountable,
       lockMountable: nextLockMountable,
       appMountables: nextAppMountables,
     });
@@ -1978,7 +2007,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setGiftResolvedAddresses({});
         setGiftResolutionWarnings([]);
         appMountablesRef.current = [];
+        childFreightMountableRef.current = DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
         setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+        setChildFreightMountable(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
         setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
         setAppMountables([]);
         setLastSavedSnapshot(null);
@@ -2031,6 +2062,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
         },
         mountables: {
+          childFreight: childFreightMountableRef.current.enabled ? childFreightMountableRef.current : null,
           forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
           lock: lockMountableRef.current.enabled ? lockMountableRef.current : null,
           apps: appMountablesRef.current.filter((entry) => entry.enabled),
@@ -2093,6 +2125,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const formsMountableSnapshot = hasMountedHashtag
           ? formsMountableRef.current
           : DEFAULT_FORMS_MOUNTABLE_CONFIG;
+        const childFreightMountableSnapshot = hasMountedHashtag
+          ? childFreightMountableRef.current
+          : DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
         const lockMountableSnapshot = hasMountedHashtag
           ? lockMountableRef.current
           : DEFAULT_LOCK_MOUNTABLE_CONFIG;
@@ -2101,6 +2136,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           : [];
         const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage, identityOverride);
         payload.mountables = {
+          childFreight: childFreightMountableSnapshot.enabled ? childFreightMountableSnapshot : null,
           forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
           lock: lockMountableSnapshot.enabled ? lockMountableSnapshot : null,
           apps: draftStatus === "draft" ? appMountablesSnapshot : appMountablesSnapshot.filter((entry) => entry.enabled),
@@ -2141,6 +2177,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           giftDeliverable: giftDeliverableDraft,
           attachments,
           formsMountable: formsMountableSnapshot,
+          childFreightMountable: childFreightMountableSnapshot,
           lockMountable: lockMountableSnapshot,
           appMountables: appMountablesSnapshot,
         });
@@ -2168,6 +2205,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
             },
             mountables: {
+              childFreight: childFreightMountableSnapshot.enabled ? childFreightMountableSnapshot : null,
               forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
               lock: lockMountableSnapshot.enabled ? lockMountableSnapshot : null,
               apps: draftStatus === "draft" ? appMountablesSnapshot : appMountablesSnapshot.filter((entry) => entry.enabled),
@@ -2357,9 +2395,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const clearMountedConfigs = useCallback(() => {
     formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
+    childFreightMountableRef.current = DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
     lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
     appMountablesRef.current = [];
     setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+    setChildFreightMountable(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
     setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
     setAppMountables([]);
     setFormsResponseAccessError("");
@@ -2370,6 +2410,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     if (!isModal || hasMountedHashtag) return;
 
     const hasStoredMountables = formsMountableRef.current.enabled
+      || childFreightMountableRef.current.enabled
       || lockMountableRef.current.enabled
       || appMountablesRef.current.length > 0;
     if (hasStoredMountables) clearMountedConfigs();
@@ -2517,6 +2558,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     });
   }, []);
 
+  const handleUpdateChildFreightMountableConfig = useCallback((updates: Partial<ChildFreightMountableConfig>) => {
+    setChildFreightMountable((current) => {
+      const nextConfig = normalizeChildFreightMountableConfig({ ...current, ...updates });
+      childFreightMountableRef.current = nextConfig;
+      return nextConfig;
+    });
+  }, []);
+
   const handleUpdateLockMountableConfig = useCallback((updates: Partial<LockMountableConfig>) => {
     setLockMountable((current) => {
       const nextConfig = normalizeLockMountableConfig({
@@ -2541,10 +2590,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     toggleDraftList: handleToggleDraftList,
     applyDraftSelection: handleApplyDraftSelection,
     getFormsMountableConfig: () => formsMountable,
+    getChildFreightMountableConfig: () => childFreightMountable,
     getLockMountableConfig: () => lockMountable,
     getAppMountableConfigs: () => appMountables,
     getAppMountableCampaignContext: () => currentAppMountableCampaignContext,
     setFormsMountableEnabled: handleSetFormsMountableEnabled,
+    setChildFreightMountableEnabled: (enabled) => handleUpdateChildFreightMountableConfig({ enabled }),
+    updateChildFreightMountableConfig: handleUpdateChildFreightMountableConfig,
     setLockMountableEnabled: handleSetLockMountableEnabled,
     setAppMountableConfigs: handleSetAppMountableConfigs,
     updateFormsMountableConfig: handleUpdateFormsMountableConfig,
@@ -2565,12 +2617,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     currentAppMountableCampaignContext,
     currentDraftSummary,
     formsMountable,
+    childFreightMountable,
     handleAdvanceToReview,
     handleApplyDraftSelection,
     handleDiscardDraftSession,
     handleSaveDraftFromClose,
     handleSetAppMountableConfigs,
     handleSetFormsMountableEnabled,
+    handleUpdateChildFreightMountableConfig,
     handleSetLockMountableEnabled,
     handleToggleDraftList,
     handleUpdateFormsMountableConfig,
@@ -2597,12 +2651,13 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
 
     onMountableSelectionStateChange?.({
+      childFreightSelected: childFreightMountable.enabled,
       hasMountedHashtag,
       formsSelected: formsMountable.enabled,
       lockSelected: lockMountable.enabled,
       appMountablesSelected: appMountables.filter((entry) => entry.enabled).length,
     });
-  }, [appMountables, formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
+  }, [appMountables, childFreightMountable.enabled, childFreightMountable.title, formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
 
   const finalizePublishedRecordSync = useCallback(
     async (sync: PendingPublishedRecordSync) => {
@@ -3050,7 +3105,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <p className="create-review-section-label">Saved drafts</p>
       </div>
 
-      {draftListError ? <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p> : null}
       {isDraftListLoading ? renderDraftListSkeleton() : null}
 
       {!isDraftListLoading && draftRecords.length > 0 ? (
@@ -3299,9 +3353,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           {reviewMountedIcons.length > 0 ? (
             <div className="create-review-mountable-icons" aria-label="Mounted apps">
               {visibleReviewMountedIcons.map((mountable, index) => (
-                <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : ""}`.trim()} data-tooltip={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
+                <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : mountable.kind === "child-freight" ? "create-mountable-option-child-freight" : ""}`.trim()} data-tooltip={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
                   {mountable.kind === "app" && mountable.logoUrl ? (
                     <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
+                  ) : mountable.kind === "child-freight" ? (
+                    <GitBranchPlus size={18} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "forms" ? (
                     <Scroll size={18} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "rewardable" ? (
@@ -3369,9 +3425,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ) : null}
               {formsMountable.responseAccessVerifiedAt?.trim() ? (
                 <p className="create-review-gift-note">Verified at {formsMountable.responseAccessVerifiedAt.trim()}</p>
-              ) : null}
-              {activeFormsResponseAccessError ? (
-                <p className="create-review-gift-warning">{activeFormsResponseAccessError}</p>
               ) : null}
             </div>
             <div className="create-info-confirm-actions create-info-confirm-actions-tight">
@@ -3455,7 +3508,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ) : giftPreviewState.preview?.perClaimAmountLabel ? (
                 <p className="create-review-preview-body">Each claim can take {giftPreviewState.preview.perClaimAmountLabel}.</p>
               ) : null}
-              {giftPreviewState.error ? <p className="create-review-gift-warning">{giftPreviewState.error}</p> : null}
               {giftResolutionWarnings.length > 0 ? giftResolutionWarnings.map((warning) => (
                 <p key={warning} className="create-review-gift-warning">{warning}</p>
               )) : null}
@@ -3888,12 +3940,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 </div>
               )}
 
-              {status === "error" && (
-                <div className="w-full p-3 theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2">
-                  <p className="text-sm font-semibold text-red-500">Error</p>
-                  <p className="text-xs text-red-600 break-all">{errorMsg}</p>
-                </div>
-              )}
 
               <button
                 type="submit"

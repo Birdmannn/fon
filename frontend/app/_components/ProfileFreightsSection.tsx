@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import type { ProfileFreightRow } from "@/app/_types/profileTabs";
 
 function formatCompactDate(value: string) {
@@ -34,6 +35,7 @@ type ProfileFreightsSectionProps = {
 };
 
 export default function ProfileFreightsSection({ error, hasLoaded, loading, rows }: ProfileFreightsSectionProps) {
+  useInfoError(error);
   return (
     <section className="profile-tab-panel" aria-labelledby="profile-tab-freights" role="tabpanel">
       {loading ? (
@@ -41,7 +43,7 @@ export default function ProfileFreightsSection({ error, hasLoaded, loading, rows
           <ThreeDotLoader label="Loading freights" inline />
         </div>
       ) : error ? (
-        <p className="profile-tab-state profile-tab-state-error">{error}</p>
+        null
       ) : !hasLoaded ? (
         <p className="profile-tab-state profile-tab-state-empty">Click refresh to load freights.</p>
       ) : rows.length === 0 ? (

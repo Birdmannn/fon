@@ -1,6 +1,7 @@
 import { after, NextResponse } from "next/server";
 
-import { getCampaignParticipantsCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
+import { getCampaignParticipantsCollection, getMongoCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
+import { hasParticipantCreatedChildFreight, normalizeChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 
 type CampaignParticipantPayload = {
@@ -334,7 +335,18 @@ export async function GET(request: Request) {
       return rest;
     });
 
-    return NextResponse.json({ participants: sanitizedParticipants });
+    let childFreightSatisfied: boolean | undefined;
+    if (participantAddress && url.searchParams.get("includeChildFreight") === "1") {
+      const records = await getMongoCollection();
+      const record = await records.findOne({ campaignId, status: "published" }, { projection: { _id: 0, "mountables.childFreight": 1 } });
+      const config = normalizeChildFreightMountableConfig(record?.mountables?.childFreight);
+      if (config.enabled) {
+        const children = await records.find({ parentCampaignId: campaignId, status: "published" }, { projection: { _id: 0, creatorAddress: 1, title: 1 } }).toArray();
+        childFreightSatisfied = hasParticipantCreatedChildFreight(participantAddress, config, children);
+      }
+    }
+
+    return NextResponse.json({ participants: sanitizedParticipants, childFreightSatisfied });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch campaign participants";
     return badRequest(message, 500);
