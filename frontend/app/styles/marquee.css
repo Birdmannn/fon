@@ -90,19 +90,21 @@
   font-weight: 950;
 }
 
-.marquee-info-modal-anchor {
-  position: fixed;
-  top: 1rem;
-  left: 50%;
-  width: min(42rem, calc(100vw - 2rem));
-  height: 0;
-  z-index: 84;
-  transform: translateX(-50%);
-  pointer-events: none;
+.marquee-info-modal-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
 }
 
-.marquee-info-modal-anchor .header-info-modal {
-  pointer-events: auto;
+.marquee-info-modal-actions > .create-info-ticket-input,
+.marquee-info-modal-actions > .create-info-confirm-btn {
+  flex: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.create-info-confirm-actions.marquee-info-modal-actions > .create-info-confirm-btn:not(:first-child) {
+  margin-left: 0;
 }
 
 @keyframes retro-marquee-scroll {
