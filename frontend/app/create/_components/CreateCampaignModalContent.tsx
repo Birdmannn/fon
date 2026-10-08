@@ -3629,7 +3629,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   <button
                     type="button"
                     onClick={() => applyFormat("bold")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-bold text-sm theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors font-bold text-sm theme-fg"
                     data-tooltip="Bold (Ctrl/Cmd+B)"
                   >
                     B
@@ -3637,7 +3637,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   <button
                     type="button"
                     onClick={() => applyFormat("italic")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors italic text-sm theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors italic text-sm theme-fg"
                     data-tooltip="Italic (Ctrl/Cmd+I)"
                   >
                     I
@@ -3645,16 +3645,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   <button
                     type="button"
                     onClick={() => applyFormat("underline")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors underline text-sm theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors underline text-sm theme-fg"
                     data-tooltip="Underline (Ctrl/Cmd+U)"
                   >
                     U
                   </button>
-                  <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  <div className="w-px h-6 bg-gray-300 mx-1" />
                   <button
                     type="button"
                     onClick={() => applyFormat("insertUnorderedList")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors text-sm theme-fg"
                     data-tooltip="Bullet List"
                   >
                     • List
@@ -3662,16 +3662,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   <button
                     type="button"
                     onClick={() => applyFormat("insertOrderedList")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors text-sm theme-fg"
                     data-tooltip="Numbered List"
                   >
                     1. List
                   </button>
-                  <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  <div className="w-px h-6 bg-gray-300 mx-1" />
                   <button
                     type="button"
                     onClick={() => applyFormat("strikeThrough")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors line-through text-sm theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors line-through text-sm theme-fg"
                     data-tooltip="Strikethrough"
                   >
                     S
@@ -3679,7 +3679,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   <button
                     type="button"
                     onClick={() => applyFormat("removeFormat")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-xs theme-fg"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors text-xs theme-fg"
                     data-tooltip="Clear Formatting"
                   >
                     ✕ Clear

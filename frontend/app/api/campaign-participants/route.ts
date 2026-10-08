@@ -341,7 +341,7 @@ export async function GET(request: Request) {
       const record = await records.findOne({ campaignId, status: "published" }, { projection: { _id: 0, "mountables.childFreight": 1 } });
       const config = normalizeChildFreightMountableConfig(record?.mountables?.childFreight);
       if (config.enabled) {
-        const children = await records.find({ parentCampaignId: campaignId, status: "published" }, { projection: { _id: 0, creatorAddress: 1, title: 1 } }).toArray();
+        const children = await records.find({ $or: [{ parentCampaignId: campaignId }, { parentCampaignIds: campaignId }], status: "published" }, { projection: { _id: 0, creatorAddress: 1, title: 1 } }).toArray();
         childFreightSatisfied = hasParticipantCreatedChildFreight(participantAddress, config, children);
       }
     }

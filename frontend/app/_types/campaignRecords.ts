@@ -27,6 +27,7 @@ export type CampaignRecord = {
   description?: string;
   campaignId?: string | null;
   parentCampaignId?: string | null;
+  parentCampaignIds?: string[] | null;
   createdByHash?: string | null;
   chainCreatedAt?: string | null;
   campaignType?: number;

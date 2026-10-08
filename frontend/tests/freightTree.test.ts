@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ancestorIds, canEncroach, countDirectChildren, effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, wouldCreateCycle } from "../lib/freightTree.ts";
+import { ancestorIds, canEncroach, countDirectChildren, effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, parentIds, sharesDirectChild, wouldCreateCycle } from "../lib/freightTree.ts";
 
 test("counts only immediate children of the current freight", () => {
   const nodes = [
@@ -9,9 +9,24 @@ test("counts only immediate children of the current freight", () => {
     { parentCampaignId: "ROOT" },
     { parentCampaignId: "root" },
     { parentCampaignId: "child" },
+    { parentCampaignIds: ["root", "other"] },
   ];
-  assert.equal(countDirectChildren("root", nodes), 2);
+  assert.equal(countDirectChildren("root", nodes), 3);
   assert.equal(countDirectChildren("child", nodes), 1);
+});
+
+test("multiple parents are distinct and all ancestors are traversed", () => {
+  const records = new Map([
+    ["a", { campaignId: "a" }],
+    ["b", { campaignId: "b" }],
+    ["c", { campaignId: "c", parentCampaignIds: ["A", "b", "a"] }],
+  ]);
+  const getRecord = (id: string) => records.get(id) ?? null;
+  assert.deepEqual(parentIds(records.get("c")), ["a", "b"]);
+  assert.deepEqual(ancestorIds("c", getRecord), ["a", "b"]);
+  assert.equal(wouldCreateCycle("a", "c", getRecord), true);
+  assert.equal(wouldCreateCycle("b", "a", getRecord), false);
+  assert.equal(sharesDirectChild("a", "b", [...records.values()]), true);
 });
 
 test("encroachment requires ten times the creator's current FBARS", () => {

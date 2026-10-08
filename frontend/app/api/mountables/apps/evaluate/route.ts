@@ -50,6 +50,7 @@ export async function POST(request: Request) {
           campaignType: 1,
           argsDraft: 1,
           parentCampaignId: 1,
+          parentCampaignIds: 1,
           linkedCampaignIds: 1,
           requiresLinkedFreight: 1,
           mountables: 1,

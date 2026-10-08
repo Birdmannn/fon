@@ -1,10 +1,11 @@
 import { Address, SignerSignType } from "@ckb-ccc/core";
+import type { Document, UpdateFilter } from "mongodb";
 import { NextResponse } from "next/server";
 
 import { buildStableCampaignId } from "@/lib/campaignIdentity";
 import { getPublicCkbClient } from "@/lib/ckbClient";
 import { bytesToHex, lockScriptToAddressBytes } from "@/lib/encoding";
-import { canEncroach, wouldCreateCycle } from "@/lib/freightTree";
+import { ancestorIds, canEncroach, parentIds, sharesDirectChild, wouldCreateCycle } from "@/lib/freightTree";
 import { verifyWalletSignature, walletActionNonceMatchesPurpose } from "@/lib/googleAuth";
 import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
@@ -20,7 +21,9 @@ type FreightRow = {
   chainCreatedAt?: string;
   campaignType?: number;
   parentCampaignId?: string | null;
+  parentCampaignIds?: string[];
   parentLinkedByAddress?: string;
+  parentLinks?: Array<{ parentCampaignId: string; linkedByAddress: string; linkedAt: string; encroachment: { actorFbars: number; creatorFbars: number } | null }>;
   linkedCampaignIds?: string[];
   requiresLinkedFreight?: boolean;
 };
@@ -41,7 +44,7 @@ function normalizeAddress(value: unknown) {
 async function loadFreights() {
   const rows = await (await getMongoCollection()).find(
     { status: "published", campaignId: { $type: "string" } },
-    { projection: { _id: 0, campaignId: 1, title: 1, description: 1, creatorAddress: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, parentCampaignId: 1, parentLinkedByAddress: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1 } },
+    { projection: { _id: 0, campaignId: 1, title: 1, description: 1, creatorAddress: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, parentCampaignId: 1, parentCampaignIds: 1, parentLinkedByAddress: 1, parentLinks: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1 } },
   ).toArray() as unknown as FreightRow[];
   return new Map(rows.map((row) => [row.campaignId.trim().toLowerCase(), row]));
 }
@@ -49,28 +52,32 @@ async function loadFreights() {
 function treeFor(campaignId: string, rows: Map<string, FreightRow>) {
   const current = rows.get(campaignId);
   if (!current) return null;
-  const seen = new Set<string>();
-  let rootId = campaignId;
-  while (rows.get(rootId)?.parentCampaignId) {
-    if (seen.has(rootId)) throw new Error("Freight tree contains a cycle");
-    seen.add(rootId);
-    rootId = rows.get(rootId)?.parentCampaignId?.toLowerCase() ?? rootId;
-    if (!rows.has(rootId)) throw new Error("Freight parent is unavailable");
-  }
-  const queue: Array<{ id: string; depth: number }> = [{ id: rootId, depth: 0 }];
-  const nodes: Array<FreightRow & { depth: number }> = [];
+  const queue = [campaignId];
   const visited = new Set<string>();
   while (queue.length) {
-    const next = queue.shift();
-    if (!next || visited.has(next.id)) continue;
-    visited.add(next.id);
-    const row = rows.get(next.id);
+    const id = queue.shift();
+    if (!id || visited.has(id)) continue;
+    visited.add(id);
+    const row = rows.get(id);
     if (!row) continue;
-    nodes.push({ ...row, depth: next.depth });
-    for (const [id, child] of rows) {
-      if (child.parentCampaignId?.toLowerCase() === next.id) queue.push({ id, depth: next.depth + 1 });
+    queue.push(...parentIds(row).filter((parentId) => rows.has(parentId)));
+    for (const [childId, child] of rows) {
+      if (parentIds(child).includes(id)) queue.push(childId);
     }
   }
+  const depths = new Map<string, number>();
+  const resolving = new Set<string>();
+  const depthOf = (id: string): number => {
+    if (depths.has(id)) return depths.get(id)!;
+    if (resolving.has(id)) throw new Error("Freight graph contains a cycle");
+    resolving.add(id);
+    const depth = Math.max(0, ...parentIds(rows.get(id)).filter((parentId) => rows.has(parentId)).map((parentId) => depthOf(parentId) + 1));
+    resolving.delete(id);
+    depths.set(id, depth);
+    return depth;
+  };
+  const nodes = [...visited].filter((id) => rows.has(id)).map((id) => ({ ...rows.get(id)!, depth: depthOf(id) }))
+    .sort((left, right) => left.depth - right.depth || left.title?.localeCompare(right.title ?? "") || left.campaignId.localeCompare(right.campaignId));
   return {
     currentCampaignId: campaignId,
     requiresLinkedFreight: current.requiresLinkedFreight === true,
@@ -90,7 +97,7 @@ function descendantIds(campaignId: string, rows: Map<string, FreightRow>) {
     seen.add(id);
     result.push(id);
     for (const [candidateId, row] of rows) {
-      if (row.parentCampaignId?.toLowerCase() === id) queue.push(candidateId);
+      if (parentIds(row).includes(id)) queue.push(candidateId);
     }
   }
   return result;
@@ -230,10 +237,12 @@ export async function POST(request: Request) {
     const childId = relation === "parent" ? campaignId : otherCampaignId;
     const parentId = relation === "parent" ? otherCampaignId : campaignId;
     const child = rows.get(childId)!;
-    if (child.parentCampaignId && child.parentCampaignId.toLowerCase() !== parentId) {
-      return errorResponse("This freight already has a parent", 409);
+    if (parentIds(child).includes(parentId)) return errorResponse("These freights are already linked as parent and child", 409);
+    if (sharesDirectChild(parentId, childId, [...rows.values()])
+      || ancestorIds(childId, (id) => rows.get(id) ?? null).includes(parentId)) {
+      return errorResponse("Absolute links between co-parents or existing ancestors are not supported", 409);
     }
-    if (!child.parentCampaignId && wouldCreateCycle(childId, parentId, (id) => rows.get(id) ?? null)) {
+    if (wouldCreateCycle(childId, parentId, (id) => rows.get(id) ?? null)) {
       return errorResponse("That relationship would make a cycle", 409);
     }
 
@@ -241,7 +250,7 @@ export async function POST(request: Request) {
     const parentCreator = parentId === campaignId ? currentCreator : otherCreator;
     if (!childCreator || !parentCreator) return errorResponse("Both freights need a creator address", 409);
     let encroachmentSnapshot: { actorFbars: number; creatorFbars: number } | null = null;
-    if (address !== childCreator && !(child.parentCampaignId && normalizeAddress(child.parentLinkedByAddress) === address)) {
+    if (address !== childCreator) {
       if (address !== parentCreator) return errorResponse("Only the child creator or an encroaching parent creator can add a parent", 403);
       const profiles = await getUserProfilesCollection();
       const [actorProfile, creatorProfile] = await Promise.all([
@@ -256,19 +265,16 @@ export async function POST(request: Request) {
       encroachmentSnapshot = { actorFbars, creatorFbars };
     }
 
-    if (!child.parentCampaignId) {
-      const linked = await collection.updateOne(
-        { campaignId: childId, status: "published", $or: [{ parentCampaignId: null }, { parentCampaignId: { $exists: false } }] },
-        { $set: {
-          parentCampaignId: parentId,
-          parentLinkedByAddress: address,
-          parentLinkedAt: new Date().toISOString(),
-          parentEncroachment: encroachmentSnapshot,
-          updatedAt: new Date(),
-        } },
-      );
-      if (!linked.modifiedCount) return errorResponse("This freight was linked by another request", 409);
-    }
+    const linkedAt = new Date().toISOString();
+    const linked = await collection.updateOne(
+      { campaignId: childId, status: "published", parentCampaignId: { $ne: parentId }, parentCampaignIds: { $ne: parentId } },
+      {
+        $addToSet: { parentCampaignIds: parentId },
+        $push: { parentLinks: { parentCampaignId: parentId, linkedByAddress: address, linkedAt, encroachment: encroachmentSnapshot } },
+        $set: { updatedAt: new Date() },
+      } as unknown as UpdateFilter<Document>,
+    );
+    if (!linked.modifiedCount) return errorResponse("This freight was linked by another request", 409);
 
     const refreshedRows = await loadFreights();
     await refreshSubtree(childId, refreshedRows);

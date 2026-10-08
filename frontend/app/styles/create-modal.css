@@ -526,6 +526,28 @@
   margin: auto;
 }
 
+.campaign-freight-tree-graph {
+  position: relative;
+  transform-origin: top left;
+}
+
+.campaign-freight-tree-edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.campaign-freight-tree-edges line {
+  stroke: #9ca3af;
+  stroke-width: 1;
+}
+
+.campaign-freight-tree-edges .campaign-freight-tree-edge-highlighted {
+  stroke: #7c3aed;
+  stroke-width: 2;
+}
+
 .campaign-freight-tree-level {
   display: flex;
   justify-content: center;
@@ -590,12 +612,9 @@
 }
 
 .campaign-freight-tree-node {
-  position: relative;
+  position: absolute;
   display: grid;
   place-items: center;
-  min-width: 8rem;
-  max-width: 12rem;
-  min-height: 3.5rem;
   padding: 0.6rem 0.8rem;
   border: 1px solid #9ca3af;
   background: var(--background);
@@ -604,6 +623,19 @@
   line-height: 1.35;
   text-align: center;
   overflow-wrap: anywhere;
+  z-index: 1;
+}
+
+.campaign-freight-tree-node-highlighted {
+  border: 2px solid #7c3aed;
+}
+
+.campaign-freight-tree-node-title {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 .campaign-freight-tree-node::before {
@@ -613,6 +645,10 @@
   left: 50%;
   height: 1.5rem;
   border-left: 1px solid #9ca3af;
+}
+
+.campaign-freight-tree-graph .campaign-freight-tree-node::before {
+  display: none;
 }
 
 .campaign-freight-tree-root > .campaign-freight-tree-branch > .campaign-freight-tree-node::before {

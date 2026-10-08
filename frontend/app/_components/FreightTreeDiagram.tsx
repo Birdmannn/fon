@@ -2,75 +2,103 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import type { FreightNode, FreightTree } from "@/app/_components/FreightTreeInfo";
+import type { FreightTree } from "@/app/_components/FreightTreeInfo";
+import { parentIds } from "@/lib/freightTree";
+
+const NODE_WIDTH = 168;
+const NODE_HEIGHT = 64;
+const COLUMN_GAP = 96;
+const ROW_GAP = 80;
+const PADDING = 48;
 
 export default function FreightTreeDiagram({ tree, zoom = 1 }: { tree: FreightTree; zoom?: number }) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const diagramRef = useRef<HTMLUListElement>(null);
-  const [diagramSize, setDiagramSize] = useState({ width: 0, height: 0 });
-  const { roots, childrenByParent } = useMemo(() => {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const graph = useMemo(() => {
     const nodesById = new Map(tree.nodes.map((node) => [node.campaignId.toLowerCase(), node]));
-    const children = new Map<string, FreightNode[]>();
-    const rootNodes: FreightNode[] = [];
+    const rows = new Map<number, typeof tree.nodes>();
     for (const node of tree.nodes) {
-      const parentId = node.parentCampaignId?.toLowerCase();
-      if (!parentId || !nodesById.has(parentId)) {
-        rootNodes.push(node);
-      } else {
-        const siblings = children.get(parentId) ?? [];
-        siblings.push(node);
-        children.set(parentId, siblings);
-      }
+      const depth = Math.max(0, node.depth ?? 0);
+      rows.set(depth, [...(rows.get(depth) ?? []), node]);
     }
-    return { roots: rootNodes, childrenByParent: children };
+    const maxColumns = Math.max(1, ...[...rows.values()].map((row) => row.length));
+    const maxDepth = Math.max(0, ...rows.keys());
+    const columnStep = NODE_WIDTH + COLUMN_GAP;
+    const rowStep = NODE_HEIGHT + ROW_GAP;
+    const width = PADDING * 2 + maxColumns * NODE_WIDTH + (maxColumns - 1) * COLUMN_GAP;
+    const height = PADDING * 2 + (maxDepth + 1) * NODE_HEIGHT + maxDepth * ROW_GAP;
+    const positions = new Map<string, { x: number; y: number }>();
+    for (const [depth, row] of rows) {
+      row.sort((left, right) => (left.title ?? left.campaignId).localeCompare(right.title ?? right.campaignId));
+      const rowWidth = row.length * NODE_WIDTH + (row.length - 1) * COLUMN_GAP;
+      const startX = (width - rowWidth) / 2;
+      row.forEach((node, index) => positions.set(node.campaignId.toLowerCase(), { x: startX + index * columnStep, y: PADDING + depth * rowStep }));
+    }
+    const edges = tree.nodes.flatMap((node) => parentIds(node)
+      .filter((parentId) => nodesById.has(parentId))
+      .map((parentId) => ({ parentId, childId: node.campaignId.toLowerCase() })));
+    return { positions, edges, width, height };
   }, [tree]);
 
-  useLayoutEffect(() => {
-    const diagram = diagramRef.current;
-    if (!diagram) return;
-    const measure = () => {
-      const width = diagram.offsetWidth;
-      const height = diagram.offsetHeight;
-      setDiagramSize((current) => current.width === width && current.height === height ? current : { width, height });
+  const highlighted = useMemo(() => {
+    if (!hoveredId) return { nodes: new Set<string>(), edges: new Set<string>() };
+    const ids = new Set([hoveredId]);
+    const edges = new Set<string>();
+    const visit = (start: string, direction: "parentId" | "childId") => {
+      const queue = [start];
+      while (queue.length) {
+        const id = queue.shift()!;
+        for (const edge of graph.edges) {
+          const next = direction === "parentId" && edge.childId === id ? edge.parentId
+            : direction === "childId" && edge.parentId === id ? edge.childId : null;
+          if (next && !ids.has(next)) {
+            ids.add(next);
+            queue.push(next);
+          }
+          if (next) edges.add(`${edge.parentId}:${edge.childId}`);
+        }
+      }
     };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(diagram);
-    return () => observer.disconnect();
-  }, [tree]);
+    visit(hoveredId, "parentId");
+    visit(hoveredId, "childId");
+    return { nodes: ids, edges };
+  }, [graph.edges, hoveredId]);
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
     viewport.scrollLeft = (viewport.scrollWidth - viewport.clientWidth) / 2;
     viewport.scrollTop = (viewport.scrollHeight - viewport.clientHeight) / 2;
-  }, [tree, zoom, diagramSize]);
-
-  const renderNode = (node: FreightNode) => {
-    const children = childrenByParent.get(node.campaignId.toLowerCase()) ?? [];
-    return (
-      <li key={node.campaignId} className="campaign-freight-tree-branch">
-        <a
-          href={`/freight/${encodeURIComponent(node.campaignId)}`}
-          className={`campaign-freight-tree-node${node.campaignId.toLowerCase() === tree.currentCampaignId.toLowerCase() ? " campaign-freight-tree-node-current" : ""}`}
-        >
-          {node.title?.trim() || "Untitled freight"}
-        </a>
-        {children.length > 0 ? (
-          <ul className="campaign-freight-tree-level">
-            {children.map(renderNode)}
-          </ul>
-        ) : null}
-      </li>
-    );
-  };
+  }, [tree, zoom, graph.width, graph.height]);
 
   return (
-    <div ref={viewportRef} className="campaign-freight-tree-viewport" role="region" aria-label="Freight tree diagram" tabIndex={0}>
-      <div className="campaign-freight-tree-zoom-space" style={diagramSize.width ? { width: diagramSize.width * zoom, height: diagramSize.height * zoom } : undefined}>
-        <ul ref={diagramRef} className="campaign-freight-tree-level campaign-freight-tree-root" style={{ transform: `scale(${zoom})` }}>
-          {roots.map(renderNode)}
-        </ul>
+    <div ref={viewportRef} className="campaign-freight-tree-viewport" role="region" aria-label="Freight graph diagram" tabIndex={0}>
+      <div className="campaign-freight-tree-zoom-space" style={{ width: graph.width * zoom, height: graph.height * zoom }}>
+        <div className="campaign-freight-tree-graph" style={{ width: graph.width, height: graph.height, transform: `scale(${zoom})` }}>
+          <svg className="campaign-freight-tree-edges" width={graph.width} height={graph.height} aria-hidden="true">
+            {graph.edges.map(({ parentId, childId }) => {
+              const parent = graph.positions.get(parentId);
+              const child = graph.positions.get(childId);
+              if (!parent || !child) return null;
+              return <line key={`${parentId}:${childId}`} x1={parent.x + NODE_WIDTH / 2} y1={parent.y + NODE_HEIGHT}
+                x2={child.x + NODE_WIDTH / 2} y2={child.y}
+                className={highlighted.edges.has(`${parentId}:${childId}`) ? "campaign-freight-tree-edge-highlighted" : undefined} />;
+            })}
+          </svg>
+          {tree.nodes.map((node) => {
+            const id = node.campaignId.toLowerCase();
+            const position = graph.positions.get(id);
+            if (!position) return null;
+            return <a key={id} href={`/freight/${encodeURIComponent(node.campaignId)}`}
+              title={node.title?.trim() || "Untitled freight"}
+              className={`campaign-freight-tree-node${id === tree.currentCampaignId.toLowerCase() ? " campaign-freight-tree-node-current" : ""}${highlighted.nodes.has(id) ? " campaign-freight-tree-node-highlighted" : ""}`}
+              style={{ left: position.x, top: position.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
+              onMouseEnter={() => setHoveredId(id)} onMouseLeave={() => setHoveredId(null)}
+              onFocus={() => setHoveredId(id)} onBlur={() => setHoveredId(null)}>
+              <span className="campaign-freight-tree-node-title">{node.title?.trim() || "Untitled freight"}</span>
+            </a>;
+          })}
+        </div>
       </div>
     </div>
   );

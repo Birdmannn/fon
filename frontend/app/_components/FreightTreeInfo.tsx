@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 export type FreightNode = {
   campaignId: string;
   parentCampaignId?: string | null;
+  parentCampaignIds?: string[] | null;
   title?: string;
   description?: string;
   creatorAddress?: string;

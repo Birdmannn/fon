@@ -3,8 +3,9 @@ export default function FreightTreeHelpInfo() {
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-500 font-bold">Linked Freights:</p>
       <ol className="m-0 flex list-decimal flex-col gap-1 pl-5 text-gray-500">
-        <li>A parent can have many children, but each child has one parent.</li>
+        <li>A freight can have multiple parents and children. Every parent is required.</li>
         <li>A participant clears a child only after the same wallet clears its own criteria and every ancestor.</li>
+        <li>Cycles and Absolute Links between co-parents or existing ancestors are not allowed.</li>
         <li>Adding a parent can return cleared participants to pending; past payouts remain final.</li>
         <li>Tracking links affect completion only when a linked freight is required.</li>
       </ol>

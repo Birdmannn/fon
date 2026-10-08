@@ -62,7 +62,7 @@ import { isWinningCampaignType } from "@/lib/fbars";
 import { CampaignType } from "@/lib/contract";
 import { isGiftApprovalSatisfied } from "@/lib/giftDeliverables";
 import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
-import { countDirectChildren } from "@/lib/freightTree";
+import { countDirectChildren, parentIds } from "@/lib/freightTree";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
 function splitCampaignId(campaignId: string) {
@@ -1272,7 +1272,7 @@ export default function CampaignDetailPage() {
     directChildrenRequestRef.current?.abort();
     setFreightTree(payload);
     const currentNode = payload.nodes.find((node) => node.campaignId.toLowerCase() === campaignId.toLowerCase());
-    if (currentNode) setSelectedRecord((current) => current ? { ...current, parentCampaignId: currentNode.parentCampaignId ?? null } : current);
+    if (currentNode) setSelectedRecord((current) => current ? { ...current, parentCampaignId: currentNode.parentCampaignId ?? null, parentCampaignIds: currentNode.parentCampaignIds ?? null } : current);
     markCurrentProfileDataDirty();
   }, [createSignedWalletAction, markCurrentProfileDataDirty, selectedRecord?.campaignId]);
 
@@ -2111,7 +2111,7 @@ export default function CampaignDetailPage() {
     : null;
   const latestDirectChildId = freightTree && freightTree.currentCampaignId.toLowerCase() === currentFreightId
     ? freightTree.nodes
-        .filter((node) => node.parentCampaignId?.trim().toLowerCase() === currentFreightId)
+        .filter((node) => parentIds(node).includes(currentFreightId))
         .sort((left, right) => {
           const leftCreatedAt = Number(left.chainCreatedAt) || Date.parse(left.chainCreatedAt ?? "") || 0;
           const rightCreatedAt = Number(right.chainCreatedAt) || Date.parse(right.chainCreatedAt ?? "") || 0;
@@ -2860,9 +2860,9 @@ export default function CampaignDetailPage() {
             setIsInfoModalClosing(false);
             setShowInfoModal(true);
           }}
-          threadRole={selectedRecord.parentCampaignId ? "child" : "parent"}
+          threadRole={parentIds(selectedRecord).length > 0 ? "child" : "parent"}
           directChildCount={directChildCount}
-          threadNodeTargetId={selectedRecord.parentCampaignId ?? latestDirectChildId}
+          threadNodeTargetId={parentIds(selectedRecord)[0] ?? latestDirectChildId}
           onSupportRequest={handleOpenSupportInfoModal}
           onTicketPurchaseRequest={handleOpenTicketPurchaseInfoModal}
         />

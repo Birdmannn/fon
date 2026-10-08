@@ -20,13 +20,14 @@ import {
   normalizeMountedAppPrincipleStates,
 } from "@/lib/fonMountablesSdk";
 import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMountableAppDeliveriesCollection, getMountableAppsCollection, getMountableAppUpdatesCollection, getMongoCollection } from "@/lib/mongodb";
-import { effectiveParticipantStatus, hasParticipantCreatedLinkedFreight } from "@/lib/freightTree";
+import { effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, parentIds } from "@/lib/freightTree";
 import { deriveMountableWindow, mountableWindowDurationSeconds } from "@/lib/mountableTiming";
 import { areRequiredPrinciplesSatisfied, isCanonicalParticipantVerified, isMountedAppPollDue, mountedAppWindowState } from "@/lib/mountableAppRuntimeRules";
 
 export type CampaignRecordMountableRuntime = {
   campaignId?: unknown;
   parentCampaignId?: unknown;
+  parentCampaignIds?: unknown;
   linkedCampaignIds?: unknown;
   requiresLinkedFreight?: unknown;
   createdByHash?: unknown;
@@ -154,6 +155,7 @@ async function loadCampaignRecordByCampaignId(campaignId: string) {
         _id: 0,
         campaignId: 1,
         parentCampaignId: 1,
+        parentCampaignIds: 1,
         linkedCampaignIds: 1,
         requiresLinkedFreight: 1,
         createdByHash: 1,
@@ -243,16 +245,18 @@ export async function finalizeCampaignParticipant(params: {
   const childFreightConfig = normalizeChildFreightMountableConfig(record.mountables?.childFreight);
   const participantChildren = childFreightConfig.enabled
       ? await (await getMongoCollection()).find({
-        parentCampaignId: campaignId,
+        $or: [{ parentCampaignId: campaignId }, { parentCampaignIds: campaignId }],
         status: "published",
       }, { projection: { _id: 0, creatorAddress: 1, title: 1 } }).toArray()
     : [];
   const childFreightSatisfied = hasParticipantCreatedChildFreight(participantAddress, childFreightConfig, participantChildren);
-  const parentCampaignId = normalizeString(record.parentCampaignId).toLowerCase();
-  const parentVerification = parentCampaignId
-    ? await finalizeCampaignParticipant({ campaignId: parentCampaignId, participantAddress, visitedCampaignIds, propagateDescendants: false })
-    : null;
-  const freightParentSatisfied = !parentCampaignId || parentVerification?.status === "verified";
+  const requiredParents = parentIds(record);
+  const incompleteParents: string[] = [];
+  for (const parentCampaignId of requiredParents) {
+    const verification = await finalizeCampaignParticipant({ campaignId: parentCampaignId, participantAddress, visitedCampaignIds, propagateDescendants: false });
+    if (verification?.status !== "verified") incompleteParents.push(parentCampaignId);
+  }
+  const freightParentSatisfied = incompleteParents.length === 0;
   visitedCampaignIds.delete(campaignId);
 
   const reasons: string[] = [];
@@ -274,7 +278,7 @@ export async function finalizeCampaignParticipant(params: {
       : "Create a direct child freight");
   }
   if (!freightParentSatisfied) {
-    reasons.push("Parent freight constraints are still pending");
+    reasons.push(`${incompleteParents.length} parent freight${incompleteParents.length === 1 ? "" : "s"} still pending`);
   }
 
   const previousFinalization = await finalizationsCollection.findOne(
@@ -354,7 +358,7 @@ export async function finalizeCampaignParticipant(params: {
       if (!parentId || refreshed.has(parentId)) continue;
       refreshed.add(parentId);
       const children = await recordsCollection.find(
-        { parentCampaignId: parentId, status: "published" },
+        { $or: [{ parentCampaignId: parentId }, { parentCampaignIds: parentId }], status: "published" },
         { projection: { _id: 0, campaignId: 1 } },
       ).toArray();
       for (const child of children) {
@@ -436,7 +440,7 @@ export async function ingestMountedAppUpdate(params: {
   const recordsCollection = await getMongoCollection();
   const record = await recordsCollection.findOne(
     { campaignId, "mountables.apps.mountableInstanceId": mountableInstanceId },
-    { projection: { campaignId: 1, parentCampaignId: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 } },
+    { projection: { campaignId: 1, parentCampaignId: 1, parentCampaignIds: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 } },
   ) as CampaignRecordMountableRuntime | null;
   if (!record) {
     throw new MountableAppRuntimeError("Mounted app record not found", 404);
@@ -1014,7 +1018,7 @@ export async function pollMountedApps(params: {
     query.campaignId = requestedCampaignId;
   }
   const records = await recordsCollection.find(query, {
-    projection: { _id: 0, campaignId: 1, parentCampaignId: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 },
+    projection: { _id: 0, campaignId: 1, parentCampaignId: 1, parentCampaignIds: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, argsDraft: 1, mountables: 1 },
   }).toArray() as CampaignRecordMountableRuntime[];
   const results: Array<Record<string, unknown>> = [];
   const now = new Date();
