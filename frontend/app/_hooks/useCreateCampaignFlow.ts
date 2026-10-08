@@ -10,6 +10,7 @@ import {
   type CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
 import { normalizeAppMountableConfig } from "@/app/_lib/appMountable";
+import { lockBodyScroll } from "@/app/_lib/bodyScrollLock";
 import type { AppMountableConfig, RegisteredMountableApp } from "@/app/_types/appMountable";
 import type { LockMountableRule } from "@/app/_types/lockMountable";
 import type { MountableJsonObject, MountableJsonValue } from "@/lib/fonMountablesSdk";
@@ -718,12 +719,7 @@ export function useCreateCampaignFlow<TMode extends string>({
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return lockBodyScroll();
   }, [showCreateModal]);
 
   const resetCreateInfoModalState = useCallback(() => {

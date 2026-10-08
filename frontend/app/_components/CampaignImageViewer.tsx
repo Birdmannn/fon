@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { lockBodyScroll } from "@/app/_lib/bodyScrollLock";
 import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
 
 type CampaignImageViewerProps = {
@@ -28,13 +29,12 @@ export default function CampaignImageViewer({ attachments, initialIndex, onClose
     if (!dialog) return;
 
     const previousFocus = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
     dialog.showModal();
-    document.body.style.overflow = "hidden";
+    const unlockBodyScroll = lockBodyScroll();
 
     return () => {
       dialog.close();
-      document.body.style.overflow = previousOverflow;
+      unlockBodyScroll();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
     };
   }, []);

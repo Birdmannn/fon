@@ -40,6 +40,7 @@ import {
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
 import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
+import { lockBodyScroll } from "@/app/_lib/bodyScrollLock";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
 import { markProfileAnalyticsDirty, useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
@@ -426,12 +427,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return lockBodyScroll();
   }, [showLeaderboardModal]);
 
   useEffect(() => {
