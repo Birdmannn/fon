@@ -504,6 +504,11 @@
   scroll-margin-top: var(--campaign-feed-scroll-offset, 0px);
 }
 
+.campaign-header-bar-sticky + .campaign-feed-content {
+  /* Replace the shell's 24px gap with clearance for the card's hover scale. */
+  margin-top: calc(4px - 1.5rem);
+}
+
 .campaign-header-actions {
   display: flex;
   align-items: center;

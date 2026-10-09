@@ -450,6 +450,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onDraftSelectionRequest,
   onPublishSuccess,
   onMountableSelectionRequired,
+  onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   availableFbars,
 }: CreateCampaignModalContentProps, ref) {
@@ -1309,7 +1310,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const mentionMatch =
         lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w.-]*$/) : null;
 
-      if (!isModal && mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
+      if (
+        isModal &&
+        event.currentTarget === modalDescriptionRef.current &&
+        mentionMatch &&
+        (lastAtIndex === 0 || /\s/.test(beforeCursor[lastAtIndex - 1])) &&
+        onTagSuggestionsRequested
+      ) {
+        tagInsertionPointRef.current = {
+          target: "description",
+          start: lastAtIndex,
+          end: updatedCaretPos,
+        };
+        setShowMentionMenu(false);
+        onTagSuggestionsRequested(beforeCursor.substring(lastAtIndex + 1));
+      } else if (!isModal && mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
         const rect = event.currentTarget.getBoundingClientRect();

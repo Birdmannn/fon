@@ -133,7 +133,7 @@ export default function CampaignFeedSection({
         searchQuery={searchQuery}
       />
 
-      <div ref={feedListRef} style={{ overflowAnchor: "none" }}>
+      <div ref={feedListRef} className="campaign-feed-content" style={{ overflowAnchor: "none" }}>
         <CampaignList
           campaigns={filteredCampaigns}
           client={client}

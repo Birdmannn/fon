@@ -41,7 +41,7 @@ export default function CampaignFeedHeaderBar({
     const updateOffset = () => {
       const headerBottom = header.getBoundingClientRect().bottom;
       bar.style.setProperty("--campaign-feed-sticky-top", `${headerBottom}px`);
-      shell.style.setProperty("--campaign-feed-scroll-offset", `${headerBottom + bar.offsetHeight + 24}px`);
+      shell.style.setProperty("--campaign-feed-scroll-offset", `${headerBottom + bar.offsetHeight + 4}px`);
     };
 
     const observer = new ResizeObserver(updateOffset);
