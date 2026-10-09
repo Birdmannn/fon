@@ -226,8 +226,11 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
     let creator_support_total = u64::from_le_bytes(data[182..190].try_into().unwrap());
     let support_pool_bps = u64::from_le_bytes(data[190..198].try_into().unwrap());
 
+    let (approval, gift) = crate::gifts::parse_extensions(&data[crate::approvals::base_data_len(campaign_type)..])?;
+    if let Some(policy) = &gift { policy.validate(campaign_type, maximum_amount, reward_count, false)?; }
     Ok(Campaign {
-        approval: crate::approvals::parse_approval(&data[crate::approvals::base_data_len(campaign_type)..])?,
+        approval,
+        gift,
         created_at,
         start_duration_in_seconds,
         task_duration_in_seconds,

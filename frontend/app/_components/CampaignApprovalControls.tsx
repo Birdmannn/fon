@@ -19,8 +19,8 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
   nowMs: number;
 }) {
   const approval = campaign.data.approval;
-  const legacyGift = !approval && !!record?.giftDeliverable?.enabled && record.giftDeliverable.approvers.length > 0;
-  const hasApproval = !!approval || legacyGift;
+  const legacyGift = !campaign.data.gift && !!record?.giftDeliverable?.enabled;
+  const hasApproval = !!approval || legacyGift || !!campaign.data.gift;
   const [walletHash, setWalletHash] = useState<string | null>(null);
   const [creator, setCreator] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -36,10 +36,10 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
     if (signer && hasApproval) void signer.getRecommendedAddressObj().then((address) => {
       if (cancelled) return;
       setWalletHash(address.script.hash());
-      setCreator(bytesToHex(lockScriptToAddressBytes(address.script)) === bytesToHex(campaign.data.createdBy));
+      setCreator(campaign.data.gift ? address.script.hash() === bytesToHex(campaign.data.gift.creator) : bytesToHex(lockScriptToAddressBytes(address.script)) === bytesToHex(campaign.data.createdBy));
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [signer, hasApproval, campaign.data.createdBy]);
+  }, [signer, hasApproval, campaign.data.createdBy, campaign.data.gift]);
 
   const awaitingConfirmation = !!approval && approval.stage === "on-commence" && raffleApprovalThresholdMet(approval) && !approval.confirmed;
   useEffect(() => {
@@ -51,20 +51,21 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
     return () => { cancelled = true; };
   }, [awaitingConfirmation, signer, campaign.outPoint.txHash, campaign.data.createdAt, campaign.data.startDurationSecs]);
 
-  if (!approval) return legacyGift ? (
+  if (legacyGift || !approval && campaign.data.gift) return (
     <div className="campaign-approval-controls">
-      <p>This older gift needs to be recreated with on-chain approvals.</p>
+      <p>{legacyGift ? "This older gift needs to be recreated with on-chain claim rules." : "Gift allocations and claims are enforced on-chain."}</p>
       {creator && (campaign.data.status === CampaignStatus.Created || campaign.data.status === CampaignStatus.Active) ? <button type="button" className="create-info-confirm-btn" disabled={busy} onClick={() => void act("cancel")}>Cancel freight</button> : null}
       {message ? <p role="status">{message}</p> : null}
     </div>
-  ) : null;
+  );
+  if (!approval) return null;
   const cancelled = campaign.data.status === CampaignStatus.Cancelled;
   const approvedCount = approval.approvers.filter((entry) => entry.approved).length;
   const failed = lateReceipt || raffleApprovalDeadlineMissed(campaign.data, nowMs);
   const entry = approval.approvers.find((value) => bytesToHex(value.lockHash) === walletHash);
   const complete = raffleApprovalsSatisfied(approval);
   const canApprove = !!entry && !entry.approved && !complete && !cancelled && !failed && !awaitingConfirmation;
-  const canCancel = creator && (failed || approval.stage === "gift-commence" && !complete)
+  const canCancel = creator && (failed || !!campaign.data.gift || approval.stage === "gift-commence" && !complete)
     && (campaign.data.status === CampaignStatus.Created || campaign.data.status === CampaignStatus.Active);
 
   async function waitAndUpdate(txHash: string): Promise<CampaignCell> {

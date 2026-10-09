@@ -46,6 +46,7 @@ import {
   type GiftSplitMode,
 } from "@/lib/giftDeliverables";
 import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
+import { buildGiftPolicyConfig } from "@/lib/giftPolicy";
 import { buildGiftApprovalConfig } from "@/lib/giftApproval";
 import { parseRaffleApprovalConfig, validateCampaignApproval, validateRaffleApproval, type RaffleApprovalConfig, type RaffleApprovalStage } from "@/lib/raffleApproval";
 import { sendCreateCampaign } from "@/lib/transactions";
@@ -741,6 +742,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     try {
       if ((shouldCollectRaffleTicketPrice || giftFeatureEnabled) && parsedGiftDirectives.hasApproveSection && !giftApproverUsers.length) throw new Error("Tag at least one approver after @approve");
       if (giftFeatureEnabled && giftPreviewState.error) throw new Error(giftPreviewState.error);
+      if (giftFeatureEnabled) {
+        if (parsedGiftDirectives.hasReceiveSection) throw new Error("@receive payment streaming is not available. Use @claim for gifts.");
+        buildGiftPolicyConfig(giftDeliverableDraft, BigInt(maxAmountCkb || "0") * 100_000_000n, BigInt(rewardCount || "0"));
+      }
       if (giftApprovalDraft) {
         validateCampaignApproval(giftApprovalDraft, campaignType, BigInt(Math.round(Number(taskStartDelayHours) * 3600)));
         if (giftApprovalDraft.approvers.some((entry) => !entry.address)) throw new Error("Resolve all tagged gift approvers’ wallets before publishing");
@@ -775,6 +780,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [
     activeReviewSummary,
     giftApprovalDraft,
+    giftDeliverableDraft,
+    parsedGiftDirectives.hasReceiveSection,
     giftFeatureEnabled,
     giftPreviewState.error,
     giftApproverUsers.length,
@@ -2876,6 +2883,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const publishResult = await sendCreateCampaign(signer, {
         raffleApproval: raffleApprovalDraft,
         giftApproval: giftApprovalDraft,
+        giftDeliverable: giftDeliverableDraft,
         startDurationSecs: normalizedParams.startDurationSecs,
         taskDurationSecs: normalizedParams.taskDurationSecs,
         campaignType,
@@ -3528,7 +3536,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           <div className="create-review-args-card">
             <div className="create-review-card-heading-row">
               <p className="create-review-section-label">Gift delivery</p>
-              <span className="create-review-offchain-note">On-chain approvals and gift claims</span>
+              <span className="create-review-offchain-note">On-chain approvals and claim payouts</span>
             </div>
             <div className="create-review-gift-grid">
               <div className="create-review-arg-field">
@@ -3563,7 +3571,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             </div>
             <div className="create-review-gift-summary">
               <p className="create-review-preview-body">Commencement: {giftApproverUsers.length > 0 ? `after start time and ${giftApprovalMode === "threshold" ? `${giftApprovalThreshold}/${giftApproverUsers.length}` : "all"} approvals` : "after start time"}.</p>
-              <p className="create-review-preview-body">Claiming: {isOpenGiftClaim ? "Anyone can claim after commencement." : `${giftClaimantUsers.map((entry) => entry.handle).join(", ")} can claim after commencement.`}</p>
+              <p className="create-review-preview-body">Claiming: {isOpenGiftClaim ? "One claim per wallet, until every allocation is claimed." : `${giftClaimantUsers.map((entry) => entry.handle).join(", ")} can each claim their fixed allocation once.`}</p>
               {giftPreviewState.preview?.allocations?.length ? (
                 <div className="create-review-gift-allocations">
                   {giftPreviewState.preview.allocations.map((allocation) => (

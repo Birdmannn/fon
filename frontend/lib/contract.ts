@@ -1,8 +1,8 @@
 const FREIGHT_CONTRACT_CODE_HASH = process.env.NEXT_PUBLIC_FREIGHT_CODE_HASH
-  || "0x096c42bd796f70653b770c8b7a3a5c2ce687afd04147c9a80355427bd72023d2";
+  || "0x50257469fedf0fc38ea06f803f289a4a395f802b7cc59a03d00846c9e6e36f43";
 const FREIGHT_CONTRACT_HASH_TYPE = (process.env.NEXT_PUBLIC_FREIGHT_HASH_TYPE || "type") as "type" | "data" | "data1";
 const FREIGHT_CONTRACT_OUTPOINT_TX_HASH = process.env.NEXT_PUBLIC_FREIGHT_OUTPOINT_TX_HASH
-  || "0x04398a268497683896caa095fcc5b4eded4a48a9d7d14b8e16722f645918e883";
+  || "0x48c6a734b1ef27cf8f877f800911b1373587d61011269f697cd524d23df64ab5";
 const FREIGHT_CONTRACT_OUTPOINT_INDEX = Number.parseInt(process.env.NEXT_PUBLIC_FREIGHT_OUTPOINT_INDEX || "0", 10);
 
 // ─── Deployed contract (environment-configurable) ─────────────────────────────
@@ -14,10 +14,6 @@ export const FREIGHT_CONTRACT = {
     index: Number.isFinite(FREIGHT_CONTRACT_OUTPOINT_INDEX) ? FREIGHT_CONTRACT_OUTPOINT_INDEX : 0,
   },
 } as const;
-
-// Enable only after deploying the binary that implements selectors 13 and 14.
-export const FREIGHT_RAFFLE_APPROVALS_ENABLED = process.env.NEXT_PUBLIC_FREIGHT_RAFFLE_APPROVALS_ENABLED === "true";
-export const FREIGHT_GIFT_APPROVALS_ENABLED = process.env.NEXT_PUBLIC_FREIGHT_GIFT_APPROVALS_ENABLED === "true";
 
 // ─── Instruction selectors ────────────────────────────────────────────────────
 export const Selector = {
@@ -37,6 +33,7 @@ export const Selector = {
   ApproveCampaign: 13,
   ApproveRaffle: 13,
   ConfirmRaffleApproval: 14,
+  ClaimGift: 15,
   StateLock: 255,
 } as const;
 export type Selector = (typeof Selector)[keyof typeof Selector];

@@ -12,6 +12,7 @@ use secp256k1::{Message as SecpMessage, PublicKey, SecretKey};
 
 mod raffle_e2e;
 mod raffle_approvals;
+mod gift_claims;
 
 const CREATOR: u8 = 11;
 const DEPOSITOR: u8 = 42;
@@ -390,6 +391,7 @@ fn test_free_raffle_multiple_entries() {
 #[test]
 fn test_simple_task_tips_do_not_expire() {
     let mut campaign = Campaign {
+        gift: None,
         approval: None,
         created_at: 0,
         start_duration_in_seconds: 0,

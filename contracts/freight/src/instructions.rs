@@ -34,15 +34,15 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     let support_pool_bps = u64::from_le_bytes(args[73..81].try_into().unwrap());
     let is_recurring = campaign_type_byte == CampaignType::RecurringRaffle as u8;
     let approval_offset = if is_recurring { 105 } else { 89 };
-    let approval = if args.len() > approval_offset {
-        crate::approvals::parse_approval(&args[approval_offset..])?
-    } else { None };
-    let base_args_len = args.len() - approval.as_ref().map_or(0, |gate| gate.encoded_len());
+    let (approval, gift) = if args.len() > approval_offset {
+        crate::gifts::parse_extensions(&args[approval_offset..])?
+    } else { (None, None) };
+    let base_args_len = args.len() - approval.as_ref().map_or(0, |gate| gate.encoded_len()) - gift.as_ref().map_or(0, |policy| policy.encoded_len());
     if (!is_recurring && base_args_len != 81 && base_args_len != 89) || (is_recurring && base_args_len != 105) {
         return Err(Error::InvalidCampaignArgs);
     }
     if args.len() >= 89 {
-        let is_gift = campaign_type_byte == CampaignType::FundedTask as u8 && approval.as_ref().is_some_and(|gate| gate.stage == 3);
+        let is_gift = campaign_type_byte == CampaignType::FundedTask as u8 && (gift.is_some() || approval.as_ref().is_some_and(|gate| gate.stage == 3));
         if campaign_type_byte != CampaignType::Raffle as u8 && !is_recurring && !is_gift {
             return Err(Error::InvalidCampaignArgs);
         }
@@ -78,11 +78,31 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         return Err(Error::Unauthorized);
     }
 
-    let campaign_type: CampaignType = campaign_type_byte.try_into().unwrap();
+    let campaign_type: CampaignType = campaign_type_byte.try_into().map_err(|_| Error::InvalidCampaignType)?;
     if let Some(gate) = &approval {
         gate.validate(campaign_type, start_duration_in_seconds)?;
         crate::approvals::verify_single_campaign_cell(Source::GroupOutput)?;
         if gate.confirmed || gate.approvers.iter().any(|entry| entry.1) { return Err(Error::InvalidCampaignArgs); }
+    }
+    if let Some(policy) = &gift {
+        policy.validate(campaign_type, maximum_amount, reward_count, true)?;
+        if !crate::gifts::signed_wallet(&policy.creator)? { return Err(Error::Unauthorized); }
+        let mut owner_matches = false;
+        let mut index = 0;
+        while let Ok(lock) = load_cell_lock(index, Source::Input) {
+            if ckb_std::high_level::load_cell_lock_hash(index, Source::Input)? == policy.creator
+                && lock.args().raw_data().get(..20) == Some(creator_address.as_slice()) { owner_matches = true; }
+            index += 1;
+        }
+        if !owner_matches { return Err(Error::Unauthorized); }
+        let lock = load_cell_lock(0, Source::GroupOutput)?;
+        let own = load_script()?;
+        if lock.code_hash() != own.code_hash() || lock.hash_type() != own.hash_type()
+            || lock.args().raw_data().len() != 21 || lock.args().raw_data()[0] != 255
+            || lock.args().raw_data()[1..] != creator_address { return Err(Error::InvalidCellData); }
+        crate::approvals::verify_single_campaign_cell(Source::GroupOutput)?;
+        crate::gifts::verify_isolated_campaign(Source::Output)?;
+        if randomness_hash != [0;32] || aux_amount != 0 || support_pool_bps != 0 { return Err(Error::InvalidCampaignArgs); }
     }
     debug!("create_campaign params start={} task={} type={:?} max={} aux={} reward={} support_pool_bps={}", start_duration_in_seconds, task_duration_in_seconds, campaign_type, maximum_amount, aux_amount, reward_count, support_pool_bps);
     validate_campaign_params(
@@ -103,7 +123,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     // Read summary from the output cell data (bytes 102..166)
     let output_data = load_cell_data(0, Source::Output)?;
     let expected_data_len = if is_recurring { RECURRING_CAMPAIGN_DATA_LEN } else { CAMPAIGN_DATA_LEN };
-    let expected_data_len = expected_data_len + approval.as_ref().map_or(0, |gate| gate.encoded_len());
+    let expected_data_len = expected_data_len + approval.as_ref().map_or(0, |gate| gate.encoded_len()) + gift.as_ref().map_or(0, |policy| policy.encoded_len());
     if output_data.len() != expected_data_len {
         return Err(Error::InvalidCampaignArgs);
     }
@@ -114,6 +134,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     }
 
     let campaign = Campaign {
+        gift,
         approval,
         created_at,
         start_duration_in_seconds,
@@ -512,6 +533,7 @@ pub fn refund(_args: &[u8]) -> Result<(), Error> {
 }
 
 pub fn creator_withdraw(_args: &[u8]) -> Result<(), Error> {
+    if parse_campaign_data(&load_cell_data(0, Source::GroupInput)?)?.gift.is_some() { return crate::gifts::withdraw_gift(); }
     let caller_address = extract_caller_address(AddressKey::Depositor)?;
 
     let campaign_data = load_cell_data(0, Source::GroupInput)?;

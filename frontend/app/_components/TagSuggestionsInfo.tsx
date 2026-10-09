@@ -274,13 +274,18 @@ export default function TagSuggestionsInfo({ initialQuery, onContinue }: TagSugg
           <button
             key={entry.tag}
             type="button"
-            className="tag-suggestion-row tag-suggestion-row-built-in"
+            className={`tag-suggestion-row tag-suggestion-row-built-in${entry.tag === "receive" ? " tag-suggestion-row-unavailable" : ""}`}
+            disabled={entry.tag === "receive"}
             onClick={() => selectSuggestion(entry.tag)}
             role="option"
-            aria-selected={query.toLowerCase() === entry.tag}
+            aria-disabled={entry.tag === "receive"}
+            aria-selected={entry.tag !== "receive" && query.toLowerCase() === entry.tag}
           >
-            <span className="tag-suggestion-label">@{entry.tag}:</span>
-            <span className="tag-suggestion-explanation"> {entry.explanation}</span>
+            <span className="tag-suggestion-copy">
+              <span className="tag-suggestion-label">@{entry.tag}:</span>
+              <span className="tag-suggestion-explanation"> {entry.explanation}</span>
+            </span>
+            {entry.tag === "receive" ? <span className="tag-suggestion-unavailable-status">Not available</span> : null}
           </button>
         ))}
         {users.map((user) => (

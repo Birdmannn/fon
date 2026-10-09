@@ -1691,11 +1691,34 @@ button.create-mountable-principle.create-mountable-principle-selected:focus-visi
   color: #111827;
 }
 
-.tag-suggestion-row-built-in:hover,
-.tag-suggestion-row-built-in:focus-visible {
+.tag-suggestion-row-built-in:not(:disabled):hover,
+.tag-suggestion-row-built-in:not(:disabled):focus-visible {
   text-decoration: underline;
   text-decoration-color: #7c3aed;
   text-underline-offset: 0.16rem;
+}
+
+.tag-suggestion-row-unavailable {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  color: #b6bdc7;
+  cursor: default;
+}
+
+.tag-suggestion-row-unavailable .tag-suggestion-copy {
+  min-width: 0;
+}
+
+.tag-suggestion-row-unavailable .tag-suggestion-label {
+  color: inherit;
+}
+
+.tag-suggestion-unavailable-status {
+  flex: none;
+  margin-left: auto;
+  color: inherit;
+  white-space: nowrap;
 }
 
 .tag-suggestion-row-user:hover,

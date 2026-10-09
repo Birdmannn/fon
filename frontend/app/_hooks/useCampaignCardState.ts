@@ -19,6 +19,7 @@ import {
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
 import { isOnChainGiftApprovalSatisfied, isOnChainGiftClaimOpen } from "@/lib/giftApproval";
+import { giftClaimSlot } from "@/lib/giftPolicy";
 import { raffleApprovalDeadlineMissed, raffleApprovalsSatisfied } from "@/lib/raffleApproval";
 import { CampaignStatus, CampaignType, ParticipantStatus } from "@/lib/contract";
 import {
@@ -26,6 +27,7 @@ import {
   computeRaffleRewardPool,
   computeRaffleSupportPoolContribution,
   decodeSummary,
+  decodeCampaignData,
   hasSplitSupportAccounting,
   hexToBytes,
   lockScriptToAddressBytes,
@@ -37,6 +39,7 @@ import {
   fetchParticipants,
   previewDeterministicWinners,
   sendClaimRecurringRaffle,
+  sendGiftClaim,
   sendDrawRecurringRaffle,
   sendRolloverRecurringRaffle,
   sendReclaimRecurringParticipant,
@@ -210,14 +213,23 @@ export function useCampaignCardState({
   });
   const mentions = record?.socialMetadata?.mentions ?? [];
   const rewardCountValue = Number(data.rewardCount);
-  const giftDeliverable = parseStoredGiftDeliverable(record?.giftDeliverable);
-  const giftPreview = computeGiftPreviewAllocations({
+  const storedGiftDeliverable = parseStoredGiftDeliverable(record?.giftDeliverable);
+  const giftDeliverable = data.gift ? { ...storedGiftDeliverable, enabled: true } : storedGiftDeliverable;
+  const metadataGiftPreview = computeGiftPreviewAllocations({
     claimants: giftDeliverable.claimants,
     maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
     rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
     ratioEntries: giftDeliverable.ratioEntries,
     splitMode: giftDeliverable.splitMode,
   });
+  const giftPreview = data.gift ? {
+    ...metadataGiftPreview,
+    error: null,
+    openClaim: data.gift.open,
+    claimSlotCount: data.gift.slots.length,
+    perClaimAmountLabel: data.gift.open ? `${formatCkbAmount(data.gift.slots.find((slot) => !slot.claimed)?.amount ?? 0n)} CKB` : null,
+    allocations: data.gift.slots.map((slot, index) => ({ handle: storedGiftDeliverable.claimants[index]?.handle ?? `Claim ${index + 1}`, amountLabel: `${formatCkbAmount(slot.amount)} CKB`, amountShannons: slot.amount.toString(), units: null })),
+  } : metadataGiftPreview;
   const giftApprovalSatisfied = isOnChainGiftApprovalSatisfied(giftDeliverable, data.approval);
   const giftApprovedCount = data.approval?.stage === "gift-commence" ? data.approval.approvers.filter((entry) => entry.approved).length : 0;
   const giftClaimOpen = isOnChainGiftClaimOpen(data, giftDeliverable);
@@ -281,15 +293,17 @@ export function useCampaignCardState({
   const lockThresholdFbars = getLockMountableThresholdFbars(lockMountable);
   const isLockedForInteractions = raffleApprovalFailed || lockThresholdFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars, creatorCurrentFbars);
   const lockAccessMessage = lockMountableAccessMessage(lockMountable, creatorCurrentFbars);
-  const canGiftClaim = Boolean(
-    normalizedCurrentWalletAddress
-    && giftDeliverable.enabled
-    && giftClaimOpen
-    && (
-      giftDeliverable.claimants.length === 0
-      || giftDeliverable.claimants.some((entry) => normalizeHash(entry.address) === normalizedCurrentWalletAddress)
-    ),
-  );
+  const [giftWalletHash, setGiftWalletHash] = useState<Uint8Array | null>(null);
+  const [giftClaimBusy, setGiftClaimBusy] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setGiftWalletHash(null);
+    if (signer && data.gift) void signer.getRecommendedAddressObj().then((address) => {
+      if (!cancelled) setGiftWalletHash(hexToBytes(address.script.hash()));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [signer, data.gift]);
+  const canGiftClaim = Boolean(!giftClaimBusy && giftClaimOpen && data.gift && giftWalletHash && giftClaimSlot(data.gift, giftWalletHash) >= 0);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [likedByAddresses, setLikedByAddresses] = useState<string[]>(initialLikedByAddresses);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
@@ -845,28 +859,22 @@ export function useCampaignCardState({
   };
 
   const handleGiftClaim = async () => {
-    if (!record?._id) {
-      showActionFeedback("reshare", "error", "Gift claims are not available for this freight yet");
-      return;
-    }
-
+    if (!signer || giftClaimBusy) return;
+    setGiftClaimBusy(true);
     try {
-      const signed = await withSignedNonce("gift-claim");
-      const response = await fetch(`/api/campaign-records/${record._id}/claim`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(signed),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to claim gift freight");
-      }
-
-      showActionFeedback("reshare", "success", payload?.claimAmountLabel ? `Claim ready: ${payload.claimAmountLabel}` : "Gift claim submitted");
+      const txHash = await sendGiftClaim(signer, c);
+      showActionFeedback("reshare", "success", "Gift claim sent. Waiting for confirmation…");
+      const receipt = await signer.client.waitTransaction(txHash, 1, 180_000);
+      if (!receipt || receipt.status !== "committed") throw new Error("Claim is pending. Refresh once confirmed.");
+      const output = receipt.transaction.outputs[0];
+      if (!output?.type) throw new Error("Missing freight output");
+      const campaign: CampaignCell = { outPoint: { txHash, index: 0 }, data: decodeCampaignData(hexToBytes(receipt.transaction.outputsData[0])), capacityShannons: output.capacity, lock: output.lock, type: output.type };
+      window.dispatchEvent(new CustomEvent("freight:approval-chain-update", { detail: { campaign, campaignId: getCampaignStableId(campaign) } }));
+      showActionFeedback("reshare", "success", "Gift paid to your wallet.");
     } catch (error) {
       showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to claim gift freight");
+    } finally {
+      setGiftClaimBusy(false);
     }
   };
 
@@ -881,8 +889,8 @@ export function useCampaignCardState({
       randomnessPreimage: null,
       evidenceItems: [
         `Gift approvals: ${giftApprovedCount}/${data.approval?.required ?? giftDeliverable.requiredApprovalCount ?? 0}`,
-        `Claim mode: ${giftDeliverable.claimants.length > 0 ? "restricted" : "open"}`,
-        `Split mode: ${giftDeliverable.splitMode ?? "equal"}`,
+        `Claim mode: ${data.gift ? data.gift.open ? "open" : "restricted" : "legacy"}`,
+        `Allocations: ${data.gift ? "fixed on-chain" : "legacy"}`,
       ],
       recipients: giftPreview.allocations.map((allocation) => ({
         address: "",
@@ -896,7 +904,7 @@ export function useCampaignCardState({
       gift: {
         approvalCount: giftApprovedCount,
         canApprove: giftDeliverable.approvers.length > 0 && !giftApprovalSatisfied,
-        canClaim: giftClaimOpen,
+        canClaim: canGiftClaim,
         claimAmountLabel: giftPreview.perClaimAmountLabel,
         claimantsLabel: giftDeliverable.claimants.length > 0
           ? giftDeliverable.claimants.map((entry) => entry.handle).join(", ")

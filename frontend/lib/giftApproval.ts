@@ -17,6 +17,9 @@ export function isOnChainGiftApprovalSatisfied(gift: GiftDeliverable | null | un
 export function isOnChainGiftClaimOpen(campaign: CampaignData, gift: GiftDeliverable, nowMs = Date.now()) {
   return campaign.campaignType === CampaignType.FundedTask && gift.enabled
     && campaign.status !== CampaignStatus.Cancelled && campaign.status !== CampaignStatus.Completed
+    && !!campaign.gift
+    && (campaign.gift.slots.some((slot) => slot.claimed) || campaign.currentDeposits >= campaign.maximumAmount)
+    && campaign.gift.slots.some((slot) => !slot.claimed)
     && isOnChainGiftApprovalSatisfied(gift, campaign.approval)
     && BigInt(Math.trunc(nowMs)) >= campaign.createdAt + campaign.startDurationSecs * 1000n;
 }

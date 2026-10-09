@@ -12,6 +12,12 @@ export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date
 
   if (campaign.data.approval?.stage === "gift-commence" && !raffleApprovalsSatisfied(campaign.data.approval)) return CampaignStatus.Created;
 
+  if (campaign.data.gift) {
+    if (campaign.data.gift.slots.every((slot) => slot.claimed)) return CampaignStatus.Completed;
+    const hasClaims = campaign.data.gift.slots.some((slot) => slot.claimed);
+    return nowMs >= Number(campaign.data.createdAt + campaign.data.startDurationSecs * 1000n) && (hasClaims || campaign.data.currentDeposits >= campaign.data.maximumAmount) ? CampaignStatus.Active : CampaignStatus.Created;
+  }
+
   if (campaign.data.campaignType === CampaignType.SimpleTask) {
     return CampaignStatus.Active;
   }

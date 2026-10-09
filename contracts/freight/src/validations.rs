@@ -331,7 +331,7 @@ pub fn verify_campaign_tx(output_data: &[u8], expected_campaign: &Campaign) -> R
     } else {
         CAMPAIGN_DATA_LEN
     };
-    let expected_len = expected_len + expected_campaign.approval.as_ref().map_or(0, |gate| gate.encoded_len());
+    let expected_len = expected_len + expected_campaign.approval.as_ref().map_or(0, |gate| gate.encoded_len()) + expected_campaign.gift.as_ref().map_or(0, |policy| policy.encoded_len());
     if output_data.len() != expected_len {
         debug!(
             "Output data length {} does not match expected campaign data length {}",

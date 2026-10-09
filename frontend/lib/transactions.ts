@@ -1,6 +1,8 @@
+import { assertGiftClaim, buildGiftPolicyConfig, validateGiftPolicy, type GiftPolicy } from "./giftPolicy";
+import type { GiftDeliverable } from "./giftDeliverables";
 import { ccc } from "@ckb-ccc/connector-react";
 import { blake2b } from "@nervosnetwork/ckb-sdk-utils";
-import { FREIGHT_CONTRACT, FREIGHT_RAFFLE_APPROVALS_ENABLED, FREIGHT_GIFT_APPROVALS_ENABLED, CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
+import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
 import {
   encodeBatchDeliverArgs,
   encodeCreateCampaignArgs,
@@ -116,6 +118,7 @@ export async function sendCreateCampaign(
     winnerReductionBps?: bigint;
     raffleApproval?: RaffleApprovalConfig | null;
     giftApproval?: CampaignApprovalConfig | null;
+    giftDeliverable?: GiftDeliverable | null;
   }
 ): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
   const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, ticketsPerUser, rewardCount, supportPoolBps, summary, randomnessHash, sleepDurationSecs, winnerReductionBps } = opts;
@@ -128,7 +131,6 @@ export async function sendCreateCampaign(
   if (opts.raffleApproval && opts.giftApproval) throw new Error("Choose one approval gate");
   const approvalConfig = opts.giftApproval ?? opts.raffleApproval;
   if (approvalConfig) {
-    if (approvalConfig.stage === "gift-commence" ? !FREIGHT_GIFT_APPROVALS_ENABLED : !FREIGHT_RAFFLE_APPROVALS_ENABLED) throw new Error("Approvals require the updated freight contract. Configure its deployment before publishing.");
     validateCampaignApproval(approvalConfig, campaignType, startDurationSecs);
     approval = {
       stage: approvalConfig.stage,
@@ -142,6 +144,16 @@ export async function sendCreateCampaign(
     };
     encodeRaffleApproval(approval);
   }
+
+  let gift: GiftPolicy | null = null;
+  const giftConfig = opts.giftDeliverable ? buildGiftPolicyConfig(opts.giftDeliverable, maximumAmount, rewardCount) : null;
+  if (giftConfig) {
+    if (campaignType !== CampaignType.FundedTask) throw new Error("Gift rules require FundedTask");
+    const hash = async (address: string | null) => address ? hexToBytes((await ccc.Address.fromString(address, signer.client)).script.hash()) : new Uint8Array(32);
+    gift = { creator: hexToBytes((await signer.getRecommendedAddressObj()).script.hash()), open: giftConfig.open, slots: await Promise.all(giftConfig.slots.map(async (slot) => ({ claimant: await hash(slot.claimantAddress), amount: slot.amount, claimed: false }))) };
+    validateGiftPolicy(gift, maximumAmount, BigInt(gift.slots.length), true);
+  }
+  const effectiveRewardCount = gift ? BigInt(gift.slots.length) : rewardCount;
 
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
@@ -164,13 +176,14 @@ export async function sendCreateCampaign(
     maximumAmount,
     auxAmount,
     randomnessHash,
-    rewardCount,
+    effectiveRewardCount,
     supportPoolBps,
     isRaffle ? ticketsPerUser : null,
     campaignType === CampaignType.RecurringRaffle
       ? { sleepDurationSecs: sleepDurationSecs ?? 60n, winnerReductionBps: winnerReductionBps ?? 5_000n }
       : null,
     approval,
+    gift,
   );
 
   // Campaign cell data (174 bytes).
@@ -183,7 +196,7 @@ export async function sendCreateCampaign(
     maximumAmount,
     currentDeposits: 0n,
     status: CampaignStatus.Created,
-    rewardCount,
+    rewardCount: effectiveRewardCount,
     randomnessHash,
     summary: encodeSummary(summary),
     auxAmount,
@@ -199,6 +212,7 @@ export async function sendCreateCampaign(
     roundWinnerCount: 0n,
     prizePool: 0n,
     approval,
+    gift,
   });
 
   // Output: campaign cell.
@@ -255,6 +269,32 @@ export async function sendConfirmRaffleApproval(signer: ccc.Signer, campaign: Ca
   const header = await signer.client.getHeaderByHash(receipt.blockHash);
   if (!header || header.timestamp >= campaign.data.createdAt + campaign.data.startDurationSecs * 1000n) throw new Error("Approval deadline missed. Only cancellation is available.");
   return sendCampaignTransition(signer, campaign, { ...campaign.data, approval: { ...approval, confirmed: true } }, new Uint8Array([Selector.ConfirmRaffleApproval]), receipt.blockHash);
+}
+
+export async function sendGiftClaim(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
+  const wallet = await signer.getRecommendedAddressObj();
+  const walletHash = hexToBytes(wallet.script.hash());
+  const tip = await signer.client.getTipHeader();
+  const index = assertGiftClaim(campaign.data, walletHash, tip.timestamp);
+  const policy = campaign.data.gift!;
+  const slot = policy.slots[index];
+  const slots = policy.slots.map((entry, i) => i === index ? { ...entry, claimant: walletHash, claimed: true } : entry);
+  const updated: CampaignData = { ...campaign.data, gift: { ...policy, slots }, currentDeposits: campaign.data.currentDeposits - slot.amount,
+    status: slots.every((entry) => entry.claimed) ? CampaignStatus.Completed : CampaignStatus.Active };
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  tx.headerDeps.push(tip.hash);
+  tx.addInput({ previousOutput: campaign.outPoint, since: "0x0", cellOutput: { capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, outputData: bytesToHex(encodeCampaignData(campaign.data)) });
+  tx.addOutput({ capacity: campaign.capacityShannons - slot.amount, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updated)));
+  tx.addOutput({ capacity: slot.amount, lock: wallet.script }, "0x");
+  const payout = tx.outputs[1];
+  const minimumCapacity = BigInt(payout.occupiedSize) * 100_000_000n;
+  if (payout.capacity < minimumCapacity) payout.capacity = minimumCapacity;
+  await tx.completeFeeBy(signer, 1000n);
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([Selector.ClaimGift, index, ...walletHash])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+  return signer.sendTransaction(tx);
 }
 
 export async function sendCancelCampaign(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
@@ -720,6 +760,7 @@ export async function sendCreatorWithdraw(
   if (bytesToHex(lockScriptToAddressBytes(creatorLock)) !== bytesToHex(campaignCell.data.createdBy)) {
     throw new Error("Connect the freight creator's wallet to withdraw support.");
   }
+  if (campaignCell.data.gift && creatorLock.hash() !== bytesToHex(campaignCell.data.gift.creator)) throw new Error("Only the fixed gift creator wallet can recover escrow");
 
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
@@ -731,7 +772,7 @@ export async function sendCreatorWithdraw(
   const updatedCampaignData = {
     ...campaignCell.data,
     currentDeposits: campaignCell.data.currentDeposits - withdrawAmount,
-    creatorSupportTotal: campaignCell.data.creatorSupportTotal - withdrawAmount,
+    creatorSupportTotal: campaignCell.data.gift ? 0n : campaignCell.data.creatorSupportTotal - withdrawAmount,
     supportPoolBps: 0n,
   };
 
@@ -759,6 +800,11 @@ export async function sendCreatorWithdraw(
     capacity: withdrawAmount,
     lock: creatorLock,
   }, "0x");
+  if (campaignCell.data.gift) {
+    const payout = tx.outputs[1];
+    const minimum = BigInt(payout.occupiedSize) * 100_000_000n;
+    if (payout.capacity < minimum) payout.capacity = minimum;
+  }
 
   await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
 

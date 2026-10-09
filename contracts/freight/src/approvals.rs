@@ -146,7 +146,7 @@ pub fn check_transition(campaign: &Campaign, instruction: u8, timestamp: u64) ->
         // transaction, but commencement, participation and payouts require quorum.
         if gate.stage == 3
             && !gate.satisfied()
-            && matches!(instruction, 2 | 3 | 4 | 8)
+            && matches!(instruction, 2 | 3 | 4 | 8 | 15)
             && campaign.status != CampaignStatus::Cancelled
         {
             return Err(Error::ApprovalRequired);

@@ -112,9 +112,10 @@ fn dispatch_instruction(instruction: u8, instruction_args: &[u8]) -> Result<(), 
     if instruction != 0 {
         let data = load_cell_data(0, Source::GroupInput)?;
         let campaign = freight::utils::parse_campaign_data(&data)?;
-        if campaign.approval.is_some() {
+        if campaign.approval.is_some() || campaign.gift.is_some() {
             freight::approvals::verify_single_campaign_cell(Source::GroupInput)?;
             freight::approvals::verify_single_campaign_cell(Source::GroupOutput)?;
+            freight::gifts::check_transition(&campaign, instruction)?;
             freight::approvals::check_transition(&campaign, instruction, freight::utils::get_current_timestamp()?)?;
         }
     }
@@ -134,6 +135,7 @@ fn dispatch_instruction(instruction: u8, instruction_args: &[u8]) -> Result<(), 
         12 => reclaim_recurring_participant(instruction_args),
         13 => approve_campaign(instruction_args),
         14 => confirm_raffle_approval(instruction_args),
+        15 => freight::gifts::claim_gift(instruction_args),
         _ => {
             debug!("Invalid instruction selector: {}", instruction);
             Err(Error::UnknownScriptArgs)

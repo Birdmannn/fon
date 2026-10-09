@@ -50,12 +50,13 @@ test("gifts support late approval and need no raffle confirmation transaction", 
 });
 test("claims require chain quorum and the start time even if metadata approvers are removed", () => {
   const gate = approval(1);
-  assert.equal(isOnChainGiftClaimOpen(campaign(gate),gift(),100_000),false);
-  assert.equal(isOnChainGiftClaimOpen(campaign(gate),{ ...gift(),approvers:[] },100_000),false);
+  const fundedGift = () => ({ ...campaign(gate), currentDeposits: 1000n, gift: { creator: new Uint8Array(32).fill(7), open: true, slots: [{ claimant: new Uint8Array(32), amount: 1000n, claimed: false }] } });
+  assert.equal(isOnChainGiftClaimOpen(fundedGift(),gift(),100_000),false);
+  assert.equal(isOnChainGiftClaimOpen(fundedGift(),{ ...gift(),approvers:[] },100_000),false);
   gate.approvers[0].approved = true;
-  assert.equal(isOnChainGiftClaimOpen(campaign(gate),gift(),60_999),false);
-  assert.equal(isOnChainGiftClaimOpen(campaign(gate),gift(),61_000),true);
-  const cancelled = { ...campaign(gate),status:CampaignStatus.Cancelled };
+  assert.equal(isOnChainGiftClaimOpen(fundedGift(),gift(),60_999),false);
+  assert.equal(isOnChainGiftClaimOpen(fundedGift(),gift(),61_000),true);
+  const cancelled = { ...fundedGift(),status:CampaignStatus.Cancelled };
   assert.equal(isOnChainGiftClaimOpen(cancelled,gift(),100_000),false);
 });
 test("pending gifts allow funding but block commencement, distribution and withdrawal", () => {

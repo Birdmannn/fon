@@ -1,3 +1,4 @@
+import { encodeGiftPolicy, decodeGiftPolicy, validateGiftPolicy, type GiftPolicy } from "./giftPolicy.ts";
 import { decodeRaffleApproval, encodeRaffleApproval, type RaffleApprovalState } from "./raffleApproval.ts";
 import type { ccc } from "@ckb-ccc/connector-react";
 import {
@@ -86,6 +87,7 @@ export function encodeCreateCampaignArgs(
   ticketsPerUser: bigint | null = null,
   recurring?: { sleepDurationSecs: bigint; winnerReductionBps: bigint } | null,
   approval?: RaffleApprovalState | null,
+  gift?: GiftPolicy | null,
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
@@ -98,9 +100,10 @@ export function encodeCreateCampaignArgs(
     randomnessHash,
     u64LE(rewardCount),
     u64LE(supportPoolBps),
-    ...(ticketsPerUser === null && !approval ? [] : [u64LE(approval?.stage === "gift-commence" ? 0n : ticketsPerUser ?? 1n)]),
+    ...(ticketsPerUser === null && !approval && !gift ? [] : [u64LE(gift || approval?.stage === "gift-commence" ? 0n : ticketsPerUser ?? 1n)]),
     ...(recurring ? [u64LE(recurring.sleepDurationSecs), u64LE(recurring.winnerReductionBps)] : []),
     ...(approval ? [encodeRaffleApproval(approval)] : []),
+    ...(gift ? [encodeGiftPolicy(gift)] : []),
   );
 }
 
@@ -160,6 +163,7 @@ export type CampaignDataLayout = "legacy" | "split-support" | "recurring";
 
 export interface CampaignData {
   approval?: RaffleApprovalState | null;
+  gift?: GiftPolicy | null;
   createdAt: bigint;
   startDurationSecs: bigint;
   taskDurationSecs: bigint;
@@ -219,6 +223,7 @@ export function computeRaffleRewardPool(campaign: CampaignData) {
 }
 
 export function computeCreatorWithdrawableAmount(campaign: CampaignData) {
+  if (campaign.gift) return campaign.status === CampaignStatus.Cancelled || campaign.status === CampaignStatus.Completed ? campaign.currentDeposits : 0n;
   if (campaign.campaignType === CampaignType.RecurringRaffle) {
     return campaign.status === CampaignStatus.Finished ? campaign.currentDeposits : 0n;
   }
@@ -269,6 +274,7 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
   );
 
   if (c.dataLayout === "legacy") {
+    if (c.gift || c.approval) throw new Error("Legacy campaign data cannot carry extensions");
     return base;
   }
 
@@ -279,7 +285,7 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     u64LE(c.supportPoolBps),
   );
   if (c.dataLayout !== "recurring") {
-    return c.approval ? concat(splitSupport, encodeRaffleApproval(c.approval)) : splitSupport;
+    return concat(splitSupport, ...(c.approval ? [encodeRaffleApproval(c.approval)] : []), ...(c.gift ? [encodeGiftPolicy(c.gift)] : []));
   }
   return concat(
     splitSupport,
@@ -292,6 +298,14 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     u64LE(c.prizePool ?? 0n),
     ...(c.approval ? [encodeRaffleApproval(c.approval)] : []),
   );
+}
+
+function decodeExtensions(bytes: Uint8Array) {
+  const approvalLen = bytes.length >= 8 && bytes[0] === 65 && bytes[1] === 80 && bytes[2] === 86 && bytes[3] === 49 ? 8 + 33 * bytes[6] : 0;
+  if (approvalLen > bytes.length) throw new Error("Truncated approval extension");
+  const approval = decodeRaffleApproval(bytes.slice(0, approvalLen));
+  const gift = decodeGiftPolicy(bytes.slice(approvalLen));
+  return gift ? { approval, gift } : { approval };
 }
 
 export function decodeCampaignData(data: Uint8Array): CampaignData {
@@ -331,8 +345,15 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     dataLayout: "split-support" as CampaignDataLayout,
   };
   if (data.length < RECURRING_CAMPAIGN_DATA_LEN || base.campaignType !== CampaignType.RecurringRaffle) {
-    return { ...splitSupport, approval: decodeRaffleApproval(data.slice(CAMPAIGN_DATA_LEN)) };
+    const extensions = decodeExtensions(data.slice(CAMPAIGN_DATA_LEN));
+    if (extensions.gift) {
+      if (base.campaignType !== CampaignType.FundedTask) throw new Error("Gift policy requires FundedTask");
+      validateGiftPolicy(extensions.gift, base.maximumAmount, base.rewardCount);
+    }
+    return { ...splitSupport, ...extensions };
   }
+  const extensions = decodeExtensions(data.slice(RECURRING_CAMPAIGN_DATA_LEN));
+  if (extensions.gift) throw new Error("Gift policy requires FundedTask");
   return {
     ...splitSupport,
     dataLayout: "recurring",
@@ -343,7 +364,7 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     roundRewardPerWinner: view.getBigUint64(230, true),
     roundWinnerCount: view.getBigUint64(238, true),
     prizePool: view.getBigUint64(246, true),
-    approval: decodeRaffleApproval(data.slice(RECURRING_CAMPAIGN_DATA_LEN)),
+    ...extensions,
   };
 }
 
