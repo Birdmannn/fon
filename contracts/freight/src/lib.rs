@@ -3,6 +3,7 @@
 #![allow(unused_attributes)]
 
 pub mod errors;
+pub mod approvals;
 pub mod instructions;
 pub mod types;
 pub mod utils;

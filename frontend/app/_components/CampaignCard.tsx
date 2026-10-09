@@ -16,6 +16,7 @@ import {
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import CampaignApprovalControls from "@/app/_components/CampaignApprovalControls";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { SettlementModalData } from "@/app/_types/settlement";
@@ -95,7 +96,6 @@ export default function CampaignCard({
     handleBookmark,
     handleComment,
     handleDepositSubmit,
-    handleGiftApprove,
     handleGiftClaim,
     handleGiftInfoClick,
     handleLike,
@@ -117,7 +117,6 @@ export default function CampaignCard({
     recurringActionLabel,
     isSavingComment,
     supportState,
-    canGiftApprove,
     canGiftClaim,
     likes,
     lockAccessMessage,
@@ -167,6 +166,8 @@ export default function CampaignCard({
         onMountablesClick={record ? () => onMountablesClick(record) : undefined}
         onFreightOptionsClick={onFreightOptionsClick}
       />
+
+      <CampaignApprovalControls campaign={campaign} record={record} signer={signer} nowMs={nowMs} />
 
       <div className="flex flex-col gap-[0.45rem] pt-2 pb-[0.45rem] text-xs">
         <div className="flex items-center gap-2">
@@ -363,17 +364,6 @@ export default function CampaignCard({
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count">gift</span>
               </button>
-              {canGiftApprove ? (
-                <button
-                  type="button"
-                  onClick={() => void handleGiftApprove()}
-                  className="campaign-action-btn action-gift-approve"
-                  data-tooltip="Approve gift"
-                >
-                  <Check className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count">approve</span>
-                </button>
-              ) : null}
               {canGiftClaim ? (
                 <button
                   type="button"

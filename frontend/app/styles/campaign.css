@@ -2188,3 +2188,6 @@
   color: var(--background) !important;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28) !important;
 }
+
+.campaign-approval-controls { padding: 0.5rem 0; font-size: 0.75rem; }
+.campaign-approval-controls p { margin: 0 0 0.25rem; }

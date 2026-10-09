@@ -10,6 +10,7 @@ import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
 import CampaignMountablesPanel, { type CampaignMountableItem } from "@/app/_components/CampaignMountablesPanel";
 import CampaignParticipantsStack from "@/app/_components/CampaignParticipantsStack";
 import CampaignThreadConnector, { type CampaignThreadRole } from "@/app/_components/CampaignThreadConnector";
+import CampaignApprovalControls from "@/app/_components/CampaignApprovalControls";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
 import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
@@ -113,6 +114,7 @@ export default function CampaignDetailInteractions({
           <div className="campaign-detail-card-shell">
             <CampaignDetailSurface campaign={campaign} record={record} nowMs={nowMs} />
           </div>
+          <CampaignApprovalControls campaign={campaign} record={record} signer={signer} nowMs={nowMs} />
           <CampaignThreadConnector role={threadRole} directChildCount={directChildCount} nodeTargetId={threadNodeTargetId} onOpenOptions={onFreightOptionsClick} onOpenTree={onFreightTreeClick}
             settlementAction={state.showSettlementAction ? (
               <button type="button" className={`campaign-action-btn campaign-thread-settlement-action action-winners ${state.shouldGlowSettlement ? "campaign-action-active" : ""}`}
@@ -152,7 +154,6 @@ export default function CampaignDetailInteractions({
                 <button type="button" className="campaign-action-btn action-gift" onClick={state.handleGiftInfoClick} data-tooltip="Gift details">
                   <Share2 size={18} aria-hidden="true" /><span className="campaign-action-count">gift</span>
                 </button>
-                {state.canGiftApprove ? <button type="button" className="campaign-action-btn action-gift-approve" onClick={() => void state.handleGiftApprove()} data-tooltip="Approve gift"><Check size={18} aria-hidden="true" /><span className="campaign-action-count">approve</span></button> : null}
                 {state.canGiftClaim ? <button type="button" className="campaign-action-btn action-gift-claim" onClick={() => void state.handleGiftClaim()} data-tooltip="Claim gift"><Coins size={18} aria-hidden="true" /><span className="campaign-action-count">claim</span></button> : null}
               </>
             ) : null}

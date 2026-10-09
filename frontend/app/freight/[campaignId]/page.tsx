@@ -60,8 +60,9 @@ import { FREIGHT_CREATION_FBARS_COST } from "@/lib/fbars";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 import { isWinningCampaignType } from "@/lib/fbars";
 import { CampaignType } from "@/lib/contract";
-import { isGiftApprovalSatisfied } from "@/lib/giftDeliverables";
-import { findCampaignByRecord, normalizeHash } from "@/lib/campaignIdentity";
+import { raffleApprovalsSatisfied } from "@/lib/raffleApproval";
+import { isOnChainGiftApprovalSatisfied } from "@/lib/giftApproval";
+import { findCampaignByRecord, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
 import { countDirectChildren, parentIds } from "@/lib/freightTree";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
@@ -866,7 +867,7 @@ export default function CampaignDetailPage() {
           rows: participantRows,
           viewerFbars: currentUserProfile?.fbars,
           creatorFbars: freightCreatorProfile?.fbars,
-          signableCleared: isGiftApprovalSatisfied(selectedRecord.giftDeliverable),
+          signableCleared: selectedRecord.raffleApproval ? !!selectedCampaign?.data.approval && raffleApprovalsSatisfied(selectedCampaign.data.approval) : isOnChainGiftApprovalSatisfied(selectedRecord.giftDeliverable, selectedCampaign?.data.approval),
           childFreightSatisfied: payload?.childFreightSatisfied,
         }));
         setCriteriaError("");
@@ -884,7 +885,7 @@ export default function CampaignDetailPage() {
       controller.abort();
       window.clearInterval(intervalId);
     };
-  }, [currentUserProfile?.fbars, freightCreatorProfile?.fbars, infoModalMode, isInfoModalClosing, selectedRecord, showInfoModal, walletAddress]);
+  }, [currentUserProfile?.fbars, freightCreatorProfile?.fbars, infoModalMode, isInfoModalClosing, selectedRecord, selectedCampaign, showInfoModal, walletAddress]);
 
   const openInsufficientFbarsInfoModal = useCallback((fromFreightRelationChoice = false) => {
     clearInfoCloseTimer();
@@ -1219,6 +1220,16 @@ export default function CampaignDetailPage() {
       cancelled = true;
     };
   }, [client, selectedRecord]);
+
+  useEffect(() => {
+    const onChainUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaign: CampaignCell }>).detail;
+      if (!detail?.campaign) return;
+      setSelectedCampaign((current) => current && getCampaignStableId(current) === getCampaignStableId(detail.campaign) ? detail.campaign : current);
+    };
+    window.addEventListener("freight:approval-chain-update", onChainUpdate);
+    return () => window.removeEventListener("freight:approval-chain-update", onChainUpdate);
+  }, []);
 
   const createSignedWalletAction = useCallback(async (purpose: string) => {
     if (!signer) {

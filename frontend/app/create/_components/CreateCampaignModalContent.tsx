@@ -46,6 +46,8 @@ import {
   type GiftSplitMode,
 } from "@/lib/giftDeliverables";
 import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
+import { buildGiftApprovalConfig } from "@/lib/giftApproval";
+import { parseRaffleApprovalConfig, validateCampaignApproval, validateRaffleApproval, type RaffleApprovalConfig, type RaffleApprovalStage } from "@/lib/raffleApproval";
 import { sendCreateCampaign } from "@/lib/transactions";
 
 const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
@@ -292,6 +294,7 @@ type DraftRecord = {
     mentions?: string[];
   };
   giftDeliverable?: GiftDeliverable | null;
+  raffleApproval?: RaffleApprovalConfig | null;
   attachments?: CampaignAttachment[];
   creatorAddress?: string | null;
   creatorHandle?: string | null;
@@ -320,6 +323,7 @@ type DraftSnapshot = {
   winnerReductionPercent: string;
   mentions: string[];
   giftDeliverable: GiftDeliverable;
+  raffleApproval?: RaffleApprovalConfig | null;
   attachments: CampaignAttachment[];
   formsMountable?: FormsMountableConfig;
   childFreightMountable?: ChildFreightMountableConfig;
@@ -511,6 +515,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [childFreightMountable, setChildFreightMountable] = useState<ChildFreightMountableConfig>(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
   const [appMountables, setAppMountables] = useState<AppMountableConfig[]>([]);
+  const [raffleApprovalStage, setRaffleApprovalStage] = useState<RaffleApprovalStage>("on-commence");
   const [giftApprovalMode, setGiftApprovalMode] = useState<GiftApprovalMode>("all");
   const [giftApprovalThreshold, setGiftApprovalThreshold] = useState("1");
   const [giftSplitMode, setGiftSplitMode] = useState<GiftSplitMode | null>(null);
@@ -649,6 +654,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     })),
     [giftResolvedAddresses, parsedGiftDirectives.receivers],
   );
+  const raffleApprovalEnabled = shouldCollectRaffleTicketPrice && giftApproverUsers.length > 0;
+  const raffleApprovalDraft = useMemo<RaffleApprovalConfig | null>(() => raffleApprovalEnabled ? {
+    stage: campaignType === CampaignType.RecurringRaffle ? "on-commence" : raffleApprovalStage,
+    required: ((raffleApprovalStage === "on-delivery" && campaignType !== CampaignType.RecurringRaffle) || giftApprovalMode === "all") ? giftApproverUsers.length : Number(giftApprovalThreshold),
+    approvers: giftApproverUsers,
+  } : null, [raffleApprovalEnabled, campaignType, raffleApprovalStage, giftApprovalMode, giftApprovalThreshold, giftApproverUsers]);
   const isOpenGiftClaim = giftFeatureEnabled && giftClaimantUsers.length === 0;
   const effectiveGiftSplitMode = giftFeatureEnabled
     ? (isOpenGiftClaim ? "equal" : giftSplitMode)
@@ -713,6 +724,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftResolvedAddresses,
     trimmedModalDescription,
   ]);
+  const giftApprovalDraft = useMemo(() => buildGiftApprovalConfig(giftDeliverableDraft), [giftDeliverableDraft]);
   const allMentions = useMemo(
     () => Array.from(new Set([...mentions, ...buildGiftMentionList(parsedGiftDirectives)])),
     [mentions, parsedGiftDirectives],
@@ -727,6 +739,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   );
   const normalizedCreateParams = useMemo(() => {
     try {
+      if ((shouldCollectRaffleTicketPrice || giftFeatureEnabled) && parsedGiftDirectives.hasApproveSection && !giftApproverUsers.length) throw new Error("Tag at least one approver after @approve");
+      if (giftFeatureEnabled && giftPreviewState.error) throw new Error(giftPreviewState.error);
+      if (giftApprovalDraft) {
+        validateCampaignApproval(giftApprovalDraft, campaignType, BigInt(Math.round(Number(taskStartDelayHours) * 3600)));
+        if (giftApprovalDraft.approvers.some((entry) => !entry.address)) throw new Error("Resolve all tagged gift approvers’ wallets before publishing");
+      }
+      if (raffleApprovalDraft) {
+        validateRaffleApproval(raffleApprovalDraft, campaignType, BigInt(Math.round(Number(taskStartDelayHours) * 3600)));
+        if (raffleApprovalDraft.approvers.some((entry) => !entry.address)) throw new Error("Resolve all tagged approvers’ wallets before publishing");
+      }
       return {
         value: normalizeCreateCampaignParams({
           campaignType,
@@ -752,6 +774,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
   }, [
     activeReviewSummary,
+    giftApprovalDraft,
+    giftFeatureEnabled,
+    giftPreviewState.error,
+    giftApproverUsers.length,
+    parsedGiftDirectives.hasApproveSection,
+    raffleApprovalDraft,
     campaignType,
     maxAmountCkb,
     raffleTicketPriceCkb,
@@ -784,6 +812,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     winnerReductionPercent,
     mentions: allMentions,
     giftDeliverable: giftDeliverableDraft,
+    raffleApproval: raffleApprovalDraft,
     attachments,
     formsMountable,
     childFreightMountable,
@@ -797,6 +826,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     currentAuxAmountCkb,
     currentDraftSummary,
     giftDeliverableDraft,
+    raffleApprovalDraft,
     maxAmountCkb,
     formsMountable,
     childFreightMountable,
@@ -860,6 +890,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     || (formsMountable.enabled && !hasFormsResponseAccess ? googleLinkError : "");
   useInfoError(activeFormsResponseAccessError);
   useInfoError(giftPreviewState.error);
+  useInfoError(isReviewStep ? normalizedCreateParams.error : null);
   const formsResponseAccessHelperMessage = !formsMountable.enabled
     ? ""
     : !hasMountedFormValidation
@@ -953,7 +984,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
 
     const unresolvedHandles = giftTaggedHandles.filter((handle) => !giftResolvedAddresses[handle]);
-    const nextWarnings = unresolvedHandles.map((handle) => `Could not resolve @${handle}. Publishing is allowed, but wallet-gated actions will only work once that handle maps to a profile.`);
+    const nextWarnings = unresolvedHandles.map((handle) => parsedGiftDirectives.approvers.includes(handle)
+      ? `Resolve @${handle}’s wallet before publishing this gift.`
+      : `Could not resolve @${handle}. Publishing is allowed, but wallet-gated actions will only work once that handle maps to a profile.`);
     const currentWarningsKey = JSON.stringify(giftResolutionWarnings);
     const nextWarningsKey = JSON.stringify(nextWarnings);
     if (currentWarningsKey !== nextWarningsKey) {
@@ -969,10 +1002,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftTaggedHandles,
     isOpenGiftClaim,
     rewardCount,
+    parsedGiftDirectives.approvers,
   ]);
 
   useEffect(() => {
-    if (!giftFeatureEnabled) {
+    if (!giftFeatureEnabled && !raffleApprovalEnabled) {
       return;
     }
 
@@ -1027,7 +1061,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     return () => {
       cancelled = true;
     };
-  }, [giftFeatureEnabled, giftResolvedAddresses, giftTaggedHandles]);
+  }, [giftFeatureEnabled, raffleApprovalEnabled, giftResolvedAddresses, giftTaggedHandles]);
 
   const filteredMentions = MOCK_USERS.filter(
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
@@ -1144,6 +1178,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setRaffleSupportPoolPercent("0");
     setRecurringSleepHours("1");
     setWinnerReductionPercent("50");
+    setRaffleApprovalStage("on-commence");
     setGiftApprovalMode("all");
     setGiftApprovalThreshold("1");
     setGiftSplitMode(null);
@@ -1714,6 +1749,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const applyDraftSnapshot = useCallback((resumeState: CreateModalResumeState) => {
     const nextSnapshot = buildDraftSnapshot(resumeState.snapshot);
     const nextGiftDeliverable = parseStoredGiftDeliverable(nextSnapshot.giftDeliverable);
+    const nextRaffleApproval = parseRaffleApprovalConfig(nextSnapshot.raffleApproval);
     const nextCampaignType = nextSnapshot.campaignType;
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
     const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
@@ -1730,13 +1766,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setSummary(nextSnapshot.description);
     setCampaignType(nextCampaignType);
     setMentions(nextSnapshot.mentions);
-    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
-    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setRaffleApprovalStage(nextRaffleApproval?.stage ?? "on-commence");
+    setGiftApprovalMode(nextRaffleApproval ? (nextRaffleApproval.required === nextRaffleApproval.approvers.length ? "all" : "threshold") : nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextRaffleApproval?.required ?? nextGiftDeliverable.approvalRule?.threshold ?? 1));
     setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
     setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
     setGiftResolvedAddresses(
       Object.fromEntries(
-        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers, ...(nextRaffleApproval?.approvers ?? [])]
           .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
       ),
     );
@@ -1848,6 +1885,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextRecurringSleepHours = record.argsDraft?.recurringSleepHours ?? "1";
     const nextWinnerReductionPercent = record.argsDraft?.winnerReductionPercent ?? "50";
     const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
+    const nextRaffleApproval = parseRaffleApprovalConfig(record.raffleApproval);
     const nextAttachments = Array.isArray(record.attachments) ? record.attachments : [];
     const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
 
@@ -1856,13 +1894,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setSummary(nextDescription);
     setCampaignType(nextCampaignType);
     setMentions(nextMentions);
-    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
-    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setRaffleApprovalStage(nextRaffleApproval?.stage ?? "on-commence");
+    setGiftApprovalMode(nextRaffleApproval ? (nextRaffleApproval.required === nextRaffleApproval.approvers.length ? "all" : "threshold") : nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextRaffleApproval?.required ?? nextGiftDeliverable.approvalRule?.threshold ?? 1));
     setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
     setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
     setGiftResolvedAddresses(
       Object.fromEntries(
-        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers, ...(nextRaffleApproval?.approvers ?? [])]
           .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
       ),
     );
@@ -1919,6 +1958,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       winnerReductionPercent: nextWinnerReductionPercent,
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
+      raffleApproval: nextRaffleApproval,
       attachments: nextAttachments,
       formsMountable: nextFormsMountable,
       childFreightMountable: nextChildFreightMountable,
@@ -2015,7 +2055,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setRaffleSupportPoolPercent("0");
         setRecurringSleepHours("1");
         setWinnerReductionPercent("50");
-        setGiftApprovalMode("all");
+        setRaffleApprovalStage("on-commence");
+    setGiftApprovalMode("all");
         setGiftApprovalThreshold("1");
         setGiftSplitMode(null);
         setGiftRatioEntries([]);
@@ -2092,6 +2133,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           resharedByAddresses: [],
         },
         giftDeliverable: giftDeliverableDraft,
+        raffleApproval: raffleApprovalDraft,
         attachments,
         creatorAddress,
         creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
@@ -2107,6 +2149,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       campaignType,
       getCreatorAddress,
       giftDeliverableDraft,
+      raffleApprovalDraft,
       attachments,
       maxAmountCkb,
       raffleTicketPriceCkb,
@@ -2190,6 +2233,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           winnerReductionPercent,
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
+          raffleApproval: raffleApprovalDraft,
           attachments,
           formsMountable: formsMountableSnapshot,
           childFreightMountable: childFreightMountableSnapshot,
@@ -2229,6 +2273,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               mentions: allMentions,
             },
             giftDeliverable: giftDeliverableDraft,
+            raffleApproval: raffleApprovalDraft,
             attachments,
             status: draftStatus,
             txHash: txHashValue,
@@ -2267,6 +2312,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       buildDraftPayload,
       campaignType,
       giftDeliverableDraft,
+      raffleApprovalDraft,
       hasMountedHashtag,
       maxAmountCkb,
       raffleTicketPriceCkb,
@@ -2828,6 +2874,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
       attemptedOnchainPublish = true;
       const publishResult = await sendCreateCampaign(signer, {
+        raffleApproval: raffleApprovalDraft,
+        giftApproval: giftApprovalDraft,
         startDurationSecs: normalizedParams.startDurationSecs,
         taskDurationSecs: normalizedParams.taskDurationSecs,
         campaignType,
@@ -3452,11 +3500,35 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           </div>
         ) : null}
 
+        {raffleApprovalDraft ? (
+          <div className="create-review-args-card">
+            <p className="create-review-section-label">Raffle approval</p>
+            <p className="create-review-preview-body">Approvers: {giftApproverUsers.map((entry) => entry.handle).join(", ")}</p>
+            <div className="create-review-arg-field">
+              <label className="create-review-arg-label" htmlFor="raffle-approval-stage">Approval stage</label>
+              <select id="raffle-approval-stage" className="create-review-arg-input" value={raffleApprovalDraft.stage} onChange={(event) => setRaffleApprovalStage(event.target.value as RaffleApprovalStage)} disabled={campaignType === CampaignType.RecurringRaffle}>
+                <option value="on-commence">On commencement</option>
+                {campaignType !== CampaignType.RecurringRaffle ? <option value="on-delivery">On delivery</option> : null}
+              </select>
+            </div>
+            {raffleApprovalDraft.stage === "on-commence" ? (
+              <>
+                <div className="create-review-gift-choice-row">
+                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "all" ? "create-review-gift-choice-active" : ""}`} onClick={() => setGiftApprovalMode("all")}>All</button>
+                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "threshold" ? "create-review-gift-choice-active" : ""}`} onClick={() => setGiftApprovalMode("threshold")}>Threshold</button>
+                </div>
+                {giftApprovalMode === "threshold" ? <label className="create-review-arg-field">Required approvals<input className="create-review-arg-input" type="number" min={1} max={giftApproverUsers.length} value={giftApprovalThreshold} onChange={(event) => setGiftApprovalThreshold(event.target.value)} /></label> : null}
+                <p className="create-review-gift-note">Approval must be recorded before the start delay ends. Missing this deadline closes the freight; only cancellation remains available. {campaignType === CampaignType.RecurringRaffle ? "Later rounds need no further approval." : ""}</p>
+              </>
+            ) : <p className="create-review-gift-note">All tagged approvers must approve before rewards can be distributed.</p>}
+          </div>
+        ) : null}
+
         {giftFeatureEnabled ? (
           <div className="create-review-args-card">
             <div className="create-review-card-heading-row">
               <p className="create-review-section-label">Gift delivery</p>
-              <span className="create-review-offchain-note">First-wave approvals and claims</span>
+              <span className="create-review-offchain-note">On-chain approvals and gift claims</span>
             </div>
             <div className="create-review-gift-grid">
               <div className="create-review-arg-field">

@@ -16,10 +16,10 @@ import {
 } from "@/lib/campaignDisplay";
 import {
   computeGiftPreviewAllocations,
-  isGiftApprovalSatisfied,
-  isGiftClaimOpen,
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
+import { isOnChainGiftApprovalSatisfied, isOnChainGiftClaimOpen } from "@/lib/giftApproval";
+import { raffleApprovalDeadlineMissed, raffleApprovalsSatisfied } from "@/lib/raffleApproval";
 import { CampaignStatus, CampaignType, ParticipantStatus } from "@/lib/contract";
 import {
   bytesToHex,
@@ -218,13 +218,13 @@ export function useCampaignCardState({
     ratioEntries: giftDeliverable.ratioEntries,
     splitMode: giftDeliverable.splitMode,
   });
-  const giftApprovalSatisfied = isGiftApprovalSatisfied(giftDeliverable);
-  const giftClaimOpen = isGiftClaimOpen({
-    chainCreatedAt: record?.chainCreatedAt ?? getCampaignChainCreatedAt(c),
-    taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
-    giftDeliverable,
-  });
-  const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled || displayStatus === CampaignStatus.Finished;
+  const giftApprovalSatisfied = isOnChainGiftApprovalSatisfied(giftDeliverable, data.approval);
+  const giftApprovedCount = data.approval?.stage === "gift-commence" ? data.approval.approvers.filter((entry) => entry.approved).length : 0;
+  const giftClaimOpen = isOnChainGiftClaimOpen(data, giftDeliverable);
+  const raffleApprovalFailed = raffleApprovalDeadlineMissed(data);
+  const raffleCommencementPending = data.approval?.stage === "on-commence" && !raffleApprovalsSatisfied(data.approval);
+  const raffleDeliveryPending = data.approval?.stage === "on-delivery" && !raffleApprovalsSatisfied(data.approval);
+  const isCampaignInactive = raffleApprovalFailed || displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled || displayStatus === CampaignStatus.Finished;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
   const chainSoldTickets = ticketPriceShannons > 0n
     ? data.ticketSalesTotal / ticketPriceShannons
@@ -279,14 +279,8 @@ export function useCampaignCardState({
     && normalizeHash(creatorAddress) === normalizedCurrentWalletAddress;
   const lockMountable = record?.mountables?.lock ?? null;
   const lockThresholdFbars = getLockMountableThresholdFbars(lockMountable);
-  const isLockedForInteractions = lockThresholdFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars, creatorCurrentFbars);
+  const isLockedForInteractions = raffleApprovalFailed || lockThresholdFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars, creatorCurrentFbars);
   const lockAccessMessage = lockMountableAccessMessage(lockMountable, creatorCurrentFbars);
-  const canGiftApprove = Boolean(
-    normalizedCurrentWalletAddress
-    && giftDeliverable.enabled
-    && !giftApprovalSatisfied
-    && giftDeliverable.approvers.some((entry) => normalizeHash(entry.address) === normalizedCurrentWalletAddress),
-  );
   const canGiftClaim = Boolean(
     normalizedCurrentWalletAddress
     && giftDeliverable.enabled
@@ -337,8 +331,8 @@ export function useCampaignCardState({
 
   const isConnected = !!signer;
   const isSupportLocked = isLockedForInteractions && c.data.campaignType !== CampaignType.SimpleTask;
-  const isSupportDisabled = !isConnected || isSupportLocked || isCampaignInactive || (isRecurringRaffle && displayStatus !== CampaignStatus.Active && displayStatus !== CampaignStatus.Created) || !supportState.supportEnabled;
-  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets || (isRecurringRaffle && displayStatus !== CampaignStatus.Active);
+  const isSupportDisabled = raffleCommencementPending || !isConnected || isSupportLocked || isCampaignInactive || (isRecurringRaffle && displayStatus !== CampaignStatus.Active && displayStatus !== CampaignStatus.Created) || !supportState.supportEnabled;
+  const isPurchaseDisabled = raffleCommencementPending || !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets || (isRecurringRaffle && displayStatus !== CampaignStatus.Active);
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userReshared = normalizedCurrentWalletAddress.length > 0 && resharedByAddresses.includes(normalizedCurrentWalletAddress);
@@ -350,9 +344,9 @@ export function useCampaignCardState({
   const shouldGlowSettlement = isRecurringRaffle
     ? (displayStatus === CampaignStatus.Sleeping || (displayStatus === CampaignStatus.Active && Date.now() >= recurringRoundEndsAt))
     : settlementUiState.shouldGlowSettlement;
-  const showSettlementAction = isRecurringRaffle
+  const showSettlementAction = !raffleApprovalFailed && !raffleCommencementPending && !raffleDeliveryPending && (isRecurringRaffle
     ? (displayStatus === CampaignStatus.Active || displayStatus === CampaignStatus.Sleeping)
-    : settlementUiState.showSettlementAction;
+    : settlementUiState.showSettlementAction);
   const recurringActionLabel = !isRecurringRaffle
     ? null
     : displayStatus === CampaignStatus.Active
@@ -360,7 +354,7 @@ export function useCampaignCardState({
       : Date.now() > recurringSleepEndsAt
         ? ((data.roundWinnerCount ?? 0n) === 1n ? "Finish recurring raffle" : "Start next raffle round")
         : "Cash out recurring raffle reward";
-  const showCreatorWithdrawAction = creatorWithdrawUiState.canWithdraw && isCreatorViewer;
+  const showCreatorWithdrawAction = (giftApprovalSatisfied || data.status === CampaignStatus.Cancelled) && creatorWithdrawUiState.canWithdraw && isCreatorViewer && (!raffleApprovalFailed || data.status === CampaignStatus.Cancelled) && (!raffleDeliveryPending || data.status === CampaignStatus.Cancelled);
   const creatorWithdrawAmountCkb = formatWholeCkbAmount(creatorWithdrawUiState.withdrawableAmount);
 
   useEffect(() => {
@@ -495,6 +489,7 @@ export function useCampaignCardState({
   }, [cardId, commentDiscardDecision]);
 
   const handleLike = async () => {
+    if (raffleApprovalFailed) return;
     if (!isConnected || isSavingLike) {
       return;
     }
@@ -574,12 +569,14 @@ export function useCampaignCardState({
   };
 
   const handleBookmark = () => {
+    if (raffleApprovalFailed) return;
     if (!isConnected) return;
     setUserBookmarked(!userBookmarked);
     setBookmarks((prev) => (userBookmarked ? prev - 1 : prev + 1));
   };
 
   const handleComment = () => {
+    if (raffleApprovalFailed) return;
     if (!isConnected) return;
     if (isLockedForInteractions) {
       setCommentError(lockAccessMessage);
@@ -624,6 +621,7 @@ export function useCampaignCardState({
   }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest, persistentCommentComposer]);
 
   const handleSubmitComment = async () => {
+    if (raffleApprovalFailed) return;
     const nextCommentText = commentDraft.trim();
     if (!nextCommentText) {
       setCommentError("Comment cannot be empty");
@@ -707,6 +705,7 @@ export function useCampaignCardState({
   };
 
   const handleReshare = async () => {
+    if (raffleApprovalFailed) return;
     const freightUrl = `${window.location.origin}/freight/${getCampaignStableId(c)}`;
 
     try {
@@ -845,32 +844,6 @@ export function useCampaignCardState({
     return txHash;
   };
 
-  const handleGiftApprove = async () => {
-    if (!record?._id) {
-      showActionFeedback("like", "error", "Gift approvals are not available for this freight yet");
-      return;
-    }
-
-    try {
-      const signed = await withSignedNonce("gift-approve");
-      const response = await fetch(`/api/campaign-records/${record._id}/approve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(signed),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to approve gift freight");
-      }
-
-      showActionFeedback("like", "success", payload?.approvalsSatisfied ? "Gift approvals satisfied" : "Gift approved");
-    } catch (error) {
-      showActionFeedback("like", "error", error instanceof Error ? error.message : "Failed to approve gift freight");
-    }
-  };
-
   const handleGiftClaim = async () => {
     if (!record?._id) {
       showActionFeedback("reshare", "error", "Gift claims are not available for this freight yet");
@@ -907,7 +880,7 @@ export function useCampaignCardState({
       randomnessHash: "",
       randomnessPreimage: null,
       evidenceItems: [
-        `Gift approvals: ${giftDeliverable.approvals.length}/${giftDeliverable.requiredApprovalCount ?? 0}`,
+        `Gift approvals: ${giftApprovedCount}/${data.approval?.required ?? giftDeliverable.requiredApprovalCount ?? 0}`,
         `Claim mode: ${giftDeliverable.claimants.length > 0 ? "restricted" : "open"}`,
         `Split mode: ${giftDeliverable.splitMode ?? "equal"}`,
       ],
@@ -921,7 +894,7 @@ export function useCampaignCardState({
       distributionTxHash: null,
       errorMessage: giftPreview.error,
       gift: {
-        approvalCount: giftDeliverable.approvals.length,
+        approvalCount: giftApprovedCount,
         canApprove: giftDeliverable.approvers.length > 0 && !giftApprovalSatisfied,
         canClaim: giftClaimOpen,
         claimAmountLabel: giftPreview.perClaimAmountLabel,
@@ -930,7 +903,7 @@ export function useCampaignCardState({
           : "Anyone can claim",
         errorMessage: giftPreview.error,
         giftEnabled: giftDeliverable.enabled,
-        requiredApprovalCount: giftDeliverable.requiredApprovalCount,
+        requiredApprovalCount: data.approval?.stage === "gift-commence" ? data.approval.required : giftDeliverable.requiredApprovalCount,
       },
       _campaign: c,
       _record: record,
@@ -938,6 +911,7 @@ export function useCampaignCardState({
   };
 
   const handleWithdrawClick = async () => {
+    if (!giftApprovalSatisfied && data.status !== CampaignStatus.Cancelled) { showActionFeedback("withdraw", "error", "Gift commencement approvals are still pending"); return; }
     if (!signer || isWithdrawing) {
       return;
     }
@@ -1013,6 +987,7 @@ export function useCampaignCardState({
   };
 
   const handleSettlementClick = async () => {
+    if (raffleApprovalFailed || raffleCommencementPending || raffleDeliveryPending) return;
     if (!isRaffleCampaign) {
       return;
     }
@@ -1335,7 +1310,6 @@ export function useCampaignCardState({
     handleBookmark,
     handleComment,
     handleDepositSubmit,
-    handleGiftApprove,
     handleGiftClaim,
     handleGiftInfoClick,
     handleLike,
@@ -1348,7 +1322,6 @@ export function useCampaignCardState({
     isCampaignInactive,
     isCommentComposerOpen,
     isConnected,
-    canGiftApprove,
     canGiftClaim,
     isLockedForInteractions,
     isSupportLocked,

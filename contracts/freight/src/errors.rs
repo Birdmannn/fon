@@ -28,6 +28,8 @@ pub enum Error {
     InvalidOperation,
     InvalidSignature,
     RandomnessMismatch,
+    ApprovalRequired,
+    ApprovalDeadlineMissed,
 }
 
 impl From<SysError> for Error {

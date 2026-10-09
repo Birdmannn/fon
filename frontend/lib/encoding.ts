@@ -1,3 +1,4 @@
+import { decodeRaffleApproval, encodeRaffleApproval, type RaffleApprovalState } from "./raffleApproval.ts";
 import type { ccc } from "@ckb-ccc/connector-react";
 import {
   CAMPAIGN_DATA_LEN,
@@ -7,12 +8,12 @@ import {
   ParticipantStatus,
   RECURRING_CAMPAIGN_DATA_LEN,
   Selector,
-} from "./contract";
+} from "./contract.ts";
 import {
   calculateCreatorWithdrawableSupport,
   calculateRaffleRewardPool,
   calculateRaffleSupportContribution,
-} from "./raffleSupportPool";
+} from "./raffleSupportPool.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +85,7 @@ export function encodeCreateCampaignArgs(
   supportPoolBps: bigint,
   ticketsPerUser: bigint | null = null,
   recurring?: { sleepDurationSecs: bigint; winnerReductionBps: bigint } | null,
+  approval?: RaffleApprovalState | null,
 ): Uint8Array {
   if (randomnessHash.length !== 32) throw new Error("randomnessHash must be 32 bytes");
   return concat(
@@ -96,8 +98,9 @@ export function encodeCreateCampaignArgs(
     randomnessHash,
     u64LE(rewardCount),
     u64LE(supportPoolBps),
-    ...(ticketsPerUser === null ? [] : [u64LE(ticketsPerUser)]),
+    ...(ticketsPerUser === null && !approval ? [] : [u64LE(approval?.stage === "gift-commence" ? 0n : ticketsPerUser ?? 1n)]),
     ...(recurring ? [u64LE(recurring.sleepDurationSecs), u64LE(recurring.winnerReductionBps)] : []),
+    ...(approval ? [encodeRaffleApproval(approval)] : []),
   );
 }
 
@@ -156,6 +159,7 @@ export type CampaignDataLayout = "legacy" | "split-support" | "recurring";
 // ─── Campaign cell data (174 or 198 bytes) ───────────────────────────────────
 
 export interface CampaignData {
+  approval?: RaffleApprovalState | null;
   createdAt: bigint;
   startDurationSecs: bigint;
   taskDurationSecs: bigint;
@@ -275,7 +279,7 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     u64LE(c.supportPoolBps),
   );
   if (c.dataLayout !== "recurring") {
-    return splitSupport;
+    return c.approval ? concat(splitSupport, encodeRaffleApproval(c.approval)) : splitSupport;
   }
   return concat(
     splitSupport,
@@ -286,6 +290,7 @@ export function encodeCampaignData(c: CampaignData): Uint8Array {
     u64LE(c.roundRewardPerWinner ?? 0n),
     u64LE(c.roundWinnerCount ?? 0n),
     u64LE(c.prizePool ?? 0n),
+    ...(c.approval ? [encodeRaffleApproval(c.approval)] : []),
   );
 }
 
@@ -326,7 +331,7 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     dataLayout: "split-support" as CampaignDataLayout,
   };
   if (data.length < RECURRING_CAMPAIGN_DATA_LEN || base.campaignType !== CampaignType.RecurringRaffle) {
-    return splitSupport;
+    return { ...splitSupport, approval: decodeRaffleApproval(data.slice(CAMPAIGN_DATA_LEN)) };
   }
   return {
     ...splitSupport,
@@ -338,6 +343,7 @@ export function decodeCampaignData(data: Uint8Array): CampaignData {
     roundRewardPerWinner: view.getBigUint64(230, true),
     roundWinnerCount: view.getBigUint64(238, true),
     prizePool: view.getBigUint64(246, true),
+    approval: decodeRaffleApproval(data.slice(RECURRING_CAMPAIGN_DATA_LEN)),
   };
 }
 

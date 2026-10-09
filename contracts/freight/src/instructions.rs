@@ -33,15 +33,21 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     let reward_count = u64::from_le_bytes(args[65..73].try_into().unwrap());
     let support_pool_bps = u64::from_le_bytes(args[73..81].try_into().unwrap());
     let is_recurring = campaign_type_byte == CampaignType::RecurringRaffle as u8;
-    if args.len() != 81 && args.len() != 89 && !(is_recurring && args.len() == 105) {
+    let approval_offset = if is_recurring { 105 } else { 89 };
+    let approval = if args.len() > approval_offset {
+        crate::approvals::parse_approval(&args[approval_offset..])?
+    } else { None };
+    let base_args_len = args.len() - approval.as_ref().map_or(0, |gate| gate.encoded_len());
+    if (!is_recurring && base_args_len != 81 && base_args_len != 89) || (is_recurring && base_args_len != 105) {
         return Err(Error::InvalidCampaignArgs);
     }
     if args.len() >= 89 {
-        if (campaign_type_byte != CampaignType::Raffle as u8 && !is_recurring) || maximum_amount == 0 {
+        let is_gift = campaign_type_byte == CampaignType::FundedTask as u8 && approval.as_ref().is_some_and(|gate| gate.stage == 3);
+        if campaign_type_byte != CampaignType::Raffle as u8 && !is_recurring && !is_gift {
             return Err(Error::InvalidCampaignArgs);
         }
         let tickets_per_user = u64::from_le_bytes(args[81..89].try_into().unwrap());
-        if tickets_per_user == 0 {
+        if (is_gift && tickets_per_user != 0) || (!is_gift && tickets_per_user == 0) {
             return Err(Error::InvalidCampaignArgs);
         }
     }
@@ -73,6 +79,11 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     }
 
     let campaign_type: CampaignType = campaign_type_byte.try_into().unwrap();
+    if let Some(gate) = &approval {
+        gate.validate(campaign_type, start_duration_in_seconds)?;
+        crate::approvals::verify_single_campaign_cell(Source::GroupOutput)?;
+        if gate.confirmed || gate.approvers.iter().any(|entry| entry.1) { return Err(Error::InvalidCampaignArgs); }
+    }
     debug!("create_campaign params start={} task={} type={:?} max={} aux={} reward={} support_pool_bps={}", start_duration_in_seconds, task_duration_in_seconds, campaign_type, maximum_amount, aux_amount, reward_count, support_pool_bps);
     validate_campaign_params(
         start_duration_in_seconds,
@@ -84,10 +95,15 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     )?;
 
     let created_at = get_current_timestamp()?;
+    if approval.as_ref().is_some_and(|gate| gate.stage == 1) {
+        created_at.checked_add(start_duration_in_seconds.checked_mul(1000).ok_or(Error::InvalidCampaignArgs)?)
+            .ok_or(Error::InvalidCampaignArgs)?;
+    }
 
     // Read summary from the output cell data (bytes 102..166)
     let output_data = load_cell_data(0, Source::Output)?;
     let expected_data_len = if is_recurring { RECURRING_CAMPAIGN_DATA_LEN } else { CAMPAIGN_DATA_LEN };
+    let expected_data_len = expected_data_len + approval.as_ref().map_or(0, |gate| gate.encoded_len());
     if output_data.len() != expected_data_len {
         return Err(Error::InvalidCampaignArgs);
     }
@@ -98,6 +114,7 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
     }
 
     let campaign = Campaign {
+        approval,
         created_at,
         start_duration_in_seconds,
         task_duration_in_seconds,
@@ -145,6 +162,67 @@ pub fn create_campaign(args: &[u8]) -> Result<(), Error> {
         }
     }
 
+    Ok(())
+}
+
+pub fn approve_campaign(args: &[u8]) -> Result<(), Error> {
+    if args.len() != 1 { return Err(Error::InvalidCampaignArgs); }
+    let input_data = load_cell_data(0, Source::GroupInput)?;
+    let mut campaign = parse_campaign_data(&input_data)?;
+    if campaign.status == CampaignStatus::Cancelled { return Err(Error::InvalidOperation); }
+    let deadline = campaign.created_at.checked_add(campaign.start_duration_in_seconds.checked_mul(1000).ok_or(Error::InvalidCampaignArgs)?)
+        .ok_or(Error::InvalidCampaignArgs)?;
+    let gate = campaign.approval.as_mut().ok_or(Error::InvalidOperation)?;
+    if gate.stage == 1 && get_current_timestamp()? >= deadline { return Err(Error::ApprovalDeadlineMissed); }
+    let entry = gate.approvers.get_mut(args[0] as usize).ok_or(Error::Unauthorized)?;
+    if entry.1 { return Err(Error::InvalidOperation); }
+    let mut authorized = false;
+    let own_code_hash = load_script()?.code_hash();
+    let mut index = 0;
+    loop {
+        match ckb_std::high_level::load_cell_lock_hash(index, Source::Input) {
+            Ok(hash) => {
+                let lock = load_cell_lock(index, Source::Input)?;
+                let is_state_lock = lock.code_hash() == own_code_hash && lock.args().raw_data().first() == Some(&255);
+                if hash == entry.0 && !is_state_lock { authorized = true; }
+                index += 1;
+            },
+            Err(ckb_std::error::SysError::IndexOutOfBound) => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    if !authorized { return Err(Error::Unauthorized); }
+    entry.1 = true;
+    let output_data = load_cell_data(0, Source::GroupOutput)?;
+    if !verify_campaign_tx(&output_data, &campaign)?
+        || load_cell_capacity(0, Source::GroupInput)? != load_cell_capacity(0, Source::GroupOutput)?
+        || load_cell_lock(0, Source::GroupInput)? != load_cell_lock(0, Source::GroupOutput)?
+        || (campaign.is_recurring_raffle() && parse_recurring_raffle_state(&input_data)? != parse_recurring_raffle_state(&output_data)?)
+    { return Err(Error::InvalidCellData); }
+    Ok(())
+}
+
+// The input's inclusion header cannot be substituted with a stale header dep.
+// This seals the initial approval once, so later recurring rounds need no votes.
+pub fn confirm_raffle_approval(args: &[u8]) -> Result<(), Error> {
+    if !args.is_empty() { return Err(Error::InvalidCampaignArgs); }
+    let input_data = load_cell_data(0, Source::GroupInput)?;
+    let mut campaign = parse_campaign_data(&input_data)?;
+    if campaign.status != CampaignStatus::Created { return Err(Error::InvalidOperation); }
+    let deadline = campaign.created_at.checked_add(campaign.start_duration_in_seconds.checked_mul(1000).ok_or(Error::InvalidCampaignArgs)?)
+        .ok_or(Error::InvalidCampaignArgs)?;
+    let gate = campaign.approval.as_mut().ok_or(Error::InvalidOperation)?;
+    if gate.stage != 1 || gate.confirmed || !gate.threshold_met() { return Err(Error::ApprovalRequired); }
+    let header = ckb_std::high_level::load_header(0, Source::GroupInput)?;
+    let recorded_at: u64 = header.raw().timestamp().into();
+    if recorded_at >= deadline { return Err(Error::ApprovalDeadlineMissed); }
+    gate.confirmed = true;
+    let output_data = load_cell_data(0, Source::GroupOutput)?;
+    if !verify_campaign_tx(&output_data, &campaign)?
+        || load_cell_capacity(0, Source::GroupInput)? != load_cell_capacity(0, Source::GroupOutput)?
+        || load_cell_lock(0, Source::GroupInput)? != load_cell_lock(0, Source::GroupOutput)?
+        || (campaign.is_recurring_raffle() && parse_recurring_raffle_state(&input_data)? != parse_recurring_raffle_state(&output_data)?)
+    { return Err(Error::InvalidCellData); }
     Ok(())
 }
 
@@ -263,7 +341,7 @@ pub fn verify_participant(args: &[u8]) -> Result<(), Error> {
         }
 
         let script_args = load_script().map_err(|_| Error::InvalidCampaignArgs)?.args().raw_data();
-        let tickets_per_user = if script_args.len() == 90 || script_args.len() == 106 {
+        let tickets_per_user = if script_args.len() >= 90 {
             u64::from_le_bytes(script_args[82..90].try_into().unwrap())
         } else {
             1

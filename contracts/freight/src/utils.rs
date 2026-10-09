@@ -212,6 +212,7 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
         addr
     };
     let campaign_type: CampaignType = data[44].try_into().unwrap();
+    if data.len() < crate::approvals::base_data_len(campaign_type) { return Err(Error::InvalidCellData); }
     let maximum_amount = u64::from_le_bytes(data[45..53].try_into().unwrap());
     let current_deposits = u64::from_le_bytes(data[53..61].try_into().unwrap());
     let status: CampaignStatus = data[61].try_into().unwrap();
@@ -226,6 +227,7 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
     let support_pool_bps = u64::from_le_bytes(data[190..198].try_into().unwrap());
 
     Ok(Campaign {
+        approval: crate::approvals::parse_approval(&data[crate::approvals::base_data_len(campaign_type)..])?,
         created_at,
         start_duration_in_seconds,
         task_duration_in_seconds,
@@ -245,7 +247,7 @@ pub fn parse_campaign_data(data: &[u8]) -> Result<Campaign, Error> {
 }
 
 pub fn parse_recurring_raffle_state(data: &[u8]) -> Result<RecurringRaffleState, Error> {
-    if data.len() != RECURRING_CAMPAIGN_DATA_LEN {
+    if data.len() < RECURRING_CAMPAIGN_DATA_LEN {
         return Err(Error::InvalidCellData);
     }
     Ok(RecurringRaffleState {

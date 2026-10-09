@@ -68,6 +68,7 @@ pub enum AddressKey {
 // Layout: [8][8][8][20][1][8][8][1][8][32][64][8][8][8][8] = 198 bytes
 #[derive(Debug, Clone, PartialEq)]
 pub struct Campaign {
+    pub approval: Option<crate::approvals::RaffleApproval>,
     pub created_at: u64,                // Unix timestamp in ms (8 bytes)
     pub start_duration_in_seconds: u64, // Time until campaign starts (8 bytes)
     pub task_duration_in_seconds: u64,  // How long campaign runs (8 bytes)

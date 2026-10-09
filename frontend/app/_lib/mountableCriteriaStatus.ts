@@ -83,12 +83,12 @@ export function getMountableCriteriaStatus({
     });
   }
 
-  if ((record.giftDeliverable?.approvers.length ?? 0) > 0) {
+  if ((record.giftDeliverable?.approvers.length ?? 0) > 0 || record.raffleApproval) {
     criteria.push({
       key: "signable",
       mountable: "Signable",
       principle: "Required approvals",
-      description: "Tagged signers approve this freight before delivery.",
+      description: record.raffleApproval?.stage === "on-commence" ? "Required approvals must be recorded before the initial start delay ends." : "Tagged signers approve this freight before delivery.",
       cleared: signableCleared,
       icon: "signable",
     });

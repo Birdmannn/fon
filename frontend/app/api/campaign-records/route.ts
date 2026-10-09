@@ -4,6 +4,7 @@ import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
 import { parseChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
+import { parseRaffleApprovalConfig } from "@/lib/raffleApproval";
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getCampaignAttachmentsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
@@ -46,6 +47,7 @@ type CampaignRecordPayload = {
     resharedByAddresses?: unknown;
   };
   giftDeliverable?: unknown;
+  raffleApproval?: unknown;
   attachments?: unknown;
   creatorAddress?: unknown;
   creatorHandle?: unknown;
@@ -402,6 +404,7 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         : [],
     },
     giftDeliverable,
+    raffleApproval: parseRaffleApprovalConfig(payload.raffleApproval),
     attachments,
     creatorAddress,
     creatorHandle,

@@ -17,6 +17,7 @@ import {
 } from "@/lib/campaignDisplay";
 import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
+import { raffleApprovalDeadlineMissed } from "@/lib/raffleApproval";
 import { CampaignStatus, CampaignType } from "@/lib/contract";
 import { isWinningCampaignType } from "@/lib/fbars";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
@@ -184,7 +185,9 @@ export default function CampaignCardSurface({
     : null;
   const mentions = record?.socialMetadata?.mentions ?? [];
   const giftDeliverable = record?.giftDeliverable;
-  const isSignable = (giftDeliverable?.approvers?.length ?? 0) > 0;
+  const isSignable = (giftDeliverable?.approvers?.length ?? 0) > 0 || !!data.approval;
+  const approvalFailed = displayStatus !== CampaignStatus.Cancelled && raffleApprovalDeadlineMissed(data, nowMs);
+  const statusLabel = approvalFailed ? "Closed — approval deadline missed" : STATUS_LABELS[displayStatus] ?? String(displayStatus);
   const rewardCountValue = Number(data.rewardCount);
   const supportPoolPercent = Number.parseInt(
     record?.argsDraft?.raffleSupportPoolPercent
@@ -201,10 +204,10 @@ export default function CampaignCardSurface({
   const descriptionLines = visibleDescription.length > 0 ? visibleDescription.split("\n") : [];
   const isSimpleTask = campaign.data.campaignType === CampaignType.SimpleTask;
   const timedCountdown = buildCampaignCountdown(campaign, nowMs);
-  const countdown = isSimpleTask
+  const countdown = approvalFailed ? { text: "Closed", tone: "ended" as const } : isSimpleTask
     ? { text: displayStatus === CampaignStatus.Cancelled ? "Closed" : "Ongoing", tone: displayStatus === CampaignStatus.Cancelled ? "ended" as const : "good" as const }
     : timedCountdown;
-  const countdownTitle = isSimpleTask
+  const countdownTitle = approvalFailed ? statusLabel : isSimpleTask
     ? countdown.text
     : campaign.data.campaignType === CampaignType.RecurringRaffle && displayStatus === CampaignStatus.Sleeping ? "Cash-out ends in"
     : timedCountdown.phase === "start" ? "Starts in" : timedCountdown.phase === "duration" ? "Ends in" : "Ended";
@@ -257,9 +260,9 @@ export default function CampaignCardSurface({
           <div className="campaign-card-creator-meta">
             <div className="campaign-card-creator-primary-line">
               <span
-                className={`status-indicator status-${getStatusClassName(displayStatus)}`}
-                data-tooltip={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
-                aria-label={STATUS_LABELS[displayStatus] ?? String(displayStatus)}
+                className={`status-indicator status-${getStatusClassName(approvalFailed ? CampaignStatus.Cancelled : displayStatus)}`}
+                data-tooltip={statusLabel}
+                aria-label={statusLabel}
               />
               <button
                 type="button"

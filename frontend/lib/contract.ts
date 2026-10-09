@@ -15,6 +15,10 @@ export const FREIGHT_CONTRACT = {
   },
 } as const;
 
+// Enable only after deploying the binary that implements selectors 13 and 14.
+export const FREIGHT_RAFFLE_APPROVALS_ENABLED = process.env.NEXT_PUBLIC_FREIGHT_RAFFLE_APPROVALS_ENABLED === "true";
+export const FREIGHT_GIFT_APPROVALS_ENABLED = process.env.NEXT_PUBLIC_FREIGHT_GIFT_APPROVALS_ENABLED === "true";
+
 // ─── Instruction selectors ────────────────────────────────────────────────────
 export const Selector = {
   CreateCampaign: 0,
@@ -30,6 +34,9 @@ export const Selector = {
   ClaimRecurringRaffle: 10,
   RolloverRecurringRaffle: 11,
   ReclaimRecurringParticipant: 12,
+  ApproveCampaign: 13,
+  ApproveRaffle: 13,
+  ConfirmRaffleApproval: 14,
   StateLock: 255,
 } as const;
 export type Selector = (typeof Selector)[keyof typeof Selector];

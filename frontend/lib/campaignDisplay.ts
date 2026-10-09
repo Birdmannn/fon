@@ -1,5 +1,6 @@
 import { ccc } from "@ckb-ccc/connector-react";
 
+import { raffleApprovalsSatisfied } from "@/lib/raffleApproval";
 import { CampaignStatus, CampaignType } from "@/lib/contract";
 import { bytesToHex, computeCreatorWithdrawableAmount } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
@@ -8,6 +9,8 @@ export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date
   if (campaign.data.status === CampaignStatus.Cancelled) {
     return campaign.data.status;
   }
+
+  if (campaign.data.approval?.stage === "gift-commence" && !raffleApprovalsSatisfied(campaign.data.approval)) return CampaignStatus.Created;
 
   if (campaign.data.campaignType === CampaignType.SimpleTask) {
     return CampaignStatus.Active;

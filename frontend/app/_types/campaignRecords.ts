@@ -4,6 +4,7 @@ import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
 import type { GiftDeliverable } from "@/lib/giftDeliverables";
+import type { RaffleApprovalConfig } from "@/lib/raffleApproval";
 
 export type CampaignComment = {
   text: string;
@@ -59,6 +60,7 @@ export type CampaignRecord = {
     resharedByAddresses?: string[];
   };
   giftDeliverable?: GiftDeliverable | null;
+  raffleApproval?: RaffleApprovalConfig | null;
   attachments?: CampaignAttachment[];
   creatorAddress?: string | null;
   creatorHandle?: string | null;

@@ -373,6 +373,16 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
     setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
   }, []);
 
+  useEffect(() => {
+    const onChainUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaign: CampaignCell; campaignId: string }>).detail;
+      if (!detail?.campaign) return;
+      setCampaigns((current) => current.map((campaign) => getCampaignStableId(campaign) === detail.campaignId ? detail.campaign : campaign));
+    };
+    window.addEventListener("freight:approval-chain-update", onChainUpdate);
+    return () => window.removeEventListener("freight:approval-chain-update", onChainUpdate);
+  }, []);
+
   const handleRefresh = useCallback(() => {
     void refreshCampaigns(campaigns.length > 0, campaigns);
   }, [campaigns, refreshCampaigns]);

@@ -4,10 +4,12 @@ import { SignerSignType } from "@ckb-ccc/core";
 
 import {
   computeGiftPreviewAllocations,
-  isGiftClaimOpen,
   matchesGiftHandle,
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
+import { getPublicCkbClient } from "@/lib/ckbClient";
+import { getLiveGiftCampaign } from "@/lib/giftApprovalProof";
+import { isOnChainGiftClaimOpen } from "@/lib/giftApproval";
 import { verifyWalletSignature } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 import { resolveTargetAddress } from "@/app/api/user-profiles/_lib/profileTarget";
@@ -89,6 +91,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       {
         projection: {
           campaignId: 1,
+          txHash: 1,
           createdByHash: 1,
           chainCreatedAt: 1,
           campaignType: 1,
@@ -107,13 +110,11 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       return badRequest("Gift claiming is not enabled for this freight", 409);
     }
 
-    if (!isGiftClaimOpen({
-      chainCreatedAt: typeof record.chainCreatedAt === "string" ? record.chainCreatedAt : null,
-      taskStartDelayHours: typeof record.argsDraft?.taskStartDelayHours === "string" ? record.argsDraft.taskStartDelayHours : null,
-      giftDeliverable,
-    })) {
-      return badRequest("This gift freight has not commenced for claiming yet", 409);
-    }
+    const client = getPublicCkbClient();
+    const campaign = await getLiveGiftCampaign(client, record);
+    if (giftDeliverable.approvers.length > 0 && !campaign.approval) return badRequest("This older gift needs to be recreated with on-chain approvals", 409);
+    const claimOpen = isOnChainGiftClaimOpen(campaign, giftDeliverable, Number((await client.getTipHeader()).timestamp));
+    if (!claimOpen) return badRequest("This gift freight has not commenced for claiming yet", 409);
 
     let claimRole: "open" | "claimant" = "open";
     let resolvedClaimHandle: string | null = null;
