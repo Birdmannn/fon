@@ -1293,7 +1293,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     <main className="profile-page">
       <div className="campaign-shell-width profile-page-shell">
         <AppShellHeader
-          className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header campaign-shell-width ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}

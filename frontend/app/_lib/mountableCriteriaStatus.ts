@@ -64,7 +64,7 @@ export function getMountableCriteriaStatus({
       key: "lock",
       mountable: "Lock",
       principle: "FBARS",
-      description: lockMountableAccessMessage(lock, creatorFbars),
+      description: lockMountableAccessMessage(lock),
       cleared: canAccessLockMountable(lock, viewerFbars, creatorFbars),
       icon: "lock",
     });

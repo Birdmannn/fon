@@ -480,9 +480,24 @@
 .campaign-header-bar-sticky {
   position: sticky;
   top: calc(var(--campaign-feed-sticky-top, 0px) - 1px);
-  z-index: 60;
+  z-index: 40;
   background-color: var(--background);
-  padding-bottom: 1.8rem;
+  padding-bottom: 1.08rem;
+  transition: background-color 220ms ease;
+}
+
+.campaign-shell-header::before,
+.campaign-header-bar-sticky::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: var(--header-full-width-background, var(--background));
+  /* Paint across the viewport without widening the shell or creating scrollbars. */
+  box-shadow: 0 0 0 100vmax var(--header-full-width-background, var(--background));
+  clip-path: inset(0 -100vmax);
+  transition: background-color 220ms ease, box-shadow 220ms ease;
 }
 
 .campaign-feed-list > .campaign-card-entry {
@@ -720,6 +735,12 @@
 
 .campaign-shell-header-transparent {
   background-color: transparent;
+  --header-full-width-background: transparent;
+  transition: var(--campaign-shell-transition), background-color 220ms ease;
+}
+
+.campaign-shell-header-transparent::before {
+  transition: background-color 220ms ease, box-shadow 220ms ease;
 }
 
 .campaign-card-surface-interactive:hover .campaign-card-title,
