@@ -5,6 +5,7 @@ import { CheckCircle, LoaderCircle } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
+import CampaignApprovalControls from "@/app/_components/CampaignApprovalControls";
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignCommentsPanel from "@/app/_components/CampaignCommentsPanel";
 import CampaignDetailSurface from "@/app/_components/CampaignDetailSurface";
@@ -2485,13 +2486,7 @@ export default function CampaignDetailPage() {
     }
   };
 
-  const infoModalActions = infoModalMode === "tag-suggestions" ? (
-    <div className="create-info-confirm-actions">
-      <button type="submit" form="tag-suggestions-form" className="create-info-confirm-btn create-info-confirm-btn-primary">
-        Continue
-      </button>
-    </div>
-  ) : infoModalMode === "freight-options" ? (
+  const freightOptionsButtons = (
     <div className="create-info-confirm-actions campaign-freight-options-actions">
       {([ ["create-parent", "Add Parent"], ["create-child", "Add Child"], ["view-tree", "View Tree"] ] as const).map(([option, label]) => (
         <button key={option} type="button" data-option={option} className={`create-info-confirm-btn${option === "view-tree" ? " create-info-confirm-btn-primary" : ""}`} disabled={option === "view-tree" && isLoadingFreightTree}
@@ -2500,6 +2495,20 @@ export default function CampaignDetailPage() {
         </button>
       ))}
     </div>
+  );
+
+  const infoModalActions = infoModalMode === "tag-suggestions" ? (
+    <div className="create-info-confirm-actions">
+      <button type="submit" form="tag-suggestions-form" className="create-info-confirm-btn create-info-confirm-btn-primary">
+        Continue
+      </button>
+    </div>
+  ) : infoModalMode === "freight-options" ? (
+    selectedCampaign ? (
+      <CampaignApprovalControls campaign={selectedCampaign} record={selectedRecord} signer={signer ?? null} nowMs={nowMs} placement="options">
+        {freightOptionsButtons}
+      </CampaignApprovalControls>
+    ) : freightOptionsButtons
   ) : infoModalMode === "freight-relation-choice" ? (
     <div className="create-info-confirm-actions campaign-freight-options-actions">
       <button type="button" className="create-info-confirm-btn" onClick={handleBackToFreightOptions}>Back</button>

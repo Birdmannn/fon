@@ -5,6 +5,7 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
 
+import CampaignApprovalControls from "@/app/_components/CampaignApprovalControls";
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
@@ -35,7 +36,8 @@ import {
 import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
-import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import { useCampaignFeed, type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import { findCampaignRecord, getCampaignStableId } from "@/lib/campaignIdentity";
 import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
 import { markProfileFreightsDirty } from "@/app/_hooks/useProfileFreights";
 import { markProfileTransactionsDirty } from "@/app/_hooks/useProfileTransactions";
@@ -77,6 +79,7 @@ export default function Home() {
     open();
   }, [open]);
   const signer = ccc.useSigner();
+  const { campaigns, recordIndexes, nowMs } = useCampaignFeed();
   const router = useRouter();
   const INFO_MODAL_ANIMATION_MS = 620;
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
@@ -885,6 +888,7 @@ export default function Home() {
   }, [closeFreightTree, closeInfoModal, freightLinkBusy, infoModalMode, isProcessingSupport, isPurchasingTickets, isSavingUserProfile, requestCloseCreateModal, resetHomeInfoModalState, showCreateModal, showFreightTree, showInfoModal]);
 
   const shouldHideWalletAction = (showCreateModal && !isCreateModalClosing) || (showFreightTree && !isFreightTreeClosing);
+  const selectedOptionsCampaign = campaigns.find((campaign) => getCampaignStableId(campaign) === selectedFreightOptionsId);
   const isFreightOptionsFlow = infoModalMode === "freight-options" || infoModalMode === "freight-relation-choice" || infoModalMode === "freight-existing" || infoModalMode === "freight-link-pending" || infoModalMode === "freight-link-success" || infoModalMode === "freight-link-error";
   const infoModalBody = showFreightTree && infoModalMode === "about" ? (
     <FreightTreeHelpInfo />
@@ -1266,6 +1270,25 @@ export default function Home() {
     }
   };
 
+  const freightOptionsButtons = (
+    <div className="create-info-confirm-actions campaign-freight-options-actions">
+      {([ ["create-parent", "Add Parent"], ["create-child", "Add Child"], ["view-tree", "View Tree"] ] as const).map(([option, label]) => (
+        <button key={option} type="button" data-option={option} className={`create-info-confirm-btn${option === "view-tree" ? " create-info-confirm-btn-primary" : ""}`}
+          disabled={option === "view-tree" && isLoadingFreightTree}
+          onClick={() => {
+            if (option === "view-tree") {
+              void handleViewFreightTree();
+            } else {
+              setFreightRelationChoice(option === "create-parent" ? "parent" : "child");
+              transitionFreightInfoModal("freight-relation-choice");
+            }
+          }}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   const infoModalActions = infoModalMode === "marquee-edit" ? (
     <form className="create-info-confirm-actions marquee-info-modal-actions" onSubmit={(event) => {
       event.preventDefault();
@@ -1289,22 +1312,11 @@ export default function Home() {
       </button>
     </form>
   ) : infoModalMode === "freight-options" ? (
-    <div className="create-info-confirm-actions campaign-freight-options-actions">
-      {([ ["create-parent", "Add Parent"], ["create-child", "Add Child"], ["view-tree", "View Tree"] ] as const).map(([option, label]) => (
-        <button key={option} type="button" data-option={option} className={`create-info-confirm-btn${option === "view-tree" ? " create-info-confirm-btn-primary" : ""}`}
-          disabled={option === "view-tree" && isLoadingFreightTree}
-          onClick={() => {
-            if (option === "view-tree") {
-              void handleViewFreightTree();
-            } else {
-              setFreightRelationChoice(option === "create-parent" ? "parent" : "child");
-              transitionFreightInfoModal("freight-relation-choice");
-            }
-          }}>
-          {label}
-        </button>
-      ))}
-    </div>
+    selectedOptionsCampaign ? (
+      <CampaignApprovalControls key={selectedFreightOptionsId} campaign={selectedOptionsCampaign} record={findCampaignRecord(recordIndexes, selectedOptionsCampaign)} signer={signer ?? null} nowMs={nowMs} placement="options">
+        {freightOptionsButtons}
+      </CampaignApprovalControls>
+    ) : freightOptionsButtons
   ) : infoModalMode === "freight-relation-choice" ? (
     <div className="create-info-confirm-actions campaign-freight-options-actions">
       <button type="button" className="create-info-confirm-btn" onClick={() => {

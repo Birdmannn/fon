@@ -57,13 +57,6 @@
 }
 
 .create-review-preview-card-main {
-  display: flex;
-  flex-direction: column;
-  border: none;
-  border-radius: 0;
-  padding: 0 0 0.25rem;
-  background: transparent;
-  box-shadow: none;
   min-height: 0;
   overflow-y: auto;
 }
@@ -182,18 +175,18 @@
 
 .create-review-summary-input {
   width: 100%;
-  margin-top: 0.8rem;
+  margin-top: 0;
   min-height: 2.7rem;
   height: 2.7rem;
   resize: none;
-  border: 1px solid rgba(23, 23, 23, 0.88);
-  border-radius: 0.6rem;
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 0;
   padding: 0 0.9rem;
   font: inherit;
   font-size: 0.9rem;
   line-height: 2.7rem;
   outline: none;
-  box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: none;
   transition: border-color 180ms ease, box-shadow 180ms ease;
 }
 
@@ -221,7 +214,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
-  margin-top: 0.85rem;
+  margin-top: 0;
 }
 
 .create-review-arg-field {
@@ -282,7 +275,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
-  margin-top: 0.85rem;
+  margin-top: 0;
 }
 
 .create-review-gift-choice-row {
@@ -321,7 +314,33 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
-  margin-top: 0.8rem;
+  margin-top: 0;
+}
+
+.create-review-pane-inner .create-review-arg-input,
+.create-review-pane-inner .create-review-summary-input,
+.create-review-pane-inner .create-review-gift-choice,
+.create-review-pane-inner .create-review-gift-allocation-row,
+.create-review-pane-inner .create-review-summary-bytes,
+.create-review-pane-inner .create-review-primary-tag,
+.create-review-pane-inner .create-review-secondary-tag {
+  border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.92);
+  color: #52525b;
+  box-shadow: none;
+}
+
+.create-review-pane-inner .create-review-gift-choice-active {
+  border-color: #171717;
+  background: #171717;
+  color: #fff;
+}
+
+.create-review-pane-inner .create-review-arg-input:focus,
+.create-review-pane-inner .create-review-summary-input:focus {
+  border-color: #171717;
+  box-shadow: 0 0 0 3px rgba(23, 23, 23, 0.08);
 }
 
 .create-review-gift-allocations {

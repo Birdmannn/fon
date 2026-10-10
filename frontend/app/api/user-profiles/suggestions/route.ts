@@ -12,14 +12,29 @@ export async function GET(request: Request) {
   try {
     const query = new URL(request.url).searchParams.get("query")?.trim().replace(/^@+/, "") ?? "";
     const collection = await getUserProfilesCollection();
+    const prefix = { $regex: `^${escapeRegex(query.replace(/\.ckb$/i, ""))}`, $options: "i" };
     const filter = query
-      ? { username: { $regex: `^${escapeRegex(query.replace(/\.ckb$/i, ""))}`, $options: "i" } }
+      ? { username: prefix }
       : { username: { $type: "string" } };
     const profiles = await collection.find(filter, {
       projection: { _id: 0, username: 1, displayName: 1 },
       sort: { username: 1 },
       limit: 50,
     }).toArray();
+
+    // Fill the remaining suggestions with name matches, after all handle matches.
+    // Excluding matching usernames also avoids listing the same user twice.
+    if (query && profiles.length < 50) {
+      const displayNameMatches = await collection.find({
+        displayName: prefix,
+        username: { $type: "string", $not: prefix },
+      }, {
+        projection: { _id: 0, username: 1, displayName: 1 },
+        sort: { displayName: 1, username: 1 },
+        limit: 50 - profiles.length,
+      }).toArray();
+      profiles.push(...displayNameMatches);
+    }
 
     return NextResponse.json({
       users: profiles.flatMap((profile) => {

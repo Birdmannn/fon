@@ -309,18 +309,16 @@
   }
 }
 
-.create-modal-gift-row {
-  position: absolute;
-  left: 1rem;
-  right: 5.2rem;
-  bottom: 4.35rem;
-  z-index: 55;
-}
-
-.create-modal-gift-card {
+.create-modal-gift-card,
+.create-review-pane-inner .create-review-preview-card-main,
+.create-review-pane-inner .create-review-summary-card,
+.create-review-pane-inner .create-review-args-card,
+.create-review-pane-inner .create-review-arg-field {
   border: 1px solid rgba(23, 23, 23, 0.12);
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.92);
   padding: 0.7rem 0.8rem;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -694,6 +692,31 @@
   gap: 0;
 }
 
+.campaign-freight-options-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0.5rem;
+  width: 100%;
+}
+
+.campaign-freight-options-controls > .campaign-freight-options-actions {
+  position: relative;
+  margin-top: 0;
+}
+
+.campaign-freight-options-controls > :is(.create-info-confirm-btn, .campaign-freight-options-actions) + :is(.create-info-confirm-btn, .campaign-freight-options-actions) {
+  margin-top: -2px;
+}
+
+.campaign-freight-options-controls > .campaign-freight-options-actions:is(:hover, :focus-within) {
+  z-index: 1;
+}
+
+.campaign-freight-options-controls > .campaign-freight-options-actions:focus-within {
+  z-index: 2;
+}
+
 .campaign-freight-options-actions .create-info-confirm-btn {
   min-width: 0;
   padding-inline: 0.3rem;
@@ -814,15 +837,19 @@
   border-color: #16a34a;
 }
 
-.campaign-freight-options-actions .create-info-confirm-btn[data-option="create-parent"]:is(:hover, :focus-visible) {
-  background: #9333ea;
+.campaign-freight-options-controls > .create-info-confirm-btn[data-option="cancel"]:not(:disabled):is(:hover, :focus-visible) {
+  background: #dc2626;
   color: #ffffff;
+  border-color: #dc2626;
+}
+
+.campaign-freight-options-actions .create-info-confirm-btn[data-option="create-parent"]:not(:disabled):is(:hover, :focus-visible) {
+  color: #9333ea;
   border-color: #9333ea;
 }
 
-.campaign-freight-options-actions .create-info-confirm-btn[data-option="create-child"]:is(:hover, :focus-visible) {
-  background: #16a34a;
-  color: #ffffff;
+.campaign-freight-options-actions .create-info-confirm-btn[data-option="create-child"]:not(:disabled):is(:hover, :focus-visible) {
+  color: #16a34a;
   border-color: #16a34a;
 }
 

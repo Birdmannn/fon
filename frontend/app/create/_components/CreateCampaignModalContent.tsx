@@ -669,7 +669,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const hiddenReviewMountedIconCount = reviewMountedIcons.length - visibleReviewMountedIcons.length;
   const isOpenGiftClaim = giftFeatureEnabled && giftClaimantUsers.length === 0;
   const effectiveGiftSplitMode = giftFeatureEnabled
-    ? (isOpenGiftClaim ? "equal" : giftSplitMode)
+    ? (isOpenGiftClaim ? "equal" : giftSplitMode ?? "equal")
     : null;
   const giftApprovalRule = useMemo(() => {
     if (!giftFeatureEnabled || giftApproverUsers.length === 0) {
@@ -3366,26 +3366,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         )}
       </div>
 
-      {giftFeatureEnabled ? (
-        <div className="create-modal-gift-row">
-          <div className="create-modal-gift-card">
-            <p className="create-review-section-label">Gift roles</p>
-            <div className="create-modal-gift-groups">
-              <span>Approvers: {giftApproverUsers.length > 0 ? giftApproverUsers.map((entry) => entry.handle).join(", ") : "None"}</span>
-              <span>Claimants: {giftClaimantUsers.length > 0 ? giftClaimantUsers.map((entry) => entry.handle).join(", ") : "Open claim"}</span>
-              <span>Receive: {giftReceiverUsers.length > 0 ? giftReceiverUsers.map((entry) => entry.handle).join(", ") : "None yet"}</span>
-            </div>
-            {giftResolutionWarnings.length > 0 ? (
-              <div className="create-modal-gift-warnings">
-                {giftResolutionWarnings.map((warning) => (
-                  <p key={warning} className="create-modal-gift-warning">{warning}</p>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
       <div className="create-modal-constraints-row">
         <p className={`create-modal-constraints-text ${constraintsPassed && !showDraftsPane && !isDraftListLoading && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
           {composeHelperMessage}
@@ -3543,6 +3523,24 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               <button type="button" className="create-info-confirm-btn" onClick={onApprovalSetupRequired}>Edit</button>
             </div>
             <p className="create-review-preview-body">{raffleApprovalDraft.stage === "on-delivery" ? "On delivery" : "On commencement"} · {raffleApprovalDraft.required} of {giftApproverUsers.length} approvals</p>
+          </div>
+        ) : null}
+
+        {giftFeatureEnabled ? (
+          <div className="create-modal-gift-card">
+            <p className="create-review-section-label">Gift roles</p>
+            <div className="create-modal-gift-groups">
+              <span>Approvers: {giftApproverUsers.length > 0 ? giftApproverUsers.map((entry) => entry.handle).join(", ") : "None"}</span>
+              <span>Claimants: {giftClaimantUsers.length > 0 ? giftClaimantUsers.map((entry) => entry.handle).join(", ") : "Open claim"}</span>
+              <span>Receive: {giftReceiverUsers.length > 0 ? giftReceiverUsers.map((entry) => entry.handle).join(", ") : "None yet"}</span>
+            </div>
+            {giftResolutionWarnings.length > 0 ? (
+              <div className="create-modal-gift-warnings">
+                {giftResolutionWarnings.map((warning) => (
+                  <p key={warning} className="create-modal-gift-warning">{warning}</p>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

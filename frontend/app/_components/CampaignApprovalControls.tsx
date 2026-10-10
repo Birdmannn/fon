@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ccc } from "@ckb-ccc/connector-react";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import { useInfoError } from "./InfoErrorProvider";
@@ -13,11 +13,13 @@ import { sendCancelCampaign, sendConfirmRaffleApproval, sendCampaignApproval, ty
 
 export const CAMPAIGN_APPROVAL_UPDATE_EVENT = "freight:approval-chain-update";
 
-export default function CampaignApprovalControls({ campaign, record, signer, nowMs }: {
+export default function CampaignApprovalControls({ campaign, record, signer, nowMs, placement = "inline", children }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
   signer: ccc.Signer | null;
   nowMs: number;
+  placement?: "inline" | "options";
+  children?: ReactNode;
 }) {
   const approval = campaign.data.approval;
   const legacyGift = !campaign.data.gift && !!record?.giftDeliverable?.enabled;
@@ -52,16 +54,20 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
     return () => { cancelled = true; };
   }, [awaitingConfirmation, signer, campaign.outPoint.txHash, campaign.data.createdAt, campaign.data.startDurationSecs]);
 
-  if (legacyGift || !approval && campaign.data.gift) return (
-    <div className="campaign-approval-controls">
-      <p>{legacyGift ? "This older gift needs to be recreated with on-chain claim rules." : "Gift allocations and claims are enforced on-chain."}</p>
-      {creator && (campaign.data.status === CampaignStatus.Created || campaign.data.status === CampaignStatus.Active) ? <button type="button" className="create-info-confirm-btn" disabled={busy} onClick={() => void act("cancel")}>Cancel freight</button> : null}
+  const canCancelGift = creator && (campaign.data.status === CampaignStatus.Created || campaign.data.status === CampaignStatus.Active);
+  if (legacyGift || !approval && campaign.data.gift) return placement === "options" ? (
+    <div className="campaign-freight-options-controls">
+      {children}
+      {canCancelGift ? <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" data-option="cancel" disabled={busy} onClick={() => void act("cancel")}>Cancel Freight</button> : null}
       {message ? <p role="status">{message}</p> : null}
     </div>
+  ) : (
+    <div className="campaign-approval-controls">
+      <p>{legacyGift ? "This older gift needs to be recreated with on-chain claim rules." : "Gift allocations and claims are enforced on-chain."}</p>
+    </div>
   );
-  if (!approval) return null;
+  if (!approval) return <>{children}</>;
   const cancelled = campaign.data.status === CampaignStatus.Cancelled;
-  const approvedCount = approval.approvers.filter((entry) => entry.approved).length;
   const failed = lateReceipt || raffleApprovalDeadlineMissed(campaign.data, nowMs);
   const entry = approval.approvers.find((value) => bytesToHex(value.lockHash) === walletHash);
   const complete = raffleApprovalsSatisfied(approval);
@@ -110,14 +116,21 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
     }
   }
 
+  if (placement === "options") return (
+    <div className="campaign-freight-options-controls">
+      {canApprove ? <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" data-option="approve" disabled={busy} onClick={() => void act("approve")}>Approve</button> : null}
+      {children}
+      {canCancel ? <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" data-option="cancel" disabled={busy} onClick={() => void act("cancel")}>Cancel Freight</button> : null}
+      {message ? <p role="status">{message}</p> : null}
+    </div>
+  );
+
+  if (!(awaitingConfirmation && signer && !failed && !cancelled) && !message) return null;
+
   return (
     <div className="campaign-approval-controls" aria-label="Freight approvals">
-      <p>{cancelled ? "Cancelled" : failed ? "Closed — approval deadline missed" : complete ? "Approved" : awaitingConfirmation ? "Approvals recorded — confirmation required" : `${approval.stage === "on-delivery" ? "Delivery" : "Commencement"} approvals pending`} · {approvedCount}/{approval.required}</p>
-      <p>{(approval.stage === "gift-commence" ? record?.giftDeliverable?.approvers : record?.raffleApproval?.approvers)?.map((value) => value.handle).join(", ")}</p>
       <div className="flex items-center gap-2">
-        {canApprove ? <button type="button" className="create-info-confirm-btn" disabled={busy} onClick={() => void act("approve")}>Approve</button> : null}
         {awaitingConfirmation && signer && !failed && !cancelled ? <button type="button" className="create-info-confirm-btn" disabled={busy} onClick={() => void act("confirm")}>Confirm commencement</button> : null}
-        {canCancel ? <button type="button" className="create-info-confirm-btn" disabled={busy} onClick={() => void act("cancel")}>Cancel freight</button> : null}
       </div>
       {message ? <p role="status">{message}</p> : null}
     </div>
