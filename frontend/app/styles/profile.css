@@ -36,7 +36,7 @@
 .profile-hero-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 8rem minmax(0, 1fr);
+  grid-template-columns: 8rem minmax(0, 1fr) auto;
   align-items: start;
   justify-content: start;
   column-gap: 0.35rem;
@@ -58,6 +58,9 @@
 }
 
 .profile-avatar-column {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -66,6 +69,8 @@
 }
 
 .profile-summary-card {
+  grid-column: 2;
+  grid-row: 1;
   width: 100%;
   min-width: 0;
   padding: 0;
@@ -165,10 +170,16 @@
   overflow-wrap: anywhere;
 }
 
+.profile-handle-row {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+
 .profile-handle-under-avatar {
-  max-width: none;
+  max-width: 100%;
   padding-left: 0.2rem;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .profile-stats-column {
@@ -187,11 +198,15 @@
 }
 
 .profile-rank-link {
+  grid-column: -2 / -1;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
+  white-space: nowrap;
   border: 0;
   background: transparent;
   padding: 0;
-  margin-left: auto;
-  margin-right: 0;
+  margin: 0;
   color: #6b7280;
   font-family: "Cruyff Sans", Arial, Helvetica, sans-serif;
   font-size: clamp(1.55rem, 4vw, 2rem);
@@ -1200,8 +1215,18 @@
 
 @media (width <= 48.3rem) {
   .profile-hero-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 6rem minmax(0, 1fr) auto;
     gap: 0.75rem;
+  }
+
+  .profile-avatar-placeholder {
+    width: 6rem;
+    height: 6rem;
+  }
+
+  .profile-reputation-balance {
+    font-size: clamp(1.25rem, 3.2vw, 1.6rem);
+    overflow-wrap: anywhere;
   }
 
   .profile-avatar-column,
@@ -1214,7 +1239,7 @@
 
   .profile-handle-under-avatar,
   .profile-handle-loader {
-    max-width: none;
+    max-width: 100%;
   }
 
   .profile-address-row {
@@ -1265,6 +1290,11 @@
 }
 
 @media (width > 48.3rem) {
+  .profile-handle-under-avatar {
+    max-width: none;
+    white-space: nowrap;
+  }
+
   .profile-page {
     padding: 2rem;
   }
@@ -1275,17 +1305,6 @@
 
   .profile-summary-card {
     padding: 0;
-  }
-}
-
-@media (30rem < width <= 48.3rem) {
-  .profile-hero-row {
-    grid-template-columns: 6rem minmax(0, 1fr);
-  }
-
-  .profile-avatar-placeholder {
-    width: 6rem;
-    height: 6rem;
   }
 }
 
@@ -1311,7 +1330,35 @@
   }
 }
 
+/* Middle layout: keep the username and address on single lines. */
+@media (30rem < width <= 48.3rem) {
+  .profile-handle-under-avatar {
+    max-width: none;
+    white-space: nowrap;
+  }
+
+  .profile-address-row {
+    align-items: center;
+  }
+
+  .profile-address-value {
+    flex: 1 1 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 @media (width <= 30rem) {
+  .profile-hero-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .profile-summary-card {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
   .profile-avatar-placeholder {
     width: 5rem;
     height: 5rem;

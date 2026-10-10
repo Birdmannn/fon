@@ -1446,32 +1446,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     {photoUrl ? <Image src={photoUrl} alt={`${currentUserProfile?.displayName ?? "User"}'s profile photo`} fill unoptimized className="profile-avatar-image" /> : <span>Profile photo</span>}
                   </div>
                 )}
-                {canEditDisplayName ? (
-                  <button
-                    type="button"
-                    className="profile-handle profile-handle-under-avatar profile-handle-edit-trigger"
-                    onClick={openDisplayNameModal}
-                    aria-label={`Edit ${handleLabel}`}
-                  >
-                    {handleLabel}
-                  </button>
-                ) : (
-                  <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-                )}
+
               </div>
 
               <section className="profile-summary-card">
                 <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
                   <div className="profile-rank-row">
                     <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: {currentUserProfile?.fbars ?? 0} FBARS</p>
-                    <button
-                      type="button"
-                      className="profile-rank-link"
-                      onClick={openLeaderboardModal}
-                      disabled={!currentUserProfile}
-                    >
-                      {currentUserRankLabel}
-                    </button>
                   </div>
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
@@ -1504,6 +1485,28 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
                 </div>
               </section>
+              <button
+                type="button"
+                className={`profile-rank-link profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}
+                onClick={openLeaderboardModal}
+                disabled={!currentUserProfile}
+              >
+                {currentUserRankLabel}
+              </button>
+              <div className={`profile-handle-row profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-handle profile-handle-under-avatar profile-handle-edit-trigger"
+                    onClick={openDisplayNameModal}
+                    aria-label={`Edit ${handleLabel}`}
+                  >
+                    {handleLabel}
+                  </button>
+                ) : (
+                  <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+                )}
+              </div>
             </div>
 
             {currentUserProfile ? (

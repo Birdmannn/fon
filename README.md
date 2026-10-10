@@ -15,6 +15,7 @@ off-chain participation state.
 | [`contracts/freight/`](contracts/freight/) | CKB freight contract |
 | [`packages/fon-sdk/`](packages/fon-sdk/) | SDK for hosted mountable apps |
 | [`examples/checkbox-demo/`](examples/checkbox-demo/) | Hosted app example using the SDK and JoyID |
+| [`checkbox-demo/`](checkbox-demo/) | Separately deployable checkbox demo with a GitHub SDK dependency |
 | [`tests/`](tests/) | Contract tests |
 
 ## Run the app locally
@@ -41,6 +42,8 @@ to connect it to a local FON app. Pull polling is disabled by default; the
 [frontend guide](frontend/README.md) explains its opt-in environment flag and
 optional scheduler.
 
+To deploy the demo as its own application, use the [standalone demo guide](checkbox-demo/README.md).
+
 ## Build and test
 
 ```bash
@@ -64,6 +67,7 @@ Start with these guides for the current project structure and integration flow:
   event delivery, polling, and the active freight window.
 - [Checkbox demo](examples/checkbox-demo/README.md): run and register a hosted
   mountable app locally.
+- [Standalone checkbox demo](checkbox-demo/README.md): deploy the demo separately with the SDK installed from GitHub.
 - [Frontend guide](frontend/README.md): app setup, environment variables, and
   mounted-app polling.
 - [Freight contract](contracts/freight/README.md): approval and gift-claim rules,
