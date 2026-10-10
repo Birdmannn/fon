@@ -376,9 +376,20 @@
   color: #a16207;
 }
 
-@media (max-width: 768px) {
+@media (width <= 48.3rem) {
   .create-review-args-grid,
   .create-review-gift-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (width <= 30rem) {
+  .create-modal-step-pane-review {
+    padding-inline: 0.75rem;
+  }
+
+  .create-review-card-heading-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 }

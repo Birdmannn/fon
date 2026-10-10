@@ -529,7 +529,7 @@
   gap: 0.55rem;
 }
 
-@media (min-width: 640px) {
+@media (width > 48.3rem) {
   .campaign-header-bar {
     flex-direction: row;
     align-items: flex-start;
@@ -731,7 +731,7 @@
 }
 
 .campaign-shell-header {
-  width: 100%;
+  width: calc(100% - 2rem);
   padding-top: 1rem;
   padding-bottom: 1rem;
   background-color: var(--background);
@@ -2045,7 +2045,7 @@
   width: 100%;
 }
 
-@media (min-width: 961px) {
+@media (width > 57.96rem) {
   .campaign-detail-page {
     overflow: hidden;
   }
@@ -2072,19 +2072,7 @@
   }
 }
 
-@media (max-width: 960px) {
-  .campaign-detail-card-title {
-    font-size: clamp(1.5rem, 7vw, 2.1rem);
-  }
-
-  .campaign-shell-width,
-  .campaign-shell-width-expanded,
-  .campaign-shell-width-md,
-  .campaign-shell-width-detail,
-  .campaign-shell-header {
-    max-width: 100%;
-  }
-
+@media (width <= 57.96rem) {
   .campaign-detail-shell,
   .campaign-detail-content-shell,
   .campaign-detail-content,
@@ -2262,4 +2250,110 @@
 
 .campaign-tag-measure .campaign-tag-chip {
   max-width: none;
+}
+
+/* Active shells: 42rem (feed/profile), 50.4rem (detail).
+   Keep tablet arrangements through 115% of each shell's width. */
+.campaign-feed-page {
+  padding: 2rem;
+}
+
+.campaign-feed-shell {
+  padding-top: 2.625rem;
+}
+
+@media (width <= 48.3rem) {
+  .campaign-shell-header {
+    padding-block: 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .campaign-card-action-row {
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+
+  .campaign-feed-page {
+    padding: 1rem;
+  }
+
+  .campaign-feed-shell {
+    padding-top: 3.625rem;
+  }
+
+  .campaign-header-bar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .campaign-header-actions {
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  .campaign-card-title {
+    font-size: 1.125rem;
+  }
+
+  .campaign-card-footer {
+    gap: 0.5rem;
+  }
+
+}
+
+@media (width <= 57.96rem) {
+  .campaign-detail-page {
+    padding-inline: 1rem;
+  }
+
+  .campaign-detail-card-title,
+  .campaign-detail-card-byline {
+    font-size: clamp(1.25rem, 4vw, 1.75rem);
+    overflow-wrap: anywhere;
+  }
+
+  .campaign-detail-card-byline {
+    flex-wrap: wrap;
+  }
+
+  .campaign-card-description-detail {
+    font-size: 0.95rem;
+    line-height: 1.4rem;
+  }
+}
+
+@media (width <= 30rem) {
+  .campaign-card-creator-header {
+    gap: 0.5rem;
+  }
+
+  .campaign-card-creator-primary-line,
+  .campaign-card-creator-secondary-line {
+    gap: 0.35rem;
+  }
+
+  .campaign-card-title {
+    overflow-wrap: anywhere;
+  }
+
+  .campaign-search-wrapper {
+    --campaign-search-width: clamp(7rem, 38vw, 11rem);
+  }
+
+  .campaign-card-surface-detail {
+    padding: 0.75rem;
+  }
+
+  .campaign-detail-comment-meta {
+    flex-wrap: wrap;
+  }
+
+  .create-campaign-fab {
+    width: 52px !important;
+    height: 52px !important;
+    bottom: max(1.25rem, env(safe-area-inset-bottom)) !important;
+  }
 }

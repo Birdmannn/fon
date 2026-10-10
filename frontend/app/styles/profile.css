@@ -1198,7 +1198,7 @@
   }
 }
 
-@media (max-width: 639px) {
+@media (width <= 48.3rem) {
   .profile-hero-row {
     grid-template-columns: 1fr;
     gap: 0.75rem;
@@ -1264,7 +1264,7 @@
   }
 }
 
-@media (min-width: 640px) {
+@media (width > 48.3rem) {
   .profile-page {
     padding: 2rem;
   }
@@ -1275,5 +1275,45 @@
 
   .profile-summary-card {
     padding: 0;
+  }
+}
+
+@media (30rem < width <= 48.3rem) {
+  .profile-hero-row {
+    grid-template-columns: 6rem minmax(0, 1fr);
+  }
+
+  .profile-avatar-placeholder {
+    width: 6rem;
+    height: 6rem;
+  }
+}
+
+@media (width <= 48.3rem) {
+  .profile-page-shell {
+    padding-top: 3.625rem;
+  }
+
+  .profile-tab-button {
+    padding: 0.5rem;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+  }
+
+  .profile-rank-row,
+  .profile-balance-inline-group-single-line {
+    flex-wrap: wrap;
+  }
+
+  .profile-freight-row,
+  .profile-transaction-row-simple {
+    gap: 0.5rem;
+  }
+}
+
+@media (width <= 30rem) {
+  .profile-avatar-placeholder {
+    width: 5rem;
+    height: 5rem;
   }
 }

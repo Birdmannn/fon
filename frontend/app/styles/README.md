@@ -84,3 +84,11 @@ All files are imported in `app/globals.css` in this order:
 - No runtime performance impact from splitting files
 - Better for development and maintenance
 - Easier code splitting if needed in the future
+
+## Responsive shells
+
+The feed and profile use the 42rem shell; freight detail uses the 50.4rem shell.
+Keep their maximum widths on tablets instead of expanding them to the viewport.
+Tablet layouts apply through 48.3rem and 57.96rem respectively (shell width × 1.15).
+Phone adjustments apply through 30rem. Keep responsive changes to dimensions,
+spacing, and component arrangement; preserve theme and interaction styles.
