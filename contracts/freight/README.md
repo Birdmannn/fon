@@ -101,20 +101,23 @@ No deployment is performed by building or testing these changes.
 
 ## Current testnet deployment
 
-The fresh profile was redeployed on 2026-10-09 after reclaiming the previous
-approval-only code cell. The transaction is committed, and the live bytes exactly
-match the tested `build/release/freight`, including `APV1` approvals and `GFT1`
-claim policies.
+The fresh profile was redeployed on 2026-10-10 after reclaiming the previous
+code cell. The transaction is committed, and the live bytes exactly match the tested `build/release/freight`,
+including `APV1` approvals and `GFT1` claim policies.
 
-- Transaction: `0x48c6a734b1ef27cf8f877f800911b1373587d61011269f697cd524d23df64ab5`, output 0.
-- Type script hash: `0x50257469fedf0fc38ea06f803f289a4a395f802b7cc59a03d00846c9e6e36f43`.
+- Transaction: `0xd5baeb3225bc7cb8558b849148e5a77c6616edc1c228dbe701dcff52e98495a3`, output 0.
+- Type script hash: `0x5724d09f04556e046c2deb3cb870883526545a1eedf67779e09b2cce0559ce3c`.
 - Binary data hash: `0x5a644fe5590e290cffd45523940eff02f9d0b33e6bd03909bfa564987a7a5b3b`.
 - Contract capacity: 167,694 CKB; deployment fee: 0.00168169 CKB.
-- Reclaim transaction: `0x0356a45a40a5945a3afdf449f16035f20bb4aac4fc819ac227fe49bb9ddca6dc`.
+- Reclaim transaction: `0x85f316c3622736bd38a1cb5b690102a8bb4b9296e0f7bf190e80c6baf6eaa013`.
+- Reclaimed capacity: 167,693.99 CKB; reclaim fee: 0.01 CKB.
 
 Previous fresh-profile records are retained in
-`deployment/archive-fresh-20261009-212258`; the earlier records remain in
+`deployment/archive-fresh-20261010-225702`, including the reclaim transaction.
+Earlier records remain in `deployment/archive-fresh-20261009-212258` and
 `deployment/archive-fresh-20261009-203824`. The deployed contract enforces gift
 approvals, tagged claimant eligibility, fixed equal/ratio allocations, one claim
 per wallet, and direct claim payouts. `@receive` payment streaming is unsupported.
-Older gifts need recreation to obtain immutable claim rules.
+Older gifts need recreation to obtain immutable claim rules. This fresh deployment
+has a new type script hash; cells referencing the consumed deployment cannot use
+this replacement as their original code dependency.
