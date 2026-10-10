@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useShowInfoSuccess } from "@/app/_components/InfoErrorProvider";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
+import { markProfileFreightsDirty } from "@/app/_hooks/useProfileFreights";
+import { markProfileTransactionsDirty } from "@/app/_hooks/useProfileTransactions";
 
 import { canAccessLockMountable, getLockMountableThresholdFbars, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
 import type { CampaignComment, CampaignRecord } from "@/app/_hooks/useCampaignFeed";
@@ -166,6 +171,7 @@ export function useCampaignCardState({
   persistentCommentComposer = false,
 }: UseCampaignCardStateArgs) {
   const { data, outPoint } = c;
+  const { refreshUserProfile } = useUserProfile(signer);
   const cardId = getCampaignStableId(c);
   const isRecurringRaffle = data.campaignType === CampaignType.RecurringRaffle;
   const isRaffleCampaign = data.campaignType === CampaignType.Raffle || isRecurringRaffle;
@@ -296,6 +302,7 @@ export function useCampaignCardState({
   const lockAccessMessage = lockMountableAccessMessage(lockMountable, creatorCurrentFbars);
   const [giftWalletHash, setGiftWalletHash] = useState<Uint8Array | null>(null);
   const [giftClaimBusy, setGiftClaimBusy] = useState(false);
+  const showInfoSuccess = useShowInfoSuccess();
   useEffect(() => {
     let cancelled = false;
     setGiftWalletHash(null);
@@ -869,6 +876,7 @@ export function useCampaignCardState({
       showActionFeedback("reshare", "success", "Gift claim sent. Waiting for confirmation…");
       const receipt = await signer.client.waitTransaction(txHash, 1, 180_000);
       if (!receipt || receipt.status !== "committed") throw new Error("Claim is pending. Refresh once confirmed.");
+      setActionFeedback(null);
       const output = receipt.transaction.outputs[0];
       if (!output?.type) throw new Error("Missing freight output");
       const campaign: CampaignCell = { outPoint: { txHash, index: 0 }, data: decodeCampaignData(hexToBytes(receipt.transaction.outputsData[0])), capacityShannons: output.capacity, lock: output.lock, type: output.type };
@@ -894,7 +902,12 @@ export function useCampaignCardState({
         showActionFeedback("reshare", "error", `Gift paid, but completion could not be recorded. Transaction: ${txHash}`);
         return;
       }
-      showActionFeedback("reshare", "success", "Gift paid to your wallet.");
+      showInfoSuccess("Gift paid to your wallet.");
+      const address = await signer.getRecommendedAddress();
+      markProfileAnalyticsDirty({ address });
+      markProfileFreightsDirty({ address });
+      markProfileTransactionsDirty({ address });
+      refreshUserProfile();
     } catch (error) {
       showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to claim gift freight");
     } finally {
@@ -902,9 +915,40 @@ export function useCampaignCardState({
     }
   };
 
-  const handleGiftInfoClick = () => {
+  const handleGiftInfoClick = async () => {
     if (!giftDeliverable.enabled) {
       return;
+    }
+
+    const recipients: SettlementRecipient[] = [];
+    let recipientsError: string | null = null;
+    try {
+      if (data.gift?.slots.some((slot) => slot.claimed)) {
+        const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(cardId)}&participantKind=gift_claim`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not load gift recipients.");
+        const payload = await response.json();
+        const addresses = [...new Set<string>([
+          ...giftDeliverable.claimants.flatMap((user) => user.address ? [user.address.toLowerCase()] : []),
+          ...(payload.participants ?? []).flatMap((participant: { participantAddress?: string }) => participant.participantAddress ? [participant.participantAddress.toLowerCase()] : []),
+        ])];
+        const claimed = await Promise.all(addresses.map(async (address) => {
+          try {
+            const wallet = await ccc.Address.fromString(address, client);
+            const slot = data.gift!.slots.find((slot) => slot.claimed && bytesToHex(slot.claimant) === wallet.script.hash());
+            return slot ? { address, slot } : null;
+          } catch { return null; }
+        }));
+        const confirmed = claimed.filter((entry) => entry !== null);
+        const profilesResponse = confirmed.length ? await fetch(`/api/user-profiles?addresses=${encodeURIComponent(confirmed.map((entry) => entry.address).join(","))}`, { cache: "no-store" }) : null;
+        const profiles = profilesResponse?.ok ? (await profilesResponse.json()).profiles ?? [] : [];
+        for (const { address, slot } of confirmed) {
+          const profile = profiles.find((entry: { address?: string }) => entry.address?.toLowerCase() === address);
+          const handle = profile?.handle ?? giftDeliverable.claimants.find((entry) => entry.address?.toLowerCase() === address)?.handle ?? buildDefaultHandle(address);
+          recipients.push({ address, username: profile?.username ?? handle, handle, amountLabel: `${formatCkbAmount(slot.amount)} CKB`, amountShannons: slot.amount.toString() });
+        }
+      }
+    } catch (error) {
+      recipientsError = error instanceof Error ? error.message : "Could not load gift recipients.";
     }
 
     onSettlementInfoRequest({
@@ -916,15 +960,9 @@ export function useCampaignCardState({
         `Claim mode: ${data.gift ? data.gift.open ? "open" : "restricted" : "legacy"}`,
         `Allocations: ${data.gift ? "fixed on-chain" : "legacy"}`,
       ],
-      recipients: giftPreview.allocations.map((allocation) => ({
-        address: "",
-        username: allocation.handle,
-        handle: allocation.handle,
-        amountLabel: allocation.amountLabel,
-        amountShannons: allocation.amountShannons,
-      })),
+      recipients,
       distributionTxHash: null,
-      errorMessage: giftPreview.error,
+      errorMessage: recipientsError ?? giftPreview.error,
       gift: {
         approvalCount: giftApprovedCount,
         canApprove: giftDeliverable.approvers.length > 0 && !giftApprovalSatisfied,

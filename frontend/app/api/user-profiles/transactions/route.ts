@@ -7,7 +7,7 @@ import {
 } from "@/app/api/user-profiles/_lib/profileTarget";
 import type { ProfileTransactionRow, ProfileTransactionsCoverage } from "@/app/_types/profileTabs";
 import { buildStableCampaignId, normalizeHash } from "@/lib/campaignIdentity";
-import { shannonsToUsdCents } from "@/lib/adsf";
+import { reconcileAdsfForAddress, shannonsToUsdCents } from "@/lib/adsf";
 import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
 import { getAddressNetDeltaMap } from "@/lib/txBalanceDelta";
 import {
@@ -43,6 +43,10 @@ type CampaignRecordTransaction = {
 };
 
 type CampaignParticipantTransaction = {
+  participantKind?: unknown;
+  claimChainVerified?: unknown;
+  claimAmountShannons?: unknown;
+  creditedUsdCents?: unknown;
   campaignId?: unknown;
   createdByHash?: unknown;
   chainCreatedAt?: unknown;
@@ -196,6 +200,7 @@ export async function GET(request: Request) {
     }
 
     const targetAddressRegex = buildAddressRegex(targetAddress);
+    await reconcileAdsfForAddress(targetAddress);
     const [campaignRecordsCollection, campaignParticipantsCollection, campaignDepositsCollection, fbarEventsCollection] = await Promise.all([
       getMongoCollection(),
       getCampaignParticipantsCollection(),
@@ -330,6 +335,10 @@ export async function GET(request: Request) {
             chainCreatedAt: 1,
             campaignType: 1,
             participantTxHash: 1,
+            participantKind: 1,
+            claimChainVerified: 1,
+            claimAmountShannons: 1,
+            creditedUsdCents: 1,
             joinedAt: 1,
             submittedAt: 1,
           },
@@ -599,9 +608,10 @@ export async function GET(request: Request) {
       }
 
       const record = recordByCampaignId.get(campaignId);
+      const isGiftClaim = row.participantKind === "gift_claim";
       rows.push({
-        adsfUsdCentsDelta: null,
-        amountLabel: null,
+        adsfUsdCentsDelta: isGiftClaim && row.claimChainVerified === true ? asPositiveInteger(row.creditedUsdCents) ?? shannonsToUsdCents(row.claimAmountShannons, usdPerCkb) : null,
+        amountLabel: isGiftClaim ? amountLabelFromShannons(asString(row.claimAmountShannons)) : null,
         campaignId,
         campaignRecordId: typeof record?._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record?.title),
@@ -612,8 +622,8 @@ export async function GET(request: Request) {
         kind: "campaign_participation",
         occurredAt,
         onchainNetDeltaShannons: deltaByTxHash[txHash] ?? null,
-        role: "actor",
-        summary: "Joined freight",
+        role: isGiftClaim ? "recipient" : "actor",
+        summary: isGiftClaim ? "Claimed gift" : "Joined freight",
         txHash,
       });
     });

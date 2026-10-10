@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import FreightTagRows from "@/app/_components/FreightTagRows";
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
 import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
@@ -12,6 +13,7 @@ import {
 import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
 import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
+import { stripFreightUserTags } from "@/lib/freightTags";
 import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
@@ -40,7 +42,7 @@ export default function CampaignDetailSurface({
   const displayTitle = record.title?.trim() || summary;
   const rawDescription = record.description?.trim() || summary;
   const displayDescription = compactDescriptionBlankLines(
-    sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription))
+    sanitizeCampaignDescription(stripFreightUserTags(stripGiftDirectiveMarkers(rawDescription)))
   );
   const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
 
@@ -73,6 +75,13 @@ export default function CampaignDetailSurface({
             <CampaignDescriptionContent lines={descriptionLines} />
           </div>
           <CampaignAttachmentGrid attachments={record.attachments ?? []} expandable />
+          <FreightTagRows
+            description={rawDescription}
+            mentions={record.socialMetadata?.mentions}
+            approvers={record.raffleApproval?.approvers ?? record.giftDeliverable?.approvers}
+            claimants={record.giftDeliverable?.claimants}
+            receivers={record.giftDeliverable?.receivers}
+          />
         </div>
       </div>
     </div>

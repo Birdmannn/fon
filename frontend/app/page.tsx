@@ -5,7 +5,7 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from "react";
 
-import CampaignApprovalControls from "@/app/_components/CampaignApprovalControls";
+import CampaignApprovalControls, { type FreightApprovalStatus } from "@/app/_components/CampaignApprovalControls";
 import AppShellHeader from "@/app/_components/AppShellHeader";
 import CampaignFeedSection from "@/app/_components/CampaignFeedSection";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
@@ -95,6 +95,7 @@ export default function Home() {
   const [pendingNewFreightId, setPendingNewFreightId] = useState<string | null>(null);
   const [freightTree, setFreightTree] = useState<FreightTree | null>(null);
   const [freightTreeFeedback, setFreightTreeFeedback] = useState("");
+  const [freightApprovalStatus, setFreightApprovalStatus] = useState<FreightApprovalStatus>({ message: "", busy: false });
   const [freightTreeError, setFreightTreeError] = useState(false);
   const [isLoadingFreightTree, setIsLoadingFreightTree] = useState(false);
   const [showFreightTree, setShowFreightTree] = useState(false);
@@ -902,7 +903,12 @@ export default function Home() {
   ) : infoModalMode === "freight-options" ? (
     <div className="create-info-constraints-copy campaign-freight-options-heading-row">
       <p className="create-review-section-label campaign-freight-options-heading">Freight Options:</p>
-      {freightTreeFeedback ? (
+      {selectedOptionsCampaign && freightApprovalStatus.message ? (
+        <p className="create-review-section-label campaign-freight-options-feedback campaign-freight-options-action-status" role="status">
+          {freightApprovalStatus.busy ? <LoaderCircle className="animate-spin" size={14} aria-hidden="true" /> : null}
+          {freightApprovalStatus.message}
+        </p>
+      ) : freightTreeFeedback ? (
         <p className={`create-review-section-label campaign-freight-options-feedback${freightTreeError ? " campaign-freight-options-feedback-error" : ""}`} role={freightTreeError ? "alert" : "status"}>
           {freightTreeFeedback}
         </p>
@@ -1313,7 +1319,7 @@ export default function Home() {
     </form>
   ) : infoModalMode === "freight-options" ? (
     selectedOptionsCampaign ? (
-      <CampaignApprovalControls key={selectedFreightOptionsId} campaign={selectedOptionsCampaign} record={findCampaignRecord(recordIndexes, selectedOptionsCampaign)} signer={signer ?? null} nowMs={nowMs} placement="options">
+      <CampaignApprovalControls key={selectedFreightOptionsId} campaign={selectedOptionsCampaign} record={findCampaignRecord(recordIndexes, selectedOptionsCampaign)} signer={signer ?? null} nowMs={nowMs} placement="options" onStatusChange={setFreightApprovalStatus}>
         {freightOptionsButtons}
       </CampaignApprovalControls>
     ) : freightOptionsButtons

@@ -3,6 +3,8 @@ import { after, NextResponse } from "next/server";
 import { getCampaignParticipantsCollection, getMongoCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
 import { hasParticipantCreatedChildFreight, normalizeChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import { assertFreightParentAccess, dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
+import { verifyGiftClaimCredit } from "@/lib/giftClaimCredit";
+import { reconcileAdsfForAddress } from "@/lib/adsf";
 
 type CampaignParticipantPayload = {
   campaignId?: unknown;
@@ -180,6 +182,11 @@ export async function POST(request: Request) {
     await assertFreightParentAccess(payload.campaignId, payload.participantAddress);
     const collection = await getCampaignParticipantsCollection();
     const now = new Date();
+    const giftCredit = payload.participantKind === "gift_claim" ? {
+      claimAmountShannons: await verifyGiftClaimCredit(payload.participantTxHash ?? "", payload.participantAddress, payload.campaignId),
+      claimChainVerified: true,
+      status: "verified",
+    } : {};
 
     const query = payload.googleSub
       ? {
@@ -202,6 +209,7 @@ export async function POST(request: Request) {
       {
         $set: {
           ...payload,
+          ...giftCredit,
           updatedAt: now,
         },
         $setOnInsert: {
@@ -210,6 +218,8 @@ export async function POST(request: Request) {
       },
       { upsert: true }
     );
+
+    if (payload.participantKind === "gift_claim") await reconcileAdsfForAddress(payload.participantAddress);
 
     after(async () => {
       const canonicalVerification = await finalizeCampaignParticipant({

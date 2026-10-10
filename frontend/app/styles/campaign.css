@@ -2191,3 +2191,75 @@
 
 .campaign-approval-controls { padding: 0.5rem 0; font-size: 0.75rem; }
 .campaign-approval-controls p { margin: 0 0 0.25rem; }
+
+/* Tagged users: one measured line per role, with a matching overflow box. */
+.campaign-tag-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.campaign-tag-line {
+  --campaign-tag-color: #111111;
+  --campaign-tag-background: #f3f4f6;
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.campaign-tag-line-approve {
+  --campaign-tag-color: #2563eb;
+  --campaign-tag-background: rgba(37, 99, 235, 0.06);
+}
+
+.campaign-tag-line-claim {
+  --campaign-tag-color: #7c3aed;
+  --campaign-tag-background: rgba(124, 58, 237, 0.06);
+}
+
+.campaign-tag-line-receive {
+  --campaign-tag-color: #16a34a;
+  --campaign-tag-background: rgba(22, 163, 74, 0.06);
+}
+
+.campaign-tag-chip {
+  display: block;
+  flex: 0 0 auto;
+  min-height: 1.6rem;
+  max-width: 100%;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid var(--campaign-tag-color);
+  border-radius: 0;
+  background: var(--campaign-tag-background);
+  color: var(--campaign-tag-color);
+  font-size: 0.72rem;
+  line-height: 1.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.campaign-tag-chip-overflow {
+  flex-shrink: 0;
+}
+
+.campaign-tag-measure {
+  position: absolute;
+  display: flex;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.campaign-tag-measure .campaign-tag-chip {
+  max-width: none;
+}

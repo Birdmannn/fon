@@ -13,13 +13,16 @@ import { sendCancelCampaign, sendConfirmRaffleApproval, sendCampaignApproval, ty
 
 export const CAMPAIGN_APPROVAL_UPDATE_EVENT = "freight:approval-chain-update";
 
-export default function CampaignApprovalControls({ campaign, record, signer, nowMs, placement = "inline", children }: {
+export type FreightApprovalStatus = { message: string; busy: boolean };
+
+export default function CampaignApprovalControls({ campaign, record, signer, nowMs, placement = "inline", children, onStatusChange }: {
   campaign: CampaignCell;
   record: CampaignRecord | null;
   signer: ccc.Signer | null;
   nowMs: number;
   placement?: "inline" | "options";
   children?: ReactNode;
+  onStatusChange?: (status: FreightApprovalStatus) => void;
 }) {
   const approval = campaign.data.approval;
   const legacyGift = !campaign.data.gift && !!record?.giftDeliverable?.enabled;
@@ -31,6 +34,10 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
   const [error, setError] = useState<string | null>(null);
   const [lateReceipt, setLateReceipt] = useState(false);
   useInfoError(error);
+
+  useEffect(() => {
+    if (placement === "options") onStatusChange?.({ message, busy });
+  }, [message, busy, placement, onStatusChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +66,6 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
     <div className="campaign-freight-options-controls">
       {children}
       {canCancelGift ? <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" data-option="cancel" disabled={busy} onClick={() => void act("cancel")}>Cancel Freight</button> : null}
-      {message ? <p role="status">{message}</p> : null}
     </div>
   ) : (
     <div className="campaign-approval-controls">
@@ -121,7 +127,6 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
       {canApprove ? <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" data-option="approve" disabled={busy} onClick={() => void act("approve")}>Approve</button> : null}
       {children}
       {canCancel ? <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" data-option="cancel" disabled={busy} onClick={() => void act("cancel")}>Cancel Freight</button> : null}
-      {message ? <p role="status">{message}</p> : null}
     </div>
   );
 

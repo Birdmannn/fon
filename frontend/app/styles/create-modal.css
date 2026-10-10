@@ -492,6 +492,18 @@
   color: #dc2626;
 }
 
+.campaign-freight-options-action-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-right: auto;
+  text-align: left;
+}
+
+.campaign-freight-options-action-status svg {
+  flex-shrink: 0;
+}
+
 .campaign-freight-tree-modal {
   padding: 1.5rem;
 }

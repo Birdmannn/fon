@@ -22,3 +22,17 @@
 @import "./styles/create-review.css";
 @import "./styles/profile.css";
 @import "./styles/rainbow-preview.css";
+
+/* Keep modal content scrollable without showing scrollbar chrome. */
+:is([role="dialog"], dialog, .campaign-detail-modal),
+:is([role="dialog"], dialog, .campaign-detail-modal) * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+:is([role="dialog"], dialog, .campaign-detail-modal)::-webkit-scrollbar,
+:is([role="dialog"], dialog, .campaign-detail-modal) *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

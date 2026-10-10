@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
 import CampaignFeedDescription from "@/app/_components/CampaignFeedDescription";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
+import FreightTagRows from "@/app/_components/FreightTagRows";
 import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
@@ -21,6 +22,7 @@ import { raffleApprovalDeadlineMissed } from "@/lib/raffleApproval";
 import { CampaignStatus, CampaignType } from "@/lib/contract";
 import { isWinningCampaignType } from "@/lib/fbars";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
+import { stripFreightUserTags } from "@/lib/freightTags";
 import { decodeSummary, hasSplitSupportAccounting } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
@@ -176,7 +178,7 @@ export default function CampaignCardSurface({
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
   const rawDescription = record?.description?.trim() || decodeSummary(data.summary);
   const displayDescription = compactDescriptionBlankLines(
-    sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription))
+    sanitizeCampaignDescription(stripFreightUserTags(stripGiftDirectiveMarkers(rawDescription)))
   );
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
@@ -377,14 +379,13 @@ export default function CampaignCardSurface({
 
         <CampaignAttachmentGrid attachments={record?.attachments ?? []} variant="feed" />
 
-        {mentions.length > 0 && (
-          <div className="flex flex-wrap gap-2 text-xs">
-            {mentions.map((mention) => (
-              <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
-            ))}
-          </div>
-        )}
-
+        <FreightTagRows
+          description={rawDescription}
+          mentions={mentions}
+          approvers={record?.raffleApproval?.approvers ?? giftDeliverable?.approvers}
+          claimants={giftDeliverable?.claimants}
+          receivers={giftDeliverable?.receivers}
+        />
         {giftDeliverable?.enabled ? (
           <div className="campaign-gift-meta-row">
             <span className="campaign-gift-pill">Gift</span>
