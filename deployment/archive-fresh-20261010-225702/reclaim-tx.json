@@ -1,0 +1,45 @@
+{
+  "transaction": {
+    "version": "0x0",
+    "cell_deps": [
+      {
+        "out_point": {
+          "tx_hash": "0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37",
+          "index": "0x0"
+        },
+        "dep_type": "dep_group"
+      }
+    ],
+    "header_deps": [],
+    "inputs": [
+      {
+        "since": "0x0",
+        "previous_output": {
+          "tx_hash": "0x48c6a734b1ef27cf8f877f800911b1373587d61011269f697cd524d23df64ab5",
+          "index": "0x0"
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "capacity": "0xf406e120bc0",
+        "lock": {
+          "code_hash": "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8",
+          "hash_type": "type",
+          "args": "0x8da4d7725a1fc36984f5d3b81ddaa148b80aca84"
+        },
+        "type": null
+      }
+    ],
+    "outputs_data": [
+      "0x"
+    ],
+    "witnesses": []
+  },
+  "multisig_configs": {},
+  "signatures": {
+    "0x8da4d7725a1fc36984f5d3b81ddaa148b80aca84": [
+      "0x0077bcd244c0af5cb37305a8b26b1c316b80763fe3c43a373280d2b8a263c0e33ebf0522e6b0144d095456f7038c73430b93ce3b4a4c54b49284dd30239a087901"
+    ]
+  }
+}
