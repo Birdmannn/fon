@@ -65,6 +65,8 @@ Start with these guides for the current project structure and integration flow:
 
 - [Mount flow](MOUNT_FLOW.md): app registration, mount setup, webhook credentials,
   event delivery, polling, and the active freight window.
+- [Registration security fix](SECURITY_FIX.md): required ownership and endpoint
+  verification before opening app registration to third parties.
 - [Checkbox demo](examples/checkbox-demo/README.md): run and register a hosted
   mountable app locally.
 - [Standalone checkbox demo](checkbox-demo/README.md): deploy the demo separately with the SDK installed from GitHub.
