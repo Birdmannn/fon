@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
 import { normalizeMountableAppId } from "@/lib/fonMountablesSdk";
 import { assertFreightParentAccess, dispatchMountableAppEvaluationRequest, finalizeCampaignParticipant, pollMountedApps, type CampaignParticipantRuntimeRow, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
+import { isMountedAppPollingEnabled } from "@/lib/mountableAppRuntimeRules";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -134,6 +135,9 @@ export async function POST(request: Request) {
 
 export async function GET(request: Request) {
   try {
+    if (!isMountedAppPollingEnabled(process.env.FON_POLLING_ENABLED)) {
+      return NextResponse.json({ ok: true, enabled: false, processed: 0, results: [] });
+    }
     const url = new URL(request.url);
     const appId = normalizeMountableAppId(url.searchParams.get("appId")?.trim() ?? "");
     if (!appId) {

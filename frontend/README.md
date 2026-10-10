@@ -16,11 +16,19 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-Mounted-app polling is exposed at `GET`/`POST /api/mountables/apps/poll` and is
-scheduled once per minute by `vercel.json`. Set `FON_POLL_CRON_SECRET` (or
-Vercel's `CRON_SECRET`) in production; the scheduler sends it as a bearer token.
-Individual app installations are only polled when their `pollIntervalSeconds`
-has elapsed.
+Mounted-app pull polling is opt-in. Set `FON_POLLING_ENABLED=false` (the
+default) to use push webhooks without polling. The authenticated `GET`/`POST
+/api/mountables/apps/poll` endpoint reports `enabled: false` and performs no
+polling in that mode. Webhook event windows are enforced independently, even
+without a poll worker clearing expired secret hashes.
+
+To enable pull polling later, set `FON_POLLING_ENABLED=true` and configure a
+scheduler to call `/api/mountables/apps/poll`. The environment variable alone
+does not schedule requests. Vercel's former one-minute cron entry was removed
+to allow Hobby deployments; add a suitable schedule back when your plan allows
+it, or use an external scheduler. Production requests require a bearer token
+matching `FON_POLL_CRON_SECRET` (or `CRON_SECRET`). Each mount is polled only
+when its `pollIntervalSeconds` has elapsed.
 
 App registration requires a public `logoUrl`, an `activityWebhookUrl`, and at
 least one principle. FON persists the manifest and shows the app logo in the

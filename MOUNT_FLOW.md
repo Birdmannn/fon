@@ -104,7 +104,10 @@ sequenceDiagram
         end
     end
 
-    F->>D: Revoke/clear mount-secret hash at expiry
+    F->>F: Reject mount events at expiry
+    opt Poll worker enabled
+        F->>D: Clear expired mount-secret hash
+    end
     A-xF: Further freight events are rejected
 ```
 
@@ -344,7 +347,8 @@ At or after `validUntil`:
 - the hosted app should stop sending freight events;
 - FON rejects further events for that mount;
 - FON stops outbound activity evaluation and polling for that mount;
-- the poll worker removes the persisted mount-secret hash and records revocation.
+- if enabled and invoked, the poll worker removes the persisted mount-secret
+  hash and records revocation. Event rejection does not depend on this cleanup.
 
 The app-level `registrationSecret` does not expire with a freight because the app
 may be mounted on other freights. Only that freight's `eventWebhook.secret`

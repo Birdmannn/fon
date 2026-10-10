@@ -37,9 +37,9 @@ linking requires its own Google OAuth credentials.
 
 The hosted checkbox example runs separately on port 3001. Follow its
 [setup and one-time registration instructions](examples/checkbox-demo/README.md)
-to connect it to a local FON app. Local development does not automatically run
-the mounted-app poll worker; the [frontend guide](frontend/README.md) explains
-its endpoint and production cron configuration.
+to connect it to a local FON app. Pull polling is disabled by default; the
+[frontend guide](frontend/README.md) explains its opt-in environment flag and
+optional scheduler.
 
 ## Build and test
 

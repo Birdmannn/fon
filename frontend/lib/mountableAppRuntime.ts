@@ -22,7 +22,7 @@ import {
 import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMountableAppDeliveriesCollection, getMountableAppsCollection, getMountableAppUpdatesCollection, getMongoCollection } from "@/lib/mongodb";
 import { effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, parentIds } from "@/lib/freightTree";
 import { deriveMountableWindow, mountableWindowDurationSeconds } from "@/lib/mountableTiming";
-import { areRequiredPrinciplesSatisfied, isCanonicalParticipantVerified, isMountedAppPollDue, mountedAppWindowState } from "@/lib/mountableAppRuntimeRules";
+import { areRequiredPrinciplesSatisfied, isCanonicalParticipantVerified, isMountedAppPollDue, isMountedAppPollingEnabled, mountedAppWindowState } from "@/lib/mountableAppRuntimeRules";
 
 export type CampaignRecordMountableRuntime = {
   campaignId?: unknown;
@@ -1039,6 +1039,10 @@ export async function pollMountedApps(params: {
   mountableInstanceId?: string;
   force?: boolean;
 } = {}) {
+  if (!isMountedAppPollingEnabled(process.env.FON_POLLING_ENABLED)) {
+    return [];
+  }
+
   const requestedAppId = normalizeMountableAppId(params.appId);
   const requestedCampaignId = normalizeString(params.campaignId).toLowerCase();
   const requestedInstanceId = normalizeString(params.mountableInstanceId);

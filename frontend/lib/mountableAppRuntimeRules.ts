@@ -17,6 +17,10 @@ export function isCanonicalParticipantVerified(input: {
   return input.baseParticipationSatisfied && input.formsSatisfied && input.appPrinciplesSatisfied;
 }
 
+export function isMountedAppPollingEnabled(value: string | undefined) {
+  return value?.trim().toLowerCase() === "true";
+}
+
 export function isMountedAppPollDue(input: {
   force?: boolean;
   lastPollAt?: string | null;
