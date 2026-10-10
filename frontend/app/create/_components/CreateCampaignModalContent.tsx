@@ -1,13 +1,14 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, GitBranchPlus, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, GitBranchPlus, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Signature, Trash2 } from "lucide-react";
 
 import Image from "next/image";
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
 import { DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG, normalizeChildFreightMountableConfig, type ChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
+import type { RaffleApprovalSetup } from "@/app/_components/RaffleApprovalConfigurator";
 import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
@@ -362,6 +363,8 @@ export type CreateCampaignModalContentHandle = {
   discardDraftSession: () => void;
   toggleDraftList: () => Promise<boolean>;
   applyDraftSelection: (draftId: string) => void;
+  getRaffleApprovalSetup: () => RaffleApprovalSetup;
+  updateRaffleApprovalSetup: (config: RaffleApprovalSetup) => void;
   getFormsMountableConfig: () => FormsMountableConfig;
   getChildFreightMountableConfig: () => ChildFreightMountableConfig;
   getLockMountableConfig: () => LockMountableConfig;
@@ -400,8 +403,9 @@ type CreateCampaignModalContentProps = {
   onDraftSelectionRequest?: (draftId: string) => void;
   onPublishSuccess?: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
   onMountableSelectionRequired?: () => void;
+  onApprovalSetupRequired?: () => void;
   onTagSuggestionsRequested?: (query: string) => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number; approvalSelected: boolean }) => void;
   availableFbars?: number;
 };
 
@@ -455,6 +459,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onDraftSelectionRequest,
   onPublishSuccess,
   onMountableSelectionRequired,
+  onApprovalSetupRequired,
   onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   availableFbars,
@@ -591,20 +596,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const summaryBytes = createContentChars;
   const title = "Create a Campaign";
   const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
-  const reviewMountedIcons = [
-    ...(childFreightMountable.enabled ? [{ key: "child-freight", name: "Child Freight", kind: "child-freight" as const, logoUrl: "" }] : []),
-    ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
-    ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
-    ...(isWinningCampaignType(campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
-    ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
-      key: entry.mountableInstanceId || entry.appId,
-      name: entry.appName || entry.appId,
-      kind: "app" as const,
-      logoUrl: entry.logoUrl || entry.iconUrl,
-    })),
-  ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
-  const visibleReviewMountedIcons = reviewMountedIcons.length >= 4 ? reviewMountedIcons.slice(0, 3) : reviewMountedIcons;
-  const hiddenReviewMountedIconCount = reviewMountedIcons.length - visibleReviewMountedIcons.length;
   const activeModalError = draftSaveError || errorMsg;
   useInfoError(draftListError);
   useInfoError(!isModal && status === "error" ? errorMsg : null);
@@ -661,6 +652,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     required: ((raffleApprovalStage === "on-delivery" && campaignType !== CampaignType.RecurringRaffle) || giftApprovalMode === "all") ? giftApproverUsers.length : Number(giftApprovalThreshold),
     approvers: giftApproverUsers,
   } : null, [raffleApprovalEnabled, campaignType, raffleApprovalStage, giftApprovalMode, giftApprovalThreshold, giftApproverUsers]);
+  const reviewMountedIcons = [
+    ...((raffleApprovalEnabled || (giftFeatureEnabled && giftApproverUsers.length > 0)) ? [{ key: "signable", name: "Signable", kind: "signable" as const, logoUrl: "" }] : []),
+    ...(childFreightMountable.enabled ? [{ key: "child-freight", name: "Child Freight", kind: "child-freight" as const, logoUrl: "" }] : []),
+    ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
+    ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(isWinningCampaignType(campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
+    ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
+      key: entry.mountableInstanceId || entry.appId,
+      name: entry.appName || entry.appId,
+      kind: "app" as const,
+      logoUrl: entry.logoUrl || entry.iconUrl,
+    })),
+  ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  const visibleReviewMountedIcons = reviewMountedIcons.length >= 4 ? reviewMountedIcons.slice(0, 3) : reviewMountedIcons;
+  const hiddenReviewMountedIconCount = reviewMountedIcons.length - visibleReviewMountedIcons.length;
   const isOpenGiftClaim = giftFeatureEnabled && giftClaimantUsers.length === 0;
   const effectiveGiftSplitMode = giftFeatureEnabled
     ? (isOpenGiftClaim ? "equal" : giftSplitMode)
@@ -2498,6 +2504,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
+    if (!skipMountedSelection && raffleApprovalEnabled && onApprovalSetupRequired) {
+      onApprovalSetupRequired();
+      return;
+    }
+
     if (!signer) {
       setPendingAdvanceToReview(true);
       setStatus("idle");
@@ -2522,7 +2533,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch {
       setStatus("error");
     }
-  }, [clearMountedConfigs, hasMountedHashtag, hideMenus, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
+  }, [clearMountedConfigs, hasMountedHashtag, hideMenus, onMountableSelectionRequired, onApprovalSetupRequired, raffleApprovalEnabled, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
 
   const handleSaveDraftFromClose = useCallback(async () => {
     if (!hasDraftableChanges) {
@@ -2657,6 +2668,19 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     discardDraftSession: handleDiscardDraftSession,
     toggleDraftList: handleToggleDraftList,
     applyDraftSelection: handleApplyDraftSelection,
+    getRaffleApprovalSetup: () => ({
+      stage: campaignType === CampaignType.RecurringRaffle ? "on-commence" : raffleApprovalStage,
+      mode: giftApprovalMode,
+      threshold: giftApprovalThreshold,
+      approverCount: giftApproverUsers.length,
+      recurring: campaignType === CampaignType.RecurringRaffle,
+      mounted: hasMountedHashtag,
+    }),
+    updateRaffleApprovalSetup: (config) => {
+      setRaffleApprovalStage(config.recurring ? "on-commence" : config.stage);
+      setGiftApprovalMode(config.mode);
+      setGiftApprovalThreshold(config.threshold);
+    },
     getFormsMountableConfig: () => formsMountable,
     getChildFreightMountableConfig: () => childFreightMountable,
     getLockMountableConfig: () => lockMountable,
@@ -2681,6 +2705,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       modalDescriptionRef.current?.focus();
     },
   }), [
+    campaignType, raffleApprovalStage, giftApprovalMode, giftApprovalThreshold, giftApproverUsers.length, hasMountedHashtag,
     appMountables,
     currentAppMountableCampaignContext,
     currentDraftSummary,
@@ -2721,11 +2746,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     onMountableSelectionStateChange?.({
       childFreightSelected: childFreightMountable.enabled,
       hasMountedHashtag,
+      approvalSelected: raffleApprovalEnabled,
       formsSelected: formsMountable.enabled,
       lockSelected: lockMountable.enabled,
       appMountablesSelected: appMountables.filter((entry) => entry.enabled).length,
     });
-  }, [appMountables, childFreightMountable.enabled, childFreightMountable.title, formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
+  }, [appMountables, childFreightMountable.enabled, childFreightMountable.title, formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, raffleApprovalEnabled, onMountableSelectionStateChange]);
 
   const finalizePublishedRecordSync = useCallback(
     async (sync: PendingPublishedRecordSync) => {
@@ -3412,6 +3438,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     <GitBranchPlus size={18} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "forms" ? (
                     <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "signable" ? (
+                    <Signature size={18} strokeWidth={2} aria-hidden="true" />
                   ) : mountable.kind === "rewardable" ? (
                     <HandCoins size={18} strokeWidth={2} aria-hidden="true" />
                   ) : (
@@ -3510,25 +3538,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
         {raffleApprovalDraft ? (
           <div className="create-review-args-card">
-            <p className="create-review-section-label">Raffle approval</p>
-            <p className="create-review-preview-body">Approvers: {giftApproverUsers.map((entry) => entry.handle).join(", ")}</p>
-            <div className="create-review-arg-field">
-              <label className="create-review-arg-label" htmlFor="raffle-approval-stage">Approval stage</label>
-              <select id="raffle-approval-stage" className="create-review-arg-input" value={raffleApprovalDraft.stage} onChange={(event) => setRaffleApprovalStage(event.target.value as RaffleApprovalStage)} disabled={campaignType === CampaignType.RecurringRaffle}>
-                <option value="on-commence">On commencement</option>
-                {campaignType !== CampaignType.RecurringRaffle ? <option value="on-delivery">On delivery</option> : null}
-              </select>
+            <div className="create-review-card-heading-row">
+              <p className="create-review-section-label">Approval</p>
+              <button type="button" className="create-info-confirm-btn" onClick={onApprovalSetupRequired}>Edit</button>
             </div>
-            {raffleApprovalDraft.stage === "on-commence" ? (
-              <>
-                <div className="create-review-gift-choice-row">
-                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "all" ? "create-review-gift-choice-active" : ""}`} onClick={() => setGiftApprovalMode("all")}>All</button>
-                  <button type="button" className={`create-review-gift-choice ${giftApprovalMode === "threshold" ? "create-review-gift-choice-active" : ""}`} onClick={() => setGiftApprovalMode("threshold")}>Threshold</button>
-                </div>
-                {giftApprovalMode === "threshold" ? <label className="create-review-arg-field">Required approvals<input className="create-review-arg-input" type="number" min={1} max={giftApproverUsers.length} value={giftApprovalThreshold} onChange={(event) => setGiftApprovalThreshold(event.target.value)} /></label> : null}
-                <p className="create-review-gift-note">Approval must be recorded before the start delay ends. Missing this deadline closes the freight; only cancellation remains available. {campaignType === CampaignType.RecurringRaffle ? "Later rounds need no further approval." : ""}</p>
-              </>
-            ) : <p className="create-review-gift-note">All tagged approvers must approve before rewards can be distributed.</p>}
+            <p className="create-review-preview-body">{raffleApprovalDraft.stage === "on-delivery" ? "On delivery" : "On commencement"} · {raffleApprovalDraft.required} of {giftApproverUsers.length} approvals</p>
           </div>
         ) : null}
 

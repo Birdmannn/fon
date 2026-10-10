@@ -20,6 +20,7 @@ import RaffleSettlementInfo from "@/app/_components/RaffleSettlementInfo";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
+import RaffleApprovalConfigurator, { RaffleApprovalActions } from "@/app/_components/RaffleApprovalConfigurator";
 import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
@@ -180,7 +181,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "creator-withdraw-success" | "raffle-settlement" | "criteria-status" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "mountables-approval" | "save-draft-confirm" | "submission-success" | "insufficient-fbars" | "support-deposit" | "support-deposit-success" | "ticket-purchase" | "ticket-buy-success" | "creator-withdraw-success" | "raffle-settlement" | "criteria-status" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error";
 type FreightOption = "view-tree";
 type FreightRelationChoice = "parent" | "child";
 type OwnedFreight = { campaignId: string; title: string };
@@ -487,6 +488,10 @@ export default function CampaignDetailPage() {
     handleCreateTopRightAction,
     handleCreateErrorChange,
     handleDraftSelectionRequest,
+    approvalSetup,
+    continueApprovalSetup,
+    openRaffleApprovalModal,
+    updateApprovalSetup,
     handleMountableSelectionStateChange,
     handleSaveDraftChoice,
     handleToggleSelectedMountablePrinciple,
@@ -926,7 +931,7 @@ export default function CampaignDetailPage() {
     || infoModalMode === "mountables-child-freight"
     || infoModalMode === "mountables-lock"
     || infoModalMode === "mountables-forms"
-    || infoModalMode === "mountables-apps"
+    || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps"
     || infoModalMode === "submission-success"
     || infoModalMode === "support-deposit"
     || infoModalMode === "support-deposit-success"
@@ -2027,7 +2032,7 @@ export default function CampaignDetailPage() {
       });
     }
 
-    if ((selectedRecord?.giftDeliverable?.approvers?.length ?? 0) > 0) {
+    if ((selectedRecord?.giftDeliverable?.approvers?.length ?? 0) > 0 || selectedRecord?.raffleApproval || selectedCampaign?.data.approval) {
       items.push({
         description: "Requires signing to deliver.",
         icon: "signable",
@@ -2066,7 +2071,7 @@ export default function CampaignDetailPage() {
     });
 
     return items.sort((left, right) => left.title.localeCompare(right.title, undefined, { numeric: true, sensitivity: "base" }));
-  }, [formsMountableActions, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.childFreight, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
+  }, [formsMountableActions, selectedCampaign?.data.approval, selectedRecord?.raffleApproval, selectedCampaign?.data.campaignType, selectedRecord?.campaignType, selectedRecord?.giftDeliverable?.approvers?.length, selectedRecord?.mountables?.apps, selectedRecord?.mountables?.childFreight, selectedRecord?.mountables?.forms, selectedRecord?.mountables?.lock]);
 
   const detailCampaignType = selectedCampaign?.data.campaignType ?? selectedRecord?.campaignType ?? 0;
   const detailTypeLabel = TYPE_LABELS[detailCampaignType] ?? `Type ${detailCampaignType}`;
@@ -2348,6 +2353,8 @@ export default function CampaignDetailPage() {
         createModalContentRef.current?.updateChildFreightMountableConfig({ title });
       }}
     />
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalConfigurator config={approvalSetup} onChange={updateApprovalSetup} errorMessage={mountablesPromptError} onBack={() => goBackMountableSetup("approval")} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <LockMountableConfigurator
       errorMessage={mountablesPromptError}
@@ -2595,6 +2602,8 @@ export default function CampaignDetailPage() {
         })();
       }}>Continue</button>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalActions onContinue={() => void continueApprovalSetup()} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-mountable-app-actions">
       <div className="create-info-confirm-actions create-info-confirm-actions-tight">
@@ -2932,7 +2941,7 @@ export default function CampaignDetailPage() {
         <AppShellHeader
           className={`campaign-shell-header ${activeShellWidthClass} ${isCreateStyleModalOpen ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={selectedFreightOption === "view-tree" && infoModalMode === "about" ? "Linked freight information" : infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "mountables-approval" ? "Raffle approval setup" : selectedFreightOption === "view-tree" && infoModalMode === "about" ? "Linked freight information" : infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "criteria-status" ? "Criteria" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "support-deposit" ? supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={((infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success") && infoModalMode !== "freight-link-pending" && !freightLinkBusy}
           infoModalBody={infoModalBody}
@@ -3015,6 +3024,7 @@ export default function CampaignDetailPage() {
           onDraftSelectionRequest={handleDraftSelectionRequest}
           onInsufficientFbars={openInsufficientFbarsInfoModal}
           onMountableSelectionRequired={openMountablesModal}
+        onApprovalSetupRequired={openRaffleApprovalModal}
           onTagSuggestionsRequested={handleTagSuggestionsRequested}
           onMountableSelectionStateChange={handleMountableSelectionStateChange}
           onOpenCreateModal={() => { setIsCreatingRelatedFreight(false); setFreightRelationChoice(null); openCreateModal(); }}

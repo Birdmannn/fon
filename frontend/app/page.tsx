@@ -16,6 +16,7 @@ import FreightTreeHelpInfo from "@/app/_components/FreightTreeHelpInfo";
 import FreightTreeZoomActions from "@/app/_components/FreightTreeZoomActions";
 import RaffleSettlementInfo from "@/app/_components/RaffleSettlementInfo";
 import type { FreightTree } from "@/app/_components/FreightTreeInfo";
+import RaffleApprovalConfigurator, { RaffleApprovalActions } from "@/app/_components/RaffleApprovalConfigurator";
 import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
@@ -63,7 +64,7 @@ const HOME_INFO_TYPE_ITEMS = [
 
 
   // Add a new mode for ticket purchase success (separate from generic submission-success)
-type InfoModalMode = "about" | "marquee-edit" | "create-error" | "tag-suggestions" | "freight-mountables" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "creator-withdraw-success" | "support-deposit" | "support-deposit-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
+type InfoModalMode = "about" | "marquee-edit" | "create-error" | "tag-suggestions" | "freight-mountables" | "freight-options" | "freight-relation-choice" | "freight-existing" | "freight-link-pending" | "freight-link-success" | "freight-link-error" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "mountables-approval" | "save-draft-confirm" | "submission-success" | "ticket-buy-success" | "creator-withdraw-success" | "support-deposit" | "support-deposit-success" | "submission-error" | "discard-comment-confirm" | "ticket-purchase" | "raffle-settlement" | "insufficient-fbars";
 type FreightRelationChoice = "parent" | "child";
 type OwnedFreight = { campaignId: string; title: string };
 
@@ -253,6 +254,10 @@ export default function Home() {
     handleCreateTopRightAction,
     handleCreateErrorChange,
     handleDraftSelectionRequest,
+    approvalSetup,
+    continueApprovalSetup,
+    openRaffleApprovalModal,
+    updateApprovalSetup,
     handleMountableSelectionStateChange,
     handleSaveDraftChoice,
     handleToggleSelectedMountablePrinciple,
@@ -1095,6 +1100,8 @@ export default function Home() {
         createModalContentRef.current?.updateChildFreightMountableConfig({ title });
       }}
     />
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalConfigurator config={approvalSetup} onChange={updateApprovalSetup} errorMessage={mountablesPromptError} onBack={() => goBackMountableSetup("approval")} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <LockMountableConfigurator
       errorMessage={mountablesPromptError}
@@ -1460,6 +1467,8 @@ export default function Home() {
         })();
       }}>Continue</button>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalActions onContinue={() => void continueApprovalSetup()} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-mountable-app-actions">
       <div className="create-info-confirm-actions create-info-confirm-actions-tight">
@@ -1690,7 +1699,7 @@ export default function Home() {
         <AppShellHeader
           className={`campaign-shell-header ${shellWidthClass} ${showCreateModal || showFreightTree ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "marquee-edit" ? "New marquee message" : showFreightTree && infoModalMode === "about" ? "Linked freight information" : infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "freight-mountables" ? "Freight mountables" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "support-deposit" ? (supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB") : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "mountables-approval" ? "Raffle approval setup" : infoModalMode === "marquee-edit" ? "New marquee message" : showFreightTree && infoModalMode === "about" ? "Linked freight information" : infoModalMode === "freight-relation-choice" ? freightRelationChoice === "parent" ? "Add Parent" : "Add Child" : infoModalMode === "freight-existing" ? "Select existing freight" : infoModalMode.startsWith("freight-link-") ? "Freight link status" : infoModalMode === "freight-options" ? "Freight options" : infoModalMode === "freight-mountables" ? "Freight mountables" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "ticket-buy-success" ? "Buy successful" : infoModalMode === "creator-withdraw-success" ? "Withdrawal successful" : infoModalMode === "support-deposit" ? (supportRequest?.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB") : infoModalMode === "support-deposit-success" ? "Support transaction successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : infoModalMode === "ticket-purchase" ? "Buy raffle tickets" : infoModalMode === "raffle-settlement" ? "Raffle settlement details" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "marquee-edit" ? "Close marquee editor" : infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : infoModalMode === "ticket-purchase" ? "Close ticket purchase modal" : infoModalMode === "support-deposit" ? "Close support modal" : infoModalMode === "raffle-settlement" ? "Close raffle settlement modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={((infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success" || infoModalMode === "ticket-purchase" || infoModalMode === "support-deposit" || infoModalMode === "raffle-settlement") && infoModalMode !== "freight-link-pending" && !freightLinkBusy && !(infoModalMode === "marquee-edit" && isSavingUserProfile)}
           infoModalBody={infoModalBody}
@@ -1713,16 +1722,16 @@ export default function Home() {
           }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "marquee-edit" || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "marquee-edit" || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoButtonFocus={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => {
             if (infoModalMode !== "create-error" && infoModalMode !== "freight-link-pending" && !freightLinkBusy && !(infoModalMode === "ticket-purchase" && isPurchasingTickets) && !(infoModalMode === "support-deposit" && isProcessingSupport) && !(infoModalMode === "marquee-edit" && isSavingUserProfile)) closeInfoModal(resetHomeInfoModalState);
           }}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "marquee-edit" || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "marquee-edit" || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "marquee-edit" || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(isFreightOptionsFlow || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(isFreightOptionsFlow || infoModalMode === "marquee-edit" || infoModalMode === "freight-mountables" || infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps" || infoModalMode === "insufficient-fbars" || (infoModalMode === "ticket-purchase" && isPurchasingTickets) || (infoModalMode === "support-deposit" && isProcessingSupport), resetHomeInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
           onRightActionsClick={(event) => event.stopPropagation()}
@@ -1796,6 +1805,7 @@ export default function Home() {
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
+        onApprovalSetupRequired={openRaffleApprovalModal}
         onTagSuggestionsRequested={handleTagSuggestionsRequested}
         onMountableSelectionStateChange={handleMountableSelectionStateChange}
         onOpenCreateModal={() => {

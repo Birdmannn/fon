@@ -185,7 +185,7 @@ export default function CampaignCardSurface({
     : null;
   const mentions = record?.socialMetadata?.mentions ?? [];
   const giftDeliverable = record?.giftDeliverable;
-  const isSignable = (giftDeliverable?.approvers?.length ?? 0) > 0 || !!data.approval;
+  const isSignable = (giftDeliverable?.approvers?.length ?? 0) > 0 || !!record?.raffleApproval || !!data.approval;
   const approvalFailed = displayStatus !== CampaignStatus.Cancelled && raffleApprovalDeadlineMissed(data, nowMs);
   const statusLabel = approvalFailed ? "Closed — approval deadline missed" : STATUS_LABELS[displayStatus] ?? String(displayStatus);
   const rewardCountValue = Number(data.rewardCount);

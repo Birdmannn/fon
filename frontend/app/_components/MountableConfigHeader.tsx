@@ -1,11 +1,11 @@
 "use client";
 
-import { GitBranchPlus, LockKeyhole, Scroll } from "lucide-react";
+import { GitBranchPlus, LockKeyhole, Scroll, Signature } from "lucide-react";
 import Image from "next/image";
 
 type MountableConfigHeaderProps = {
   description: string;
-  kind: "app" | "child-freight" | "forms" | "lock";
+  kind: "app" | "child-freight" | "forms" | "lock" | "signable";
   logoUrl?: string;
   name: string;
 };
@@ -26,6 +26,8 @@ export default function MountableConfigHeader({
             <GitBranchPlus size={18} strokeWidth={2} />
           ) : kind === "forms" ? (
             <Scroll size={18} strokeWidth={2} />
+          ) : kind === "signable" ? (
+            <Signature size={18} strokeWidth={2} />
           ) : (
             <LockKeyhole size={18} strokeWidth={2} />
           )}

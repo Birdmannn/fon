@@ -21,8 +21,9 @@ type CreateCampaignLauncherProps = {
   onDraftSelectionRequest: (draftId: string) => void;
   onInsufficientFbars?: () => void;
   onMountableSelectionRequired: () => void;
+  onApprovalSetupRequired: () => void;
   onTagSuggestionsRequested: (query: string) => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number }) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number; approvalSelected: boolean }) => void;
   onOpenCreateModal: () => void;
   onPreviewErrorChange: (message: string) => void;
   onPublishSuccess: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
@@ -43,6 +44,7 @@ export default function CreateCampaignLauncher({
   onDraftSelectionRequest,
   onInsufficientFbars,
   onMountableSelectionRequired,
+  onApprovalSetupRequired,
   onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   onOpenCreateModal,
@@ -95,6 +97,7 @@ export default function CreateCampaignLauncher({
             onDraftListOpenChange={onDraftListOpenChange}
             onDraftSelectionRequest={onDraftSelectionRequest}
             onMountableSelectionRequired={onMountableSelectionRequired}
+            onApprovalSetupRequired={onApprovalSetupRequired}
             onTagSuggestionsRequested={onTagSuggestionsRequested}
             onMountableSelectionStateChange={onMountableSelectionStateChange}
             onPublishSuccess={onPublishSuccess}

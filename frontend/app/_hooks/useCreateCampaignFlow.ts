@@ -9,6 +9,8 @@ import {
   type CreateConstraintStatus,
   type CreateModalStep,
 } from "@/app/create/_components/CreateCampaignModalContent";
+import { buildMountableSetupSequence, type MountableSetupStep } from "@/app/_lib/mountableSetupSequence";
+import type { RaffleApprovalSetup } from "@/app/_components/RaffleApprovalConfigurator";
 import { normalizeAppMountableConfig } from "@/app/_lib/appMountable";
 import { lockBodyScroll } from "@/app/_lib/bodyScrollLock";
 import type { AppMountableConfig, RegisteredMountableApp } from "@/app/_types/appMountable";
@@ -34,17 +36,11 @@ type UseCreateCampaignFlowArgs<TMode extends string> = {
 
 type MountableSelectionState = {
   hasMountedHashtag: boolean;
+  approvalSelected: boolean;
   childFreightSelected: boolean;
   formsSelected: boolean;
   lockSelected: boolean;
   appMountablesSelected: number;
-};
-
-type MountableSetupStep = {
-  key: string;
-  label: string;
-  mode: "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps";
-  appId?: string;
 };
 
 export function useCreateCampaignFlow<TMode extends string>({
@@ -83,6 +79,8 @@ export function useCreateCampaignFlow<TMode extends string>({
     isRaffle: false,
   });
   const [previewError, setPreviewError] = useState("");
+  const [approvalSelected, setApprovalSelected] = useState(false);
+  const [approvalSetup, setApprovalSetup] = useState<RaffleApprovalSetup>({ stage: "on-commence", mode: "all", threshold: "1", approverCount: 0, recurring: false, mounted: false });
   const [formsMountableSelected, setFormsMountableSelected] = useState(false);
   const [childFreightMountableSelected, setChildFreightMountableSelected] = useState(false);
   const [lockMountableSelected, setLockMountableSelected] = useState(false);
@@ -201,6 +199,40 @@ export function useCreateCampaignFlow<TMode extends string>({
     }
   }, []);
 
+  const openRaffleApprovalModal = useCallback(() => {
+    const config = createModalContentRef.current?.getRaffleApprovalSetup();
+    if (!config || config.approverCount === 0) return;
+    setApprovalSetup(config);
+    setMountablesPromptError("");
+    showCreateInfoModal("mountables-approval" as TMode);
+  }, [showCreateInfoModal]);
+
+  const updateApprovalSetup = useCallback((config: RaffleApprovalSetup) => {
+    setApprovalSetup(config);
+    createModalContentRef.current?.updateRaffleApprovalSetup(config);
+    setMountablesPromptError("");
+  }, []);
+
+  const continueApprovalSetup = useCallback(async () => {
+    if (approvalSetup.stage === "on-commence" && approvalSetup.mode === "threshold") {
+      const threshold = Number(approvalSetup.threshold);
+      if (!Number.isInteger(threshold) || threshold < 1 || threshold > approvalSetup.approverCount) {
+        setMountablesPromptError(`Enter an approval count from 1 to ${approvalSetup.approverCount}.`);
+        return;
+      }
+    }
+    setIsMountablesContinuing(true);
+    try {
+      await createModalContentRef.current?.persistCurrentDraft();
+      closeInfoModal(() => setInfoModalMode(initialInfoModalMode));
+      await createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+    } catch (error) {
+      setMountablesPromptError(error instanceof Error ? error.message : "Failed to save approval settings.");
+    } finally {
+      setIsMountablesContinuing(false);
+    }
+  }, [approvalSetup, closeInfoModal, initialInfoModalMode, setInfoModalMode]);
+
   const openMountablesModal = useCallback(() => {
     const nextChildFreightMountable = createModalContentRef.current?.getChildFreightMountableConfig();
     const nextFormsMountable = createModalContentRef.current?.getFormsMountableConfig();
@@ -208,6 +240,8 @@ export function useCreateCampaignFlow<TMode extends string>({
     const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
     const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
 
+    const approval = createModalContentRef.current?.getRaffleApprovalSetup();
+    if (approval) setApprovalSetup(approval);
     setFormsMountableSelected(Boolean(nextFormsMountable?.enabled));
     setChildFreightMountableSelected(Boolean(nextChildFreightMountable?.enabled));
     setMountableChildFreightTitle(nextChildFreightMountable?.title ?? "");
@@ -337,6 +371,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     const nextAppMountables = createModalContentRef.current?.getAppMountableConfigs() ?? [];
     const nextEnabledAppMountables = nextAppMountables.filter((entry) => entry.enabled);
 
+    setApprovalSelected(state.approvalSelected);
     setFormsMountableSelected(state.formsSelected);
     setChildFreightMountableSelected(state.childFreightSelected);
     setMountableChildFreightTitle(createModalContentRef.current?.getChildFreightMountableConfig().title ?? "");
@@ -449,7 +484,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     }, Math.max(120, animationMs - 500));
   }, [animationMs, clearInfoCloseTimer, clearInfoHideTimer, setInfoModalMode, setIsInfoModalClosing, setShowInfoModal]);
 
-  const mountableSetupSteps = useMemo<MountableSetupStep[]>(() => [
+  const mountableSetupSteps = useMemo<MountableSetupStep[]>(() => buildMountableSetupSequence([
     ...(childFreightMountableSelected ? [{ key: "child-freight", label: "Child Freight", mode: "mountables-child-freight" as const }] : []),
     ...(formsMountableSelected ? [{ key: "forms", label: "Forms", mode: "mountables-forms" as const }] : []),
     ...(lockMountableSelected ? [{ key: "lock", label: "Lock", mode: "mountables-lock" as const }] : []),
@@ -462,9 +497,13 @@ export function useCreateCampaignFlow<TMode extends string>({
         appId,
       };
     }),
-  ].sort((left, right) => left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: "base" })), [childFreightMountableSelected, formsMountableSelected, lockMountableSelected, registeredMountableApps, selectedMountableAppIds]);
+  ], approvalSelected), [approvalSelected, childFreightMountableSelected, formsMountableSelected, lockMountableSelected, registeredMountableApps, selectedMountableAppIds]);
 
   const openMountableSetupStep = useCallback((step: (typeof mountableSetupSteps)[number]) => {
+    if (step.key === "approval") {
+      const config = createModalContentRef.current?.getRaffleApprovalSetup();
+      if (config) setApprovalSetup(config);
+    }
     if (step.appId) {
       handleSelectMountableAppId(step.appId);
     }
@@ -493,6 +532,10 @@ export function useCreateCampaignFlow<TMode extends string>({
   }, [mountableSetupSteps, openMountableSetupStep]);
 
   const goBackMountableSetup = useCallback((currentKey: string) => {
+    if (currentKey === "approval" && (!approvalSetup.mounted || createModalStep === "review")) {
+      closeInfoModal(() => setInfoModalMode(initialInfoModalMode));
+      return;
+    }
     const currentIndex = mountableSetupSteps.findIndex((step) => step.key === currentKey);
     const previousStep = currentIndex > 0 ? mountableSetupSteps[currentIndex - 1] : undefined;
     if (previousStep) {
@@ -501,7 +544,7 @@ export function useCreateCampaignFlow<TMode extends string>({
     }
     transitionMountablesModal("mountables" as Extract<TMode, string>);
     setMountablesPromptError("");
-  }, [mountableSetupSteps, openMountableSetupStep, transitionMountablesModal]);
+  }, [mountableSetupSteps, openMountableSetupStep, transitionMountablesModal, approvalSetup.mounted, createModalStep, closeInfoModal, initialInfoModalMode, setInfoModalMode]);
 
   const finalizeCloseCreateModal = useCallback(() => {
     if (!showCreateModal || isCreateModalClosing) {
@@ -739,6 +782,10 @@ export function useCreateCampaignFlow<TMode extends string>({
   }, [initialInfoModalMode, setInfoModalMode]);
 
   return {
+    approvalSetup,
+    continueApprovalSetup,
+    openRaffleApprovalModal,
+    updateApprovalSetup,
     advanceMountableSetup,
     appsMountableSelected,
     appMountablesSelected,

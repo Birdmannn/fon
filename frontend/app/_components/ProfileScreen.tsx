@@ -21,6 +21,7 @@ import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
 import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
+import RaffleApprovalConfigurator, { RaffleApprovalActions } from "@/app/_components/RaffleApprovalConfigurator";
 import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
 import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
 import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
@@ -61,7 +62,7 @@ const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
 const MAX_PROFILE_PHOTO_BYTES = 4 * 1024 * 1024;
 
-type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "edit-display-name" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "edit-display-name" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "mountables-approval" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
 
 const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
@@ -232,6 +233,10 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     handleCreateTopRightAction,
     handleCreateErrorChange,
     handleDraftSelectionRequest,
+    approvalSetup,
+    continueApprovalSetup,
+    openRaffleApprovalModal,
+    updateApprovalSetup,
     handleMountableSelectionStateChange,
     handleSaveDraftChoice,
     handleToggleSelectedMountablePrinciple,
@@ -813,6 +818,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         createModalContentRef.current?.updateChildFreightMountableConfig({ title });
       }}
     />
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalConfigurator config={approvalSetup} onChange={updateApprovalSetup} errorMessage={mountablesPromptError} onBack={() => goBackMountableSetup("approval")} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <LockMountableConfigurator
       errorMessage={mountablesPromptError}
@@ -1082,6 +1089,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         })();
       }}>Continue</button>
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalActions onContinue={() => void continueApprovalSetup()} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
     <div className="create-info-mountable-app-actions">
       <div className="create-info-confirm-actions create-info-confirm-actions-tight">
@@ -1295,7 +1304,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <AppShellHeader
           className={`campaign-shell-header campaign-shell-width ${showCreateModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "mountables-approval" ? "Raffle approval setup" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
           infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
@@ -1316,16 +1325,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
           onInfoModalRequestClose={() => {
             if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
           }}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
@@ -1643,6 +1652,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
+        onApprovalSetupRequired={openRaffleApprovalModal}
         onTagSuggestionsRequested={handleTagSuggestionsRequested}
         onMountableSelectionStateChange={handleMountableSelectionStateChange}
         onOpenCreateModal={openCreateModal}
