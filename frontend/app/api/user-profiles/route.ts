@@ -18,6 +18,7 @@ import {
   normalizeLightModePrimaryColor,
 } from "@/lib/lightModePrimaryColor";
 import { getUserProfilesCollection } from "@/lib/mongodb";
+import { uniqueProfilesByAddress } from "@/lib/userProfileRanking";
 
 export const dynamic = "force-dynamic";
 
@@ -323,7 +324,7 @@ function rankLeaderboard(entries: LeaderboardEntry[], metric: "overall" | "weekl
 
 function buildLeaderboardBundle(profiles: StoredProfileRecord[], now = new Date()): LeaderboardBundle {
   const weekKey = getCurrentWeekKey(now);
-  const baseEntries = profiles.map((profile) => buildLeaderboardEntry(profile, weekKey));
+  const baseEntries = uniqueProfilesByAddress(profiles).map((profile) => buildLeaderboardEntry(profile, weekKey));
   const overallLeaderboard = rankLeaderboard(baseEntries, "overall");
   const weeklyLeaderboard = rankLeaderboard(baseEntries, "weekly");
 
@@ -337,7 +338,7 @@ function buildLeaderboardBundle(profiles: StoredProfileRecord[], now = new Date(
 
 function buildProfilesByAddress(profiles: StoredProfileRecord[]) {
   return new Map(
-    profiles.map((profile) => [typeof profile.address === "string" ? normalizeAddress(profile.address) : "", profile]),
+    uniqueProfilesByAddress(profiles).map((profile) => [normalizeAddress(profile.address as string), profile]),
   );
 }
 
@@ -467,6 +468,26 @@ async function loadAllProfiles(includePrivate = false) {
   }).toArray()) as StoredProfileRecord[];
 }
 
+async function upsertProfile(
+  collection: Awaited<ReturnType<typeof getUserProfilesCollection>>,
+  address: string,
+  nextSet: Record<string, unknown>,
+  nextSetOnInsert: Record<string, unknown>,
+) {
+  try {
+    return await collection.updateOne(
+      { address },
+      { $set: nextSet, $setOnInsert: nextSetOnInsert },
+      { upsert: true },
+    );
+  } catch (error) {
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== 11000) {
+      throw error;
+    }
+    return collection.updateOne({ address }, { $set: nextSet });
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -495,7 +516,7 @@ export async function GET(request: Request) {
       const profilesByAddress = buildProfilesByAddress(profiles);
       const activeWeeklyMarquee = buildActiveWeeklyMarquee(bundle, profilesByAddress);
       const normalizedHandle = normalizeUsername(handleParam);
-      const rawProfile = profiles.find((entry) => {
+      const rawProfile = uniqueProfilesByAddress(profiles).find((entry) => {
         const username = typeof entry.username === "string" ? entry.username : "";
         const handle = formatUsernameHandle(username);
         return normalizeUsername(username) === normalizedHandle || normalizeUsername(handle) === normalizedHandle;
@@ -581,24 +602,18 @@ export async function POST(request: Request) {
 
     const existingUserCount = await collection.countDocuments();
 
-    await collection.updateOne(
-      { address },
+    await upsertProfile(
+      collection,
+      address,
+      { address, updatedAt: now, lastSeenAt: now },
       {
-        $set: {
-          address,
-          updatedAt: now,
-          lastSeenAt: now,
-        },
-        $setOnInsert: {
-          username: buildDefaultUsername(address),
-          displayName: buildDefaultDisplayName(existingUserCount),
-          fbars: 0,
-          adsfUsdCents: 0,
-          lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
-          createdAt: now,
-        },
+        username: buildDefaultUsername(address),
+        displayName: buildDefaultDisplayName(existingUserCount),
+        fbars: 0,
+        adsfUsdCents: 0,
+        lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
+        createdAt: now,
       },
-      { upsert: true }
     );
 
     await reconcileAdsfForAddress(address);
@@ -698,14 +713,7 @@ export async function PATCH(request: Request) {
       nextSet.googleAccount = googleAccount;
     }
 
-    const result = await collection.updateOne(
-      { address },
-      {
-        $set: nextSet,
-        $setOnInsert: nextSetOnInsert,
-      },
-      { upsert: true }
-    );
+    const result = await upsertProfile(collection, address, nextSet, nextSetOnInsert);
 
     if (result.matchedCount === 0 && result.upsertedCount === 0) {
       return badRequest("User profile not found", 404);

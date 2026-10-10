@@ -2,6 +2,7 @@ import { Binary, MongoClient, MongoClientOptions } from "mongodb";
 
 const globalForMongo = globalThis as typeof globalThis & {
   __freightMongoClientPromise?: Promise<MongoClient>;
+  __freightUserProfilesIndexPromise?: Promise<string>;
 };
 
 function getMongoClientPromise() {
@@ -76,7 +77,18 @@ export async function getCampaignDepositsCollection() {
 
 export async function getUserProfilesCollection() {
   const client = await getMongoClientPromise();
-  return client.db(MONGODB_DB_NAME).collection(USER_PROFILES_COLLECTION);
+  const collection = client.db(MONGODB_DB_NAME).collection(USER_PROFILES_COLLECTION);
+  if (!globalForMongo.__freightUserProfilesIndexPromise) {
+    globalForMongo.__freightUserProfilesIndexPromise = collection.createIndex(
+      { address: 1 },
+      { name: "address_unique", unique: true },
+    ).catch((error) => {
+      globalForMongo.__freightUserProfilesIndexPromise = undefined;
+      throw error;
+    });
+  }
+  await globalForMongo.__freightUserProfilesIndexPromise;
+  return collection;
 }
 
 export async function getUserProfilePhotosCollection() {

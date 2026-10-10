@@ -6,6 +6,7 @@ import { type MouseEventHandler, type ReactNode, type RefObject, useCallback } f
 
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
+import { useWalletSeedNotice } from "@/app/_hooks/useUserProfile";
 import { useLightModePrimaryColor } from "@/app/providers";
 import {
   LIGHT_MODE_PRIMARY_COLOR_OPTIONS,
@@ -120,6 +121,7 @@ export default function AppShellHeader({
   walletActionLabel,
   walletActionOnly = false,
 }: AppShellHeaderProps) {
+  const showWalletSeedNotice = useWalletSeedNotice();
   useInfoError(walletCopyFeedback === "error" ? "Copy failed" : null);
   useInfoError(walletInfoError);
   const { lightModePrimaryColor, setLightModePrimaryColor } = useLightModePrimaryColor();
@@ -279,16 +281,21 @@ export default function AppShellHeader({
       </div>
 
       <FreightInfoModal
-        open={infoModalOpen}
-        closing={infoModalClosing}
-        ariaLabel={infoModalAriaLabel}
-        body={infoModalBody}
-        actions={infoModalActions}
-        backdropAriaLabel={infoModalBackdropAriaLabel}
-        backdropInteractive={infoModalBackdropInteractive}
-        onRequestClose={onInfoModalRequestClose}
-        onKeepOpen={onInfoModalKeepOpen}
-        onScheduleClose={onInfoModalScheduleClose}
+        open={infoModalOpen || showWalletSeedNotice}
+        closing={showWalletSeedNotice ? false : infoModalClosing}
+        ariaLabel={showWalletSeedNotice ? "Awarding FBARS" : infoModalAriaLabel}
+        body={showWalletSeedNotice ? (
+          <div className="create-info-constraints-copy" role="status" aria-live="polite">
+            <p className="mt-3 create-review-section-label">Awarding FBARS...</p>
+            <p className="create-info-constraint-item">Hold and sign the next transaction</p>
+          </div>
+        ) : infoModalBody}
+        actions={showWalletSeedNotice ? null : infoModalActions}
+        backdropAriaLabel={showWalletSeedNotice ? "Awarding FBARS in progress" : infoModalBackdropAriaLabel}
+        backdropInteractive={showWalletSeedNotice ? false : infoModalBackdropInteractive}
+        onRequestClose={showWalletSeedNotice ? () => undefined : onInfoModalRequestClose}
+        onKeepOpen={showWalletSeedNotice ? () => undefined : onInfoModalKeepOpen}
+        onScheduleClose={showWalletSeedNotice ? () => undefined : onInfoModalScheduleClose}
       />
     </div>
   );

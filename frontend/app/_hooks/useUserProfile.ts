@@ -108,6 +108,7 @@ type ProfileViewState = {
 
 type UserProfileContextValue = {
   entries: Record<string, ProfileEntry>;
+  walletSeedNoticeAddress: string | null;
   ensureLoaded: (args: ProfileTargetArgs, force?: boolean) => void;
   markDirty: (args: ProfileTargetArgs) => void;
   resetViewerRequest: () => void;
@@ -250,6 +251,7 @@ export function formatAdsfUsdParts(valueUsdCents: number | null | undefined) {
 
 export function UserProfileProvider({ children }: { children: React.ReactNode }) {
   const [entries, setEntries] = useState<Record<string, ProfileEntry>>({});
+  const [walletSeedNoticeAddress, setWalletSeedNoticeAddress] = useState<string | null>(null);
   const [aliases, setAliases] = useState<Record<string, string>>({});
   const [viewStates, setViewStates] = useState<Record<string, ProfileViewState>>({});
   const entriesRef = useRef(entries);
@@ -602,8 +604,12 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
       userProfileError: "",
     }));
 
+    let seedAddress: string | null = null;
     try {
       const address = await resolveMutationAddress(args);
+      seedAddress = address;
+      setWalletSeedNoticeAddress(address);
+      const noticeStartedAt = Date.now();
       const nonceResponse = await fetch("/api/wallet/nonce", {
         method: "POST",
         headers: {
@@ -622,6 +628,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
         throw new Error(noncePayload?.error ?? "Failed to create wallet seed nonce");
       }
 
+      await new Promise<void>((resolve) => window.setTimeout(resolve, Math.max(0, 800 - (Date.now() - noticeStartedAt))));
       const signature = await args.signer.signMessage(noncePayload.nonce);
       console.log("[wallet-seed] client signMessage result", {
         address,
@@ -669,6 +676,9 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
       }));
       throw error;
     } finally {
+      if (seedAddress) {
+        setWalletSeedNoticeAddress((current) => current === seedAddress ? null : current);
+      }
       setEntryFlags(args, (entry) => ({
         ...entry,
         isSeedingWalletFbars: false,
@@ -754,6 +764,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
 
   const value = useMemo<UserProfileContextValue>(() => ({
     entries,
+    walletSeedNoticeAddress,
     ensureLoaded,
     markDirty,
     resetViewerRequest,
@@ -767,6 +778,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
     viewStates,
   }), [
     entries,
+    walletSeedNoticeAddress,
     ensureLoaded,
     markDirty,
     resetViewerRequest,
@@ -907,6 +919,14 @@ export function useUserProfile(signer: ccc.Signer | null, targetHandle?: string 
     userProfileError: entry.userProfileError,
     weeklyLeaderboard: entry.weeklyLeaderboard,
   };
+}
+
+export function useWalletSeedNotice() {
+  const context = useContext(UserProfileContext);
+  if (!context) {
+    throw new Error("useWalletSeedNotice must be used within a UserProfileProvider");
+  }
+  return context.walletSeedNoticeAddress !== null;
 }
 
 export function useProfileViewState(signer: ccc.Signer | null, targetHandle?: string | null) {
