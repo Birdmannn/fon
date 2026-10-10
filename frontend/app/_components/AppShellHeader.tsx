@@ -2,7 +2,7 @@
 
 import { Copy, Fingerprint } from "lucide-react";
 import Link from "next/link";
-import { type MouseEventHandler, type ReactNode, type RefObject, useCallback } from "react";
+import { type MouseEventHandler, type ReactNode, type RefObject, useCallback, useId, useRef } from "react";
 
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
@@ -12,6 +12,8 @@ import {
   LIGHT_MODE_PRIMARY_COLOR_OPTIONS,
   type LightModePrimaryColor,
 } from "@/lib/lightModePrimaryColor";
+
+const INFO_DOUBLE_TAP_INTERVAL_MS = 300;
 
 type WalletUsdParts = {
   whole: string;
@@ -38,6 +40,7 @@ type AppShellHeaderProps = {
   onDisconnect: () => void;
   onInfoButtonBlur: () => void;
   onInfoButtonClick: () => void;
+  onInfoButtonTouch: () => void;
   onInfoButtonFocus: () => void;
   onInfoModalKeepOpen: () => void;
   onInfoModalRequestClose: () => void;
@@ -90,6 +93,7 @@ export default function AppShellHeader({
   onDisconnect,
   onInfoButtonBlur,
   onInfoButtonClick,
+  onInfoButtonTouch,
   onInfoButtonFocus,
   onInfoModalKeepOpen,
   onInfoModalRequestClose,
@@ -127,7 +131,23 @@ export default function AppShellHeader({
   const { lightModePrimaryColor, setLightModePrimaryColor } = useLightModePrimaryColor();
   const activeLightModePrimaryColor = currentLightModePrimaryColor ?? lightModePrimaryColor;
 
-  const handleInfoButtonClick = () => {
+  const infoTouchHintId = useId();
+  const infoPointerTypeRef = useRef<string | null>(null);
+  const lastInfoTouchTapRef = useRef<number | null>(null);
+
+  const handleInfoButtonClick: MouseEventHandler<HTMLButtonElement> = (event) => {
+    if (infoPointerTypeRef.current === "touch" && event.detail !== 0) {
+      event.stopPropagation();
+      const now = performance.now();
+      const lastTap = lastInfoTouchTapRef.current;
+      if (lastTap === null || now - lastTap > INFO_DOUBLE_TAP_INTERVAL_MS) {
+        lastInfoTouchTapRef.current = now;
+        onInfoButtonTouch();
+        return;
+      }
+    }
+
+    lastInfoTouchTapRef.current = null;
     onInfoModalRequestClose();
     onInfoButtonClick();
   };
@@ -150,20 +170,42 @@ export default function AppShellHeader({
   return (
     <div className={className} onClick={onContainerClick}>
       <div className="header-info-wrap" onClick={onInfoWrapClick}>
-        <div onMouseEnter={onInfoMouseEnter} onMouseLeave={onInfoMouseLeave}>
+        <div
+          onPointerEnter={(event) => {
+            infoPointerTypeRef.current = event.pointerType;
+            if (event.pointerType === "mouse") onInfoMouseEnter();
+          }}
+          onPointerLeave={(event) => {
+            if (event.pointerType === "mouse") onInfoMouseLeave();
+          }}
+        >
           <button
             ref={walletInfoButtonRef}
             type="button"
             className="header-info-btn"
             aria-label={infoButtonAriaLabel}
+            aria-describedby={infoTouchHintId}
+            onPointerDown={(event) => {
+              infoPointerTypeRef.current = event.pointerType;
+            }}
+            onPointerCancel={() => {
+              lastInfoTouchTapRef.current = null;
+            }}
             onClick={handleInfoButtonClick}
-            onFocus={onInfoButtonFocus}
-            onBlur={onInfoButtonBlur}
+            onFocus={() => {
+              if (infoPointerTypeRef.current !== "touch") onInfoButtonFocus();
+            }}
+            onBlur={() => {
+              if (infoPointerTypeRef.current !== "touch") onInfoButtonBlur();
+            }}
           >
             <span className="header-info-inner-ring" aria-hidden="true" />
             <span className="header-info-glyph" aria-hidden="true">i</span>
           </button>
         </div>
+        <span id={infoTouchHintId} className="sr-only">
+          On touch screens, tap for information or double-tap within 300 milliseconds to go home.
+        </span>
       </div>
 
       <div className="header-right-actions" onClick={onRightActionsClick}>
@@ -295,7 +337,11 @@ export default function AppShellHeader({
         backdropInteractive={showWalletSeedNotice ? false : infoModalBackdropInteractive}
         onRequestClose={showWalletSeedNotice ? () => undefined : onInfoModalRequestClose}
         onKeepOpen={showWalletSeedNotice ? () => undefined : onInfoModalKeepOpen}
-        onScheduleClose={showWalletSeedNotice ? () => undefined : onInfoModalScheduleClose}
+        onScheduleClose={() => {
+          if (!showWalletSeedNotice && infoPointerTypeRef.current !== "touch") {
+            onInfoModalScheduleClose();
+          }
+        }}
       />
     </div>
   );

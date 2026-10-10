@@ -1326,6 +1326,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoButtonTouch={() => {
+            clearInfoCloseTimer();
+            clearInfoHideTimer();
+            setInfoModalInteraction("click");
+            setIsInfoModalClosing(false);
+            setShowInfoModal(true);
+          }}
           onInfoButtonClick={() => router.push("/")}
           onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}

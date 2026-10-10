@@ -2983,6 +2983,13 @@ export default function CampaignDetailPage() {
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(preventInfoHover, resetInfoModalState)}
+          onInfoButtonTouch={() => {
+            clearInfoCloseTimer();
+            clearInfoHideTimer();
+            setInfoModalInteraction("click");
+            setIsInfoModalClosing(false);
+            setShowInfoModal(true);
+          }}
           onInfoButtonClick={() => handleReturnToFeed()}
           onInfoButtonFocus={() => openInfoModalFromHover(preventInfoHover)}
           onInfoModalKeepOpen={keepInfoModalOpen}
