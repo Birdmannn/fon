@@ -1302,7 +1302,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     <main className="profile-page">
       <div className="campaign-shell-width profile-page-shell">
         <AppShellHeader
-          className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
+          className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-row items-center justify-between gap-4`.trim()}
           infoButtonAriaLabel="Open Freight information"
           infoModalAriaLabel={infoModalMode === "mountables-approval" ? "Raffle approval setup" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
@@ -1326,6 +1326,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
           onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoButtonTouch={() => {
+            clearInfoCloseTimer();
+            clearInfoHideTimer();
+            setInfoModalInteraction("click");
+            setIsInfoModalClosing(false);
+            setShowInfoModal(true);
+          }}
           onInfoButtonClick={() => router.push("/")}
           onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
@@ -1439,32 +1446,13 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     {photoUrl ? <Image src={photoUrl} alt={`${currentUserProfile?.displayName ?? "User"}'s profile photo`} fill unoptimized className="profile-avatar-image" /> : <span>Profile photo</span>}
                   </div>
                 )}
-                {canEditDisplayName ? (
-                  <button
-                    type="button"
-                    className="profile-handle profile-handle-under-avatar profile-handle-edit-trigger"
-                    onClick={openDisplayNameModal}
-                    aria-label={`Edit ${handleLabel}`}
-                  >
-                    {handleLabel}
-                  </button>
-                ) : (
-                  <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-                )}
+
               </div>
 
               <section className="profile-summary-card">
                 <div className={`profile-stats-column profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}>
                   <div className="profile-rank-row">
                     <p className="profile-reputation-balance"><span className="profile-display-name-inline">{currentUserProfile?.displayName ?? ""}</span>: {currentUserProfile?.fbars ?? 0} FBARS</p>
-                    <button
-                      type="button"
-                      className="profile-rank-link"
-                      onClick={openLeaderboardModal}
-                      disabled={!currentUserProfile}
-                    >
-                      {currentUserRankLabel}
-                    </button>
                   </div>
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
@@ -1497,6 +1485,28 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
                 </div>
               </section>
+              <button
+                type="button"
+                className={`profile-rank-link profile-hero-item ${isProfileStatsVisible ? "profile-hero-item-visible" : ""}`.trim()}
+                onClick={openLeaderboardModal}
+                disabled={!currentUserProfile}
+              >
+                {currentUserRankLabel}
+              </button>
+              <div className={`profile-handle-row profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-handle profile-handle-under-avatar profile-handle-edit-trigger"
+                    onClick={openDisplayNameModal}
+                    aria-label={`Edit ${handleLabel}`}
+                  >
+                    {handleLabel}
+                  </button>
+                ) : (
+                  <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
+                )}
+              </div>
             </div>
 
             {currentUserProfile ? (

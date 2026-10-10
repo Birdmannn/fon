@@ -1,0 +1,14 @@
+{
+  "name": "@freightonervos/fon-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./packages/fon-sdk/src/index.ts",
+  "exports": {
+    ".": "./packages/fon-sdk/src/index.ts"
+  },
+  "files": [
+    "packages/fon-sdk/src/",
+    "frontend/lib/fonMountablesSdk.ts"
+  ]
+}

@@ -1784,11 +1784,16 @@ button.create-mountable-principle.create-mountable-principle-selected:focus-visi
   padding: 0.75rem 0;
 }
 
-@media (max-width: 768px) {
+@media (width <= 48.3rem) {
   .create-campaign-modal {
     left: 0.75rem;
     right: 0.75rem;
     top: max(4.25rem, 7vh);
-    height: 80vh;
+    height: min(80dvh, calc(100dvh - 5.25rem));
+  }
+
+  .create-editor-modal {
+    padding-inline: 0.85rem;
+    font-size: 1rem;
   }
 }

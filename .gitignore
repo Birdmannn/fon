@@ -8,3 +8,10 @@ examples/checkbox-demo/.next/
 examples/checkbox-demo/node_modules/
 examples/checkbox-demo/tsconfig.tsbuildinfo
 examples/checkbox-demo/.fon/
+
+checkbox-demo/.next/
+checkbox-demo/node_modules/
+checkbox-demo/tsconfig.tsbuildinfo
+checkbox-demo/.fon/
+checkbox-demo/.env*
+!checkbox-demo/.env.example

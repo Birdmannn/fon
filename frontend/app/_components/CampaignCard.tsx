@@ -170,7 +170,7 @@ export default function CampaignCard({
       <CampaignApprovalControls campaign={campaign} record={record} signer={signer} nowMs={nowMs} />
 
       <div className="flex flex-col gap-[0.45rem] pt-2 pb-[0.45rem] text-xs">
-        <div className="flex items-center gap-2">
+        <div className="campaign-card-action-row flex items-center gap-2">
           <button
             onClick={() => void handleLike()}
             className={`campaign-action-btn action-like ${userLiked ? "campaign-action-active" : ""} ${!isConnected || isLockedForInteractions ? "campaign-action-disabled" : ""}`}

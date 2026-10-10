@@ -19,6 +19,7 @@
 }
 
 .header-info-btn {
+  touch-action: manipulation;
   position: relative;
   width: 2.6rem;
   height: 2.6rem;
@@ -233,5 +234,29 @@
   }
   to {
     opacity: 0;
+  }
+}
+
+@media (width <= 48.3rem) {
+  .header-right-actions {
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .btn-wallet {
+    width: auto;
+    padding-inline: 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .header-info-modal {
+    max-height: min(60dvh, calc(100dvh - 5rem));
+    padding-inline: 0.75rem;
+    overflow-wrap: anywhere;
+  }
+
+  .header-info-modal-title-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
 }
