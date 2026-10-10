@@ -7,6 +7,7 @@ import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex } from "@/lib/encoding";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId } from "@/lib/campaignIdentity";
+import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
 import { fetchCampaigns, fetchParticipants, getRaffleTicketsPerUser, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
@@ -73,6 +74,14 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     setIsPurchasingTickets(true);
     setTicketPurchaseError("");
     await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    try {
+      await assertFreightParentPreflight(getCampaignStableId(ticketPurchaseCampaign), await signer.getRecommendedAddress());
+    } catch (error) {
+      setTicketPurchaseError(error instanceof Error ? error.message : "Could not check parent freight completion");
+      setIsPurchasingTickets(false);
+      return;
+    }
 
     const [liveViewerFbars, creatorCurrentFbars] = await Promise.all([
       signer.getRecommendedAddress().then((address) => fetchCurrentFbars(address)).catch(() => currentViewerFbars ?? null),

@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 
 import { getCampaignParticipantsCollection, getMongoCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
 import { hasParticipantCreatedChildFreight, normalizeChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
-import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
+import { assertFreightParentAccess, dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 
 type CampaignParticipantPayload = {
   campaignId?: unknown;
@@ -177,6 +177,7 @@ function normalizePayload(payload: CampaignParticipantPayload) {
 export async function POST(request: Request) {
   try {
     const payload = normalizePayload((await request.json()) as CampaignParticipantPayload);
+    await assertFreightParentAccess(payload.campaignId, payload.participantAddress);
     const collection = await getCampaignParticipantsCollection();
     const now = new Date();
 

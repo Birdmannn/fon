@@ -4,7 +4,7 @@ import { SignerSignType } from "@ckb-ccc/core";
 
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { findGoogleFormResponseByEmail } from "@/lib/googleFormsApi";
-import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
+import { assertFreightParentAccess, dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
 import { verifyWalletSignature, walletActionNonceMatchesPurpose } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
@@ -143,6 +143,8 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     if (!record) {
       return badRequest("Campaign record not found", 404);
     }
+
+    await assertFreightParentAccess(String(record.campaignId ?? ""), address);
 
     const formsMountable = normalizeFormsMountableConfig(record.mountables?.forms ?? null);
     if (!formsMountable.enabled) {

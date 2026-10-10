@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
 import { normalizeMountableAppId } from "@/lib/fonMountablesSdk";
-import { dispatchMountableAppEvaluationRequest, finalizeCampaignParticipant, pollMountedApps, type CampaignParticipantRuntimeRow, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
+import { assertFreightParentAccess, dispatchMountableAppEvaluationRequest, finalizeCampaignParticipant, pollMountedApps, type CampaignParticipantRuntimeRow, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +60,8 @@ export async function POST(request: Request) {
     if (!record) {
       return badRequest("Campaign record not found", 404);
     }
+
+    await assertFreightParentAccess(campaignId, participantAddress);
 
     const mountedApps = normalizeAppMountableConfigs(record.mountables?.apps).filter((entry) => {
       if (!entry.enabled) {

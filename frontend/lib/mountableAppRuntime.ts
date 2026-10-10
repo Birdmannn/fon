@@ -386,6 +386,33 @@ export async function finalizeCampaignParticipant(params: {
   return snapshot;
 }
 
+export async function assertFreightParentAccess(campaignId: string, participantAddress: string) {
+  const normalizedCampaignId = campaignId.trim().toLowerCase();
+  const normalizedAddress = participantAddress.trim().toLowerCase();
+  if (!normalizedCampaignId || !normalizedAddress) {
+    throw new Error("Freight and wallet address are required");
+  }
+
+  const record = await (await getMongoCollection()).findOne(
+    { campaignId: normalizedCampaignId, status: "published" },
+    { projection: { _id: 0, parentCampaignId: 1, parentCampaignIds: 1 } },
+  );
+  if (!record) throw new Error("Published freight record not found");
+
+  const parents = parentIds({ parentCampaignId: record.parentCampaignId, parentCampaignIds: record.parentCampaignIds });
+  if (parents.length === 0) return;
+
+  const snapshots = await Promise.all(parents.map((parentCampaignId) => finalizeCampaignParticipant({
+    campaignId: parentCampaignId,
+    participantAddress: normalizedAddress,
+    propagateDescendants: false,
+  })));
+  const pendingCount = snapshots.filter((snapshot) => snapshot?.status !== "verified").length;
+  if (pendingCount > 0) {
+    throw new Error(`Complete ${pendingCount === 1 ? "the parent freight" : "all parent freights"} before interacting with this child freight`);
+  }
+}
+
 async function loadRegisteredAppById(appId: string) {
   const collection = await getMountableAppsCollection();
   return collection.findOne(
@@ -476,6 +503,12 @@ export async function ingestMountedAppUpdate(params: {
   }
   if (new Date(effectiveAt).getTime() < new Date(mountedApp.startsAt).getTime() || new Date(effectiveAt).getTime() >= new Date(mountedApp.endsAt).getTime()) {
     throw new MountableAppRuntimeError("Event effectiveAt is outside the mounted freight window", 422);
+  }
+
+  try {
+    await assertFreightParentAccess(campaignId, participantAddress);
+  } catch (error) {
+    throw new MountableAppRuntimeError(error instanceof Error ? error.message : "Parent freight check failed", 409);
   }
 
   const principleStates = normalizeMountedAppPrincipleStates(params.payload.principleStates, mountedApp.selectedPrinciples)

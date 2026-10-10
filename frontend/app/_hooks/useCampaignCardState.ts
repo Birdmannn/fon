@@ -20,6 +20,7 @@ import {
 } from "@/lib/giftDeliverables";
 import { isOnChainGiftApprovalSatisfied, isOnChainGiftClaimOpen } from "@/lib/giftApproval";
 import { giftClaimSlot } from "@/lib/giftPolicy";
+import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
 import { raffleApprovalDeadlineMissed, raffleApprovalsSatisfied } from "@/lib/raffleApproval";
 import { CampaignStatus, CampaignType, ParticipantStatus } from "@/lib/contract";
 import {
@@ -799,6 +800,7 @@ export function useCampaignCardState({
   const handleDepositSubmit = async (depositAmount: string) => {
     if (!signer) throw new Error("Connect your wallet first");
     if (isSupportDisabled) throw new Error("Support is unavailable for this freight");
+    await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
 
     const parsedDepositAmount = Number(depositAmount.trim());
     if (!Number.isFinite(parsedDepositAmount) || parsedDepositAmount <= 0) {
@@ -862,6 +864,7 @@ export function useCampaignCardState({
     if (!signer || giftClaimBusy) return;
     setGiftClaimBusy(true);
     try {
+      await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
       const txHash = await sendGiftClaim(signer, c);
       showActionFeedback("reshare", "success", "Gift claim sent. Waiting for confirmation…");
       const receipt = await signer.client.waitTransaction(txHash, 1, 180_000);
@@ -870,6 +873,27 @@ export function useCampaignCardState({
       if (!output?.type) throw new Error("Missing freight output");
       const campaign: CampaignCell = { outPoint: { txHash, index: 0 }, data: decodeCampaignData(hexToBytes(receipt.transaction.outputsData[0])), capacityShannons: output.capacity, lock: output.lock, type: output.type };
       window.dispatchEvent(new CustomEvent("freight:approval-chain-update", { detail: { campaign, campaignId: getCampaignStableId(campaign) } }));
+      try {
+        const participationResponse = await fetch("/api/campaign-participants", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignId: cardId,
+            createdByHash: getCampaignCreatedByHash(c),
+            chainCreatedAt: getCampaignChainCreatedAt(c),
+            campaignType: c.data.campaignType,
+            participantAddress: await signer.getRecommendedAddress(),
+            participantKind: "gift_claim",
+            participantTxHash: txHash,
+            joinedAt: String(Date.now()),
+            status: "verified",
+          }),
+        });
+        if (!participationResponse.ok) throw new Error("Completion record rejected");
+      } catch {
+        showActionFeedback("reshare", "error", `Gift paid, but completion could not be recorded. Transaction: ${txHash}`);
+        return;
+      }
       showActionFeedback("reshare", "success", "Gift paid to your wallet.");
     } catch (error) {
       showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to claim gift freight");
@@ -939,6 +963,7 @@ export function useCampaignCardState({
     setActionFeedback(null);
 
     try {
+      await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
       const { txHash, withdrawnAmountShannons } = await sendCreatorWithdraw(signer, c);
       let withdrawnAt = new Date().toISOString();
       let withdrawnByAddress = currentWalletAddress ?? await signer.getRecommendedAddress() ?? creatorAddress;
@@ -1022,6 +1047,7 @@ export function useCampaignCardState({
           || ((entry.data.round ?? 0n) < round && entry.data.status === ParticipantStatus.Winner)
         ));
         if (reclaimable) {
+          await assertFreightParentPreflight(cardId, walletAddress);
           await sendReclaimRecurringParticipant(signer, c, reclaimable);
           showActionFeedback("reshare", "success", "Ticket storage reclaimed.");
           window.setTimeout(() => window.location.reload(), 1200);
@@ -1032,6 +1058,7 @@ export function useCampaignCardState({
           const userHasPermission = await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record);
           if (!userHasPermission) throw new Error("Only the freight creator can draw this round");
           if (!record?.randomnessPreimage) throw new Error("The recurring raffle randomness preimage is unavailable");
+          await assertFreightParentPreflight(cardId, walletAddress);
           const participants = (await fetchParticipants(client, c, 500, undefined, true))
             .filter((entry) => entry.data.status === ParticipantStatus.Verified && (entry.data.round ?? 1n) === round);
           await sendDrawRecurringRaffle(signer, c, participants, hexToBytes(record.randomnessPreimage));
@@ -1040,6 +1067,7 @@ export function useCampaignCardState({
           const winners = ownedRoundCells
             .filter((entry) => (entry.data.round ?? 0n) === round);
           if (winners.length > 0 && Date.now() <= recurringSleepEndsAt) {
+            await assertFreightParentPreflight(cardId, walletAddress);
             const txHash = await sendClaimRecurringRaffle(signer, c, winners[0]);
             if (record?._id) {
               const key = `fon:pending-win:${record._id}:${txHash.toLowerCase()}`;
@@ -1054,6 +1082,7 @@ export function useCampaignCardState({
             }
             showActionFeedback("reshare", "success", "Reward cashed out.");
           } else if (Date.now() > recurringSleepEndsAt) {
+            await assertFreightParentPreflight(cardId, walletAddress);
             await sendRolloverRecurringRaffle(signer, c);
             showActionFeedback("reshare", "success", (data.roundWinnerCount ?? 0n) === 1n ? "Recurring raffle finished." : "Next raffle round started.");
           } else {
@@ -1224,6 +1253,7 @@ export function useCampaignCardState({
           errorMessage = "No eligible verified winners are available for settlement.";
         } else {
           try {
+            await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
             distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
           } catch (error) {
             if (error instanceof Error && /Transient CKB cell lookup failed/i.test(error.message)) {

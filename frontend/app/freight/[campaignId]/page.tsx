@@ -59,6 +59,7 @@ import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import { buildDefaultUsername, decodeCreatedByAddress, formatCkbAmount } from "@/lib/campaignDisplay";
 import { FREIGHT_CREATION_FBARS_COST } from "@/lib/fbars";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
+import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
 import { isWinningCampaignType } from "@/lib/fbars";
 import { CampaignType } from "@/lib/contract";
 import { raffleApprovalsSatisfied } from "@/lib/raffleApproval";
@@ -1583,6 +1584,8 @@ export default function CampaignDetailPage() {
     setParticipantFormsActionNotice("");
 
     try {
+      if (!selectedRecord.campaignId) throw new Error("This freight is missing its campaign id");
+      await assertFreightParentPreflight(selectedRecord.campaignId, await signer.getRecommendedAddress());
       const signed = await createSignedWalletAction("forms-claim");
       const response = await fetch(`/api/campaign-records/${selectedRecord._id}/forms/claim`, {
         method: "POST",
@@ -1622,7 +1625,7 @@ export default function CampaignDetailPage() {
     } finally {
       setIsSubmittingFormsClaim(false);
     }
-  }, [createSignedWalletAction, linkedIdentityEmail, loadFormsClaims, openWalletWithSeed, selectedRecord?._id, signer]);
+  }, [createSignedWalletAction, linkedIdentityEmail, loadFormsClaims, openWalletWithSeed, selectedRecord?._id, selectedRecord?.campaignId, signer]);
 
   const handleSyncFormsClaims = useCallback(async () => {
     if (!signer) {

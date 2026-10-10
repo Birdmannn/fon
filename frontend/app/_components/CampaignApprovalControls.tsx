@@ -6,6 +6,7 @@ import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import { useInfoError } from "./InfoErrorProvider";
 import { CampaignStatus } from "@/lib/contract";
 import { getCampaignStableId } from "@/lib/campaignIdentity";
+import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
 import { bytesToHex, decodeCampaignData, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 import { raffleApprovalDeadlineMissed, raffleApprovalsSatisfied, raffleApprovalThresholdMet } from "@/lib/raffleApproval";
 import { sendCancelCampaign, sendConfirmRaffleApproval, sendCampaignApproval, type CampaignCell } from "@/lib/transactions";
@@ -94,6 +95,7 @@ export default function CampaignApprovalControls({ campaign, record, signer, now
     setError(null);
     setMessage(action === "cancel" ? "Cancelling…" : "Recording approval…");
     try {
+      await assertFreightParentPreflight(getCampaignStableId(campaign), await signer.getRecommendedAddress());
       let updated = await waitAndUpdate(await (action === "cancel" ? sendCancelCampaign(signer, campaign) : action === "confirm" ? sendConfirmRaffleApproval(signer, campaign) : sendCampaignApproval(signer, campaign)));
       if (action === "approve" && updated.data.approval?.stage === "on-commence" && raffleApprovalThresholdMet(updated.data.approval)) {
         setMessage("Confirming commencement approvals…");
