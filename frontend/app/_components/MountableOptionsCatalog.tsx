@@ -84,7 +84,7 @@ export default function MountableOptionsCatalog({
                     ? lockMountableSelected
                     : isRegisteredAppSelected;
                 const ariaLabel = item.kind === "forms"
-                  ? `${selected ? "Deselect" : "Select"} forms mountable`
+                  ? "Forms mountable unavailable"
                   : item.kind === "child-freight"
                     ? `${selected ? "Deselect" : "Select"} child freight mountable`
                   : item.kind === "lock"
@@ -101,7 +101,7 @@ export default function MountableOptionsCatalog({
                     aria-label={ariaLabel}
                     aria-pressed={item.kind === "payable" ? undefined : selected}
                     data-tooltip={item.label}
-                    disabled={item.kind === "payable"}
+                    disabled={item.kind === "payable" || item.kind === "forms"}
                     onClick={item.kind === "forms"
                       ? onToggleForms
                       : item.kind === "child-freight"
