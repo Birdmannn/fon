@@ -74,13 +74,14 @@ create a duplicate or rotate its credential.
 
 ## Run The Poll Worker Locally
 
-In development the worker endpoint is available without a cron secret:
+Set `FON_POLLING_ENABLED=true` in the FON frontend environment to test pull
+polling. In development the worker endpoint is available without a cron secret:
 
 ```bash
 curl http://localhost:3000/api/mountables/apps/poll
 ```
 
 Production deployments must set `FON_POLL_CRON_SECRET` or `CRON_SECRET` and send
-it as a bearer token. `frontend/vercel.json` schedules this endpoint once per
-minute; each installation's `pollIntervalSeconds` still controls whether it is
-due.
+it as a bearer token. There is no bundled Vercel cron schedule; configure one
+or use an external scheduler when pull polling is needed. Each installation's
+`pollIntervalSeconds` still controls whether it is due.

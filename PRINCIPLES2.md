@@ -231,8 +231,8 @@ sends it in an authenticated `mount.requested` event to the app's registered
 selected principles, exact FON event URL, start/end timestamps, and
 `timeframeSeconds`. Only the grant secret's hash is retained in the freight
 record, and delivery logs redact it. App-originated updates are accepted only
-inside that freight window, and the polling worker revokes persisted hashes
-after expiry.
+inside that freight window. When pull polling is enabled and scheduled, its
+worker also clears persisted secret hashes after expiry.
 
 ---
 
@@ -277,7 +277,8 @@ Pull evaluation is implemented through the protected
 `/api/mountables/apps/poll` worker. It builds a typed poll request for each due
 installation, authenticates to the hosted app, ingests returned updates through
 the same runtime used by push updates, and honors each app's configured polling
-interval. `frontend/vercel.json` invokes the worker once per minute on Vercel.
+interval when `FON_POLLING_ENABLED=true` and an external scheduler invokes the
+worker. Push webhooks remain active when polling is disabled.
 
 ### 3. External SDK packaging
 The ideal interfaces live in the internal codebase, but there is not yet a standalone published SDK package for third-party app authors.

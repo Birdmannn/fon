@@ -5,6 +5,7 @@ import {
   areRequiredPrinciplesSatisfied,
   isCanonicalParticipantVerified,
   isMountedAppPollDue,
+  isMountedAppPollingEnabled,
   mountedAppWindowState,
 } from "../lib/mountableAppRuntimeRules.ts";
 import { resolveSelectedMountableAppPrinciples } from "../lib/fonMountablesSdk.ts";
@@ -62,6 +63,13 @@ test("poll scheduling honors the configured interval", () => {
   assert.equal(isMountedAppPollDue({ now, lastPollAt: "2026-09-29T12:00:45.000Z", pollIntervalSeconds: 30 }), false);
   assert.equal(isMountedAppPollDue({ now, lastPollAt: "2026-09-29T12:00:30.000Z", pollIntervalSeconds: 30 }), true);
   assert.equal(isMountedAppPollDue({ now, lastPollAt: "2026-09-29T12:00:59.000Z", pollIntervalSeconds: 300, force: true }), true);
+});
+
+test("mounted-app polling is opt-in and ignores non-true values", () => {
+  assert.equal(isMountedAppPollingEnabled(undefined), false);
+  assert.equal(isMountedAppPollingEnabled("false"), false);
+  assert.equal(isMountedAppPollingEnabled("1"), false);
+  assert.equal(isMountedAppPollingEnabled(" TRUE "), true);
 });
 
 test("creator principle parameters survive selection resolution", () => {
