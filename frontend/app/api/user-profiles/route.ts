@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { SignerSignType } from "@ckb-ccc/core";
 
+import { reconcileAdsfForAddress } from "@/lib/adsf";
 import {
   getCurrentWeekKey,
   getWeeklyMarqueeEditsRemaining,
@@ -17,6 +18,7 @@ import {
   normalizeLightModePrimaryColor,
 } from "@/lib/lightModePrimaryColor";
 import { getUserProfilesCollection } from "@/lib/mongodb";
+import { uniqueProfilesByAddress } from "@/lib/userProfileRanking";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +40,7 @@ const BASE_PROFILE_PROJECTION = {
   weeklyMarqueeWeekKey: 1,
   weeklyMarqueeUpdatedAt: 1,
   lightModePrimaryColor: 1,
+  photoUpdatedAt: 1,
 } as const;
 
 type WalletSignaturePayload = {
@@ -99,6 +102,7 @@ type StoredProfileRecord = StoredFbarsProfile & {
   lastSeenAt?: string | null;
   googleAccount?: unknown;
   lightModePrimaryColor?: unknown;
+  photoUpdatedAt?: unknown;
   weeklyMarqueeMessage?: unknown;
   weeklyMarqueeWeekKey?: unknown;
   weeklyMarqueeUpdatedAt?: unknown;
@@ -109,6 +113,7 @@ type UserProfileResponse = LeaderboardEntry & {
   weeklyRank: number;
   canEditWeeklyMarquee: boolean;
   lightModePrimaryColor: string;
+  photoUpdatedAt?: string | null;
   weeklyMarqueeMessage?: string | null;
   weeklyMarqueeWeekKey?: string | null;
   weeklyMarqueeEditsUsed: number;
@@ -319,7 +324,7 @@ function rankLeaderboard(entries: LeaderboardEntry[], metric: "overall" | "weekl
 
 function buildLeaderboardBundle(profiles: StoredProfileRecord[], now = new Date()): LeaderboardBundle {
   const weekKey = getCurrentWeekKey(now);
-  const baseEntries = profiles.map((profile) => buildLeaderboardEntry(profile, weekKey));
+  const baseEntries = uniqueProfilesByAddress(profiles).map((profile) => buildLeaderboardEntry(profile, weekKey));
   const overallLeaderboard = rankLeaderboard(baseEntries, "overall");
   const weeklyLeaderboard = rankLeaderboard(baseEntries, "weekly");
 
@@ -333,7 +338,7 @@ function buildLeaderboardBundle(profiles: StoredProfileRecord[], now = new Date(
 
 function buildProfilesByAddress(profiles: StoredProfileRecord[]) {
   return new Map(
-    profiles.map((profile) => [typeof profile.address === "string" ? normalizeAddress(profile.address) : "", profile]),
+    uniqueProfilesByAddress(profiles).map((profile) => [normalizeAddress(profile.address as string), profile]),
   );
 }
 
@@ -352,6 +357,7 @@ function buildFallbackUserProfileResponse(address: string, bundle: LeaderboardBu
     overallRank: bundle.overallLeaderboard.length + 1,
     canEditWeeklyMarquee: false,
     lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
+    photoUpdatedAt: null,
     weeklyMarqueeMessage: null,
     weeklyMarqueeWeekKey: null,
     weeklyMarqueeEditsUsed: 0,
@@ -391,6 +397,7 @@ function buildUserProfileResponse(
     overallRank: overallEntry?.rank ?? 0,
     canEditWeeklyMarquee: bundle.weeklyWinnerAddress === baseEntry.address && weeklyMarqueeEditsRemaining > 0,
     lightModePrimaryColor: sanitizeLightModePrimaryColor(rawProfile?.lightModePrimaryColor),
+    photoUpdatedAt: typeof rawProfile?.photoUpdatedAt === "string" ? rawProfile.photoUpdatedAt : null,
     weeklyMarqueeMessage,
     weeklyMarqueeWeekKey,
     weeklyMarqueeEditsUsed: weeklyState.marqueeEditCount,
@@ -461,6 +468,26 @@ async function loadAllProfiles(includePrivate = false) {
   }).toArray()) as StoredProfileRecord[];
 }
 
+async function upsertProfile(
+  collection: Awaited<ReturnType<typeof getUserProfilesCollection>>,
+  address: string,
+  nextSet: Record<string, unknown>,
+  nextSetOnInsert: Record<string, unknown>,
+) {
+  try {
+    return await collection.updateOne(
+      { address },
+      { $set: nextSet, $setOnInsert: nextSetOnInsert },
+      { upsert: true },
+    );
+  } catch (error) {
+    if (!error || typeof error !== "object" || !("code" in error) || error.code !== 11000) {
+      throw error;
+    }
+    return collection.updateOne({ address }, { $set: nextSet });
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -489,7 +516,7 @@ export async function GET(request: Request) {
       const profilesByAddress = buildProfilesByAddress(profiles);
       const activeWeeklyMarquee = buildActiveWeeklyMarquee(bundle, profilesByAddress);
       const normalizedHandle = normalizeUsername(handleParam);
-      const rawProfile = profiles.find((entry) => {
+      const rawProfile = uniqueProfilesByAddress(profiles).find((entry) => {
         const username = typeof entry.username === "string" ? entry.username : "";
         const handle = formatUsernameHandle(username);
         return normalizeUsername(username) === normalizedHandle || normalizeUsername(handle) === normalizedHandle;
@@ -499,16 +526,20 @@ export async function GET(request: Request) {
         return badRequest("User profile not found", 404);
       }
 
-      const profile = buildUserProfileResponse(normalizeAddress(rawProfile.address), bundle, rawProfile);
+      const adsf = await reconcileAdsfForAddress(rawProfile.address);
+      if (adsf.complete) rawProfile.adsfUsdCents = adsf.cents;
+      else rawProfile.adsfUsdCents = Math.max(parseAdsfUsdCents(rawProfile.adsfUsdCents), adsf.cents);
+      const updatedBundle = buildLeaderboardBundle(profiles);
+      const profile = buildUserProfileResponse(normalizeAddress(rawProfile.address), updatedBundle, rawProfile);
       if (!profile) {
         return badRequest("User profile not found", 404);
       }
 
       return NextResponse.json({
         profile: includePrivate ? attachGoogleAccountToProfile(profile, sanitizeGoogleAccount(rawProfile.googleAccount)) : profile,
-        leaderboard: bundle.weeklyLeaderboard,
-        weeklyLeaderboard: bundle.weeklyLeaderboard,
-        overallLeaderboard: bundle.overallLeaderboard,
+        leaderboard: updatedBundle.weeklyLeaderboard,
+        weeklyLeaderboard: updatedBundle.weeklyLeaderboard,
+        overallLeaderboard: updatedBundle.overallLeaderboard,
         ...activeWeeklyMarquee,
       });
     }
@@ -545,6 +576,7 @@ export async function GET(request: Request) {
           overallRank: entry.rank,
           canEditWeeklyMarquee: false,
           lightModePrimaryColor: sanitizeLightModePrimaryColor(profilesByAddress.get(entry.address)?.lightModePrimaryColor),
+          photoUpdatedAt: typeof profilesByAddress.get(entry.address)?.photoUpdatedAt === "string" ? profilesByAddress.get(entry.address)?.photoUpdatedAt as string : null,
           weeklyMarqueeMessage: null,
           weeklyMarqueeWeekKey: null,
           weeklyMarqueeEditsUsed: parseWeeklyFbarsState(profilesByAddress.get(entry.address), bundle.weekKey).marqueeEditCount,
@@ -570,26 +602,21 @@ export async function POST(request: Request) {
 
     const existingUserCount = await collection.countDocuments();
 
-    await collection.updateOne(
-      { address },
+    await upsertProfile(
+      collection,
+      address,
+      { address, updatedAt: now, lastSeenAt: now },
       {
-        $set: {
-          address,
-          updatedAt: now,
-          lastSeenAt: now,
-        },
-        $setOnInsert: {
-          username: buildDefaultUsername(address),
-          displayName: buildDefaultDisplayName(existingUserCount),
-          fbars: 0,
-          adsfUsdCents: 0,
-          lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
-          createdAt: now,
-        },
+        username: buildDefaultUsername(address),
+        displayName: buildDefaultDisplayName(existingUserCount),
+        fbars: 0,
+        adsfUsdCents: 0,
+        lightModePrimaryColor: DEFAULT_LIGHT_MODE_PRIMARY_COLOR,
+        createdAt: now,
       },
-      { upsert: true }
     );
 
+    await reconcileAdsfForAddress(address);
     const profiles = await loadAllProfiles();
     const bundle = buildLeaderboardBundle(profiles, now);
     const profilesByAddress = buildProfilesByAddress(profiles);
@@ -635,11 +662,7 @@ export async function PATCH(request: Request) {
       nextSet.displayName = sanitizeDisplayName(ensureString(payload.displayName, "displayName"));
     }
 
-    if (typeof payload.adsfUsdCents === "number" && Number.isInteger(payload.adsfUsdCents) && payload.adsfUsdCents >= 0) {
-      nextSet.adsfUsdCents = payload.adsfUsdCents;
-    } else {
-      nextSetOnInsert.adsfUsdCents = 0;
-    }
+    nextSetOnInsert.adsfUsdCents = 0;
 
     if (payload.lightModePrimaryColor !== undefined) {
       nextSet.lightModePrimaryColor = sanitizeLightModePrimaryColor(payload.lightModePrimaryColor);
@@ -690,14 +713,7 @@ export async function PATCH(request: Request) {
       nextSet.googleAccount = googleAccount;
     }
 
-    const result = await collection.updateOne(
-      { address },
-      {
-        $set: nextSet,
-        $setOnInsert: nextSetOnInsert,
-      },
-      { upsert: true }
-    );
+    const result = await upsertProfile(collection, address, nextSet, nextSetOnInsert);
 
     if (result.matchedCount === 0 && result.upsertedCount === 0) {
       return badRequest("User profile not found", 404);

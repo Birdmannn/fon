@@ -7,7 +7,7 @@ use ckb_std::debug;
 use ckb_std::ckb_constants::Source;
 // use ckb_std::ckb_types::prelude::Entity;
 use ckb_std::error::SysError;
-use ckb_std::high_level::{load_input, load_script, load_witness_args};
+use ckb_std::high_level::{load_cell_data, load_cell_type, load_input, load_script, load_witness_args};
 use freight::errors::Error;
 use freight::instructions::*;
 
@@ -45,6 +45,39 @@ fn run() -> Result<(), Error> {
 
     let instruction = args[0];
 
+    // Selector 255 is the permissive state-cell lock used by new freight and
+    // participant cells. It is only valid when this same binary is also
+    // executing as a type script in the transaction, so the type transition
+    // remains the authority over all state and funds.
+    if instruction == 255 {
+        let own_code_hash = script.code_hash();
+        if args.len() != 21 && args.len() != 49 {
+            return Err(Error::Unauthorized);
+        }
+        let mut index = 0;
+        loop {
+            match load_cell_type(index, Source::Input) {
+                Ok(Some(type_script)) if type_script.code_hash() == own_code_hash => {
+                    if args.len() == 21 {
+                        return Ok(());
+                    }
+                    let data = load_cell_data(index, Source::Input)
+                        .map_err(|_| Error::InvalidCellData)?;
+                    if data.len() >= 44
+                        && data[0..8] == args[21..29]
+                        && data[24..44] == args[1..21]
+                    {
+                        return Ok(());
+                    }
+                    index += 1;
+                }
+                Ok(_) => index += 1,
+                Err(SysError::IndexOutOfBound) => return Err(Error::Unauthorized),
+                Err(err) => return Err(err.into()),
+            }
+        }
+    }
+
     // Stable campaign cells keep selector 0 in the type args forever.
     // When such a cell is being spent, the real state-transition action is
     // passed in WitnessArgs.output_type of GroupInput[0].
@@ -76,6 +109,16 @@ fn has_group_input() -> Result<bool, Error> {
 }
 
 fn dispatch_instruction(instruction: u8, instruction_args: &[u8]) -> Result<(), Error> {
+    if instruction != 0 {
+        let data = load_cell_data(0, Source::GroupInput)?;
+        let campaign = freight::utils::parse_campaign_data(&data)?;
+        if campaign.approval.is_some() || campaign.gift.is_some() {
+            freight::approvals::verify_single_campaign_cell(Source::GroupInput)?;
+            freight::approvals::verify_single_campaign_cell(Source::GroupOutput)?;
+            freight::gifts::check_transition(&campaign, instruction)?;
+            freight::approvals::check_transition(&campaign, instruction, freight::utils::get_current_timestamp()?)?;
+        }
+    }
     match instruction {
         0 => create_campaign(instruction_args),
         1 => deposit(instruction_args),
@@ -85,6 +128,14 @@ fn dispatch_instruction(instruction: u8, instruction_args: &[u8]) -> Result<(), 
         5 => submit_randomness_hash(instruction_args),
         6 => cancel_campaign(instruction_args),
         7 => refund(instruction_args),
+        8 => creator_withdraw(instruction_args),
+        9 => draw_recurring_raffle(instruction_args),
+        10 => claim_recurring_raffle(instruction_args),
+        11 => rollover_recurring_raffle(instruction_args),
+        12 => reclaim_recurring_participant(instruction_args),
+        13 => approve_campaign(instruction_args),
+        14 => confirm_raffle_approval(instruction_args),
+        15 => freight::gifts::claim_gift(instruction_args),
         _ => {
             debug!("Invalid instruction selector: {}", instruction);
             Err(Error::UnknownScriptArgs)

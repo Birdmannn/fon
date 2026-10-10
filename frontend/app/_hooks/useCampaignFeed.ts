@@ -1,11 +1,11 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildDefaultHandle, deriveDisplayStatus } from "@/lib/campaignDisplay";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 export type { CampaignComment, CampaignRecord } from "@/app/_types/campaignRecords";
+import { buildDefaultHandle, deriveDisplayStatus } from "@/lib/campaignDisplay";
 import {
   buildCampaignRecordIndexes,
   findCampaignRecord,
@@ -14,12 +14,13 @@ import {
   type CampaignRecordIndexes,
 } from "@/lib/campaignIdentity";
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
+import type { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
 
 export type MergedCampaign = {
   campaign: CampaignCell;
   record: CampaignRecord | null;
-  displayStatus: number;
+  displayStatus: CampaignStatus;
 };
 
 const EMPTY_CAMPAIGN_RECORD_INDEXES: CampaignRecordIndexes<CampaignRecord> = {
@@ -28,6 +29,34 @@ const EMPTY_CAMPAIGN_RECORD_INDEXES: CampaignRecordIndexes<CampaignRecord> = {
   byLegacyKey: {},
 };
 
+function withLiveRaffleTicketCounts(campaigns: CampaignCell[], records: CampaignRecord[], participantCounts: Record<string, number>) {
+  return records.map((record) => {
+    const explicitCampaignId = typeof record.campaignId === "string" ? record.campaignId.trim().toLowerCase() : "";
+    const matchedCampaign = explicitCampaignId
+      ? campaigns.find((campaign) => getCampaignStableId(campaign) === explicitCampaignId)
+      : null;
+    const isRaffleCampaign = matchedCampaign?.data.campaignType === 4 || matchedCampaign?.data.campaignType === 5 || record.campaignType === 4 || record.campaignType === 5;
+    if (!isRaffleCampaign) {
+      return record;
+    }
+
+    const campaignId = explicitCampaignId || (matchedCampaign ? getCampaignStableId(matchedCampaign) : "");
+    if (!campaignId) {
+      return record;
+    }
+
+    const participantCount = participantCounts[campaignId];
+    if (!Number.isInteger(participantCount) || participantCount < 0) {
+      return record;
+    }
+
+    return {
+      ...record,
+      liveSoldTicketCount: String(participantCount),
+    };
+  });
+}
+
 function formatCompactCampaignCount(count: number) {
   return new Intl.NumberFormat(undefined, {
     notation: "compact",
@@ -35,12 +64,45 @@ function formatCompactCampaignCount(count: number) {
   }).format(count).toLowerCase();
 }
 
-type UseCampaignFeedArgs = {
-  client: ccc.Client;
-  onErrorChange: (message: string) => void;
+type CampaignFeedContextValue = {
+  campaigns: CampaignCell[];
+  clearShouldScrollToNewest: () => void;
+  ensureLoaded: () => void;
+  error: string;
+  handleRefresh: () => void;
+  handleSearchClick: () => void;
+  handleSettlementCompleted: (
+    campaignId: string,
+    settlementTxHash: string,
+    settledAt: string,
+    soldTicketCount: string,
+    settledParticipantCount?: string | null,
+    settledRecipients?: CampaignRecord["settledRecipients"],
+  ) => void;
+  handleWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
+  handleShowPendingCampaigns: () => void;
+  handleTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
+  isRefreshing: boolean;
+  isSearchOpen: boolean;
+  loading: boolean;
+  recordIndexes: CampaignRecordIndexes<CampaignRecord>;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
+  shouldScrollToNewest: boolean;
+  unseenCampaignCount: number;
+  unseenCampaignBadgeLabel: string | null;
 };
 
-export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) {
+const CampaignFeedContext = createContext<CampaignFeedContextValue | null>(null);
+
+export function CampaignFeedProvider({ children }: { children: React.ReactNode }) {
+  const { client } = ccc.useCcc();
   const [campaigns, setCampaigns] = useState<CampaignCell[]>([]);
   const [recordIndexes, setRecordIndexes] = useState<CampaignRecordIndexes<CampaignRecord>>(() => ({ ...EMPTY_CAMPAIGN_RECORD_INDEXES }));
   const [pendingCampaigns, setPendingCampaigns] = useState<CampaignCell[] | null>(null);
@@ -52,18 +114,163 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [shouldScrollToNewest, setShouldScrollToNewest] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const campaignsRef = useRef<CampaignCell[]>(campaigns);
+  const hasLoadedOnceRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
+  const previousClientRef = useRef<ccc.Client | null>(null);
 
-  const handleTicketBought = useCallback((campaignId: string, ticketPrice: bigint) => {
+  campaignsRef.current = campaigns;
+
+  const buildRecordIndexes = useCallback((records: CampaignRecord[]) => {
+    return buildCampaignRecordIndexes(records);
+  }, []);
+
+  const refreshCampaigns = useCallback(async (preserveVisibleList: boolean, visibleCampaigns?: CampaignCell[]) => {
+    if (refreshInFlightRef.current) {
+      return;
+    }
+
+    refreshInFlightRef.current = true;
+    const activeVisibleCampaigns: CampaignCell[] = visibleCampaigns ?? campaignsRef.current;
+    if (!preserveVisibleList) {
+      setLoading(true);
+    }
+
+    setError("");
+    setIsRefreshing(true);
+
+    try {
+      const [chainCampaigns, records] = await Promise.all([
+        fetchCampaigns(client),
+        fetch("/api/campaign-records", { cache: "no-store" }).then(async (response) => {
+          const data = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(data?.error ?? "Failed to fetch campaign records");
+          }
+
+          return Array.isArray(data?.records) ? (data.records as CampaignRecord[]) : [];
+        }),
+      ]);
+
+      const raffleCampaignIds = chainCampaigns
+        .filter((campaign) => campaign.data.campaignType === 4 || campaign.data.campaignType === 5)
+        .map((campaign) => getCampaignStableId(campaign));
+      const participantCounts = raffleCampaignIds.length > 0
+        ? Object.fromEntries(await Promise.all(
+            raffleCampaignIds.map(async (campaignId) => {
+              try {
+                const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(campaignId)}&participantKind=raffle_ticket`, { cache: "no-store" });
+                const data = await response.json().catch(() => null);
+                const participants = response.ok && Array.isArray(data?.participants) ? data.participants : [];
+                return [campaignId, participants.length] as const;
+              } catch {
+                return [campaignId, 0] as const;
+              }
+            })
+          ))
+        : {};
+      const nextRecordIndexes = buildRecordIndexes(withLiveRaffleTicketCounts(chainCampaigns, records, participantCounts));
+
+      if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
+        setCampaigns(chainCampaigns);
+        setRecordIndexes(nextRecordIndexes);
+        setPendingCampaigns(null);
+        setPendingRecordIndexes(null);
+        setUnseenCampaignCount(0);
+        hasLoadedOnceRef.current = true;
+        return;
+      }
+
+      const currentKeys = new Set(activeVisibleCampaigns.map(getCampaignStableId));
+      let nextUnseenCount = 0;
+
+      for (const campaign of chainCampaigns) {
+        const key = getCampaignStableId(campaign);
+        if (currentKeys.has(key)) {
+          break;
+        }
+        nextUnseenCount += 1;
+      }
+
+      if (nextUnseenCount > 0) {
+        setPendingCampaigns(chainCampaigns);
+        setPendingRecordIndexes(nextRecordIndexes);
+        setUnseenCampaignCount(nextUnseenCount);
+        hasLoadedOnceRef.current = true;
+        return;
+      }
+
+      setCampaigns(chainCampaigns);
+      setRecordIndexes(nextRecordIndexes);
+      setPendingCampaigns(null);
+      setPendingRecordIndexes(null);
+      setUnseenCampaignCount(0);
+      hasLoadedOnceRef.current = true;
+    } catch (refreshError) {
+      const message = refreshError instanceof Error ? refreshError.message : String(refreshError);
+      setError(message);
+    } finally {
+      setLoading(false);
+      setIsRefreshing(false);
+      refreshInFlightRef.current = false;
+    }
+  }, [buildRecordIndexes, client]);
+
+  const ensureLoaded = useCallback(() => {
+    if (hasLoadedOnceRef.current || refreshInFlightRef.current) {
+      return;
+    }
+
+    void refreshCampaigns(false);
+  }, [refreshCampaigns]);
+
+  useEffect(() => {
+    if (previousClientRef.current && previousClientRef.current !== client && hasLoadedOnceRef.current) {
+      void refreshCampaigns(false);
+    }
+
+    previousClientRef.current = client;
+  }, [client, refreshCampaigns]);
+
+  const handleTicketBought = useCallback((campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => {
     setCampaigns((prev) =>
-      prev.map((c) =>
-        getCampaignStableId(c) === campaignId
-          ? { ...c, data: { ...c.data, currentDeposits: c.data.currentDeposits + ticketPrice } }
-          : c
+      prev.map((campaign) =>
+        getCampaignStableId(campaign) === campaignId
+          ? { ...campaign, data: { ...campaign.data, currentDeposits: campaign.data.currentDeposits + ticketPrice } }
+          : campaign
       )
     );
+
+    const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
+      const matchedRecord = prev.byCampaignId[campaignId]
+        ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
+        ?? Object.values(prev.byLegacyKey).find((record) => getRecordStableId(record) === campaignId);
+
+      if (!matchedRecord) {
+        return prev;
+      }
+
+      const nextRecord: CampaignRecord = {
+        ...matchedRecord,
+        liveSoldTicketCount: String(nextSoldTickets),
+      };
+      const shouldReplace = (record: CampaignRecord) => (
+        record === matchedRecord
+        || (!!record._id && !!matchedRecord._id && record._id === matchedRecord._id)
+      );
+      const replaceBucket = (bucket: Record<string, CampaignRecord>) => Object.fromEntries(
+        Object.entries(bucket).map(([key, value]) => [key, shouldReplace(value) ? nextRecord : value])
+      ) as Record<string, CampaignRecord>;
+
+      return {
+        byCampaignId: replaceBucket(prev.byCampaignId),
+        byTxHash: replaceBucket(prev.byTxHash),
+        byLegacyKey: replaceBucket(prev.byLegacyKey),
+      };
+    };
+
+    setRecordIndexes(updateIndexes);
+    setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
   }, []);
 
   const handleSettlementCompleted = useCallback((
@@ -72,7 +279,7 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     settledAt: string,
     soldTicketCount: string,
     settledParticipantCount?: string | null,
-    settledRecipients?: CampaignRecord["settledRecipients"]
+    settledRecipients?: CampaignRecord["settledRecipients"],
   ) => {
     const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
       const matchedRecord = prev.byCampaignId[campaignId]
@@ -110,144 +317,74 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
   }, []);
 
-  const buildRecordIndexes = useCallback((records: CampaignRecord[]) => {
-    const nextRecordIndexes = buildCampaignRecordIndexes(records);
-
-    // console.log("[campaign-records] published records from API", records.map((record) => ({
-    //   id: record._id ?? null,
-    //   campaignId: record.campaignId ?? null,
-    //   createdByHash: record.createdByHash ?? null,
-    //   chainCreatedAt: record.chainCreatedAt ?? null,
-    //   txHash: record.txHash ?? null,
-    //   normalizedTxHash: normalizeHash(record.txHash),
-    //   status: record.status ?? null,
-    //   hasRandomnessPreimage: typeof record.randomnessPreimage === "string" && record.randomnessPreimage.length > 0,
-    //   randomnessPreimage: record.randomnessPreimage ?? null,
-    // })));
-
-    // console.log("[campaign-records] stable index keys", {
-    //   campaignIds: Object.keys(nextRecordIndexes.byCampaignId),
-    //   txHashes: Object.keys(nextRecordIndexes.byTxHash),
-    //   legacyKeys: Object.keys(nextRecordIndexes.byLegacyKey),
-    // });
-
-    return nextRecordIndexes;
-  }, []);
-
-  useEffect(() => {
-    campaignsRef.current = campaigns;
-  }, [campaigns]);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  const refreshCampaigns = useCallback((preserveVisibleList: boolean, visibleCampaigns?: CampaignCell[]) => {
-    const activeVisibleCampaigns: CampaignCell[] = visibleCampaigns ?? campaignsRef.current;
-    if (!preserveVisibleList) {
-      setLoading(true);
-    }
-
-    setError("");
-    setIsRefreshing(true);
-
-    Promise.all([
-      fetchCampaigns(client),
-      fetch("/api/campaign-records", { cache: "no-store" }).then(async (response) => {
-        const data = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(data?.error ?? "Failed to fetch campaign records");
-        }
-
-        return Array.isArray(data?.records) ? (data.records as CampaignRecord[]) : [];
-      }),
-    ])
-      .then(([chainCampaigns, records]) => {
-        const nextRecordIndexes = buildRecordIndexes(records);
-
-        // console.log("[campaign-records] fetched campaigns and records", {
-        //   chainCampaigns: chainCampaigns.map((campaign) => ({
-        //     txHash: campaign.outPoint.txHash,
-        //     normalizedTxHash: normalizeHash(campaign.outPoint.txHash),
-        //     campaignId: getCampaignStableId(campaign),
-        //     createdByHash: getCampaignCreatedByHash(campaign),
-        //     chainCreatedAt: getCampaignChainCreatedAt(campaign),
-        //     index: campaign.outPoint.index,
-        //     campaignType: campaign.data.campaignType,
-        //   })),
-        //   recordCount: records.length,
-        //   recordCampaignIds: Object.keys(nextRecordIndexes.byCampaignId),
-        //   recordTxHashes: Object.keys(nextRecordIndexes.byTxHash),
-        // });
-
-        if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
-          setCampaigns(chainCampaigns);
-          setRecordIndexes(nextRecordIndexes);
-          setPendingCampaigns(null);
-          setPendingRecordIndexes(null);
-          setUnseenCampaignCount(0);
-          return;
-        }
-
-        const currentKeys = new Set(activeVisibleCampaigns.map(getCampaignStableId));
-        let nextUnseenCount = 0;
-
-        for (const campaign of chainCampaigns) {
-          const key = getCampaignStableId(campaign);
-          if (currentKeys.has(key)) {
-            break;
+  const handleWithdrawalCompleted = useCallback((
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => {
+    setCampaigns((prev) => prev.map((campaign) => (
+      getCampaignStableId(campaign) === campaignId
+        ? {
+            ...campaign,
+            data: {
+              ...campaign.data,
+              currentDeposits: 0n,
+              creatorSupportTotal: 0n,
+              supportPoolBps: 0n,
+            },
           }
-          nextUnseenCount += 1;
-        }
+        : campaign
+    )));
 
-        if (nextUnseenCount > 0) {
-          setPendingCampaigns(chainCampaigns);
-          setPendingRecordIndexes(nextRecordIndexes);
-          setUnseenCampaignCount(nextUnseenCount);
-          return;
-        }
+    const updateIndexes = (prev: CampaignRecordIndexes<CampaignRecord>) => {
+      const matchedRecord = prev.byCampaignId[campaignId]
+        ?? Object.values(prev.byTxHash).find((record) => getRecordStableId(record) === campaignId)
+        ?? Object.values(prev.byLegacyKey).find((record) => getRecordStableId(record) === campaignId);
 
-        setCampaigns(chainCampaigns);
-        setRecordIndexes(nextRecordIndexes);
-        setPendingCampaigns(null);
-        setPendingRecordIndexes(null);
-        setUnseenCampaignCount(0);
-      })
-      .catch((e) => {
-        const message = e instanceof Error ? e.message : String(e);
-        setError(message);
-        onErrorChange(message);
-      })
-      .finally(() => {
-        setLoading(false);
-        setIsRefreshing(false);
-      });
-  }, [buildRecordIndexes, client, onErrorChange]);
+      if (!matchedRecord) {
+        return prev;
+      }
 
-  useEffect(() => {
-    const loadTimer = setTimeout(() => {
-      refreshCampaigns(false);
-    }, 0);
+      const nextRecord: CampaignRecord = {
+        ...matchedRecord,
+        withdrawalTxHash,
+        withdrawnAt,
+        withdrawnByAddress,
+        withdrawnAmountShannons,
+      };
+      const shouldReplace = (record: CampaignRecord) => (
+        record === matchedRecord
+        || (!!record._id && !!matchedRecord._id && record._id === matchedRecord._id)
+      );
+      const replaceBucket = (bucket: Record<string, CampaignRecord>) => Object.fromEntries(
+        Object.entries(bucket).map(([key, value]) => [key, shouldReplace(value) ? nextRecord : value])
+      ) as Record<string, CampaignRecord>;
 
-    return () => {
-      clearTimeout(loadTimer);
+      return {
+        byCampaignId: replaceBucket(prev.byCampaignId),
+        byTxHash: replaceBucket(prev.byTxHash),
+        byLegacyKey: replaceBucket(prev.byLegacyKey),
+      };
     };
-  }, [refreshCampaigns]);
+
+    setRecordIndexes(updateIndexes);
+    setPendingRecordIndexes((prev) => (prev ? updateIndexes(prev) : prev));
+  }, []);
 
   useEffect(() => {
-    if (isSearchOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  }, [isSearchOpen]);
+    const onChainUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ campaign: CampaignCell; campaignId: string }>).detail;
+      if (!detail?.campaign) return;
+      setCampaigns((current) => current.map((campaign) => getCampaignStableId(campaign) === detail.campaignId ? detail.campaign : campaign));
+    };
+    window.addEventListener("freight:approval-chain-update", onChainUpdate);
+    return () => window.removeEventListener("freight:approval-chain-update", onChainUpdate);
+  }, []);
 
   const handleRefresh = useCallback(() => {
-    refreshCampaigns(campaigns.length > 0, campaigns);
+    void refreshCampaigns(campaigns.length > 0, campaigns);
   }, [campaigns, refreshCampaigns]);
 
   const handleSearchClick = useCallback(() => {
@@ -273,22 +410,76 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
     setShouldScrollToNewest(true);
   }, [pendingCampaigns, pendingRecordIndexes]);
 
-  const mergedCampaigns = useMemo(() => {
-    return campaigns.map((campaign) => {
-      const matchedRecord = findCampaignRecord(recordIndexes, campaign);
+  const value = useMemo<CampaignFeedContextValue>(() => ({
+    campaigns,
+    clearShouldScrollToNewest: () => setShouldScrollToNewest(false),
+    ensureLoaded,
+    error,
+    handleRefresh,
+    handleSearchClick,
+    handleSettlementCompleted,
+    handleWithdrawalCompleted,
+    handleShowPendingCampaigns,
+    handleTicketBought,
+    isRefreshing,
+    isSearchOpen,
+    loading,
+    recordIndexes,
+    searchQuery,
+    setSearchQuery,
+    shouldScrollToNewest,
+    unseenCampaignCount,
+    unseenCampaignBadgeLabel: unseenCampaignCount > 0 ? formatCompactCampaignCount(unseenCampaignCount) : null,
+  }), [
+    campaigns,
+    ensureLoaded,
+    error,
+    handleRefresh,
+    handleSearchClick,
+    handleSettlementCompleted,
+    handleWithdrawalCompleted,
+    handleShowPendingCampaigns,
+    handleTicketBought,
+    isRefreshing,
+    isSearchOpen,
+    loading,
+    recordIndexes,
+    searchQuery,
+    shouldScrollToNewest,
+    unseenCampaignCount,
+  ]);
 
-      // console.log("[campaign-records] merge campaign with record", {
-      //   campaignTxHash: campaign.outPoint.txHash,
-      //   normalizedCampaignTxHash: normalizeHash(campaign.outPoint.txHash),
-      //   campaignId: getCampaignStableId(campaign),
-      //   createdByHash: getCampaignCreatedByHash(campaign),
-      //   chainCreatedAt: getCampaignChainCreatedAt(campaign),
-      //   matchedRecordId: matchedRecord?._id ?? null,
-      //   matchedRecordCampaignId: matchedRecord?.campaignId ?? null,
-      //   matchedRecordTxHash: matchedRecord?.txHash ?? null,
-      //   matchedRecordHasPreimage: typeof matchedRecord?.randomnessPreimage === "string" && matchedRecord.randomnessPreimage.length > 0,
-      //   matchedRecordStatus: matchedRecord?.status ?? null,
-      // });
+  return createElement(CampaignFeedContext.Provider, { value }, children);
+}
+
+export function useCampaignFeed() {
+  const context = useContext(CampaignFeedContext);
+  if (!context) {
+    throw new Error("useCampaignFeed must be used within a CampaignFeedProvider");
+  }
+
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (context.isSearchOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    }
+  }, [context.isSearchOpen]);
+
+  const mergedCampaigns = useMemo(() => {
+    return context.campaigns.map((campaign) => {
+      const matchedRecord = findCampaignRecord(context.recordIndexes, campaign);
 
       return {
         campaign,
@@ -296,9 +487,9 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
         displayStatus: deriveDisplayStatus(campaign, nowMs),
       };
     });
-  }, [campaigns, nowMs, recordIndexes]);
+  }, [context.campaigns, context.recordIndexes, nowMs]);
 
-  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const normalizedSearchQuery = context.searchQuery.trim().toLowerCase();
   const filteredCampaigns = useMemo(() => {
     if (!normalizedSearchQuery) {
       return mergedCampaigns;
@@ -326,23 +517,9 @@ export function useCampaignFeed({ client, onErrorChange }: UseCampaignFeedArgs) 
   }, [mergedCampaigns, normalizedSearchQuery]);
 
   return {
+    ...context,
     filteredCampaigns,
-    handleRefresh,
-    handleSearchClick,
-    handleSettlementCompleted,
-    handleShowPendingCampaigns,
-    handleTicketBought,
-    isRefreshing,
-    isSearchOpen,
-    loading,
     nowMs,
     searchInputRef,
-    searchQuery,
-    setSearchQuery,
-    shouldScrollToNewest,
-    setShouldScrollToNewest,
-    error,
-    unseenCampaignCount,
-    unseenCampaignBadgeLabel: unseenCampaignCount > 0 ? formatCompactCampaignCount(unseenCampaignCount) : null,
   };
 }

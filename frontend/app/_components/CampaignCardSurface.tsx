@@ -1,27 +1,36 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { Copy, LockKeyhole, Scroll, Ticket } from "lucide-react";
+import { Blocks, Copy, EllipsisVertical, GitBranchPlus, HandCoins, LockKeyhole, Scroll, Signature, Ticket } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import CampaignFeedDescription from "@/app/_components/CampaignFeedDescription";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
+import FreightTagRows from "@/app/_components/FreightTagRows";
+import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
   decodeCreatedByAddress,
-  deriveRaffleSettlementUiState,
   formatCkbAmount,
 } from "@/lib/campaignDisplay";
-import { CampaignStatus } from "@/lib/contract";
+import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
+import { stripCampaignControlTags } from "@/lib/campaignTipping";
+import { raffleApprovalDeadlineMissed } from "@/lib/raffleApproval";
+import { CampaignStatus, CampaignType } from "@/lib/contract";
+import { isWinningCampaignType } from "@/lib/fbars";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
-import { decodeSummary } from "@/lib/encoding";
+import { stripFreightUserTags } from "@/lib/freightTags";
+import { decodeSummary, hasSplitSupportAccounting } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignCountdownTone = "good" | "warn" | "danger" | "ended";
 type CampaignCountdownPhase = "start" | "duration" | "ended";
 
-const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled"];
-const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle"];
+const STATUS_LABELS = ["Created", "Active", "Completed", "Cancelled", "Sleeping", "Finished"];
+const TYPE_LABELS = ["Simple Task", "FundedTask", "Crowdfunding", "Timed Challenge", "Raffle", "Recurring Raffle"];
 const CAMPAIGN_CARD_PREVIEW_MAX_CHARS = 280;
 
 function formatCountdownSegment(value: number) {
@@ -29,10 +38,14 @@ function formatCountdownSegment(value: number) {
 }
 
 function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
-  const createdAtMs = Number(campaign.data.createdAt);
+  const recurring = campaign.data.campaignType === CampaignType.RecurringRaffle;
+  const createdAtMs = recurring ? Number(campaign.data.roundStartedAt ?? campaign.data.createdAt) : Number(campaign.data.createdAt);
   const startDelayMs = Math.max(0, Number(campaign.data.startDurationSecs) * 1000);
-  const durationMs = Math.max(0, Number(campaign.data.taskDurationSecs) * 1000);
-  const startsAtMs = createdAtMs + startDelayMs;
+  const sleeping = recurring && campaign.data.status === CampaignStatus.Sleeping;
+  const durationMs = Math.max(0, Number(sleeping ? campaign.data.sleepDurationSecs ?? 0n : campaign.data.taskDurationSecs) * 1000);
+  const startsAtMs = sleeping
+    ? createdAtMs + Number(campaign.data.taskDurationSecs) * 1000
+    : recurring ? createdAtMs : createdAtMs + startDelayMs;
   const endsAtMs = startsAtMs + durationMs;
 
   let remainingMs = 0;
@@ -80,12 +93,7 @@ function buildCampaignCountdown(campaign: CampaignCell, nowMs: number) {
 }
 
 function sanitizeCampaignDescription(text: string) {
-  return text
-    .replace(/(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|mounted)\b/gi, "$1")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return stripCampaignControlTags(text);
 }
 
 function truncateCampaignDescription(text: string, maxChars: number) {
@@ -116,10 +124,12 @@ function getStatusClassName(status: CampaignStatus) {
     case CampaignStatus.Active:
       return "active";
     case CampaignStatus.Completed:
+    case CampaignStatus.Finished:
       return "completed";
     case CampaignStatus.Cancelled:
       return "cancelled";
     case CampaignStatus.Created:
+    case CampaignStatus.Sleeping:
     default:
       return "created";
   }
@@ -135,42 +145,57 @@ async function copyText(text: string) {
 
 type CampaignCardSurfaceProps = {
   campaign: CampaignCell;
+  creatorPhotoUpdatedAt?: string | null;
   displayStatus: CampaignStatus;
+  shouldGlowSettlement: boolean;
   isHighlighted?: boolean;
   nowMs: number;
   onOpenDetail?: () => void;
+  onMountablesClick?: () => void;
+  onFreightOptionsClick?: () => void;
   record: CampaignRecord | null;
   variant?: "feed" | "detail";
 };
 
 export default function CampaignCardSurface({
   campaign,
+  creatorPhotoUpdatedAt,
   displayStatus,
+  shouldGlowSettlement,
   isHighlighted = false,
   nowMs,
   onOpenDetail,
+  onMountablesClick,
+  onFreightOptionsClick,
   record,
   variant = "feed",
 }: CampaignCardSurfaceProps) {
   const { data, outPoint } = campaign;
   const shortHash = outPoint.txHash.slice(0, 10) + "…";
   const createdAtDate = new Date(Number(data.createdAt)).toLocaleDateString();
-  const isRaffleCampaign = data.campaignType === 4;
+  const isRaffleCampaign = data.campaignType === CampaignType.Raffle || data.campaignType === CampaignType.RecurringRaffle;
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
   const displayTitle = record?.title?.trim() || decodeSummary(data.summary);
   const rawDescription = record?.description?.trim() || decodeSummary(data.summary);
-  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
+  const displayDescription = compactDescriptionBlankLines(
+    sanitizeCampaignDescription(stripFreightUserTags(stripGiftDirectiveMarkers(rawDescription)))
+  );
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
+  const creatorPhotoUrl = creatorPhotoUpdatedAt
+    ? `/api/user-profiles/photo?address=${encodeURIComponent(creatorAddress)}&v=${encodeURIComponent(creatorPhotoUpdatedAt)}`
+    : null;
   const mentions = record?.socialMetadata?.mentions ?? [];
   const giftDeliverable = record?.giftDeliverable;
+  const isSignable = (giftDeliverable?.approvers?.length ?? 0) > 0 || !!record?.raffleApproval || !!data.approval;
+  const approvalFailed = displayStatus !== CampaignStatus.Cancelled && raffleApprovalDeadlineMissed(data, nowMs);
+  const statusLabel = approvalFailed ? "Closed — approval deadline missed" : STATUS_LABELS[displayStatus] ?? String(displayStatus);
   const rewardCountValue = Number(data.rewardCount);
-  const shouldGlowSettlement = deriveRaffleSettlementUiState({
-    campaign,
-    displayStatus,
-    settlementTxHash: record?.settlementTxHash ?? null,
-    soldTicketCount: record?.soldTicketCount ?? null,
-  }).shouldGlowSettlement;
+  const supportPoolPercent = Number.parseInt(
+    record?.argsDraft?.raffleSupportPoolPercent
+      ?? (hasSplitSupportAccounting(data) ? String(Number(data.supportPoolBps / 100n)) : "0"),
+    10
+  );
   const collapsedDescription = useMemo(
     () => truncateCampaignDescription(displayDescription, variant === "detail" ? 1200 : CAMPAIGN_CARD_PREVIEW_MAX_CHARS),
     [displayDescription, variant]
@@ -179,10 +204,35 @@ export default function CampaignCardSurface({
   const shouldShowReadMore = collapsedDescription.truncated;
   const visibleDescription = isDescriptionExpanded ? displayDescription : collapsedDescription.text;
   const descriptionLines = visibleDescription.length > 0 ? visibleDescription.split("\n") : [];
-  const countdown = buildCampaignCountdown(campaign, nowMs);
-  const countdownTitle = countdown.phase === "start" ? "Starts in" : countdown.phase === "duration" ? "Ends in" : "Ended";
+  const isSimpleTask = campaign.data.campaignType === CampaignType.SimpleTask;
+  const timedCountdown = buildCampaignCountdown(campaign, nowMs);
+  const countdown = approvalFailed ? { text: "Closed", tone: "ended" as const } : isSimpleTask
+    ? { text: displayStatus === CampaignStatus.Cancelled ? "Closed" : "Ongoing", tone: displayStatus === CampaignStatus.Cancelled ? "ended" as const : "good" as const }
+    : timedCountdown;
+  const countdownTitle = approvalFailed ? statusLabel : isSimpleTask
+    ? countdown.text
+    : campaign.data.campaignType === CampaignType.RecurringRaffle && displayStatus === CampaignStatus.Sleeping ? "Cash-out ends in"
+    : timedCountdown.phase === "start" ? "Starts in" : timedCountdown.phase === "duration" ? "Ends in" : "Ended";
   const countdownClassName = `campaign-card-countdown campaign-card-countdown-${countdown.tone}`;
   const [copyFeedback, setCopyFeedback] = useState<"idle" | "copied" | "error">("idle");
+  useInfoError(copyFeedback === "error" ? "Copy failed" : null);
+  const [loadedCreatorPhotoUrl, setLoadedCreatorPhotoUrl] = useState<string | null>(null);
+  const isCreatorPhotoLoaded = creatorPhotoUrl !== null && loadedCreatorPhotoUrl === creatorPhotoUrl;
+  const mountedIcons = [
+    ...(record?.mountables?.childFreight?.enabled ? [{ key: "child-freight", name: "Child Freight", kind: "child-freight" as const, logoUrl: "" }] : []),
+    ...(record?.mountables?.forms?.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
+    ...(record?.mountables?.lock?.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(isWinningCampaignType(campaign.data.campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
+    ...(isSignable ? [{ key: "signable", name: "Signable", kind: "signable" as const, logoUrl: "" }] : []),
+    ...(record?.mountables?.apps ?? []).filter((entry) => entry.enabled).map((entry) => ({
+      key: entry.mountableInstanceId || entry.appId,
+      name: entry.appName || entry.appId,
+      kind: "app" as const,
+      logoUrl: entry.logoUrl || entry.iconUrl,
+    })),
+  ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  const visibleMountedIcons = mountedIcons.length >= 4 ? mountedIcons.slice(0, 3) : mountedIcons;
+  const hiddenMountedIconCount = mountedIcons.length - visibleMountedIcons.length;
 
   const handleCopyAddress = async (event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -208,81 +258,134 @@ export default function CampaignCardSurface({
   return (
     <div className={rootClassName} onClick={onOpenDetail} role={onOpenDetail ? "button" : undefined} tabIndex={onOpenDetail ? 0 : undefined}>
       <div className="campaign-card-body campaign-card-body-feed">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <button
-              type="button"
-              onClick={handleCopyAddress}
-              className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
-              title={creatorAddress}
-              aria-label="Copy creator address"
-            >
-              <Copy size={14} strokeWidth={2} aria-hidden="true" />
-              <span>{truncateAddress(creatorAddress)}</span>
-            </button>
-            <Link
-              href={`/user/${encodeURIComponent(creatorHandle)}`}
-              className="campaign-card-handle-link"
-              onClick={(event) => {
-                event.stopPropagation();
-              }}
-            >
-              {creatorHandle}
-            </Link>
-            {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
-            {copyFeedback === "error" && <span className="text-[11px] text-red-500">Copy failed</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`status-indicator status-${getStatusClassName(displayStatus)}`} title={STATUS_LABELS[displayStatus] ?? String(displayStatus)} />
-          </div>
-        </div>
+        <div className="campaign-card-creator-header">
+          <div className="campaign-card-creator-meta">
+            <div className="campaign-card-creator-primary-line">
+              <span
+                className={`status-indicator status-${getStatusClassName(approvalFailed ? CampaignStatus.Cancelled : displayStatus)}`}
+                data-tooltip={statusLabel}
+                aria-label={statusLabel}
+              />
+              <button
+                type="button"
+                onClick={handleCopyAddress}
+                className="inline-flex items-center gap-1 text-xs font-mono text-gray-500 hover:text-gray-700"
+                aria-label="Copy creator address"
+              >
+                <Copy size={14} strokeWidth={2} aria-hidden="true" />
+                <span>{truncateAddress(creatorAddress)}</span>
+              </button>
+              <Link
+                href={`/user/${encodeURIComponent(creatorHandle)}`}
+                className="campaign-card-handle-link"
+                onClick={(event) => {
+                  event.stopPropagation();
+                }}
+              >
+                {creatorHandle}
+              </Link>
+              {copyFeedback === "copied" && <span className="text-[11px] text-green-600">Copied</span>}
+            </div>
 
-        <div className="flex flex-wrap items-baseline gap-2 text-xs text-gray-500">
-          <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
-          {isRaffleCampaign && ticketPriceShannons > 0n && (
-            <>
-              <span className="campaign-card-ticket-price">
-                1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
-              </span>
-              {data.rewardCount > 0n && (
+            <div className="campaign-card-creator-secondary-line">
+              <span className="font-medium text-gray-800">{TYPE_LABELS[data.campaignType] ?? data.campaignType}</span>
+              {isRaffleCampaign && ticketPriceShannons > 0n && (
                 <>
-                  <span className="font-medium text-gray-800">then:</span>
-                  <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`}>take {String(rewardCountValue)}</span>
+                  <span className="campaign-card-ticket-price">
+                    1 <Ticket className="campaign-card-inline-ticket" size={16} strokeWidth={2} aria-hidden="true" /> = {formatCkbAmount(ticketPriceShannons)} CKB
+                  </span>
+                  {data.rewardCount > 0n && (
+                    <>
+                      <span className="font-medium text-gray-800">then:</span>
+                      <span className={`campaign-card-ticket-price ${shouldGlowSettlement ? "campaign-card-ticket-price-pending" : "campaign-card-ticket-price-settled"}`}>take {String(rewardCountValue)}</span>
+                      {supportPoolPercent > 0 ? (
+                        <>
+                          <span className="font-medium text-gray-800">with:</span>
+                          <span className="campaign-card-ticket-price">{supportPoolPercent}%</span>
+                        </>
+                      ) : null}
+                    </>
+                  )}
                 </>
               )}
-            </>
-          )}
+            </div>
+          </div>
+          <div className="campaign-card-creator-photo-wrap">
+            <Link
+              href={`/user/${encodeURIComponent(creatorHandle)}`}
+              className={`campaign-card-creator-photo ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-image" : "campaign-card-creator-photo-fallback"}`.trim()}
+              aria-label={`View ${creatorHandle} profile`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {!isCreatorPhotoLoaded ? (
+                <span className="campaign-card-creator-photo-fallback-inner" aria-hidden="true" />
+              ) : null}
+              {creatorPhotoUrl ? (
+                <Image
+                  src={creatorPhotoUrl}
+                  alt=""
+                  width={44}
+                  height={44}
+                  unoptimized
+                  className={`campaign-card-creator-photo-source ${isCreatorPhotoLoaded ? "campaign-card-creator-photo-source-loaded" : ""}`.trim()}
+                  onLoad={() => setLoadedCreatorPhotoUrl(creatorPhotoUrl)}
+                  onError={() => setLoadedCreatorPhotoUrl((current) => current === creatorPhotoUrl ? null : current)}
+                />
+              ) : null}
+            </Link>
+            {onFreightOptionsClick ? (
+              <button
+                type="button"
+                className="campaign-card-creator-options"
+                aria-label="Freight options"
+                data-tooltip="Freight options"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onFreightOptionsClick();
+                }}
+              >
+                <EllipsisVertical size={20} strokeWidth={2} aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div className="campaign-card-content campaign-card-content-feed">
           <h3 className="campaign-card-title text-xl font-semibold leading-tight text-gray-900">{displayTitle}</h3>
-          <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
-            <div className="campaign-card-description campaign-card-description-feed">
-              <CampaignDescriptionContent lines={descriptionLines} />
-            </div>
-          </div>
-          {shouldShowReadMore && (
-            <button
-              type="button"
-              className="campaign-card-read-more"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsDescriptionExpanded((current) => !current);
-              }}
-            >
-              {isDescriptionExpanded ? "Show less" : "Read more..."}
-            </button>
+          {variant === "feed" ? (
+            <CampaignFeedDescription text={displayDescription} onOpenDetail={onOpenDetail} />
+          ) : (
+            <>
+                <div className={`campaign-card-description-wrap ${isDescriptionExpanded ? "campaign-card-description-wrap-expanded" : ""}`}>
+                  <div className="campaign-card-description campaign-card-description-feed">
+                    <CampaignDescriptionContent lines={descriptionLines} />
+                  </div>
+                </div>
+                {shouldShowReadMore && (
+                  <button
+                    type="button"
+                    className="campaign-card-read-more"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setIsDescriptionExpanded((current) => !current);
+                    }}
+                  >
+                    {isDescriptionExpanded ? "Show less" : "Read more..."}
+                  </button>
+                )}
+            </>
           )}
         </div>
 
-        {mentions.length > 0 && (
-          <div className="flex flex-wrap gap-2 text-xs">
-            {mentions.map((mention) => (
-              <span key={mention} className="px-2 py-1 rounded border border-gray-300 text-gray-600">@{mention}</span>
-            ))}
-          </div>
-        )}
+        <CampaignAttachmentGrid attachments={record?.attachments ?? []} variant="feed" />
 
+        <FreightTagRows
+          description={rawDescription}
+          mentions={mentions}
+          approvers={record?.raffleApproval?.approvers ?? giftDeliverable?.approvers}
+          claimants={giftDeliverable?.claimants}
+          receivers={giftDeliverable?.receivers}
+        />
         {giftDeliverable?.enabled ? (
           <div className="campaign-gift-meta-row">
             <span className="campaign-gift-pill">Gift</span>
@@ -298,15 +401,54 @@ export default function CampaignCardSurface({
 
       <div className="campaign-card-footer">
         <div className="campaign-card-footer-meta">
-          {record?.mountables?.forms?.enabled ? (
-            <span className="campaign-card-mounted-icon" title="Forms mounted" aria-label="Forms mounted">
-              <Scroll size={22} strokeWidth={2} aria-hidden="true" />
-            </span>
-          ) : null}
-          {record?.mountables?.lock?.enabled ? (
-            <span className="campaign-card-mounted-icon" title="Lock mounted" aria-label="Lock mounted">
-              <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
-            </span>
+          {mountedIcons.length > 0 ? (
+            <button
+              type="button"
+              className="campaign-card-mountable-icons"
+              aria-label="View mountables"
+              onClick={(event) => {
+                event.stopPropagation();
+                onMountablesClick?.();
+              }}
+            >
+              {visibleMountedIcons.map((mountable, index) => (
+                <span
+                  className={`campaign-card-mounted-icon ${mountable.kind === "app" && mountable.logoUrl ? "campaign-card-mounted-icon-logo" : mountable.kind === "child-freight" ? "campaign-card-mounted-icon-child-freight" : ""}`.trim()}
+                  data-tooltip={mountable.name}
+                  aria-label={mountable.name}
+                  key={mountable.key}
+                  style={{ zIndex: index + 1 }}
+                >
+                  {mountable.kind === "app" ? (
+                    mountable.logoUrl ? (
+                      <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
+                    ) : (
+                      <Blocks size={20} strokeWidth={2} aria-hidden="true" />
+                    )
+                  ) : mountable.kind === "child-freight" ? (
+                    <GitBranchPlus size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "forms" ? (
+                    <Scroll size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "signable" ? (
+                    <Signature size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "rewardable" ? (
+                    <HandCoins size={22} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <LockKeyhole size={22} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </span>
+              ))}
+              {hiddenMountedIconCount > 0 ? (
+                <span
+                  className="campaign-card-mounted-icon campaign-card-mounted-icon-overflow"
+                  data-tooltip={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  aria-label={`${hiddenMountedIconCount} more ${hiddenMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  style={{ zIndex: visibleMountedIcons.length + 1 }}
+                >
+                  +{hiddenMountedIconCount}
+                </span>
+              ) : null}
+            </button>
           ) : null}
           <span className="text-xs font-mono text-gray-400 break-all">
             <a
@@ -321,7 +463,7 @@ export default function CampaignCardSurface({
           </span>
           <span className="campaign-card-created-date">Created {createdAtDate}</span>
         </div>
-        <span className={countdownClassName} title={countdownTitle} aria-label={`${countdownTitle} ${countdown.text}`}>
+        <span className={countdownClassName} data-tooltip={countdownTitle} aria-label={isSimpleTask ? countdown.text : `${countdownTitle} ${countdown.text}`}>
           {countdown.text}
         </span>
       </div>

@@ -4,7 +4,9 @@ import { ccc } from "@ckb-ccc/connector-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import type { CampaignRecord, MergedCampaign } from "@/app/_hooks/useCampaignFeed";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import type { SettlementModalData } from "@/app/_types/settlement";
+import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import { getCampaignStableId } from "@/lib/campaignIdentity";
 import type { CampaignCell } from "@/lib/transactions";
 
@@ -18,8 +20,11 @@ type CampaignListProps = {
   error: string;
   loading: boolean;
   onCommentDiscardRequest: (cardId: string) => void;
+  onMountablesClick: (record: CampaignRecord) => void;
+  onFreightOptionsClick: (campaignId: string) => void;
   onScrolledToNewest: () => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
+  onSupportRequest: (request: CampaignSupportRequest) => void;
   onSettlementCompleted: (
     campaignId: string,
     settlementTxHash: string,
@@ -28,9 +33,16 @@ type CampaignListProps = {
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"]
   ) => void;
+  onWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
   onStartDetailTransition: (href: string) => void;
-  onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
-  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
+  onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
   shouldScrollToNewest: boolean;
 };
 
@@ -42,10 +54,14 @@ export default function CampaignList({
   error,
   loading,
   onCommentDiscardRequest,
+  onMountablesClick,
+  onFreightOptionsClick,
   onScrolledToNewest,
   onSettlementCompleted,
   onSettlementInfoRequest,
+  onSupportRequest,
   onStartDetailTransition,
+  onWithdrawalCompleted,
   onTicketBought,
   onTicketPurchaseRequest,
   shouldScrollToNewest,
@@ -54,6 +70,7 @@ export default function CampaignList({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);
+  useInfoError(error);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -107,7 +124,7 @@ export default function CampaignList({
   }
 
   if (error) {
-    return <p className="text-sm text-gray-400">Sorry, an error occurred while loading freights</p>;
+    return null;
   }
 
   if (campaigns.length === 0) {
@@ -115,7 +132,7 @@ export default function CampaignList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="campaign-feed-list flex flex-col gap-[0.45rem]">
       {campaigns.map(({ campaign, record, displayStatus }, index) => (
         <div
           key={getCampaignStableId(campaign)}
@@ -135,10 +152,14 @@ export default function CampaignList({
             isHighlighted={index === 99 && !!signer}
             onCommentDiscardRequest={onCommentDiscardRequest}
             commentDiscardDecision={commentDiscardDecision}
-            onOpenDetail={() => onStartDetailTransition(`/campaign/${getCampaignStableId(campaign)}`)}
+            onOpenDetail={() => onStartDetailTransition(`/freight/${getCampaignStableId(campaign)}`)}
+            onMountablesClick={onMountablesClick}
+            onFreightOptionsClick={() => onFreightOptionsClick(getCampaignStableId(campaign))}
+            onSupportRequest={onSupportRequest}
             onTicketPurchaseRequest={onTicketPurchaseRequest}
             onTicketBought={onTicketBought}
             onSettlementCompleted={onSettlementCompleted}
+            onWithdrawalCompleted={onWithdrawalCompleted}
             onSettlementInfoRequest={onSettlementInfoRequest}
           />
         </div>

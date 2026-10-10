@@ -6,6 +6,7 @@ import {
   Check,
   Coins,
   Heart,
+  Infinity,
   MessageSquare,
   Repeat2,
   Share2,
@@ -13,10 +14,15 @@ import {
 } from "lucide-react";
 
 import CampaignCardSurface from "@/app/_components/CampaignCardSurface";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { type CampaignRecord } from "@/app/_hooks/useCampaignFeed";
+import CampaignApprovalControls from "@/app/_components/CampaignApprovalControls";
 import { useCampaignCardState } from "@/app/_hooks/useCampaignCardState";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
 import type { SettlementModalData } from "@/app/_types/settlement";
+import type { CampaignSupportRequest } from "@/app/_types/campaignSupport";
 import { CampaignStatus } from "@/lib/contract";
+import { decodeCreatedByAddress } from "@/lib/campaignDisplay";
 import type { CampaignCell } from "@/lib/transactions";
 
 type CampaignCardProps = {
@@ -32,8 +38,11 @@ type CampaignCardProps = {
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
   onOpenDetail: () => void;
-  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => void;
-  onTicketBought: (campaignId: string, ticketPrice: bigint) => void;
+  onMountablesClick: (record: CampaignRecord) => void;
+  onFreightOptionsClick: () => void;
+  onSupportRequest: (request: CampaignSupportRequest) => void;
+  onTicketPurchaseRequest: (campaign: CampaignCell, record: CampaignRecord | null, liveSoldTickets: bigint, remainingTickets: bigint, onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) => void;
+  onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void;
   onSettlementCompleted: (
     campaignId: string,
     settlementTxHash: string,
@@ -41,6 +50,13 @@ type CampaignCardProps = {
     soldTicketCount: string,
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"]
+  ) => void;
+  onWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
   ) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
 };
@@ -58,11 +74,17 @@ export default function CampaignCard({
   onCommentDiscardRequest,
   commentDiscardDecision,
   onOpenDetail,
+  onMountablesClick,
+  onFreightOptionsClick,
+  onSupportRequest,
   onTicketPurchaseRequest,
   onTicketBought,
   onSettlementCompleted,
+  onWithdrawalCompleted,
   onSettlementInfoRequest,
 }: CampaignCardProps) {
+  const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(campaign);
+  const { currentUserProfile: creatorProfile } = useUserProfile(null, null, creatorAddress);
   const {
     bookmarks,
     commentComposerRef,
@@ -70,43 +92,42 @@ export default function CampaignCard({
     commentError,
     commentInputRef,
     comments,
-    depositAmount,
-    depositedCkb,
     giftDeliverable,
     handleBookmark,
     handleComment,
-    handleDepositClick,
     handleDepositSubmit,
-    handleGiftApprove,
     handleGiftClaim,
     handleGiftInfoClick,
     handleLike,
     handleReshare,
     handleSettlementClick,
     handleSubmitComment,
+    handleWithdrawClick,
     hasNotStartedRaffle,
-    hasReachedMaxAmount,
     isCampaignInactive,
     isCommentComposerOpen,
     isConnected,
-    isDepositing,
     isLockedForInteractions,
+    isSupportLocked,
+    isWithdrawing,
     isPurchaseDisabled,
+    isSupportDisabled,
     isRaffleCampaign,
+    isRecurringRaffle,
+    recurringActionLabel,
     isSavingComment,
-    canGiftApprove,
+    supportState,
     canGiftClaim,
     likes,
     lockAccessMessage,
     actionFeedback,
-    maxCkb,
     remainingTickets,
     reshares,
     setCommentDraft,
-    setDepositAmount,
-    setShowDepositModal,
     shouldGlowSettlement,
-    showDepositModal,
+    showCreatorWithdrawAction,
+    creatorWithdrawAmountCkb,
+    supportDisplayCkb,
     showSettlementAction,
     soldTickets,
     userBookmarked,
@@ -120,25 +141,35 @@ export default function CampaignCard({
     signer,
     client,
     currentViewerFbars,
+    creatorCurrentFbars: creatorProfile?.fbars,
     currentWalletAddress,
     onCommentDiscardRequest,
     commentDiscardDecision,
     onSettlementCompleted,
+    onWithdrawalCompleted,
     onSettlementInfoRequest,
   });
+  useInfoError(actionFeedback?.tone === "error" ? actionFeedback.message : null);
+  useInfoError(commentError);
 
   return (
     <div className="campaign-card-shell flex flex-col gap-0">
       <CampaignCardSurface
         campaign={campaign}
         record={record}
+        creatorPhotoUpdatedAt={creatorProfile?.photoUpdatedAt}
         displayStatus={displayStatus}
+        shouldGlowSettlement={shouldGlowSettlement}
         nowMs={nowMs}
         isHighlighted={isHighlighted}
         onOpenDetail={onOpenDetail}
+        onMountablesClick={record ? () => onMountablesClick(record) : undefined}
+        onFreightOptionsClick={onFreightOptionsClick}
       />
 
-      <div className="flex flex-col gap-3 pt-2 pb-3 text-xs">
+      <CampaignApprovalControls campaign={campaign} record={record} signer={signer} nowMs={nowMs} />
+
+      <div className="flex flex-col gap-[0.45rem] pt-2 pb-[0.45rem] text-xs">
         <div className="flex items-center gap-2">
           <button
             onClick={() => void handleLike()}
@@ -179,12 +210,25 @@ export default function CampaignCard({
           {hasNotStartedRaffle && (
             <button
               type="button"
-              disabled
-              className="campaign-action-btn ml-auto campaign-action-disabled"
-              data-tooltip="Funding coming soon"
+              onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
+              disabled={isSupportDisabled}
+              className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
+              data-tooltip={
+                !isConnected
+                  ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
+                  : isSupportLocked
+                    ? lockAccessMessage
+                    : !supportState.supportEnabled
+                      ? "Support disabled for this freight"
+                      : isCampaignInactive
+                        ? "Freight unavailable"
+                        : supportState.supportMode === "direct_creator"
+                          ? "Tip creator"
+                          : "Deposit CKB"
+              }
             >
               <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-              <span className="campaign-action-count font-mono">{depositedCkb} CKB</span>
+              <span className="campaign-action-count font-mono">{supportDisplayCkb} CKB</span>
             </button>
           )}
 
@@ -194,58 +238,123 @@ export default function CampaignCard({
                 type="button"
                 onClick={() => void handleSettlementClick()}
                 className={`campaign-action-btn action-winners ${shouldGlowSettlement ? "campaign-action-active" : ""}`.trim()}
-                data-tooltip={shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
+                data-tooltip={isRecurringRaffle ? recurringActionLabel ?? "Recurring raffle action" : shouldGlowSettlement ? "Distribute raffle rewards" : "View raffle settlement evidence"}
               >
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count">{String(soldTickets)}</span>
               </button>
+              {showCreatorWithdrawAction ? (
+                <button
+                  type="button"
+                  onClick={() => void handleWithdrawClick()}
+                  disabled={isWithdrawing}
+                  className={`campaign-action-btn ${isWithdrawing ? "campaign-action-disabled" : ""}`.trim()}
+                  data-tooltip={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
+                >
+                  <Coins className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count font-mono">{isWithdrawing ? "..." : `${creatorWithdrawAmountCkb} CKB`}</span>
+                </button>
+              ) : null}
               <button
-                onClick={() => onTicketPurchaseRequest(campaign, record, onTicketBought)}
+                onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
                 disabled={isPurchaseDisabled}
                 className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-                data-tooltip={!isConnected ? "Connect wallet to buy tickets" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
+                data-tooltip={!isConnected ? "Connect wallet to enter raffle" : isLockedForInteractions ? lockAccessMessage : "Freight unavailable"}
               >
                 <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
+                <span className="campaign-action-count font-mono inline-flex items-center" aria-label={remainingTickets < 0n ? "Unlimited tickets" : undefined}>
+                  {remainingTickets < 0n ? <Infinity size={22} strokeWidth={2} aria-hidden="true" /> : `${String(remainingTickets)} left`}
+                </span>
               </button>
             </div>
           )}
 
           {!showSettlementAction && !hasNotStartedRaffle && (
-            <button
-              onClick={isRaffleCampaign ? () => onTicketPurchaseRequest(campaign, record, onTicketBought) : handleDepositClick}
-              disabled={isPurchaseDisabled}
-              className={`campaign-action-btn ml-auto ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
-              data-tooltip={
-                !isConnected
-                  ? (isRaffleCampaign ? "Connect wallet to buy tickets" : "Connect wallet to deposit")
-                  : isLockedForInteractions
-                    ? lockAccessMessage
-                    : isCampaignInactive
-                      ? "Freight unavailable"
-                      : remainingTickets <= 0n
-                        ? "No tickets left"
-                        : hasReachedMaxAmount
-                          ? "Max amount reached"
-                          : (isRaffleCampaign ? "Buy tickets" : "Deposit CKB")
-              }
-            >
-              {isRaffleCampaign ? (
-                <>
-                  <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{String(remainingTickets)} left</span>
-                </>
-              ) : (
-                <>
+            isRaffleCampaign ? (
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
+                  disabled={isSupportDisabled}
+                  className={`campaign-action-btn ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                  data-tooltip={
+                    !isConnected
+                      ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
+                      : isSupportLocked
+                        ? lockAccessMessage
+                        : !supportState.supportEnabled
+                          ? "Support disabled for this freight"
+                          : isCampaignInactive
+                            ? "Freight unavailable"
+                            : supportState.supportMode === "direct_creator"
+                              ? "Tip creator"
+                              : "Deposit CKB"
+                  }
+                >
                   <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count font-mono">{depositedCkb} / {maxCkb} CKB</span>
-                </>
-              )}
-            </button>
+                  <span className="campaign-action-count font-mono">{supportDisplayCkb} CKB</span>
+                </button>
+                {showCreatorWithdrawAction ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleWithdrawClick()}
+                    disabled={isWithdrawing}
+                    className={`campaign-action-btn ${isWithdrawing ? "campaign-action-disabled" : ""}`.trim()}
+                    data-tooltip={isWithdrawing ? "Withdrawing creator support" : `Withdraw ${creatorWithdrawAmountCkb} CKB creator support`}
+                  >
+                    <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                    <span className="campaign-action-count font-mono">{isWithdrawing ? "..." : `${creatorWithdrawAmountCkb} CKB`}</span>
+                  </button>
+                ) : null}
+                <button
+                  onClick={() => onTicketPurchaseRequest(campaign, record, soldTickets, remainingTickets, onTicketBought)}
+                  disabled={isPurchaseDisabled}
+                  className={`campaign-action-btn ${isPurchaseDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                  data-tooltip={
+                    !isConnected
+                      ? "Connect wallet to buy tickets"
+                      : isLockedForInteractions
+                        ? lockAccessMessage
+                        : isCampaignInactive
+                          ? "Freight unavailable"
+                          : hasNotStartedRaffle
+                            ? "Raffle has not started"
+                            : remainingTickets === 0n
+                              ? "No tickets left"
+                              : campaign.data.auxAmount === 0n ? "Enter raffle" : "Buy tickets"
+                  }
+                >
+                  <Ticket className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                  <span className="campaign-action-count font-mono inline-flex items-center" aria-label={remainingTickets < 0n ? "Unlimited tickets" : undefined}>
+                    {remainingTickets < 0n ? <Infinity size={22} strokeWidth={2} aria-hidden="true" /> : `${String(remainingTickets)} left`}
+                  </span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => onSupportRequest({ supportMode: supportState.supportMode, submit: handleDepositSubmit })}
+                disabled={isSupportDisabled}
+                className={`campaign-action-btn ml-auto ${isSupportDisabled ? "campaign-action-disabled" : ""}`.trim()}
+                data-tooltip={
+                  !isConnected
+                    ? `Connect wallet to ${supportState.supportMode === "direct_creator" ? "tip" : "deposit"}`
+                    : isSupportLocked
+                      ? lockAccessMessage
+                      : !supportState.supportEnabled
+                        ? "Support disabled for this freight"
+                      : isCampaignInactive
+                        ? "Freight unavailable"
+                        : supportState.supportMode === "direct_creator" ? "Tip creator" : "Deposit CKB"
+                }
+              >
+                <Coins className="campaign-action-icon" size={20} strokeWidth={2} aria-hidden="true" />
+                <span className="campaign-action-count font-mono">{supportDisplayCkb} CKB</span>
+              </button>
+            )
           )}
 
           {giftDeliverable.enabled ? (
-            <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleGiftInfoClick}
@@ -255,17 +364,6 @@ export default function CampaignCard({
                 <Share2 className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
                 <span className="campaign-action-count">gift</span>
               </button>
-              {canGiftApprove ? (
-                <button
-                  type="button"
-                  onClick={() => void handleGiftApprove()}
-                  className="campaign-action-btn action-gift-approve"
-                  data-tooltip="Approve gift"
-                >
-                  <Check className="campaign-action-icon" size={18} strokeWidth={2} aria-hidden="true" />
-                  <span className="campaign-action-count">approve</span>
-                </button>
-              ) : null}
               {canGiftClaim ? (
                 <button
                   type="button"
@@ -281,8 +379,8 @@ export default function CampaignCard({
           ) : null}
         </div>
 
-        {actionFeedback ? (
-          <p className={`campaign-action-feedback ${actionFeedback.tone === "error" ? "campaign-action-feedback-error" : "campaign-action-feedback-success"}`.trim()}>
+        {actionFeedback?.tone === "success" ? (
+          <p className="campaign-action-feedback campaign-action-feedback-success">
             {actionFeedback.message}
           </p>
         ) : null}
@@ -327,56 +425,9 @@ export default function CampaignCard({
           <div className="campaign-comment-meta-row">
             <span className={`campaign-comment-count ${commentDraft.length >= 300 ? "campaign-comment-count-limit" : commentDraft.length >= 250 ? "campaign-comment-count-warn" : ""}`}>{300 - commentDraft.length}</span>
           </div>
-          {commentError ? <p className="campaign-comment-error">{commentError}</p> : null}
         </div>
       </div>
 
-      {showDepositModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm mx-4">
-            <h3 className="text-lg font-semibold mb-4">Deposit CKB</h3>
-            <form onSubmit={handleDepositSubmit} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Amount (CKB)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max={Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8}
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="0.00"
-                  disabled={isDepositing || isPurchaseDisabled}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Max available: {(Number(campaign.data.maximumAmount - campaign.data.currentDeposits) / 1e8).toFixed(2)} CKB
-                </p>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDepositModal(false);
-                    setDepositAmount("");
-                  }}
-                  disabled={isDepositing}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isDepositing || !depositAmount || isPurchaseDisabled}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isDepositing ? "Processing..." : "Deposit"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

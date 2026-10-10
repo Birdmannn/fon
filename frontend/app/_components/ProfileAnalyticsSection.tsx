@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import type { ProfileAnalytics, ProfileAnalyticsPoint } from "@/app/_hooks/useProfileAnalytics";
 
 const CHART_WIDTH = 760;
@@ -174,6 +175,7 @@ function buildXAxisLabelIndexes(points: ProfileAnalyticsPoint[]) {
 }
 
 export default function ProfileAnalyticsSection({ analytics, error, loading }: ProfileAnalyticsSectionProps) {
+  useInfoError(error);
   const hasActivity = Boolean(analytics) && ANALYTICS_SERIES.some((series) => (analytics?.totals[series.key] ?? 0) > 0);
 
   const chartModel = useMemo(() => {
@@ -206,7 +208,7 @@ export default function ProfileAnalyticsSection({ analytics, error, loading }: P
           <ThreeDotLoader label="Loading activity graph" inline />
         </div>
       ) : error ? (
-        <p className="profile-analytics-state profile-analytics-state-error">{error}</p>
+        null
       ) : !analytics || !hasActivity || !chartModel ? (
         <p className="profile-analytics-state profile-analytics-state-empty">No created, participated, or rewarded activity yet.</p>
       ) : (

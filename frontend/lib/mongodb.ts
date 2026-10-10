@@ -1,7 +1,8 @@
-import { MongoClient, MongoClientOptions } from "mongodb";
+import { Binary, MongoClient, MongoClientOptions } from "mongodb";
 
 const globalForMongo = globalThis as typeof globalThis & {
   __freightMongoClientPromise?: Promise<MongoClient>;
+  __freightUserProfilesIndexPromise?: Promise<string>;
 };
 
 function getMongoClientPromise() {
@@ -34,16 +35,34 @@ function getMongoClientPromise() {
 
 export const MONGODB_DB_NAME = process.env.MONGODB_DB_NAME || "freightonnervos";
 export const CAMPAIGN_RECORDS_COLLECTION = "campaignRecords";
+export const CAMPAIGN_ATTACHMENTS_COLLECTION = "campaignAttachments";
 export const CAMPAIGN_PARTICIPANTS_COLLECTION = "campaignParticipants";
 export const CAMPAIGN_DEPOSITS_COLLECTION = "campaignDeposits";
 export const USER_PROFILES_COLLECTION = "userProfiles";
+export const USER_PROFILE_PHOTOS_COLLECTION = "userProfilePhotos";
 export const GOOGLE_LINK_CODES_COLLECTION = "googleLinkCodes";
 export const GOOGLE_OAUTH_GRANTS_COLLECTION = "googleOAuthGrants";
 export const FBAR_EVENTS_COLLECTION = "fbarEvents";
+export const MOUNTABLE_APPS_COLLECTION = "mountableApps";
+export const MOUNTABLE_APP_UPDATES_COLLECTION = "mountableAppUpdates";
+export const MOUNTABLE_APP_DELIVERIES_COLLECTION = "mountableAppDeliveries";
+export const CAMPAIGN_PARTICIPANT_FINALIZATIONS_COLLECTION = "campaignParticipantFinalizations";
 
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(CAMPAIGN_RECORDS_COLLECTION);
+}
+
+export async function getCampaignAttachmentsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection<{
+    data: Binary | Buffer;
+    contentType: string;
+    name: string;
+    creatorAddress: string;
+    groupId: string;
+    createdAt: string;
+  }>(CAMPAIGN_ATTACHMENTS_COLLECTION);
 }
 
 export async function getCampaignParticipantsCollection() {
@@ -58,7 +77,28 @@ export async function getCampaignDepositsCollection() {
 
 export async function getUserProfilesCollection() {
   const client = await getMongoClientPromise();
-  return client.db(MONGODB_DB_NAME).collection(USER_PROFILES_COLLECTION);
+  const collection = client.db(MONGODB_DB_NAME).collection(USER_PROFILES_COLLECTION);
+  if (!globalForMongo.__freightUserProfilesIndexPromise) {
+    globalForMongo.__freightUserProfilesIndexPromise = collection.createIndex(
+      { address: 1 },
+      { name: "address_unique", unique: true },
+    ).catch((error) => {
+      globalForMongo.__freightUserProfilesIndexPromise = undefined;
+      throw error;
+    });
+  }
+  await globalForMongo.__freightUserProfilesIndexPromise;
+  return collection;
+}
+
+export async function getUserProfilePhotosCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection<{
+    _id: string;
+    data: Binary | Buffer;
+    contentType: string;
+    updatedAt: string;
+  }>(USER_PROFILE_PHOTOS_COLLECTION);
 }
 
 export async function getGoogleOAuthGrantsCollection() {
@@ -69,4 +109,24 @@ export async function getGoogleOAuthGrantsCollection() {
 export async function getFbarEventsCollection() {
   const client = await getMongoClientPromise();
   return client.db(MONGODB_DB_NAME).collection(FBAR_EVENTS_COLLECTION);
+}
+
+export async function getMountableAppsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APPS_COLLECTION);
+}
+
+export async function getMountableAppUpdatesCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APP_UPDATES_COLLECTION);
+}
+
+export async function getMountableAppDeliveriesCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(MOUNTABLE_APP_DELIVERIES_COLLECTION);
+}
+
+export async function getCampaignParticipantFinalizationsCollection() {
+  const client = await getMongoClientPromise();
+  return client.db(MONGODB_DB_NAME).collection(CAMPAIGN_PARTICIPANT_FINALIZATIONS_COLLECTION);
 }

@@ -1,4 +1,4 @@
-import { CampaignType } from "@/lib/contract";
+import { CampaignType } from "./contract.ts";
 
 export type GiftApprovalMode = "all" | "threshold";
 export type GiftSplitMode = "equal" | "ratio";
@@ -192,7 +192,7 @@ export function createEmptyGiftDeliverable(): GiftDeliverable {
 }
 
 export function isGiftEligibleCampaignType(campaignType: number) {
-  return campaignType === CampaignType.SimpleTask || campaignType === CampaignType.TimedChallenge;
+  return campaignType === CampaignType.FundedTask;
 }
 
 export function normalizeGiftHandle(value: string) {
@@ -303,6 +303,7 @@ export function deriveRequiredApprovalCount(approverCount: number, approvalRule:
   return Math.min(Math.max(1, threshold), approverCount - 1);
 }
 
+/** Legacy metadata preview only. Never authorize transactions or claims with this. */
 export function isGiftApprovalSatisfied(giftDeliverable: GiftDeliverable | null | undefined) {
   if (!giftDeliverable?.enabled) {
     return true;
@@ -335,6 +336,7 @@ export function hasGiftStartTimeReached(args: {
   return (args.nowMs ?? Date.now()) >= createdAt.getTime() + startDelayMs;
 }
 
+/** Legacy metadata preview only. Runtime claims use the live on-chain gate. */
 export function isGiftClaimOpen(args: {
   chainCreatedAt?: string | null;
   taskStartDelayHours?: string | null;

@@ -5,7 +5,7 @@ export const CREATE_INFO_CONSTRAINT_ITEMS = [
   { key: "bodyPassed", text: "2. Body must be at least 120 characters (Well, ofcourse, we can keep it 15 if it's a Raffle)" },
   {
     key: "firstHashtagPassed",
-    text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, or #Raffle.",
+    text: "3. The first hashtag (there must be a first hashtag) must be exactly one of #SimpleTask, #FundedTask, #Crowdfunding, #TimedChallenge, #Raffle, or #RecurringRaffle.",
   },
 ] as const;
 
@@ -28,11 +28,4 @@ export const CREATE_INFO_TYPING_ITEMS = [
 
 export const CREATE_INFO_PREVIEW_HEADING = "Preview:";
 
-export const CREATE_INFO_PREVIEW_ITEMS = [
-  "The generated summary is the short on-chain version of the post.",
-  "It is required because on-chain summary storage is limited to 64 UTF-8 bytes.",
-  "You can edit the summary before publishing if you want a clearer on-chain description.",
-  "Review and set the campaign args here, especially duration and max deposit.",
-  "If the first hashtag is #Raffle, a ticket price is also required.",
-  "The full title, description, mentions, and review snapshot are saved off-chain.",
-] as const;
+export const CREATE_INFO_RAFFLE_SUPPORT_NOTE = "The selected percentage of voluntary support deposits joins the winners' prize pool; the remainder stays withdrawable by the creator after settlement.";

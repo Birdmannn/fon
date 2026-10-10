@@ -16,6 +16,28 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+Mounted-app polling is exposed at `GET`/`POST /api/mountables/apps/poll` and is
+scheduled once per minute by `vercel.json`. Set `FON_POLL_CRON_SECRET` (or
+Vercel's `CRON_SECRET`) in production; the scheduler sends it as a bearer token.
+Individual app installations are only polled when their `pollIntervalSeconds`
+has elapsed.
+
+App registration requires a public `logoUrl`, an `activityWebhookUrl`, and at
+least one principle. FON persists the manifest and shows the app logo in the
+`#mounted` chooser.
+
+Registration is performed once per `appId`. FON stores the app manifest and
+credential in MongoDB. The hosted app must retain the returned registration
+secret; later manifest updates and secret rotations are authenticated with that
+secret, while ordinary app restarts require no FON registration call.
+
+Mount setup validates the selected principles and configuration. After the
+freight receives its canonical ID, FON sends an
+authenticated `mount.requested` event to the registered `activityWebhookUrl`.
+That event contains the selected principles, freight window, duration in
+seconds, and a distinct per-freight event webhook grant. The grant secret
+authenticates app-to-FON updates and works only from task start until task end.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

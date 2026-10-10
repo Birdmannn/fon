@@ -1,21 +1,30 @@
 "use client";
 
 import { ccc } from "@ckb-ccc/connector-react";
-import { ArrowRight, LoaderCircle, RefreshCw, SendHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, GitBranchPlus, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Signature, Trash2 } from "lucide-react";
 
+import Image from "next/image";
 import Link from "next/link";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
+import { DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG, normalizeChildFreightMountableConfig, type ChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
+import type { RaffleApprovalSetup } from "@/app/_components/RaffleApprovalConfigurator";
+import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { DEFAULT_FORMS_MOUNTABLE_CONFIG, normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import {
   DEFAULT_LOCK_MOUNTABLE_CONFIG,
-  lockMountableSummary,
   normalizeLockMountableConfig,
 } from "@/app/_lib/lockMountable";
 import { useGoogleLink } from "@/app/_hooks/useGoogleLink";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import type { AppMountableConfig } from "@/app/_types/appMountable";
+import type { CampaignAttachment } from "@/app/_types/campaignAttachments";
 import type { FormsMountableConfig } from "@/app/_types/formsMountable";
 import type { LockMountableConfig } from "@/app/_types/lockMountable";
 import { CampaignType } from "@/lib/contract";
+import { isWinningCampaignType } from "@/lib/fbars";
+import type { VerifyMountableAppCampaignContext } from "@/lib/fonMountablesSdk";
 import type { GoogleFormsAccessVerification } from "@/lib/googleFormsApi";
 import {
   MIN_TASK_DURATION_MINUTES,
@@ -38,6 +47,9 @@ import {
   type GiftSplitMode,
 } from "@/lib/giftDeliverables";
 import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/randomness";
+import { buildGiftPolicyConfig } from "@/lib/giftPolicy";
+import { buildGiftApprovalConfig } from "@/lib/giftApproval";
+import { parseRaffleApprovalConfig, validateCampaignApproval, validateRaffleApproval, type RaffleApprovalConfig, type RaffleApprovalStage } from "@/lib/raffleApproval";
 import { sendCreateCampaign } from "@/lib/transactions";
 
 const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
@@ -46,11 +58,15 @@ const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
   [CampaignType.Crowdfunding]: "Crowdfunding",
   [CampaignType.TimedChallenge]: "TimedChallenge",
   [CampaignType.Raffle]: "Raffle",
+  [CampaignType.RecurringRaffle]: "RecurringRaffle",
 };
+
+const GIFT_FUNDED_TASK_NOTICE = "Gift directives use FundedTask escrow behavior.";
 
 const MOUNTABLE_TRIGGER_HASHTAG = "mounted";
 
 const MOCK_USERS = ["alice", "bob", "charlie", "diana", "eve", "frank"];
+const BUILT_IN_TAGS = new Set(["approve", "claim", "receive"]);
 const COMPULSORY_HASHTAG_SET = new Set([...Object.values(CAMPAIGN_TYPE_LABELS).map((label) => label.toLowerCase()), "mounted"]);
 const CREATE_CONSTRAINTS_MESSAGE_PENDING = "Not all constraints passed, hover on info button for more";
 const CREATE_MODAL_TITLE_MAX_CHARS = 30;
@@ -67,6 +83,9 @@ const buildCreateContent = (title: string, description: string) => [title, descr
 const normalizeSummarySource = (text: string) => text.replace(/\s+/g, " ").trim();
 const stripTagsForCount = (text: string) => text.replace(/(^|\s)([#@]\w+)/g, "$1");
 const getCountableChars = (text: string) => getTextChars(stripTagsForCount(text));
+const stripBodyTagsForCount = (text: string) => text.replace(/(^|\s)[#@][^\s#@]*/g, "$1");
+const getBodyCountableChars = (text: string) => getTextChars(stripBodyTagsForCount(text).replace(/\s/g, ""));
+const compactBlankLines = (text: string) => text.replace(/\n{3,}/g, "\n\n");
 
 const truncateToUtf8Bytes = (text: string, maxBytes: number) => {
   let truncated = "";
@@ -90,6 +109,18 @@ const truncateToTextLimit = (text: string, maxChars: number) => {
     if (getTextChars(candidate) > maxChars) {
       break;
     }
+    truncated = candidate;
+  }
+
+  return truncated;
+};
+
+const truncateBodyToCountableLimit = (text: string, maxChars: number) => {
+  let truncated = "";
+
+  for (const char of Array.from(text)) {
+    const candidate = truncated + char;
+    if (getBodyCountableChars(candidate) > maxChars) break;
     truncated = candidate;
   }
 
@@ -250,15 +281,23 @@ type DraftRecord = {
     maxAmountCkb?: string;
     auxAmountCkb?: string;
     rewardCount?: string;
+    raffleSupportPoolPercent?: string;
+    ticketsPerUser?: string;
+    recurringSleepHours?: string;
+    winnerReductionPercent?: string;
   };
   mountables?: {
+    childFreight?: ChildFreightMountableConfig | null;
     forms?: FormsMountableConfig | null;
     lock?: LockMountableConfig | null;
+    apps?: AppMountableConfig[] | null;
   };
   socialMetadata?: {
     mentions?: string[];
   };
   giftDeliverable?: GiftDeliverable | null;
+  raffleApproval?: RaffleApprovalConfig | null;
+  attachments?: CampaignAttachment[];
   creatorAddress?: string | null;
   creatorHandle?: string | null;
   status?: DraftRecordStatus;
@@ -280,12 +319,19 @@ type DraftSnapshot = {
   maxAmountCkb: string;
   rewardCount: string;
   auxAmountCkb: string;
+  raffleSupportPoolPercent: string;
+  ticketsPerUser: string;
+  recurringSleepHours: string;
+  winnerReductionPercent: string;
   mentions: string[];
   giftDeliverable: GiftDeliverable;
+  raffleApproval?: RaffleApprovalConfig | null;
+  attachments: CampaignAttachment[];
   formsMountable?: FormsMountableConfig;
+  childFreightMountable?: ChildFreightMountableConfig;
   lockMountable?: LockMountableConfig;
+  appMountables?: AppMountableConfig[];
 };
-
 type CreateModalResumeState = {
   savedAt: number;
   path: string;
@@ -317,14 +363,24 @@ export type CreateCampaignModalContentHandle = {
   discardDraftSession: () => void;
   toggleDraftList: () => Promise<boolean>;
   applyDraftSelection: (draftId: string) => void;
+  getRaffleApprovalSetup: () => RaffleApprovalSetup;
+  updateRaffleApprovalSetup: (config: RaffleApprovalSetup) => void;
   getFormsMountableConfig: () => FormsMountableConfig;
+  getChildFreightMountableConfig: () => ChildFreightMountableConfig;
   getLockMountableConfig: () => LockMountableConfig;
+  getAppMountableConfigs: () => AppMountableConfig[];
+  getAppMountableCampaignContext: () => VerifyMountableAppCampaignContext;
   setFormsMountableEnabled: (enabled: boolean) => void;
+  setChildFreightMountableEnabled: (enabled: boolean) => void;
+  updateChildFreightMountableConfig: (updates: Partial<ChildFreightMountableConfig>) => void;
   setLockMountableEnabled: (enabled: boolean) => void;
+  setAppMountableConfigs: (mountables: AppMountableConfig[]) => void;
   updateFormsMountableConfig: (updates: Partial<FormsMountableConfig>) => void;
   updateLockMountableConfig: (updates: Partial<LockMountableConfig>) => void;
   persistCurrentDraft: () => Promise<void>;
   advanceToReviewAfterMountableSelection: () => Promise<void>;
+  insertTagSuggestion: (tag: string) => void;
+  insertReferenceQuote: (quote: string) => void;
 };
 
 export type CreateConstraintStatus = {
@@ -332,6 +388,7 @@ export type CreateConstraintStatus = {
   bodyPassed: boolean;
   firstHashtagPassed: boolean;
   additionalHashtagsPassed: boolean;
+  isRaffle: boolean;
 };
 
 type CreateCampaignModalContentProps = {
@@ -344,9 +401,11 @@ type CreateCampaignModalContentProps = {
   onPreviewErrorChange?: (message: string) => void;
   onDraftListOpenChange?: (isOpen: boolean) => void;
   onDraftSelectionRequest?: (draftId: string) => void;
-  onPublishSuccess?: (txHash: string, randomnessPreimage: string | null) => void;
+  onPublishSuccess?: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
   onMountableSelectionRequired?: () => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean }) => void;
+  onApprovalSetupRequired?: () => void;
+  onTagSuggestionsRequested?: (query: string) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number; approvalSelected: boolean }) => void;
   availableFbars?: number;
 };
 
@@ -358,6 +417,8 @@ function buildDraftSnapshot(snapshot: DraftSnapshot): DraftSnapshot {
     summaryDraft: snapshot.summaryDraft.trim(),
     mentions: [...snapshot.mentions],
     giftDeliverable: snapshot.giftDeliverable,
+    attachments: Array.isArray(snapshot.attachments) ? [...snapshot.attachments] : [],
+    appMountables: normalizeAppMountableConfigs(snapshot.appMountables),
   };
 }
 
@@ -398,6 +459,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onDraftSelectionRequest,
   onPublishSuccess,
   onMountableSelectionRequired,
+  onApprovalSetupRequired,
+  onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   availableFbars,
 }: CreateCampaignModalContentProps, ref) {
@@ -417,15 +480,24 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const pageEditorRef = useRef<HTMLDivElement>(null);
   const modalTitleRef = useRef<HTMLDivElement>(null);
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const attachmentGroupIdRef = useRef("");
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
+  const tagInsertionPointRef = useRef<{
+    target: "title" | "description" | "page";
+    start: number;
+    end: number;
+  } | null>(null);
   const lastHandledStepBackSignalRef = useRef(stepBackSignal);
   const applyDraftAnimationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftListRequestIdRef = useRef(0);
   const previousShowDraftsPaneRef = useRef(false);
   const hasRestoredResumeStateRef = useRef(false);
   const formsMountableRef = useRef<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const childFreightMountableRef = useRef<ChildFreightMountableConfig>(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
   const lockMountableRef = useRef<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+  const appMountablesRef = useRef<AppMountableConfig[]>([]);
 
   const [campaignType, setCampaignType] = useState<CampaignType>(CampaignType.SimpleTask);
   const [summary, setSummary] = useState("");
@@ -437,8 +509,19 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [maxAmountCkb, setMaxAmountCkb] = useState("1000");
   const [rewardCount, setRewardCount] = useState("1");
   const [raffleTicketPriceCkb, setRaffleTicketPriceCkb] = useState("1");
+  const [ticketsPerUser, setTicketsPerUser] = useState("1");
+  const handleTicketCountChange = (value: string) => {
+    setMaxAmountCkb(value);
+    if (Number(value) === 0) setTicketsPerUser("1");
+  };
+  const [raffleSupportPoolPercent, setRaffleSupportPoolPercent] = useState("0");
+  const [recurringSleepHours, setRecurringSleepHours] = useState("1");
+  const [winnerReductionPercent, setWinnerReductionPercent] = useState("50");
   const [formsMountable, setFormsMountable] = useState<FormsMountableConfig>(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+  const [childFreightMountable, setChildFreightMountable] = useState<ChildFreightMountableConfig>(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
   const [lockMountable, setLockMountable] = useState<LockMountableConfig>(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+  const [appMountables, setAppMountables] = useState<AppMountableConfig[]>([]);
+  const [raffleApprovalStage, setRaffleApprovalStage] = useState<RaffleApprovalStage>("on-commence");
   const [giftApprovalMode, setGiftApprovalMode] = useState<GiftApprovalMode>("all");
   const [giftApprovalThreshold, setGiftApprovalThreshold] = useState("1");
   const [giftSplitMode, setGiftSplitMode] = useState<GiftSplitMode | null>(null);
@@ -469,6 +552,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const [isVerifyingFormsResponseAccess, setIsVerifyingFormsResponseAccess] = useState(false);
   const [formsResponseAccessError, setFormsResponseAccessError] = useState("");
   const [pendingPublishedRecordSync, setPendingPublishedRecordSync] = useState<PendingPublishedRecordSync | null>(null);
+  const [attachments, setAttachments] = useState<CampaignAttachment[]>([]);
+  const [isUploadingAttachments, setIsUploadingAttachments] = useState(false);
   const activeDraftRecord = useMemo(
     () => draftRecords.find((record) => record._id === activeDraftRecordId) ?? null,
     [activeDraftRecordId, draftRecords]
@@ -486,7 +571,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     : buildOnchainSummary({ title: "", description: summary });
   const activeReviewSummary = isModal ? reviewSummary : generatedOnchainSummary;
   const modalTitleChars = getCountableChars(modalTitle);
-  const modalDescriptionChars = getCountableChars(modalDescription);
+  const modalDescriptionChars = getBodyCountableChars(modalDescription);
   const modalTitleMaxChars = CREATE_MODAL_TITLE_MAX_CHARS;
   const modalDescriptionMaxChars = CREATE_MODAL_BODY_MAX_CHARS;
   const reviewSummaryBytes = getTextBytes(activeReviewSummary);
@@ -503,8 +588,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const isFirstHashtagCompulsory = normalizedFirstHashtag.length > 0 && COMPULSORY_HASHTAG_SET.has(normalizedFirstHashtag);
   const hasExactlyOneCompulsoryHashtag = compulsoryHashtags.length >= 1;
   const hasRequiredCompulsoryHashtag = isFirstHashtagCompulsory && hasExactlyOneCompulsoryHashtag;
-  const descriptionChars = getCountableChars(descriptionText.trim());
-  const minDescriptionChars = normalizedFirstHashtag === "raffle" ? 15 : 120;
+  const descriptionChars = getBodyCountableChars(descriptionText);
+  const minDescriptionChars = normalizedFirstHashtag === "raffle" || normalizedFirstHashtag === "recurringraffle" ? 15 : 120;
   const hasRequiredBodyLength = descriptionChars >= minDescriptionChars;
   const hasRequiredTitle = !isModal || trimmedModalTitle.length > 0;
   const constraintsPassed = hasRequiredTitle && hasRequiredBodyLength && hasRequiredCompulsoryHashtag;
@@ -512,6 +597,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const title = "Create a Campaign";
   const createPreviewLines = buildPreviewLines(trimmedModalDescription, 220);
   const activeModalError = draftSaveError || errorMsg;
+  useInfoError(draftListError);
+  useInfoError(!isModal && status === "error" ? errorMsg : null);
   const isNextDisabled = status === "pending" || !constraintsPassed;
   const startDelayParts = useMemo(() => splitTimingParts(taskStartDelayHours, 0), [taskStartDelayHours]);
   const durationParts = useMemo(() => splitTimingParts(taskDurationHours, MIN_TASK_DURATION_MINUTES), [taskDurationHours]);
@@ -533,7 +620,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const handleDurationMinutesChange = useCallback((value: string) => {
     updateDurationFromParts(String(durationParts.hours), value);
   }, [durationParts.hours, updateDurationFromParts]);
-  const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle";
+  const shouldCollectRaffleTicketPrice = normalizedFirstHashtag === "raffle" || normalizedFirstHashtag === "recurringraffle";
   const hasMountedHashtag = hashtags.some((tag) => tag.toLowerCase() === MOUNTABLE_TRIGGER_HASHTAG);
   const parsedGiftDirectives = useMemo(() => parseGiftDirectiveSections(trimmedModalDescription), [trimmedModalDescription]);
   const isGiftEligibleType = isGiftEligibleCampaignType(campaignType);
@@ -559,9 +646,30 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     })),
     [giftResolvedAddresses, parsedGiftDirectives.receivers],
   );
+  const raffleApprovalEnabled = shouldCollectRaffleTicketPrice && giftApproverUsers.length > 0;
+  const raffleApprovalDraft = useMemo<RaffleApprovalConfig | null>(() => raffleApprovalEnabled ? {
+    stage: campaignType === CampaignType.RecurringRaffle ? "on-commence" : raffleApprovalStage,
+    required: ((raffleApprovalStage === "on-delivery" && campaignType !== CampaignType.RecurringRaffle) || giftApprovalMode === "all") ? giftApproverUsers.length : Number(giftApprovalThreshold),
+    approvers: giftApproverUsers,
+  } : null, [raffleApprovalEnabled, campaignType, raffleApprovalStage, giftApprovalMode, giftApprovalThreshold, giftApproverUsers]);
+  const reviewMountedIcons = [
+    ...((raffleApprovalEnabled || (giftFeatureEnabled && giftApproverUsers.length > 0)) ? [{ key: "signable", name: "Signable", kind: "signable" as const, logoUrl: "" }] : []),
+    ...(childFreightMountable.enabled ? [{ key: "child-freight", name: "Child Freight", kind: "child-freight" as const, logoUrl: "" }] : []),
+    ...(formsMountable.enabled ? [{ key: "forms", name: "Forms", kind: "forms" as const, logoUrl: "" }] : []),
+    ...(lockMountable.enabled ? [{ key: "lock", name: "Lock", kind: "lock" as const, logoUrl: "" }] : []),
+    ...(isWinningCampaignType(campaignType) ? [{ key: "rewardable", name: "Rewardable", kind: "rewardable" as const, logoUrl: "" }] : []),
+    ...appMountables.filter((entry) => entry.enabled).map((entry) => ({
+      key: entry.mountableInstanceId || entry.appId,
+      name: entry.appName || entry.appId,
+      kind: "app" as const,
+      logoUrl: entry.logoUrl || entry.iconUrl,
+    })),
+  ].sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }));
+  const visibleReviewMountedIcons = reviewMountedIcons.length >= 4 ? reviewMountedIcons.slice(0, 3) : reviewMountedIcons;
+  const hiddenReviewMountedIconCount = reviewMountedIcons.length - visibleReviewMountedIcons.length;
   const isOpenGiftClaim = giftFeatureEnabled && giftClaimantUsers.length === 0;
   const effectiveGiftSplitMode = giftFeatureEnabled
-    ? (isOpenGiftClaim ? "equal" : giftSplitMode)
+    ? (isOpenGiftClaim ? "equal" : giftSplitMode ?? "equal")
     : null;
   const giftApprovalRule = useMemo(() => {
     if (!giftFeatureEnabled || giftApproverUsers.length === 0) {
@@ -623,6 +731,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftResolvedAddresses,
     trimmedModalDescription,
   ]);
+  const giftApprovalDraft = useMemo(() => buildGiftApprovalConfig(giftDeliverableDraft), [giftDeliverableDraft]);
   const allMentions = useMemo(
     () => Array.from(new Set([...mentions, ...buildGiftMentionList(parsedGiftDirectives)])),
     [mentions, parsedGiftDirectives],
@@ -637,15 +746,34 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   );
   const normalizedCreateParams = useMemo(() => {
     try {
+      if ((shouldCollectRaffleTicketPrice || giftFeatureEnabled) && parsedGiftDirectives.hasApproveSection && !giftApproverUsers.length) throw new Error("Tag at least one approver after @approve");
+      if (giftFeatureEnabled && giftPreviewState.error) throw new Error(giftPreviewState.error);
+      if (giftFeatureEnabled) {
+        if (parsedGiftDirectives.hasReceiveSection) throw new Error("@receive payment streaming is not available. Use @claim for gifts.");
+        buildGiftPolicyConfig(giftDeliverableDraft, BigInt(maxAmountCkb || "0") * 100_000_000n, BigInt(rewardCount || "0"));
+      }
+      if (giftApprovalDraft) {
+        validateCampaignApproval(giftApprovalDraft, campaignType, BigInt(Math.round(Number(taskStartDelayHours) * 3600)));
+        if (giftApprovalDraft.approvers.some((entry) => !entry.address)) throw new Error("Resolve all tagged gift approvers’ wallets before publishing");
+      }
+      if (raffleApprovalDraft) {
+        validateRaffleApproval(raffleApprovalDraft, campaignType, BigInt(Math.round(Number(taskStartDelayHours) * 3600)));
+        if (raffleApprovalDraft.approvers.some((entry) => !entry.address)) throw new Error("Resolve all tagged approvers’ wallets before publishing");
+      }
       return {
         value: normalizeCreateCampaignParams({
+          campaignType,
           maxAmountCkb,
+          raffleSupportPoolPercent,
           raffleTicketPriceCkb,
+          ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
           rewardCount,
           shouldCollectRaffleTicketPrice,
           summary: activeReviewSummary,
           taskDurationHours,
           taskStartDelayHours,
+          recurringSleepHours,
+          winnerReductionPercent,
         }),
         error: null as string | null,
       };
@@ -657,44 +785,87 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
   }, [
     activeReviewSummary,
+    giftApprovalDraft,
+    giftDeliverableDraft,
+    parsedGiftDirectives.hasReceiveSection,
+    giftFeatureEnabled,
+    giftPreviewState.error,
+    giftApproverUsers.length,
+    parsedGiftDirectives.hasApproveSection,
+    raffleApprovalDraft,
+    campaignType,
     maxAmountCkb,
     raffleTicketPriceCkb,
+    raffleSupportPoolPercent,
     rewardCount,
     shouldCollectRaffleTicketPrice,
     taskDurationHours,
     taskStartDelayHours,
+    recurringSleepHours,
+    winnerReductionPercent,
+    ticketsPerUser,
   ]);
   const currentDraftSummary = isReviewStep ? activeReviewSummary : generatedOnchainSummary;
   const currentAuxAmountCkb = shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0";
+  const storedStartDelayHours = campaignType === CampaignType.SimpleTask ? "0" : taskStartDelayHours;
+  const storedDurationHours = campaignType === CampaignType.SimpleTask ? "0" : taskDurationHours;
   const currentDraftSnapshot = useMemo<DraftSnapshot>(() => buildDraftSnapshot({
     title: trimmedModalTitle,
     description: trimmedModalDescription,
     campaignType,
     summaryDraft: currentDraftSummary,
-    taskStartDelayHours,
-    taskDurationHours,
+    taskStartDelayHours: storedStartDelayHours,
+    taskDurationHours: storedDurationHours,
     maxAmountCkb,
     rewardCount,
     auxAmountCkb: currentAuxAmountCkb,
+    raffleSupportPoolPercent,
+    ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
+    recurringSleepHours,
+    winnerReductionPercent,
     mentions: allMentions,
     giftDeliverable: giftDeliverableDraft,
+    raffleApproval: raffleApprovalDraft,
+    attachments,
     formsMountable,
+    childFreightMountable,
     lockMountable,
+    appMountables,
   }), [
     allMentions,
+    appMountables,
+    attachments,
     campaignType,
     currentAuxAmountCkb,
     currentDraftSummary,
     giftDeliverableDraft,
+    raffleApprovalDraft,
     maxAmountCkb,
     formsMountable,
+    childFreightMountable,
     lockMountable,
     rewardCount,
-    taskDurationHours,
-    taskStartDelayHours,
+    raffleSupportPoolPercent,
+    recurringSleepHours,
+    storedDurationHours,
+    storedStartDelayHours,
+    ticketsPerUser,
+    winnerReductionPercent,
     trimmedModalDescription,
     trimmedModalTitle,
   ]);
+  const currentAppMountableCampaignContext = useMemo<VerifyMountableAppCampaignContext>(() => ({
+    freightId: activeDraftRecord?.campaignId ?? null,
+    campaignId: activeDraftRecord?.campaignId ?? null,
+    createdByHash: activeDraftRecord?.createdByHash ?? null,
+    chainCreatedAt: activeDraftRecord?.chainCreatedAt ?? new Date().toISOString(),
+    campaignType,
+    taskStartDelayHours: storedStartDelayHours,
+    taskDurationHours: storedDurationHours,
+    startsAt: null,
+    endsAt: null,
+    timeframeSeconds: null,
+  }), [activeDraftRecord?.campaignId, activeDraftRecord?.chainCreatedAt, activeDraftRecord?.createdByHash, campaignType, storedDurationHours, storedStartDelayHours]);
   const hasTypedDraftContent = currentDraftSnapshot.title.length > 0 || currentDraftSnapshot.description.length > 0;
   const hasDraftableChanges = hasTypedDraftContent && !areDraftSnapshotsEqual(currentDraftSnapshot, lastSavedSnapshot);
   const mountedFormUrl = formsMountable.canonicalFormUrl?.trim() || formsMountable.formUrl.trim();
@@ -730,6 +901,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const activeFormsResponseAccessError = formsResponseAccessError
     || formsResponseAccessMismatchError
     || (formsMountable.enabled && !hasFormsResponseAccess ? googleLinkError : "");
+  useInfoError(activeFormsResponseAccessError);
+  useInfoError(giftPreviewState.error);
+  useInfoError(isReviewStep ? normalizedCreateParams.error : null);
   const formsResponseAccessHelperMessage = !formsMountable.enabled
     ? ""
     : !hasMountedFormValidation
@@ -756,8 +930,16 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, [formsMountable]);
 
   useEffect(() => {
+    childFreightMountableRef.current = childFreightMountable;
+  }, [childFreightMountable]);
+
+  useEffect(() => {
     lockMountableRef.current = lockMountable;
   }, [lockMountable]);
+
+  useEffect(() => {
+    appMountablesRef.current = appMountables;
+  }, [appMountables]);
 
   useEffect(() => {
     if (isFirstHashtagCompulsory) {
@@ -815,7 +997,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
 
     const unresolvedHandles = giftTaggedHandles.filter((handle) => !giftResolvedAddresses[handle]);
-    const nextWarnings = unresolvedHandles.map((handle) => `Could not resolve @${handle}. Publishing is allowed, but wallet-gated actions will only work once that handle maps to a profile.`);
+    const nextWarnings = unresolvedHandles.map((handle) => parsedGiftDirectives.approvers.includes(handle)
+      ? `Resolve @${handle}’s wallet before publishing this gift.`
+      : `Could not resolve @${handle}. Publishing is allowed, but wallet-gated actions will only work once that handle maps to a profile.`);
     const currentWarningsKey = JSON.stringify(giftResolutionWarnings);
     const nextWarningsKey = JSON.stringify(nextWarnings);
     if (currentWarningsKey !== nextWarningsKey) {
@@ -831,10 +1015,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     giftTaggedHandles,
     isOpenGiftClaim,
     rewardCount,
+    parsedGiftDirectives.approvers,
   ]);
 
   useEffect(() => {
-    if (!giftFeatureEnabled) {
+    if (!giftFeatureEnabled && !raffleApprovalEnabled) {
       return;
     }
 
@@ -889,7 +1074,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     return () => {
       cancelled = true;
     };
-  }, [giftFeatureEnabled, giftResolvedAddresses, giftTaggedHandles]);
+  }, [giftFeatureEnabled, raffleApprovalEnabled, giftResolvedAddresses, giftTaggedHandles]);
 
   const filteredMentions = MOCK_USERS.filter(
     (user) => user.toLowerCase().startsWith(mentionQuery.toLowerCase()) && mentionQuery.length > 0
@@ -970,25 +1155,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
 
       const fragment = document.createDocumentFragment();
-      const lines = text.split("\n");
-
-      lines.forEach((line, index) => {
-        if (index > 0) {
-          fragment.appendChild(document.createTextNode("\n"));
-        }
-
-        if (/^\s*##\s+/.test(line)) {
-          const headingLine = document.createElement("span");
-          headingLine.textContent = line;
-          headingLine.style.fontSize = "1.45rem";
-          headingLine.style.lineHeight = "1.25";
-          headingLine.style.fontWeight = "700";
-          fragment.appendChild(headingLine);
-          return;
-        }
-
-        fragment.appendChild(document.createTextNode(line));
-      });
+      fragment.appendChild(document.createTextNode(text));
 
       if (text.endsWith("\n")) {
         fragment.appendChild(document.createElement("br"));
@@ -1020,14 +1187,27 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setMaxAmountCkb("1000");
     setRewardCount("1");
     setRaffleTicketPriceCkb("1");
+    setTicketsPerUser("1");
+    setRaffleSupportPoolPercent("0");
+    setRecurringSleepHours("1");
+    setWinnerReductionPercent("50");
+    setRaffleApprovalStage("on-commence");
     setGiftApprovalMode("all");
     setGiftApprovalThreshold("1");
     setGiftSplitMode(null);
     setGiftRatioEntries([]);
     setGiftResolvedAddresses({});
     setGiftResolutionWarnings([]);
+    setAttachments([]);
+    attachmentGroupIdRef.current = "";
+    formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
+    childFreightMountableRef.current = DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
+    lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
+    appMountablesRef.current = [];
     setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+    setChildFreightMountable(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
     setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+    setAppMountables([]);
     setModalStep("compose");
     setReviewSummary("");
     setActiveDraftRecordId(null);
@@ -1091,8 +1271,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       bodyPassed: hasRequiredBodyLength,
       firstHashtagPassed: hasRequiredCompulsoryHashtag,
       additionalHashtagsPassed: true,
+      isRaffle: campaignType === CampaignType.Raffle || campaignType === CampaignType.RecurringRaffle,
     });
   }, [
+    campaignType,
     hasRequiredTitle,
     hasRequiredBodyLength,
     hasRequiredCompulsoryHashtag,
@@ -1100,8 +1282,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   ]);
 
   useEffect(() => {
-    onPreviewErrorChange?.(isReviewStep ? activeModalError : "");
-  }, [activeModalError, isReviewStep, onPreviewErrorChange]);
+    onPreviewErrorChange?.(activeModalError);
+  }, [activeModalError, onPreviewErrorChange]);
 
   useEffect(() => {
     onDraftListOpenChange?.(isDraftListOpen);
@@ -1112,11 +1294,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const text = event.currentTarget.textContent || "";
     let normalizedText = text.trim().length === 0 ? "" : text;
 
+    if (event.currentTarget === modalDescriptionRef.current || event.currentTarget === pageEditorRef.current) {
+      normalizedText = compactBlankLines(normalizedText);
+    }
+
     if (isModal) {
       if (event.currentTarget === modalTitleRef.current) {
         normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_TITLE_MAX_CHARS);
       } else if (event.currentTarget === modalDescriptionRef.current) {
-        normalizedText = truncateToTextLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
+        normalizedText = truncateBodyToCountableLimit(normalizedText, CREATE_MODAL_BODY_MAX_CHARS);
       }
     }
 
@@ -1150,8 +1336,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const hashtagMatch =
         lastHashIndex !== -1 ? beforeCursor.substring(lastHashIndex + 1).match(/^[\w]*$/) : null;
 
-      const allowHashtagMenu =
-        event.currentTarget === modalDescriptionRef.current || event.currentTarget === pageEditorRef.current;
+      const allowHashtagMenu = event.currentTarget === pageEditorRef.current;
 
       if (
         allowHashtagMenu &&
@@ -1171,9 +1356,23 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
       const lastAtIndex = beforeCursor.lastIndexOf("@");
       const mentionMatch =
-        lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w]*$/) : null;
+        lastAtIndex !== -1 ? beforeCursor.substring(lastAtIndex + 1).match(/^[\w.-]*$/) : null;
 
-      if (mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
+      if (
+        isModal &&
+        event.currentTarget === modalDescriptionRef.current &&
+        mentionMatch &&
+        (lastAtIndex === 0 || /\s/.test(beforeCursor[lastAtIndex - 1])) &&
+        onTagSuggestionsRequested
+      ) {
+        tagInsertionPointRef.current = {
+          target: "description",
+          start: lastAtIndex,
+          end: updatedCaretPos,
+        };
+        setShowMentionMenu(false);
+        onTagSuggestionsRequested(beforeCursor.substring(lastAtIndex + 1));
+      } else if (!isModal && mentionMatch && normalizedText[updatedCaretPos - 1] !== " " && normalizedText[updatedCaretPos - 1] !== "\n") {
         const query = beforeCursor.substring(lastAtIndex + 1);
         setMentionQuery(query);
         const rect = event.currentTarget.getBoundingClientRect();
@@ -1228,25 +1427,24 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const currentLine = text.slice(lineStartIndex, lineEndIndex);
         const nextListLine = getNextListLine(currentLine);
 
-        let newText =
+        const rawNewText =
           nextListLine?.mode === "exit"
             ? text.slice(0, lineStartIndex) + text.slice(lineEndIndex)
             : text.slice(0, caretPos) + (nextListLine?.insertText ?? "\n") + text.slice(caretPos);
+        const rawCaretPos = nextListLine?.mode === "exit"
+          ? lineStartIndex
+          : caretPos + (nextListLine?.insertText?.length ?? 1);
+        let newText = compactBlankLines(rawNewText);
 
         if (isModal && event.currentTarget === modalDescriptionRef.current) {
-          newText = truncateToTextLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
+          newText = truncateBodyToCountableLimit(newText, CREATE_MODAL_BODY_MAX_CHARS);
         }
 
         renderEditorText(event.currentTarget, newText);
         setEditorTextByNode(event.currentTarget, newText);
         hideMenus();
 
-        const newCaretPos = Math.min(
-          nextListLine?.mode === "exit"
-            ? lineStartIndex
-            : caretPos + (nextListLine?.insertText?.length ?? 1),
-          newText.length
-        );
+        const newCaretPos = Math.min(compactBlankLines(rawNewText.slice(0, rawCaretPos)).length, newText.length);
 
         setCaretPosition(event.currentTarget, newCaretPos);
         return;
@@ -1326,7 +1524,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const insertedText = text.substring(0, lastHashIndex) + `#${label} ` + text.substring(caretPos);
         const newText =
           isModal && targetEditor === modalDescriptionRef.current
-            ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+            ? truncateBodyToCountableLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
             : isModal && targetEditor === modalTitleRef.current
               ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
               : insertedText;
@@ -1368,7 +1566,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         const insertedText = text.substring(0, lastAtIndex) + `@${username} ` + text.substring(caretPos);
         const newText =
           isModal && targetEditor === modalDescriptionRef.current
-            ? truncateToTextLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+            ? truncateBodyToCountableLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
             : isModal && targetEditor === modalTitleRef.current
               ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
               : insertedText;
@@ -1395,6 +1593,50 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
     }
   };
+
+  const insertTagSuggestion = useCallback((tag: string) => {
+    const normalizedTags = Array.from(tag.matchAll(/@([^\s@]+)/g), (match) => match[1]?.trim() ?? "")
+      .filter(Boolean);
+    const insertionPoint = tagInsertionPointRef.current;
+    if (!insertionPoint) return;
+
+    const targetEditor = insertionPoint.target === "title"
+      ? modalTitleRef.current
+      : insertionPoint.target === "description"
+        ? modalDescriptionRef.current
+        : pageEditorRef.current;
+    if (!targetEditor) return;
+
+    const currentText = targetEditor.textContent || "";
+    const tagText = normalizedTags.map((normalizedTag) => `@${normalizedTag}`).join(" ");
+    const insertedText = tagText
+      ? `${currentText.slice(0, insertionPoint.start)}${tagText} ${currentText.slice(insertionPoint.end)}`
+      : currentText;
+    const nextText = insertionPoint.target === "title"
+      ? truncateToTextLimit(insertedText, CREATE_MODAL_TITLE_MAX_CHARS)
+      : insertionPoint.target === "description"
+        ? truncateBodyToCountableLimit(insertedText, CREATE_MODAL_BODY_MAX_CHARS)
+        : insertedText;
+
+    renderEditorText(targetEditor, nextText);
+    setEditorTextByNode(targetEditor, nextText);
+    tagInsertionPointRef.current = null;
+    setShowMentionMenu(false);
+
+    const userTags = normalizedTags.filter((normalizedTag) => !BUILT_IN_TAGS.has(normalizedTag.toLowerCase()));
+    if (userTags.length > 0) {
+      setMentions((current) => [...new Set([...current, ...userTags])]);
+    }
+
+    window.setTimeout(() => {
+      targetEditor.focus();
+      activeEditorRef.current = targetEditor;
+      const nextCaretPosition = tagText
+        ? insertionPoint.start + tagText.length + 1
+        : insertionPoint.end;
+      setCaretPosition(targetEditor, Math.min(nextCaretPosition, nextText.length));
+    }, 0);
+  }, [renderEditorText, setCaretPosition, setEditorTextByNode]);
 
   const handleRemoveMention = (mention: string) => {
     setMentions((current) => current.filter((item) => item !== mention));
@@ -1467,6 +1709,48 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     return creatorAddress;
   }, [signer]);
 
+  const handleAttachPhotos = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const allowance = Math.max(0, Math.floor((availableFbars ?? 0) / 20));
+    if (attachments.length + files.length > allowance) {
+      setErrorMsg(`Your ${Math.trunc(availableFbars ?? 0)} FBARS allow ${allowance} photo${allowance === 1 ? "" : "s"}.`);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+      return;
+    }
+
+    setIsUploadingAttachments(true);
+    setErrorMsg("");
+    try {
+      const creatorAddress = await getCreatorAddress();
+      if (!attachmentGroupIdRef.current) attachmentGroupIdRef.current = crypto.randomUUID();
+      const uploaded: CampaignAttachment[] = [];
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.set("photo", file);
+        form.set("creatorAddress", creatorAddress);
+        form.set("groupId", attachmentGroupIdRef.current);
+        const response = await fetch("/api/campaign-attachments", { method: "POST", body: form });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.attachment) throw new Error(payload?.error ?? `Failed to upload ${file.name}`);
+        uploaded.push(payload.attachment as CampaignAttachment);
+      }
+      setAttachments((current) => [...current, ...uploaded]);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Failed to attach photos");
+    } finally {
+      setIsUploadingAttachments(false);
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    }
+  }, [attachments.length, availableFbars, getCreatorAddress]);
+
+  const handleRemoveAttachment = useCallback((attachment: CampaignAttachment) => {
+    setAttachments((current) => current.filter((item) => item.id !== attachment.id));
+    void getCreatorAddress().then((creatorAddress) => fetch(
+      `/api/campaign-attachments/${encodeURIComponent(attachment.id)}?creatorAddress=${encodeURIComponent(creatorAddress)}`,
+      { method: "DELETE" },
+    )).catch(() => undefined);
+  }, [getCreatorAddress]);
+
   const clearCreateModalResumeState = useCallback(() => {
     if (typeof window === "undefined") {
       return;
@@ -1478,37 +1762,50 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const applyDraftSnapshot = useCallback((resumeState: CreateModalResumeState) => {
     const nextSnapshot = buildDraftSnapshot(resumeState.snapshot);
     const nextGiftDeliverable = parseStoredGiftDeliverable(nextSnapshot.giftDeliverable);
+    const nextRaffleApproval = parseRaffleApprovalConfig(nextSnapshot.raffleApproval);
     const nextCampaignType = nextSnapshot.campaignType;
-    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
     const nextFormsMountable = normalizeFormsMountableConfig(nextSnapshot.formsMountable);
+    const nextChildFreightMountable = normalizeChildFreightMountableConfig(nextSnapshot.childFreightMountable);
     const nextLockMountable = normalizeLockMountableConfig(nextSnapshot.lockMountable);
+    const nextAppMountables = normalizeAppMountableConfigs(nextSnapshot.appMountables);
 
     formsMountableRef.current = nextFormsMountable;
+    childFreightMountableRef.current = nextChildFreightMountable;
     lockMountableRef.current = nextLockMountable;
+    appMountablesRef.current = nextAppMountables;
     setModalTitle(nextSnapshot.title);
     setModalDescription(nextSnapshot.description);
     setSummary(nextSnapshot.description);
     setCampaignType(nextCampaignType);
     setMentions(nextSnapshot.mentions);
-    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
-    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setRaffleApprovalStage(nextRaffleApproval?.stage ?? "on-commence");
+    setGiftApprovalMode(nextRaffleApproval ? (nextRaffleApproval.required === nextRaffleApproval.approvers.length ? "all" : "threshold") : nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextRaffleApproval?.required ?? nextGiftDeliverable.approvalRule?.threshold ?? 1));
     setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
     setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
     setGiftResolvedAddresses(
       Object.fromEntries(
-        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers, ...(nextRaffleApproval?.approvers ?? [])]
           .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
       ),
     );
     setGiftResolutionWarnings([]);
+    setAttachments(nextSnapshot.attachments);
     setTaskStartDelayHours(nextSnapshot.taskStartDelayHours);
     setTaskDurationHours(nextSnapshot.taskDurationHours);
     setMaxAmountCkb(nextSnapshot.maxAmountCkb);
     setRewardCount(nextSnapshot.rewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextSnapshot.auxAmountCkb : "1");
+    setTicketsPerUser(isRaffleDraft && Number(nextSnapshot.maxAmountCkb) !== 0 ? nextSnapshot.ticketsPerUser ?? "1" : "1");
+    setRaffleSupportPoolPercent(isRaffleDraft ? nextSnapshot.raffleSupportPoolPercent : "0");
+    setRecurringSleepHours(nextSnapshot.recurringSleepHours ?? "1");
+    setWinnerReductionPercent(nextSnapshot.winnerReductionPercent ?? "50");
     setReviewSummary(nextSnapshot.summaryDraft || buildOnchainSummary({ title: nextSnapshot.title, description: nextSnapshot.description }));
     setFormsMountable(nextFormsMountable);
+    setChildFreightMountable(nextChildFreightMountable);
     setLockMountable(nextLockMountable);
+    setAppMountables(nextAppMountables);
     setActiveDraftRecordId(resumeState.activeDraftRecordId);
     setModalStep(resumeState.modalStep);
     setIsDraftListOpen(false);
@@ -1597,33 +1894,56 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     const nextMaxAmount = record.argsDraft?.maxAmountCkb ?? "1000";
     const nextRewardCount = record.argsDraft?.rewardCount ?? "1";
     const nextAuxAmount = record.argsDraft?.auxAmountCkb ?? "0";
+    const nextRaffleSupportPoolPercent = record.argsDraft?.raffleSupportPoolPercent ?? "0";
+    const nextRecurringSleepHours = record.argsDraft?.recurringSleepHours ?? "1";
+    const nextWinnerReductionPercent = record.argsDraft?.winnerReductionPercent ?? "50";
     const nextGiftDeliverable = parseStoredGiftDeliverable(record.giftDeliverable);
-    const isRaffleDraft = nextCampaignType === CampaignType.Raffle;
+    const nextRaffleApproval = parseRaffleApprovalConfig(record.raffleApproval);
+    const nextAttachments = Array.isArray(record.attachments) ? record.attachments : [];
+    const isRaffleDraft = nextCampaignType === CampaignType.Raffle || nextCampaignType === CampaignType.RecurringRaffle;
 
     setModalTitle(nextTitle);
     setModalDescription(nextDescription);
     setSummary(nextDescription);
     setCampaignType(nextCampaignType);
     setMentions(nextMentions);
-    setGiftApprovalMode(nextGiftDeliverable.approvalRule?.mode ?? "all");
-    setGiftApprovalThreshold(String(nextGiftDeliverable.approvalRule?.threshold ?? 1));
+    setRaffleApprovalStage(nextRaffleApproval?.stage ?? "on-commence");
+    setGiftApprovalMode(nextRaffleApproval ? (nextRaffleApproval.required === nextRaffleApproval.approvers.length ? "all" : "threshold") : nextGiftDeliverable.approvalRule?.mode ?? "all");
+    setGiftApprovalThreshold(String(nextRaffleApproval?.required ?? nextGiftDeliverable.approvalRule?.threshold ?? 1));
     setGiftSplitMode(nextGiftDeliverable.splitMode ?? null);
     setGiftRatioEntries(nextGiftDeliverable.ratioEntries ?? []);
     setGiftResolvedAddresses(
       Object.fromEntries(
-        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers]
+        [...nextGiftDeliverable.approvers, ...nextGiftDeliverable.claimants, ...nextGiftDeliverable.receivers, ...(nextRaffleApproval?.approvers ?? [])]
           .map((entry) => [entry.handle.replace(/^@/, "").replace(/\.ckb$/i, "").toLowerCase(), entry.address ?? null] as const),
       ),
     );
     setGiftResolutionWarnings([]);
+    setAttachments(nextAttachments);
     setTaskStartDelayHours(nextStartDelay);
     setTaskDurationHours(nextDuration);
     setMaxAmountCkb(nextMaxAmount);
     setRewardCount(nextRewardCount);
     setRaffleTicketPriceCkb(isRaffleDraft ? nextAuxAmount : "1");
+    setTicketsPerUser(isRaffleDraft && Number(nextMaxAmount) !== 0 ? record.argsDraft?.ticketsPerUser ?? "1" : "1");
+    setRaffleSupportPoolPercent(isRaffleDraft ? nextRaffleSupportPoolPercent : "0");
+    setRecurringSleepHours(nextRecurringSleepHours);
+    setWinnerReductionPercent(nextWinnerReductionPercent);
+    const nextFormsMountable = normalizeFormsMountableConfig(record.mountables?.forms);
+    const nextChildFreightMountable = normalizeChildFreightMountableConfig(record.mountables?.childFreight);
+    const nextLockMountable = normalizeLockMountableConfig(record.mountables?.lock);
+    const nextAppMountables = normalizeAppMountableConfigs(record.mountables?.apps);
+
+    formsMountableRef.current = nextFormsMountable;
+    childFreightMountableRef.current = nextChildFreightMountable;
+    lockMountableRef.current = nextLockMountable;
+    appMountablesRef.current = nextAppMountables;
+
     setReviewSummary(nextSummary || buildOnchainSummary({ title: nextTitle, description: nextDescription }));
-    setFormsMountable(normalizeFormsMountableConfig(record.mountables?.forms));
-    setLockMountable(normalizeLockMountableConfig(record.mountables?.lock));
+    setFormsMountable(nextFormsMountable);
+    setChildFreightMountable(nextChildFreightMountable);
+    setLockMountable(nextLockMountable);
+    setAppMountables(nextAppMountables);
     setActiveDraftRecordId(record._id ?? null);
     setModalStep("compose");
     setIsDraftListOpen(false);
@@ -1645,10 +1965,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       maxAmountCkb: nextMaxAmount,
       rewardCount: nextRewardCount,
       auxAmountCkb: nextAuxAmount,
+      raffleSupportPoolPercent: nextRaffleSupportPoolPercent,
+      ticketsPerUser: Number(nextMaxAmount) === 0 ? "1" : record.argsDraft?.ticketsPerUser ?? "1",
+      recurringSleepHours: nextRecurringSleepHours,
+      winnerReductionPercent: nextWinnerReductionPercent,
       mentions: nextMentions,
       giftDeliverable: nextGiftDeliverable,
-      formsMountable: normalizeFormsMountableConfig(record.mountables?.forms),
-      lockMountable: normalizeLockMountableConfig(record.mountables?.lock),
+      raffleApproval: nextRaffleApproval,
+      attachments: nextAttachments,
+      formsMountable: nextFormsMountable,
+      childFreightMountable: nextChildFreightMountable,
+      lockMountable: nextLockMountable,
+      appMountables: nextAppMountables,
     });
     setLastSavedSnapshot(nextSnapshot);
 
@@ -1736,14 +2064,23 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         setMaxAmountCkb("1000");
         setRewardCount("1");
         setRaffleTicketPriceCkb("1");
-        setGiftApprovalMode("all");
+        setTicketsPerUser("1");
+        setRaffleSupportPoolPercent("0");
+        setRecurringSleepHours("1");
+        setWinnerReductionPercent("50");
+        setRaffleApprovalStage("on-commence");
+    setGiftApprovalMode("all");
         setGiftApprovalThreshold("1");
         setGiftSplitMode(null);
         setGiftRatioEntries([]);
         setGiftResolvedAddresses({});
         setGiftResolutionWarnings([]);
+        appMountablesRef.current = [];
+        childFreightMountableRef.current = DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
         setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+        setChildFreightMountable(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
         setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+        setAppMountables([]);
         setLastSavedSnapshot(null);
         setDraftSaveStatus("idle");
         setDraftSaveError("");
@@ -1783,15 +2120,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         campaignType,
         summaryDraft,
         argsDraft: {
-          taskStartDelayHours,
-          taskDurationHours,
+          taskStartDelayHours: storedStartDelayHours,
+          taskDurationHours: storedDurationHours,
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+          raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+          recurringSleepHours: campaignType === CampaignType.RecurringRaffle ? recurringSleepHours : "1",
+          winnerReductionPercent: campaignType === CampaignType.RecurringRaffle ? winnerReductionPercent : "50",
+          ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
         },
         mountables: {
+          childFreight: childFreightMountableRef.current.enabled ? childFreightMountableRef.current : null,
           forms: formsMountableRef.current.enabled ? formsMountableRef.current : null,
           lock: lockMountableRef.current.enabled ? lockMountableRef.current : null,
+          apps: appMountablesRef.current.filter((entry) => entry.enabled),
         },
         socialMetadata: {
           mentions: allMentions,
@@ -1803,6 +2146,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           resharedByAddresses: [],
         },
         giftDeliverable: giftDeliverableDraft,
+        raffleApproval: raffleApprovalDraft,
+        attachments,
         creatorAddress,
         creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
         status: draftStatus,
@@ -1815,16 +2160,20 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       activeDraftRecord,
       allMentions,
       campaignType,
-      formsMountable,
-      lockMountable,
       getCreatorAddress,
       giftDeliverableDraft,
+      raffleApprovalDraft,
+      attachments,
       maxAmountCkb,
       raffleTicketPriceCkb,
+      raffleSupportPoolPercent,
+      recurringSleepHours,
       rewardCount,
       shouldCollectRaffleTicketPrice,
-      taskDurationHours,
-      taskStartDelayHours,
+      storedDurationHours,
+      storedStartDelayHours,
+      ticketsPerUser,
+      winnerReductionPercent,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -1844,7 +2193,25 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       setDraftSaveError("");
 
       try {
+        const formsMountableSnapshot = hasMountedHashtag
+          ? formsMountableRef.current
+          : DEFAULT_FORMS_MOUNTABLE_CONFIG;
+        const childFreightMountableSnapshot = hasMountedHashtag
+          ? childFreightMountableRef.current
+          : DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
+        const lockMountableSnapshot = hasMountedHashtag
+          ? lockMountableRef.current
+          : DEFAULT_LOCK_MOUNTABLE_CONFIG;
+        const appMountablesSnapshot = hasMountedHashtag
+          ? [...appMountablesRef.current]
+          : [];
         const payload = await buildDraftPayload(summaryDraft, draftStatus, txHashValue, publishError, randomnessPreimage, identityOverride);
+        payload.mountables = {
+          childFreight: childFreightMountableSnapshot.enabled ? childFreightMountableSnapshot : null,
+          forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
+          lock: lockMountableSnapshot.enabled ? lockMountableSnapshot : null,
+          apps: draftStatus === "draft" ? appMountablesSnapshot : appMountablesSnapshot.filter((entry) => entry.enabled),
+        };
         const response = await fetch(recordIdOverride ? `/api/campaign-records/${recordIdOverride}` : "/api/campaign-records", {
           method: recordIdOverride ? "PATCH" : "POST",
           headers: {
@@ -1873,10 +2240,18 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           maxAmountCkb,
           rewardCount,
           auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+          raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+          ticketsPerUser: Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser,
+          recurringSleepHours,
+          winnerReductionPercent,
           mentions: allMentions,
           giftDeliverable: giftDeliverableDraft,
-          formsMountable,
-          lockMountable,
+          raffleApproval: raffleApprovalDraft,
+          attachments,
+          formsMountable: formsMountableSnapshot,
+          childFreightMountable: childFreightMountableSnapshot,
+          lockMountable: lockMountableSnapshot,
+          appMountables: appMountablesSnapshot,
         });
         setLastSavedSnapshot(nextSnapshot);
 
@@ -1891,20 +2266,28 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             campaignType,
             summaryDraft,
             argsDraft: {
-              taskStartDelayHours,
-              taskDurationHours,
+              taskStartDelayHours: storedStartDelayHours,
+              taskDurationHours: storedDurationHours,
               maxAmountCkb,
               rewardCount,
               auxAmountCkb: shouldCollectRaffleTicketPrice ? raffleTicketPriceCkb : "0",
+              raffleSupportPoolPercent: shouldCollectRaffleTicketPrice ? raffleSupportPoolPercent : "0",
+              recurringSleepHours: campaignType === CampaignType.RecurringRaffle ? recurringSleepHours : "1",
+              winnerReductionPercent: campaignType === CampaignType.RecurringRaffle ? winnerReductionPercent : "50",
+              ...(shouldCollectRaffleTicketPrice && Number(maxAmountCkb) !== 0 ? { ticketsPerUser } : {}),
             },
             mountables: {
-              forms: formsMountable.enabled ? formsMountable : null,
-              lock: lockMountable.enabled ? lockMountable : null,
+              childFreight: childFreightMountableSnapshot.enabled ? childFreightMountableSnapshot : null,
+              forms: formsMountableSnapshot.enabled ? formsMountableSnapshot : null,
+              lock: lockMountableSnapshot.enabled ? lockMountableSnapshot : null,
+              apps: draftStatus === "draft" ? appMountablesSnapshot : appMountablesSnapshot.filter((entry) => entry.enabled),
             },
             socialMetadata: {
               mentions: allMentions,
             },
             giftDeliverable: giftDeliverableDraft,
+            raffleApproval: raffleApprovalDraft,
+            attachments,
             status: draftStatus,
             txHash: txHashValue,
             publishError,
@@ -1935,17 +2318,27 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
     },
     [
+      activeDraftRecord,
       activeDraftRecordId,
-      buildDraftPayload,
       allMentions,
+      attachments,
+      buildDraftPayload,
       campaignType,
       giftDeliverableDraft,
+      raffleApprovalDraft,
+      hasMountedHashtag,
       maxAmountCkb,
       raffleTicketPriceCkb,
+      raffleSupportPoolPercent,
+      recurringSleepHours,
       rewardCount,
       shouldCollectRaffleTicketPrice,
+      storedDurationHours,
+      storedStartDelayHours,
       taskDurationHours,
       taskStartDelayHours,
+      ticketsPerUser,
+      winnerReductionPercent,
       trimmedModalDescription,
       trimmedModalTitle,
     ]
@@ -2074,13 +2467,45 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     };
   }, []);
 
+  const clearMountedConfigs = useCallback(() => {
+    formsMountableRef.current = DEFAULT_FORMS_MOUNTABLE_CONFIG;
+    childFreightMountableRef.current = DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG;
+    lockMountableRef.current = DEFAULT_LOCK_MOUNTABLE_CONFIG;
+    appMountablesRef.current = [];
+    setFormsMountable(DEFAULT_FORMS_MOUNTABLE_CONFIG);
+    setChildFreightMountable(DEFAULT_CHILD_FREIGHT_MOUNTABLE_CONFIG);
+    setLockMountable(DEFAULT_LOCK_MOUNTABLE_CONFIG);
+    setAppMountables([]);
+    setFormsResponseAccessError("");
+    setIsVerifyingFormsResponseAccess(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isModal || hasMountedHashtag) return;
+
+    const hasStoredMountables = formsMountableRef.current.enabled
+      || childFreightMountableRef.current.enabled
+      || lockMountableRef.current.enabled
+      || appMountablesRef.current.length > 0;
+    if (hasStoredMountables) clearMountedConfigs();
+  }, [clearMountedConfigs, hasMountedHashtag, isModal]);
+
   const handleAdvanceToReview = useCallback(async (skipMountedSelection = false) => {
     if (!validateComposeConstraints()) {
       return;
     }
 
+    if (!hasMountedHashtag) {
+      clearMountedConfigs();
+    }
+
     if (!skipMountedSelection && hasMountedHashtag) {
       onMountableSelectionRequired?.();
+      return;
+    }
+
+    if (!skipMountedSelection && raffleApprovalEnabled && onApprovalSetupRequired) {
+      onApprovalSetupRequired();
       return;
     }
 
@@ -2108,7 +2533,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     } catch {
       setStatus("error");
     }
-  }, [formsMountable.enabled, hasMountedHashtag, hideMenus, lockMountable.enabled, onMountableSelectionRequired, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
+  }, [clearMountedConfigs, hasMountedHashtag, hideMenus, onMountableSelectionRequired, onApprovalSetupRequired, raffleApprovalEnabled, open, persistDraftRecord, signer, trimmedModalDescription, trimmedModalTitle, validateComposeConstraints]);
 
   const handleSaveDraftFromClose = useCallback(async () => {
     if (!hasDraftableChanges) {
@@ -2212,6 +2637,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     });
   }, []);
 
+  const handleUpdateChildFreightMountableConfig = useCallback((updates: Partial<ChildFreightMountableConfig>) => {
+    setChildFreightMountable((current) => {
+      const nextConfig = normalizeChildFreightMountableConfig({ ...current, ...updates });
+      childFreightMountableRef.current = nextConfig;
+      return nextConfig;
+    });
+  }, []);
+
   const handleUpdateLockMountableConfig = useCallback((updates: Partial<LockMountableConfig>) => {
     setLockMountable((current) => {
       const nextConfig = normalizeLockMountableConfig({
@@ -2223,37 +2656,78 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     });
   }, []);
 
+  const handleSetAppMountableConfigs = useCallback((mountables: AppMountableConfig[]) => {
+    const nextConfigs = normalizeAppMountableConfigs(mountables);
+    appMountablesRef.current = nextConfigs;
+    setAppMountables(nextConfigs);
+  }, []);
+
   useImperativeHandle(ref, () => ({
     hasDraftableChanges: () => hasDraftableChanges,
     saveDraftFromClose: handleSaveDraftFromClose,
     discardDraftSession: handleDiscardDraftSession,
     toggleDraftList: handleToggleDraftList,
     applyDraftSelection: handleApplyDraftSelection,
+    getRaffleApprovalSetup: () => ({
+      stage: campaignType === CampaignType.RecurringRaffle ? "on-commence" : raffleApprovalStage,
+      mode: giftApprovalMode,
+      threshold: giftApprovalThreshold,
+      approverCount: giftApproverUsers.length,
+      recurring: campaignType === CampaignType.RecurringRaffle,
+      mounted: hasMountedHashtag,
+    }),
+    updateRaffleApprovalSetup: (config) => {
+      setRaffleApprovalStage(config.recurring ? "on-commence" : config.stage);
+      setGiftApprovalMode(config.mode);
+      setGiftApprovalThreshold(config.threshold);
+    },
     getFormsMountableConfig: () => formsMountable,
+    getChildFreightMountableConfig: () => childFreightMountable,
     getLockMountableConfig: () => lockMountable,
+    getAppMountableConfigs: () => appMountables,
+    getAppMountableCampaignContext: () => currentAppMountableCampaignContext,
     setFormsMountableEnabled: handleSetFormsMountableEnabled,
+    setChildFreightMountableEnabled: (enabled) => handleUpdateChildFreightMountableConfig({ enabled }),
+    updateChildFreightMountableConfig: handleUpdateChildFreightMountableConfig,
     setLockMountableEnabled: handleSetLockMountableEnabled,
+    setAppMountableConfigs: handleSetAppMountableConfigs,
     updateFormsMountableConfig: handleUpdateFormsMountableConfig,
     updateLockMountableConfig: handleUpdateLockMountableConfig,
     persistCurrentDraft: async () => {
       await persistDraftRecord(currentDraftSummary, "draft");
     },
     advanceToReviewAfterMountableSelection: () => handleAdvanceToReview(true),
+    insertTagSuggestion,
+    insertReferenceQuote: (quote) => {
+      setModalDescription(quote);
+      setSummary(quote);
+      syncEditorsFromState(modalTitle, quote);
+      modalDescriptionRef.current?.focus();
+    },
   }), [
+    campaignType, raffleApprovalStage, giftApprovalMode, giftApprovalThreshold, giftApproverUsers.length, hasMountedHashtag,
+    appMountables,
+    currentAppMountableCampaignContext,
     currentDraftSummary,
     formsMountable,
+    childFreightMountable,
     handleAdvanceToReview,
     handleApplyDraftSelection,
     handleDiscardDraftSession,
     handleSaveDraftFromClose,
+    handleSetAppMountableConfigs,
     handleSetFormsMountableEnabled,
+    handleUpdateChildFreightMountableConfig,
     handleSetLockMountableEnabled,
     handleToggleDraftList,
     handleUpdateFormsMountableConfig,
     handleUpdateLockMountableConfig,
     hasDraftableChanges,
+    insertTagSuggestion,
     lockMountable,
+    modalTitle,
     persistDraftRecord,
+    syncEditorsFromState,
   ]);
 
   useEffect(() => {
@@ -2270,11 +2744,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     }
 
     onMountableSelectionStateChange?.({
+      childFreightSelected: childFreightMountable.enabled,
       hasMountedHashtag,
+      approvalSelected: raffleApprovalEnabled,
       formsSelected: formsMountable.enabled,
       lockSelected: lockMountable.enabled,
+      appMountablesSelected: appMountables.filter((entry) => entry.enabled).length,
     });
-  }, [formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, onMountableSelectionStateChange]);
+  }, [appMountables, childFreightMountable.enabled, childFreightMountable.title, formsMountable.enabled, hasMountedHashtag, isModal, lockMountable.enabled, raffleApprovalEnabled, onMountableSelectionStateChange]);
 
   const finalizePublishedRecordSync = useCallback(
     async (sync: PendingPublishedRecordSync) => {
@@ -2302,14 +2779,36 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [persistDraftRecord]
   );
 
+  const applyFreightCreateCost = async (txHash: string, campaignId: string) => {
+    if (!signer) throw new Error("Connect the creator wallet to finish publishing");
+    const address = await signer.getRecommendedAddress();
+    if (!address) throw new Error("Unable to resolve wallet address for FBARS update");
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const response = await fetch("/api/fbars/freight-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, txHash, campaignId }),
+      });
+      if (response.ok) return;
+      if (response.status === 409 && attempt < 29) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        continue;
+      }
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error ?? "Failed to apply freight creation FBARS cost");
+    }
+  };
+
   const handleRetryDraftSave = async () => {
     setStatus("idle");
     setErrorMsg("");
 
     try {
       if (pendingPublishedRecordSync) {
+        await applyFreightCreateCost(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.campaignId);
         await finalizePublishedRecordSync(pendingPublishedRecordSync);
-        onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage);
+        onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage, pendingPublishedRecordSync.campaignId);
         setStatus("success");
         return;
       }
@@ -2408,52 +2907,22 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
       attemptedOnchainPublish = true;
       const publishResult = await sendCreateCampaign(signer, {
+        raffleApproval: raffleApprovalDraft,
+        giftApproval: giftApprovalDraft,
+        giftDeliverable: giftDeliverableDraft,
         startDurationSecs: normalizedParams.startDurationSecs,
         taskDurationSecs: normalizedParams.taskDurationSecs,
         campaignType,
         maximumAmountCkb: normalizedParams.maximumAmountCkb,
         auxAmountCkb: normalizedParams.auxAmountCkb,
+        ticketsPerUser: normalizedParams.ticketsPerUser,
         rewardCount: normalizedParams.rewardCount,
+        supportPoolBps: normalizedParams.supportPoolBps,
         summary: summaryToPublish,
         randomnessHash,
+        sleepDurationSecs: normalizedParams.sleepDurationSecs,
+        winnerReductionBps: normalizedParams.winnerReductionBps,
       });
-
-      const creatorAddress = await signer.getRecommendedAddress();
-      if (!creatorAddress) {
-        throw new Error("Unable to resolve wallet address for FBARS update");
-      }
-      const nonceResponse = await fetch("/api/wallet/nonce", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ address: creatorAddress, purpose: "freight-create" }),
-      });
-      const noncePayload = await nonceResponse.json().catch(() => null);
-      if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
-        throw new Error(noncePayload?.error ?? "Failed to create freight FBARS nonce");
-      }
-      const signature = await signer.signMessage(noncePayload.nonce);
-      const freightFbarsResponse = await fetch("/api/fbars/freight-create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          address: creatorAddress,
-          nonce: noncePayload.nonce,
-          txHash: publishResult.txHash,
-          nonceSignature: {
-            signature: signature.signature,
-            identity: signature.identity,
-            signType: signature.signType,
-          },
-        }),
-      });
-      const freightFbarsPayload = await freightFbarsResponse.json().catch(() => null);
-      if (!freightFbarsResponse.ok) {
-        throw new Error(freightFbarsPayload?.error ?? "Failed to apply freight creation FBARS cost");
-      }
 
       if (isModal) {
         const draftRecordId = stagedDraftRecordId ?? activeDraftRecordId;
@@ -2470,10 +2939,15 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           chainCreatedAt: publishResult.chainCreatedAt,
           randomnessPreimage: randomnessPreimageHex,
         };
+      }
+
+      await applyFreightCreateCost(publishResult.txHash, publishResult.campaignId);
+
+      if (pendingSync) {
         await finalizePublishedRecordSync(pendingSync);
       }
 
-      onPublishSuccess?.(publishResult.txHash, randomnessPreimageHex);
+      onPublishSuccess?.(publishResult.txHash, randomnessPreimageHex, publishResult.campaignId);
       setStatus("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2481,7 +2955,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       if (pendingSync) {
         setPendingPublishedRecordSync(pendingSync);
         setDraftSaveStatus("error");
-        setDraftSaveError(`Campaign published on-chain, but saving the published record failed: ${message}`);
+        setDraftSaveError(`Campaign published on-chain, but finalizing it failed: ${message}`);
         setErrorMsg("");
         setStatus("error");
         return;
@@ -2514,65 +2988,69 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const renderModalArgsInputs = () => (
     <div className="create-review-args-grid">
-      <div className="create-review-arg-field">
-        <label className="create-review-arg-label">Start delay</label>
-        <div className="create-review-arg-control gap-2">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={String(startDelayParts.hours)}
-            onChange={(event) => handleStartDelayHoursChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">hrs</span>
-          <input
-            type="number"
-            min="0"
-            max="55"
-            step={TIMING_MINUTE_STEP}
-            value={String(startDelayParts.minutes)}
-            onChange={(event) => handleStartDelayMinutesChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">min</span>
+      {campaignType !== CampaignType.SimpleTask ? (
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Start delay</label>
+          <div className="create-review-arg-control gap-2">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={String(startDelayParts.hours)}
+              onChange={(event) => handleStartDelayHoursChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">hrs</span>
+            <input
+              type="number"
+              min="0"
+              max="55"
+              step={TIMING_MINUTE_STEP}
+              value={String(startDelayParts.minutes)}
+              onChange={(event) => handleStartDelayMinutesChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">min</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="create-review-arg-field">
-        <label className="create-review-arg-label">Duration</label>
-        <div className="create-review-arg-control gap-2">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={String(durationParts.hours)}
-            onChange={(event) => handleDurationHoursChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">hrs</span>
-          <input
-            type="number"
-            min={MIN_TASK_DURATION_MINUTES}
-            max="55"
-            step={TIMING_MINUTE_STEP}
-            value={String(durationParts.minutes)}
-            onChange={(event) => handleDurationMinutesChange(event.target.value)}
-            className="create-review-arg-input"
-          />
-          <span className="create-review-arg-unit">min</span>
+      {campaignType !== CampaignType.SimpleTask ? (
+        <div className="create-review-arg-field">
+          <label className="create-review-arg-label">Duration</label>
+          <div className="create-review-arg-control gap-2">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={String(durationParts.hours)}
+              onChange={(event) => handleDurationHoursChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">hrs</span>
+            <input
+              type="number"
+              min="0"
+              max="59"
+              step={TIMING_MINUTE_STEP}
+              value={String(durationParts.minutes)}
+              onChange={(event) => handleDurationMinutesChange(event.target.value)}
+              className="create-review-arg-input"
+            />
+            <span className="create-review-arg-unit">min</span>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="create-review-arg-field">
         <label className="create-review-arg-label">{shouldCollectRaffleTicketPrice ? "Number of tickets" : "Max deposit"}</label>
         <div className="create-review-arg-control">
           <input
             type="number"
-            min="1"
+            min={shouldCollectRaffleTicketPrice ? "0" : "1"}
             step="1"
             value={maxAmountCkb}
-            onChange={(event) => setMaxAmountCkb(event.target.value)}
+            onChange={(event) => shouldCollectRaffleTicketPrice ? handleTicketCountChange(event.target.value) : setMaxAmountCkb(event.target.value)}
             className="create-review-arg-input"
           />
           <span className="create-review-arg-unit">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
@@ -2595,30 +3073,87 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       </div>
 
       {shouldCollectRaffleTicketPrice ? (
-        <div className="create-review-arg-field">
-          <label className="create-review-arg-label">Ticket price</label>
-          <div className="create-review-arg-control">
-            <input
-              type="number"
-              min="1"
-              step="1"
-              value={raffleTicketPriceCkb}
-              onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
-              className="create-review-arg-input"
-            />
-            <span className="create-review-arg-unit">CKB</span>
+        <>
+          <div className="create-review-arg-field">
+            <label className="create-review-arg-label">Ticket price</label>
+            <div className="create-review-arg-control">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={raffleTicketPriceCkb}
+                onChange={(event) => setRaffleTicketPriceCkb(event.target.value)}
+                className="create-review-arg-input"
+              />
+              <span className="create-review-arg-unit">CKB</span>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="create-review-arg-field">
-          <label className="create-review-arg-label">Social</label>
-          <div className="create-review-social-control" aria-label="Social actions enabled">
-            <span>Like</span>
-            <span>Reply</span>
-            <span>Share</span>
+          <div className="create-review-arg-field">
+            <label className="create-review-arg-label">Tickets per user</label>
+            <div className="create-review-arg-control">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser}
+                onChange={(event) => setTicketsPerUser(event.target.value)}
+                disabled={Number(maxAmountCkb) === 0}
+                className="create-review-arg-input"
+              />
+              <span className="create-review-arg-unit">tickets</span>
+            </div>
           </div>
-        </div>
-      )}
+          <div className="create-review-arg-field">
+            <label className="create-review-arg-label">Support to pool</label>
+            <div className="create-review-arg-control">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={raffleSupportPoolPercent}
+                onChange={(event) => setRaffleSupportPoolPercent(event.target.value)}
+                className="create-review-arg-input"
+              />
+              <span className="create-review-arg-unit">%</span>
+            </div>
+          </div>
+          {campaignType === CampaignType.RecurringRaffle ? (
+            <>
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Sleep time</label>
+                <div className="create-review-arg-control">
+                  <input
+                    type="number"
+                    min="0.0167"
+                    max="8760"
+                    step="0.25"
+                    value={recurringSleepHours}
+                    onChange={(event) => setRecurringSleepHours(event.target.value)}
+                    className="create-review-arg-input"
+                  />
+                  <span className="create-review-arg-unit">hrs</span>
+                </div>
+              </div>
+              <div className="create-review-arg-field">
+                <label className="create-review-arg-label">Winner reduction</label>
+                <div className="create-review-arg-control">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={winnerReductionPercent}
+                    onChange={(event) => setWinnerReductionPercent(event.target.value)}
+                    className="create-review-arg-input"
+                  />
+                  <span className="create-review-arg-unit">%</span>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : null}
     </div>
   );
 
@@ -2648,7 +3183,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <p className="create-review-section-label">Saved drafts</p>
       </div>
 
-      {draftListError ? <p className="create-drafts-feedback create-drafts-feedback-error">{draftListError}</p> : null}
       {isDraftListLoading ? renderDraftListSkeleton() : null}
 
       {!isDraftListLoading && draftRecords.length > 0 ? (
@@ -2757,7 +3291,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               data-placeholder="description"
               role="textbox"
               aria-placeholder="description"
-              className="w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
+              className="create-modal-description-editor w-full flex-1 px-5 pt-2 pb-24 text-[1.05rem] leading-5 focus:outline-none focus:ring-0 theme-bg theme-fg whitespace-pre-wrap break-words overflow-y-auto"
               style={{
                 wordWrap: "break-word",
                 overflowWrap: "break-word",
@@ -2765,6 +3299,12 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 caretColor: "currentColor",
               }}
             />
+
+            {attachments.length > 0 ? (
+              <div className="create-modal-compose-attachments">
+                <CampaignAttachmentGrid attachments={attachments} editable onRemove={handleRemoveAttachment} />
+              </div>
+            ) : null}
 
             <div className="create-modal-counter create-modal-body-counter">
               {modalDescriptionChars}/{modalDescriptionMaxChars}
@@ -2826,52 +3366,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         )}
       </div>
 
-      {!showDraftsPane && allMentions.length > 0 && (
-        <div className="create-modal-mentions-row">
-          {allMentions.map((mention) => {
-            const isEditableMention = mentions.includes(mention);
-            return (
-              <div
-                key={mention}
-                className="flex items-center gap-2 px-3 py-1 theme-border theme-fg rounded-full text-xs font-medium"
-                style={{ backgroundColor: "var(--background)", opacity: 0.8 }}
-              >
-                <span>@{mention}</span>
-                {isEditableMention ? (
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMention(mention)}
-                    className="theme-fg opacity-70 hover:opacity-100 font-bold"
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {giftFeatureEnabled ? (
-        <div className="create-modal-gift-row">
-          <div className="create-modal-gift-card">
-            <p className="create-review-section-label">Gift roles</p>
-            <div className="create-modal-gift-groups">
-              <span>Approvers: {giftApproverUsers.length > 0 ? giftApproverUsers.map((entry) => entry.handle).join(", ") : "None"}</span>
-              <span>Claimants: {giftClaimantUsers.length > 0 ? giftClaimantUsers.map((entry) => entry.handle).join(", ") : "Open claim"}</span>
-              <span>Receive: {giftReceiverUsers.length > 0 ? giftReceiverUsers.map((entry) => entry.handle).join(", ") : "None yet"}</span>
-            </div>
-            {giftResolutionWarnings.length > 0 ? (
-              <div className="create-modal-gift-warnings">
-                {giftResolutionWarnings.map((warning) => (
-                  <p key={warning} className="create-modal-gift-warning">{warning}</p>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
       <div className="create-modal-constraints-row">
         <p className={`create-modal-constraints-text ${constraintsPassed && !showDraftsPane && !isDraftListLoading && !showNoDraftsMessage ? "create-modal-constraints-pass" : ""}`}>
           {composeHelperMessage}
@@ -2886,12 +3380,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         <div className="create-review-preview-card create-review-preview-card-main">
           <p className="create-review-section-label">Preview</p>
           {trimmedModalTitle.length > 0 && <h2 className="create-review-preview-title">{trimmedModalTitle}</h2>}
-          {formsMountable.enabled && formsMountable.formUrl.trim().length > 0 ? (
-            <p className="create-review-preview-body">Mounted form: {formsMountable.formUrl.trim()}</p>
-          ) : null}
-          {lockMountable.enabled && lockMountable.minimumFbars.trim().length > 0 ? (
-            <p className="create-review-preview-body">Mounted lock: {lockMountableSummary(lockMountable)}</p>
-          ) : null}
           {createPreviewLines.length > 0 ? (
             <div className="create-review-preview-content">
               {createPreviewLines.map((line, index) => {
@@ -2911,6 +3399,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           ) : (
             <p className="create-review-preview-body">No preview available yet.</p>
           )}
+          <CampaignAttachmentGrid attachments={attachments} />
           {(firstHashtag || otherHashtags.length > 0) && (
             <div className="create-review-tag-row">
               {firstHashtag && <span className="create-review-primary-tag">#{firstHashtag}</span>}
@@ -2919,6 +3408,37 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ))}
             </div>
           )}
+          {reviewMountedIcons.length > 0 ? (
+            <div className="create-review-mountable-icons" aria-label="Mounted apps">
+              {visibleReviewMountedIcons.map((mountable, index) => (
+                <span className={`create-review-mountable-icon create-mountable-option-icon-bg ${mountable.kind === "app" && mountable.logoUrl ? "create-mountable-option-logo-bg" : mountable.kind === "child-freight" ? "create-mountable-option-child-freight" : ""}`.trim()} data-tooltip={mountable.name} aria-label={mountable.name} key={mountable.key} style={{ zIndex: index + 1 }}>
+                  {mountable.kind === "app" && mountable.logoUrl ? (
+                    <Image src={mountable.logoUrl} alt="" width={38} height={38} unoptimized />
+                  ) : mountable.kind === "child-freight" ? (
+                    <GitBranchPlus size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "forms" ? (
+                    <Scroll size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "signable" ? (
+                    <Signature size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : mountable.kind === "rewardable" ? (
+                    <HandCoins size={18} strokeWidth={2} aria-hidden="true" />
+                  ) : (
+                    <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
+                  )}
+                </span>
+              ))}
+              {hiddenReviewMountedIconCount > 0 ? (
+                <span
+                  className="create-review-mountable-icon create-mountable-option-icon-bg create-review-mountable-icon-overflow"
+                  data-tooltip={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  aria-label={`${hiddenReviewMountedIconCount} more ${hiddenReviewMountedIconCount === 1 ? "mountable" : "mountables"}`}
+                  style={{ zIndex: visibleReviewMountedIcons.length + 1 }}
+                >
+                  +{hiddenReviewMountedIconCount}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="create-review-summary-card">
@@ -2966,9 +3486,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               {formsMountable.responseAccessVerifiedAt?.trim() ? (
                 <p className="create-review-gift-note">Verified at {formsMountable.responseAccessVerifiedAt.trim()}</p>
               ) : null}
-              {activeFormsResponseAccessError ? (
-                <p className="create-review-gift-warning">{activeFormsResponseAccessError}</p>
-              ) : null}
             </div>
             <div className="create-info-confirm-actions create-info-confirm-actions-tight">
               <button
@@ -2999,11 +3516,39 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           </div>
         ) : null}
 
+        {raffleApprovalDraft ? (
+          <div className="create-review-args-card">
+            <div className="create-review-card-heading-row">
+              <p className="create-review-section-label">Approval</p>
+              <button type="button" className="create-info-confirm-btn" onClick={onApprovalSetupRequired}>Edit</button>
+            </div>
+            <p className="create-review-preview-body">{raffleApprovalDraft.stage === "on-delivery" ? "On delivery" : "On commencement"} · {raffleApprovalDraft.required} of {giftApproverUsers.length} approvals</p>
+          </div>
+        ) : null}
+
+        {giftFeatureEnabled ? (
+          <div className="create-modal-gift-card">
+            <p className="create-review-section-label">Gift roles</p>
+            <div className="create-modal-gift-groups">
+              <span>Approvers: {giftApproverUsers.length > 0 ? giftApproverUsers.map((entry) => entry.handle).join(", ") : "None"}</span>
+              <span>Claimants: {giftClaimantUsers.length > 0 ? giftClaimantUsers.map((entry) => entry.handle).join(", ") : "Open claim"}</span>
+              <span>Receive: {giftReceiverUsers.length > 0 ? giftReceiverUsers.map((entry) => entry.handle).join(", ") : "None yet"}</span>
+            </div>
+            {giftResolutionWarnings.length > 0 ? (
+              <div className="create-modal-gift-warnings">
+                {giftResolutionWarnings.map((warning) => (
+                  <p key={warning} className="create-modal-gift-warning">{warning}</p>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {giftFeatureEnabled ? (
           <div className="create-review-args-card">
             <div className="create-review-card-heading-row">
               <p className="create-review-section-label">Gift delivery</p>
-              <span className="create-review-offchain-note">First-wave approvals and claims</span>
+              <span className="create-review-offchain-note">On-chain approvals and claim payouts</span>
             </div>
             <div className="create-review-gift-grid">
               <div className="create-review-arg-field">
@@ -3038,7 +3583,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
             </div>
             <div className="create-review-gift-summary">
               <p className="create-review-preview-body">Commencement: {giftApproverUsers.length > 0 ? `after start time and ${giftApprovalMode === "threshold" ? `${giftApprovalThreshold}/${giftApproverUsers.length}` : "all"} approvals` : "after start time"}.</p>
-              <p className="create-review-preview-body">Claiming: {isOpenGiftClaim ? "Anyone can claim after commencement." : `${giftClaimantUsers.map((entry) => entry.handle).join(", ")} can claim after commencement.`}</p>
+              <p className="create-review-preview-body">Claiming: {isOpenGiftClaim ? "One claim per wallet, until every allocation is claimed." : `${giftClaimantUsers.map((entry) => entry.handle).join(", ")} can each claim their fixed allocation once.`}</p>
               {giftPreviewState.preview?.allocations?.length ? (
                 <div className="create-review-gift-allocations">
                   {giftPreviewState.preview.allocations.map((allocation) => (
@@ -3051,7 +3596,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
               ) : giftPreviewState.preview?.perClaimAmountLabel ? (
                 <p className="create-review-preview-body">Each claim can take {giftPreviewState.preview.perClaimAmountLabel}.</p>
               ) : null}
-              {giftPreviewState.error ? <p className="create-review-gift-warning">{giftPreviewState.error}</p> : null}
               {giftResolutionWarnings.length > 0 ? giftResolutionWarnings.map((warning) => (
                 <p key={warning} className="create-review-gift-warning">{warning}</p>
               )) : null}
@@ -3094,23 +3638,30 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 </div>
               </div>
 
-              {activeModalError && (
-                isReviewStep ? (
-                  <div className="create-modal-constraints-row">
-                    <p className="create-modal-constraints-text text-red-500">An Error Occurred. Hover on info for more</p>
-                  </div>
-                ) : (
-                  <div
-                    className="create-modal-error-box theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2"
-                    style={{ bottom: mentions.length > 0 ? "7.6rem" : "3.2rem" }}
-                  >
-                    <p className="text-sm font-semibold text-red-500">Error</p>
-                    <p className="text-xs text-red-600 break-all">{activeModalError}</p>
-                  </div>
-                )
-              )}
-
               {(!showDraftsPane || isReviewStep) && (
+                <>
+                {!isReviewStep ? (
+                  <>
+                    <input
+                      ref={attachmentInputRef}
+                      className="create-modal-attachment-input"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      multiple
+                      onChange={(event) => void handleAttachPhotos(event.target.files)}
+                    />
+                    <button
+                      type="button"
+                      className="create-modal-attachment-btn"
+                      onClick={() => attachmentInputRef.current?.click()}
+                      disabled={isUploadingAttachments}
+                      aria-label="Attach photos"
+                      data-tooltip={`Attach photos (1 photo per 20 FBARS; ${Math.max(0, Math.floor((availableFbars ?? 0) / 20))} allowed)`}
+                    >
+                      {isUploadingAttachments ? <LoaderCircle className="create-modal-send-spinner" size={23} strokeWidth={2} aria-hidden="true" /> : <Paperclip size={24} strokeWidth={2} aria-hidden="true" />}
+                    </button>
+                  </>
+                ) : null}
                 <button
                   type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
                   disabled={
@@ -3144,20 +3695,20 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                         ? "Saving preview"
                         : draftSaveStatus === "error"
                           ? pendingPublishedRecordSync
-                            ? "Retry saving published record"
+                            ? "Retry finalizing published freight"
                             : "Retry saving preview"
                           : status === "pending"
                             ? "Publishing"
                             : "Publish campaign"
                       : "Next"
                   }
-                  title={
+                  data-tooltip={
                     isReviewStep
                       ? draftSaveStatus === "saving"
                         ? "Saving preview..."
                         : draftSaveStatus === "error"
                           ? pendingPublishedRecordSync
-                            ? "Retry saving published record"
+                            ? "Retry finalizing published freight"
                             : "Retry saving preview"
                           : status === "pending"
                             ? "Publishing..."
@@ -3175,6 +3726,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     <ArrowRight size={30} strokeWidth={2} aria-hidden="true" />
                   )}
                 </button>
+                </>
               )}
             </>
           ) : (
@@ -3184,58 +3736,58 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                   <button
                     type="button"
                     onClick={() => applyFormat("bold")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors font-bold text-sm theme-fg"
-                    title="Bold (Ctrl/Cmd+B)"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors font-bold text-sm theme-fg"
+                    data-tooltip="Bold (Ctrl/Cmd+B)"
                   >
                     B
                   </button>
                   <button
                     type="button"
                     onClick={() => applyFormat("italic")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors italic text-sm theme-fg"
-                    title="Italic (Ctrl/Cmd+I)"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors italic text-sm theme-fg"
+                    data-tooltip="Italic (Ctrl/Cmd+I)"
                   >
                     I
                   </button>
                   <button
                     type="button"
                     onClick={() => applyFormat("underline")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors underline text-sm theme-fg"
-                    title="Underline (Ctrl/Cmd+U)"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors underline text-sm theme-fg"
+                    data-tooltip="Underline (Ctrl/Cmd+U)"
                   >
                     U
                   </button>
-                  <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  <div className="w-px h-6 bg-gray-300 mx-1" />
                   <button
                     type="button"
                     onClick={() => applyFormat("insertUnorderedList")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm theme-fg"
-                    title="Bullet List"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors text-sm theme-fg"
+                    data-tooltip="Bullet List"
                   >
                     • List
                   </button>
                   <button
                     type="button"
                     onClick={() => applyFormat("insertOrderedList")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-sm theme-fg"
-                    title="Numbered List"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors text-sm theme-fg"
+                    data-tooltip="Numbered List"
                   >
                     1. List
                   </button>
-                  <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1" />
+                  <div className="w-px h-6 bg-gray-300 mx-1" />
                   <button
                     type="button"
                     onClick={() => applyFormat("strikeThrough")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors line-through text-sm theme-fg"
-                    title="Strikethrough"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors line-through text-sm theme-fg"
+                    data-tooltip="Strikethrough"
                   >
                     S
                   </button>
                   <button
                     type="button"
                     onClick={() => applyFormat("removeFormat")}
-                    className="px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors text-xs theme-fg"
-                    title="Clear Formatting"
+                    className="px-3 py-1.5 rounded hover:bg-gray-200 transition-colors text-xs theme-fg"
+                    data-tooltip="Clear Formatting"
                   >
                     ✕ Clear
                   </button>
@@ -3350,41 +3902,43 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                     <span className="font-medium">{summaryBytes}/{CREATE_TOTAL_MAX_CHARS} chars</span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold theme-fg">⏱️ Duration</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={String(durationParts.hours)}
-                          onChange={(event) => handleDurationHoursChange(event.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
-                        />
-                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
-                        <input
-                          type="number"
-                          min={MIN_TASK_DURATION_MINUTES}
-                          max="55"
-                          step={TIMING_MINUTE_STEP}
-                          value={String(durationParts.minutes)}
-                          onChange={(event) => handleDurationMinutesChange(event.target.value)}
-                          className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
-                        />
-                        <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">min</span>
+                  <div className={`grid gap-2 ${campaignType === CampaignType.SimpleTask ? "grid-cols-2" : "grid-cols-3"}`}>
+                    {campaignType !== CampaignType.SimpleTask ? (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold theme-fg">⏱️ Duration</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={String(durationParts.hours)}
+                            onChange={(event) => handleDurationHoursChange(event.target.value)}
+                            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+                          />
+                          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">hrs</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            step={TIMING_MINUTE_STEP}
+                            value={String(durationParts.minutes)}
+                            onChange={(event) => handleDurationMinutesChange(event.target.value)}
+                            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-orange-500"
+                          />
+                          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">min</span>
+                        </div>
                       </div>
-                    </div>
+                    ) : null}
 
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-semibold theme-fg">{shouldCollectRaffleTicketPrice ? "🎟️ Number of Tickets" : "💰 Max Deposit"}</label>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
-                          min="1"
+                          min={shouldCollectRaffleTicketPrice ? "0" : "1"}
                           step="1"
                           value={maxAmountCkb}
-                          onChange={(event) => setMaxAmountCkb(event.target.value)}
+                          onChange={(event) => shouldCollectRaffleTicketPrice ? handleTicketCountChange(event.target.value) : setMaxAmountCkb(event.target.value)}
                           className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-pink-500"
                         />
                         <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">{shouldCollectRaffleTicketPrice ? "tickets" : "CKB"}</span>
@@ -3406,15 +3960,47 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold theme-fg">💬 Social</label>
-                      <div className="flex items-center justify-center gap-1 theme-bg border-2 theme-border rounded-lg px-2 py-1">
-                        <span className="text-red-500 font-bold text-sm">❤️</span>
-                        <span className="text-green-500 font-bold text-sm">💬</span>
-                        <span className="text-orange-500 font-bold text-sm">🔄</span>
+                    {shouldCollectRaffleTicketPrice ? (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold theme-fg">🫶 Support to Pool</label>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="1"
+                            value={raffleSupportPoolPercent}
+                            onChange={(event) => setRaffleSupportPoolPercent(event.target.value)}
+                            className="flex-1 px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-sky-500"
+                          />
+                          <span className="text-xs theme-fg opacity-70 whitespace-nowrap font-medium">%</span>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-semibold theme-fg">💬 Social</label>
+                        <div className="flex items-center justify-center gap-1 theme-bg border-2 theme-border rounded-lg px-2 py-1">
+                          <span className="text-red-500 font-bold text-sm">❤️</span>
+                          <span className="text-green-500 font-bold text-sm">💬</span>
+                          <span className="text-orange-500 font-bold text-sm">🔄</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
+                  {shouldCollectRaffleTicketPrice ? (
+                    <div className="mt-2 flex flex-col gap-1">
+                      <label className="text-xs font-semibold theme-fg">Tickets per user</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={Number(maxAmountCkb) === 0 ? "1" : ticketsPerUser}
+                        onChange={(event) => setTicketsPerUser(event.target.value)}
+                        disabled={Number(maxAmountCkb) === 0}
+                        className="px-2 py-1 text-xs border-2 theme-input rounded-lg focus:outline-none focus:border-sky-500 disabled:opacity-50"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -3442,12 +4028,6 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 </div>
               )}
 
-              {status === "error" && (
-                <div className="w-full p-3 theme-bg border-2 border-red-500 rounded-xl flex flex-col gap-2">
-                  <p className="text-sm font-semibold text-red-500">Error</p>
-                  <p className="text-xs text-red-600 break-all">{errorMsg}</p>
-                </div>
-              )}
 
               <button
                 type="submit"

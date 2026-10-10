@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 
+import FreightTagRows from "@/app/_components/FreightTagRows";
 import CampaignDescriptionContent from "@/app/_components/CampaignDescriptionContent";
+import CampaignAttachmentGrid from "@/app/_components/CampaignAttachmentGrid";
 import type { CampaignRecord } from "@/app/_types/campaignRecords";
 import {
   buildDefaultHandle,
   decodeCreatedByAddress,
 } from "@/lib/campaignDisplay";
+import { compactDescriptionBlankLines } from "@/lib/campaignDescription";
+import { stripCampaignControlTags } from "@/lib/campaignTipping";
 import { stripGiftDirectiveMarkers } from "@/lib/giftDeliverables";
+import { stripFreightUserTags } from "@/lib/freightTags";
 import { decodeSummary } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
@@ -23,12 +28,7 @@ type CampaignDetailSurfaceProps = {
 };
 
 function sanitizeCampaignDescription(text: string) {
-  return text
-    .replace(/(^|\s)#(?:simpletask|fundedtask|crowdfunding|timedchallenge|raffle|mounted)\b/gi, "$1")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return stripCampaignControlTags(text);
 }
 
 export default function CampaignDetailSurface({
@@ -41,7 +41,9 @@ export default function CampaignDetailSurface({
   const summary = record.summaryDraft?.trim() || (campaign ? decodeSummary(campaign.data.summary) : "Untitled freight");
   const displayTitle = record.title?.trim() || summary;
   const rawDescription = record.description?.trim() || summary;
-  const displayDescription = sanitizeCampaignDescription(stripGiftDirectiveMarkers(rawDescription));
+  const displayDescription = compactDescriptionBlankLines(
+    sanitizeCampaignDescription(stripFreightUserTags(stripGiftDirectiveMarkers(rawDescription)))
+  );
   const descriptionLines = displayDescription.length > 0 ? displayDescription.split("\n") : [];
 
   return (
@@ -72,6 +74,14 @@ export default function CampaignDetailSurface({
           <div className="campaign-card-description campaign-card-description-detail">
             <CampaignDescriptionContent lines={descriptionLines} />
           </div>
+          <CampaignAttachmentGrid attachments={record.attachments ?? []} expandable />
+          <FreightTagRows
+            description={rawDescription}
+            mentions={record.socialMetadata?.mentions}
+            approvers={record.raffleApproval?.approvers ?? record.giftDeliverable?.approvers}
+            claimants={record.giftDeliverable?.claimants}
+            receivers={record.giftDeliverable?.receivers}
+          />
         </div>
       </div>
     </div>

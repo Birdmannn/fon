@@ -87,13 +87,38 @@
   animation: header-info-modal-reveal 620ms ease forwards;
 }
 
+.global-info-error-anchor {
+  position: fixed;
+  top: 4rem;
+  left: max(1rem, calc(50% - 21rem));
+  width: min(42rem, calc(100vw - 2rem));
+  z-index: 90;
+}
+
 .header-info-modal-header {
   flex-shrink: 0;
+}
+
+.header-info-modal-contract {
+  font-family: var(--font-geist-mono, ui-monospace), SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .header-info-modal-scroll-area {
   min-height: 0;
   overflow-y: auto;
+}
+
+.header-info-modal,
+.header-info-modal * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.header-info-modal::-webkit-scrollbar,
+.header-info-modal *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .header-info-modal-title-row {
@@ -210,4 +235,3 @@
     opacity: 0;
   }
 }
-

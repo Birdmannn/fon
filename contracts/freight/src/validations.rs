@@ -1,13 +1,69 @@
 use crate::errors::Error;
 use crate::types::{
-    CAMPAIGN_DATA_LEN, Campaign, PARTICIPANT_DATA_LEN, ParticipantData, ParticipantStatus,
+    CAMPAIGN_DATA_LEN, RECURRING_CAMPAIGN_DATA_LEN, Campaign, CampaignType,
+    PARTICIPANT_DATA_LEN, RECURRING_PARTICIPANT_DATA_LEN, ParticipantData, ParticipantStatus,
 };
-use crate::utils::{parse_campaign_data, parse_participant_data};
+use crate::utils::{parse_campaign_data, parse_participant_data, parse_recurring_participant_state};
 use alloc::vec::Vec;
 use ckb_std::ckb_constants::Source;
 use ckb_std::ckb_types::prelude::Entity;
+use ckb_std::ckb_types::packed::Script;
 use ckb_std::debug;
-use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_input};
+use ckb_std::high_level::{load_cell_capacity, load_cell_data, load_cell_lock, load_cell_type, load_input, load_script};
+
+pub fn validate_raffle_entry_count(
+    participant_address: &[u8; 20], campaign_created_by: &[u8; 20],
+    campaign_created_at: u64, campaign_type: CampaignType, ticket_price: u64,
+    expected: u64, recurring_round: Option<u64>,
+) -> Result<(), Error> {
+    let mut count = 0u64;
+    let mut i = 1;
+    while let Ok(data) = load_cell_data(i, Source::Output) {
+        let expected_len = if campaign_type == CampaignType::RecurringRaffle {
+            RECURRING_PARTICIPANT_DATA_LEN
+        } else {
+            PARTICIPANT_DATA_LEN
+        };
+        if data.len() == expected_len {
+            let participant = parse_participant_data(&data)?;
+            if &participant.campaign_created_by == campaign_created_by
+                && participant.campaign_created_at == campaign_created_at
+                && participant.campaign_type == campaign_type
+            {
+                if &participant.participant_address != participant_address
+                    || participant.status != ParticipantStatus::Verified
+                    || participant.deposited_amount != ticket_price
+                {
+                    return Err(Error::InvalidOperation);
+                }
+                if let Some(round) = recurring_round {
+                    let recurring = parse_recurring_participant_state(&data)?;
+                    if recurring.round != round || recurring.claimable_amount != 0 {
+                        return Err(Error::InvalidOperation);
+                    }
+                    let lock = load_cell_lock(i, Source::Output).map_err(|_| Error::InvalidCellData)?;
+                    let lock_args = lock.args().raw_data();
+                    let current_script = load_script().map_err(|_| Error::LoadScriptFailed)?;
+                    if lock.code_hash() != current_script.code_hash()
+                        || lock_args.len() != 49
+                        || lock_args[0] != 255
+                        || &lock_args[1..21] != campaign_created_by
+                        || lock_args[21..29] != campaign_created_at.to_le_bytes()
+                        || &lock_args[29..49] != participant_address
+                    {
+                        return Err(Error::InvalidOperation);
+                    }
+                }
+                count = count.checked_add(1).ok_or(Error::AmountMismatch)?;
+            }
+        }
+        i += 1;
+    }
+    if count != expected {
+        return Err(Error::InvalidOperation);
+    }
+    Ok(())
+}
 
 #[derive(Clone)]
 pub struct ParticipantEntry {
@@ -15,6 +71,116 @@ pub struct ParticipantEntry {
     pub input_capacity: u64,
     pub input_tx_hash: [u8; 32],
     pub input_index: u32,
+}
+
+#[derive(Clone)]
+pub struct RecurringParticipantEntry {
+    pub participant: ParticipantData,
+    pub recurring_round: u64,
+    pub claimable_amount: u64,
+    pub input_capacity: u64,
+    pub input_position: usize,
+    pub input_lock: Script,
+    pub input_tx_hash: [u8; 32],
+    pub input_index: u32,
+}
+
+pub fn collect_recurring_participants(
+    campaign_created_by: &[u8; 20],
+    campaign_created_at: u64,
+    round: u64,
+    required_status: ParticipantStatus,
+) -> Result<Vec<RecurringParticipantEntry>, Error> {
+    let mut participants = Vec::new();
+    let current_script = load_script().map_err(|_| Error::LoadScriptFailed)?;
+    let mut i = 1;
+    while let Ok(data) = load_cell_data(i, Source::Input) {
+        if data.len() == RECURRING_PARTICIPANT_DATA_LEN {
+            let input_lock = load_cell_lock(i, Source::Input).map_err(|_| Error::InvalidCellData)?;
+            let lock_args = input_lock.args().raw_data();
+            if input_lock.code_hash() != current_script.code_hash()
+                || lock_args.len() != 49
+                || lock_args[0] != 255
+            {
+                i += 1;
+                continue;
+            }
+            let participant = parse_participant_data(&data)?;
+            let recurring = parse_recurring_participant_state(&data)?;
+            if participant.campaign_created_by != *campaign_created_by
+                || participant.campaign_created_at != campaign_created_at
+                || participant.campaign_type != CampaignType::RecurringRaffle
+                || participant.status != required_status
+                || recurring.round != round
+                || lock_args[1..21] != participant.campaign_created_by
+                || lock_args[21..29] != participant.campaign_created_at.to_le_bytes()
+                || lock_args[29..49] != participant.participant_address
+            {
+                return Err(Error::CampaignDataMismatch);
+            }
+            let input = load_input(i, Source::Input).map_err(|_| Error::InvalidCellData)?;
+            let previous_output = input.previous_output();
+            let mut input_tx_hash = [0u8; 32];
+            input_tx_hash.copy_from_slice(previous_output.tx_hash().as_slice());
+            participants.push(RecurringParticipantEntry {
+                participant,
+                recurring_round: recurring.round,
+                claimable_amount: recurring.claimable_amount,
+                input_capacity: load_cell_capacity(i, Source::Input).map_err(|_| Error::InvalidCellData)?,
+                input_position: i,
+                input_lock,
+                input_tx_hash,
+                input_index: u32::from_le_bytes(previous_output.index().as_slice().try_into().unwrap()),
+            });
+        }
+        i += 1;
+    }
+    Ok(participants)
+}
+
+pub fn validate_recurring_draw_outputs(
+    ordered: &[RecurringParticipantEntry],
+    winner_count: usize,
+    round: u64,
+    reward_per_winner: u64,
+) -> Result<(), Error> {
+    for (index, entry) in ordered.iter().enumerate() {
+        let output_index = index + 1;
+        let data = load_cell_data(output_index, Source::Output).map_err(|_| Error::InvalidCellData)?;
+        if data.len() != RECURRING_PARTICIPANT_DATA_LEN {
+            return Err(Error::InvalidCellData);
+        }
+        let participant = parse_participant_data(&data)?;
+        let recurring = parse_recurring_participant_state(&data)?;
+        let expected_status = if index < winner_count { ParticipantStatus::Winner } else { ParticipantStatus::Eliminated };
+        let expected_claim = if index < winner_count { reward_per_winner } else { 0 };
+        if participant.campaign_created_by != entry.participant.campaign_created_by
+            || participant.campaign_created_at != entry.participant.campaign_created_at
+            || participant.campaign_type != entry.participant.campaign_type
+            || participant.participant_address != entry.participant.participant_address
+            || participant.joined_at != entry.participant.joined_at
+            || participant.deposited_amount != entry.participant.deposited_amount
+            || participant.status != expected_status
+            || recurring.round != round
+            || recurring.claimable_amount != expected_claim
+            || load_cell_capacity(output_index, Source::Output).map_err(|_| Error::InvalidCellData)? != entry.input_capacity
+            || load_cell_lock(output_index, Source::Output).map_err(|_| Error::InvalidCellData)? != entry.input_lock
+        {
+            return Err(Error::InvalidOperation);
+        }
+    }
+    if load_cell_data(ordered.len() + 1, Source::Output).is_ok() {
+        // Additional normal change outputs are allowed, but no additional
+        // recurring participant records may be minted by the draw.
+        let mut i = ordered.len() + 1;
+        while let Ok(data) = load_cell_data(i, Source::Output) {
+            if data.len() == RECURRING_PARTICIPANT_DATA_LEN {
+                return Err(Error::InvalidOperation);
+            }
+            i += 1;
+        }
+    }
+    Ok(())
 }
 
 /// Count non-campaign input cells that have PARTICIPANT_DATA_LEN bytes of data.
@@ -160,11 +326,17 @@ pub fn validate_batch_delivery_for_winners(
 }
 
 pub fn verify_campaign_tx(output_data: &[u8], expected_campaign: &Campaign) -> Result<bool, Error> {
-    if output_data.len() != CAMPAIGN_DATA_LEN {
+    let expected_len = if expected_campaign.campaign_type == CampaignType::RecurringRaffle {
+        RECURRING_CAMPAIGN_DATA_LEN
+    } else {
+        CAMPAIGN_DATA_LEN
+    };
+    let expected_len = expected_len + expected_campaign.approval.as_ref().map_or(0, |gate| gate.encoded_len()) + expected_campaign.gift.as_ref().map_or(0, |policy| policy.encoded_len());
+    if output_data.len() != expected_len {
         debug!(
             "Output data length {} does not match expected campaign data length {}",
             output_data.len(),
-            CAMPAIGN_DATA_LEN
+            expected_len
         );
         return Ok(false);
     }
@@ -186,6 +358,69 @@ pub fn validate_deposit_transfer(deposit_amount: u64) -> Result<(), Error> {
         .ok_or(Error::AmountMismatch)?;
 
     if campaign_output_capacity != expected_campaign_output {
+        return Err(Error::AmountMismatch);
+    }
+
+    Ok(())
+}
+
+pub fn validate_creator_tip_transfer(deposit_amount: u64, creator_address: &[u8; 20]) -> Result<(), Error> {
+    let campaign_input_capacity =
+        load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+    let campaign_output_capacity =
+        load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
+
+    if campaign_output_capacity != campaign_input_capacity {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_tip_type = load_cell_type(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_tip_type.is_some() {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_tip_lock = load_cell_lock(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    let creator_tip_lock_args = creator_tip_lock.args().raw_data();
+    if creator_tip_lock_args.len() < 20 || &creator_tip_lock_args[0..20] != creator_address {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_tip_capacity =
+        load_cell_capacity(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_tip_capacity != deposit_amount {
+        return Err(Error::AmountMismatch);
+    }
+
+    Ok(())
+}
+
+pub fn validate_creator_withdraw_transfer(withdraw_amount: u64, creator_address: &[u8; 20]) -> Result<(), Error> {
+    let campaign_input_capacity =
+        load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+    let campaign_output_capacity =
+        load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
+
+    let expected_campaign_output = campaign_input_capacity
+        .checked_sub(withdraw_amount)
+        .ok_or(Error::AmountMismatch)?;
+    if campaign_output_capacity != expected_campaign_output {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_withdraw_type = load_cell_type(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_withdraw_type.is_some() {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_withdraw_lock = load_cell_lock(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    let creator_withdraw_lock_args = creator_withdraw_lock.args().raw_data();
+    if creator_withdraw_lock_args.len() < 20 || &creator_withdraw_lock_args[0..20] != creator_address {
+        return Err(Error::AmountMismatch);
+    }
+
+    let creator_withdraw_capacity =
+        load_cell_capacity(1, Source::Output).map_err(|_| Error::InvalidCellData)?;
+    if creator_withdraw_capacity != withdraw_amount {
         return Err(Error::AmountMismatch);
     }
 

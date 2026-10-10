@@ -1,35 +1,96 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useShowInfoSuccess } from "@/app/_components/InfoErrorProvider";
+import { useUserProfile } from "@/app/_hooks/useUserProfile";
+import { markProfileAnalyticsDirty } from "@/app/_hooks/useProfileAnalytics";
+import { markProfileFreightsDirty } from "@/app/_hooks/useProfileFreights";
+import { markProfileTransactionsDirty } from "@/app/_hooks/useProfileTransactions";
 
-import { canAccessLockMountable, getLockMountableBypassFbars } from "@/app/_lib/lockMountable";
+import { canAccessLockMountable, getLockMountableThresholdFbars, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
 import type { CampaignComment, CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import type { SettlementModalData, SettlementRecipient } from "@/app/_types/settlement";
 import {
   buildDefaultHandle,
   buildDefaultUsername,
   decodeCreatedByAddress,
+  deriveCreatorWithdrawUiState,
   deriveRaffleSettlementUiState,
   formatCkbAmount,
+  formatWholeCkbAmount,
 } from "@/lib/campaignDisplay";
 import {
   computeGiftPreviewAllocations,
-  isGiftApprovalSatisfied,
-  isGiftClaimOpen,
   parseStoredGiftDeliverable,
 } from "@/lib/giftDeliverables";
-import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex, decodeSummary, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
+import { isOnChainGiftApprovalSatisfied, isOnChainGiftClaimOpen } from "@/lib/giftApproval";
+import { giftClaimSlot } from "@/lib/giftPolicy";
+import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
+import { raffleApprovalDeadlineMissed, raffleApprovalsSatisfied } from "@/lib/raffleApproval";
+import { CampaignStatus, CampaignType, ParticipantStatus } from "@/lib/contract";
+import {
+  bytesToHex,
+  computeRaffleRewardPool,
+  computeRaffleSupportPoolContribution,
+  decodeSummary,
+  decodeCampaignData,
+  hasSplitSupportAccounting,
+  hexToBytes,
+  lockScriptToAddressBytes,
+} from "@/lib/encoding";
 import { copyText } from "@/lib/clipboard";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId, normalizeHash } from "@/lib/campaignIdentity";
+import { deriveCampaignSupportState } from "@/lib/campaignTipping";
 import {
   fetchParticipants,
   previewDeterministicWinners,
+  sendClaimRecurringRaffle,
+  sendGiftClaim,
+  sendDrawRecurringRaffle,
+  sendRolloverRecurringRaffle,
+  sendReclaimRecurringParticipant,
   sendBatchDeliver,
-  sendDeposit,
+  sendCreatorTipShannons,
+  sendCreatorWithdraw,
+  sendDepositShannons,
   type CampaignCell,
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
+
+const pendingWinRequests = new Set<string>();
+
+async function postPendingWin(key: string, url: string, body: Record<string, unknown>) {
+  if (pendingWinRequests.has(key)) return null;
+  pendingWinRequests.add(key);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) window.localStorage.removeItem(key);
+    return response;
+  } finally {
+    pendingWinRequests.delete(key);
+  }
+}
+
+function parseOptionalBigInt(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    return BigInt(normalized);
+  } catch {
+    return null;
+  }
+}
 
 async function hasSettlementCreatorPermission(
   signer: ccc.Signer | null,
@@ -70,6 +131,7 @@ type UseCampaignCardStateArgs = {
   signer: ccc.Signer | null;
   client: ccc.Client;
   currentViewerFbars?: number | null;
+  creatorCurrentFbars?: number | null;
   currentWalletAddress: string | null;
   onCommentDiscardRequest: (cardId: string) => void;
   commentDiscardDecision: { cardId: string; discard: boolean } | null;
@@ -81,7 +143,15 @@ type UseCampaignCardStateArgs = {
     settledParticipantCount?: string | null,
     settledRecipients?: CampaignRecord["settledRecipients"]
   ) => void;
+  onWithdrawalCompleted: (
+    campaignId: string,
+    withdrawalTxHash: string,
+    withdrawnAt: string,
+    withdrawnByAddress: string,
+    withdrawnAmountShannons: string,
+  ) => void;
   onSettlementInfoRequest: (data: SettlementModalData) => void;
+  persistentCommentComposer?: boolean;
 };
 
 export function useCampaignCardState({
@@ -91,53 +161,123 @@ export function useCampaignCardState({
   signer,
   client,
   currentViewerFbars,
+  creatorCurrentFbars,
   currentWalletAddress,
   onCommentDiscardRequest,
   commentDiscardDecision,
   onSettlementCompleted,
+  onWithdrawalCompleted,
   onSettlementInfoRequest,
+  persistentCommentComposer = false,
 }: UseCampaignCardStateArgs) {
   const { data, outPoint } = c;
+  const { refreshUserProfile } = useUserProfile(signer);
   const cardId = getCampaignStableId(c);
-  const maxCkb = formatCkbAmount(data.maximumAmount);
-  const depositedCkb = formatCkbAmount(data.currentDeposits);
-  const isRaffleCampaign = data.campaignType === 4;
+  const isRecurringRaffle = data.campaignType === CampaignType.RecurringRaffle;
+  const isRaffleCampaign = data.campaignType === CampaignType.Raffle || isRecurringRaffle;
+
+  useEffect(() => {
+    if (!record?._id || !isRaffleCampaign) return;
+    const retry = () => {
+      try {
+        const prefix = `fon:pending-win:${record._id}:`;
+        for (let index = 0; index < window.localStorage.length; index += 1) {
+          const key = window.localStorage.key(index);
+          if (!key?.startsWith(prefix)) continue;
+          try {
+            const pending = JSON.parse(window.localStorage.getItem(key) ?? "null") as {
+              url?: unknown;
+              body?: unknown;
+            } | null;
+            if (typeof pending?.url === "string" && pending.body && typeof pending.body === "object") {
+              void postPendingWin(key, pending.url, pending.body as Record<string, unknown>).catch(() => undefined);
+            }
+          } catch {
+            window.localStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // Some browsers disable storage; the initial award request still runs.
+      }
+    };
+    retry();
+    const interval = window.setInterval(retry, 20_000);
+    return () => window.clearInterval(interval);
+  }, [record?._id, isRaffleCampaign]);
   const ticketPriceShannons = data.auxAmount > 0n ? data.auxAmount : 0n;
-  const totalTickets = isRaffleCampaign && ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : 0n;
-  const remainingDepositCapacity = data.maximumAmount > data.currentDeposits ? data.maximumAmount - data.currentDeposits : 0n;
+  const totalTickets = isRaffleCampaign
+    ? ticketPriceShannons > 0n ? data.maximumAmount / ticketPriceShannons : data.maximumAmount
+    : 0n;
   const onchainSummary = decodeSummary(data.summary);
   const creatorAddress = record?.creatorAddress || decodeCreatedByAddress(c);
   const creatorHandle = record?.creatorHandle || buildDefaultHandle(creatorAddress);
   const displayTitle = record?.title?.trim() || onchainSummary;
   const displayDescription = record?.description?.trim() || onchainSummary;
+  const supportState = deriveCampaignSupportState({
+    campaignType: data.campaignType,
+    currentDeposits: data.currentDeposits,
+    description: record?.description?.trim() || onchainSummary,
+  });
   const mentions = record?.socialMetadata?.mentions ?? [];
   const rewardCountValue = Number(data.rewardCount);
-  const giftDeliverable = parseStoredGiftDeliverable(record?.giftDeliverable);
-  const giftPreview = computeGiftPreviewAllocations({
+  const storedGiftDeliverable = parseStoredGiftDeliverable(record?.giftDeliverable);
+  const giftDeliverable = data.gift ? { ...storedGiftDeliverable, enabled: true } : storedGiftDeliverable;
+  const metadataGiftPreview = computeGiftPreviewAllocations({
     claimants: giftDeliverable.claimants,
     maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
     rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
     ratioEntries: giftDeliverable.ratioEntries,
     splitMode: giftDeliverable.splitMode,
   });
-  const giftApprovalSatisfied = isGiftApprovalSatisfied(giftDeliverable);
-  const giftClaimOpen = isGiftClaimOpen({
-    chainCreatedAt: record?.chainCreatedAt ?? getCampaignChainCreatedAt(c),
-    taskStartDelayHours: record?.argsDraft?.taskStartDelayHours ?? String(Number(data.startDurationSecs) / 3600),
-    giftDeliverable,
-  });
-  const hasReachedMaxAmount = remainingDepositCapacity <= 0n;
-  const isCampaignInactive = displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled;
+  const giftPreview = data.gift ? {
+    ...metadataGiftPreview,
+    error: null,
+    openClaim: data.gift.open,
+    claimSlotCount: data.gift.slots.length,
+    perClaimAmountLabel: data.gift.open ? `${formatCkbAmount(data.gift.slots.find((slot) => !slot.claimed)?.amount ?? 0n)} CKB` : null,
+    allocations: data.gift.slots.map((slot, index) => ({ handle: storedGiftDeliverable.claimants[index]?.handle ?? `Claim ${index + 1}`, amountLabel: `${formatCkbAmount(slot.amount)} CKB`, amountShannons: slot.amount.toString(), units: null })),
+  } : metadataGiftPreview;
+  const giftApprovalSatisfied = isOnChainGiftApprovalSatisfied(giftDeliverable, data.approval);
+  const giftApprovedCount = data.approval?.stage === "gift-commence" ? data.approval.approvers.filter((entry) => entry.approved).length : 0;
+  const giftClaimOpen = isOnChainGiftClaimOpen(data, giftDeliverable);
+  const raffleApprovalFailed = raffleApprovalDeadlineMissed(data);
+  const raffleCommencementPending = data.approval?.stage === "on-commence" && !raffleApprovalsSatisfied(data.approval);
+  const raffleDeliveryPending = data.approval?.stage === "on-delivery" && !raffleApprovalsSatisfied(data.approval);
+  const isCampaignInactive = raffleApprovalFailed || displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Cancelled || displayStatus === CampaignStatus.Finished;
   const hasNotStartedRaffle = isRaffleCampaign && displayStatus === CampaignStatus.Created;
+  const chainSoldTickets = ticketPriceShannons > 0n
+    ? data.ticketSalesTotal / ticketPriceShannons
+    : data.ticketSalesTotal;
+  const recordedSoldTickets = isRecurringRaffle ? null : parseOptionalBigInt(record?.liveSoldTicketCount);
+  const liveSoldTickets = recordedSoldTickets !== null && recordedSoldTickets > chainSoldTickets
+    ? recordedSoldTickets : chainSoldTickets;
   const settlementUiState = deriveRaffleSettlementUiState({
     campaign: c,
     displayStatus,
     settlementTxHash: record?.settlementTxHash ?? null,
     soldTicketCount: record?.soldTicketCount ?? null,
+    liveSoldTickets,
+  });
+  const creatorWithdrawUiState = deriveCreatorWithdrawUiState({
+    campaign: c,
+    displayStatus,
+    withdrawalTxHash: record?.withdrawalTxHash ?? null,
   });
   const soldTickets = settlementUiState.soldTickets;
-  const remainingTickets = totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
-  const hasNoRemainingTickets = isRaffleCampaign && remainingTickets <= 0n;
+  const hasSplitSupport = hasSplitSupportAccounting(data);
+  const raffleTicketPoolShannons = isRaffleCampaign
+    ? soldTickets * ticketPriceShannons
+    : 0n;
+  const supportDisplayShannons = isRaffleCampaign
+    ? (hasSplitSupport
+        ? data.creatorSupportTotal
+        : (data.currentDeposits > raffleTicketPoolShannons ? data.currentDeposits - raffleTicketPoolShannons : 0n))
+    : data.currentDeposits;
+  const supportDisplayCkb = formatWholeCkbAmount(supportDisplayShannons);
+  const supportPoolPercent = record?.argsDraft?.raffleSupportPoolPercent ?? (hasSplitSupport ? String(Number(data.supportPoolBps / 100n)) : "0");
+  const remainingTickets = isRaffleCampaign && totalTickets === 0n
+    ? -1n : totalTickets > soldTickets ? totalTickets - soldTickets : 0n;
+  const hasNoRemainingTickets = isRaffleCampaign && totalTickets > 0n && remainingTickets <= 0n;
   const initialComments = useMemo<CampaignComment[]>(() => (
     Array.isArray(record?.socialMetadata?.comments)
       ? record.socialMetadata.comments.filter((value): value is CampaignComment => !!value && typeof value === "object" && typeof (value as { text?: unknown }).text === "string")
@@ -154,25 +294,24 @@ export function useCampaignCardState({
       : []
   ), [record?.socialMetadata?.resharedByAddresses]);
   const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
+  const isCreatorViewer = normalizedCurrentWalletAddress.length > 0
+    && normalizeHash(creatorAddress) === normalizedCurrentWalletAddress;
   const lockMountable = record?.mountables?.lock ?? null;
-  const lockBypassFbars = getLockMountableBypassFbars(lockMountable);
-  const isLockedForInteractions = lockBypassFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars);
-  const lockAccessMessage = lockBypassFbars === null ? "This freight is locked." : `Need ${lockBypassFbars} FBARS to bypass this lock`;
-  const canGiftApprove = Boolean(
-    normalizedCurrentWalletAddress
-    && giftDeliverable.enabled
-    && !giftApprovalSatisfied
-    && giftDeliverable.approvers.some((entry) => normalizeHash(entry.address) === normalizedCurrentWalletAddress),
-  );
-  const canGiftClaim = Boolean(
-    normalizedCurrentWalletAddress
-    && giftDeliverable.enabled
-    && giftClaimOpen
-    && (
-      giftDeliverable.claimants.length === 0
-      || giftDeliverable.claimants.some((entry) => normalizeHash(entry.address) === normalizedCurrentWalletAddress)
-    ),
-  );
+  const lockThresholdFbars = getLockMountableThresholdFbars(lockMountable);
+  const isLockedForInteractions = raffleApprovalFailed || lockThresholdFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars, creatorCurrentFbars);
+  const lockAccessMessage = lockMountableAccessMessage(lockMountable, creatorCurrentFbars);
+  const [giftWalletHash, setGiftWalletHash] = useState<Uint8Array | null>(null);
+  const [giftClaimBusy, setGiftClaimBusy] = useState(false);
+  const showInfoSuccess = useShowInfoSuccess();
+  useEffect(() => {
+    let cancelled = false;
+    setGiftWalletHash(null);
+    if (signer && data.gift) void signer.getRecommendedAddressObj().then((address) => {
+      if (!cancelled) setGiftWalletHash(hexToBytes(address.script.hash()));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [signer, data.gift]);
+  const canGiftClaim = Boolean(!giftClaimBusy && giftClaimOpen && data.gift && giftWalletHash && giftClaimSlot(data.gift, giftWalletHash) >= 0);
   const [likes, setLikes] = useState(record?.socialMetadata?.likeCount ?? 0);
   const [likedByAddresses, setLikedByAddresses] = useState<string[]>(initialLikedByAddresses);
   const [bookmarks, setBookmarks] = useState(record?.socialMetadata?.bookmarkCount ?? 0);
@@ -180,26 +319,24 @@ export function useCampaignCardState({
   const [reshares, setReshares] = useState(record?.socialMetadata?.reshareCount ?? 0);
   const [resharedByAddresses, setResharedByAddresses] = useState<string[]>(initialResharedByAddresses);
   const [userBookmarked, setUserBookmarked] = useState(false);
-  const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(false);
+  const [isCommentComposerOpen, setIsCommentComposerOpen] = useState(persistentCommentComposer);
   const [commentDraft, setCommentDraft] = useState("");
   const [isSavingLike, setIsSavingLike] = useState(false);
   const [isSavingComment, setIsSavingComment] = useState(false);
   const [isSavingReshare, setIsSavingReshare] = useState(false);
   const [commentError, setCommentError] = useState("");
   const [actionFeedback, setActionFeedback] = useState<{
-    source: "like" | "reshare";
+    source: "like" | "reshare" | "withdraw";
     tone: "success" | "error";
     message: string;
   } | null>(null);
   const commentComposerRef = useRef<HTMLDivElement>(null);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const actionFeedbackTimerRef = useRef<number | null>(null);
-  const [showDepositModal, setShowDepositModal] = useState(false);
-  const [depositAmount, setDepositAmount] = useState("");
-  const [isDepositing, setIsDepositing] = useState(false);
+  const [isWithdrawing, setIsWithdrawing] = useState(false);
 
   const showActionFeedback = (
-    source: "like" | "reshare",
+    source: "like" | "reshare" | "withdraw",
     tone: "success" | "error",
     message: string
   ) => {
@@ -215,15 +352,32 @@ export function useCampaignCardState({
   };
 
   const isConnected = !!signer;
-  const isPurchaseDisabled = !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasReachedMaxAmount || hasNoRemainingTickets;
+  const isSupportLocked = isLockedForInteractions && c.data.campaignType !== CampaignType.SimpleTask;
+  const isSupportDisabled = raffleCommencementPending || !isConnected || isSupportLocked || isCampaignInactive || (isRecurringRaffle && displayStatus !== CampaignStatus.Active && displayStatus !== CampaignStatus.Created) || !supportState.supportEnabled;
+  const isPurchaseDisabled = raffleCommencementPending || !isConnected || isLockedForInteractions || isCampaignInactive || hasNotStartedRaffle || hasNoRemainingTickets || (isRecurringRaffle && displayStatus !== CampaignStatus.Active);
   const comments = commentList.length;
   const userLiked = normalizedCurrentWalletAddress.length > 0 && likedByAddresses.includes(normalizedCurrentWalletAddress);
   const userReshared = normalizedCurrentWalletAddress.length > 0 && resharedByAddresses.includes(normalizedCurrentWalletAddress);
   const userCommented = normalizedCurrentWalletAddress.length > 0
     && commentList.some((comment) => normalizeHash(comment.creatorAddress) === normalizedCurrentWalletAddress);
   const hasSettledRewards = settlementUiState.hasSettledRewards;
-  const shouldGlowSettlement = settlementUiState.shouldGlowSettlement;
-  const showSettlementAction = settlementUiState.showSettlementAction;
+  const recurringRoundEndsAt = Number(data.roundStartedAt ?? data.createdAt) + Number(data.taskDurationSecs) * 1000;
+  const recurringSleepEndsAt = recurringRoundEndsAt + Number(data.sleepDurationSecs ?? 0n) * 1000;
+  const shouldGlowSettlement = isRecurringRaffle
+    ? (displayStatus === CampaignStatus.Sleeping || (displayStatus === CampaignStatus.Active && Date.now() >= recurringRoundEndsAt))
+    : settlementUiState.shouldGlowSettlement;
+  const showSettlementAction = !raffleApprovalFailed && !raffleCommencementPending && !raffleDeliveryPending && (isRecurringRaffle
+    ? (displayStatus === CampaignStatus.Active || displayStatus === CampaignStatus.Sleeping)
+    : settlementUiState.showSettlementAction);
+  const recurringActionLabel = !isRecurringRaffle
+    ? null
+    : displayStatus === CampaignStatus.Active
+      ? (Date.now() >= recurringRoundEndsAt ? "Draw recurring raffle round" : "Recurring raffle actions")
+      : Date.now() > recurringSleepEndsAt
+        ? ((data.roundWinnerCount ?? 0n) === 1n ? "Finish recurring raffle" : "Start next raffle round")
+        : "Cash out recurring raffle reward";
+  const showCreatorWithdrawAction = (giftApprovalSatisfied || data.status === CampaignStatus.Cancelled) && creatorWithdrawUiState.canWithdraw && isCreatorViewer && (!raffleApprovalFailed || data.status === CampaignStatus.Cancelled) && (!raffleDeliveryPending || data.status === CampaignStatus.Cancelled);
+  const creatorWithdrawAmountCkb = formatWholeCkbAmount(creatorWithdrawUiState.withdrawableAmount);
 
   useEffect(() => {
     setLikes(record?.socialMetadata?.likeCount ?? 0);
@@ -268,6 +422,9 @@ export function useCampaignCardState({
       maxAmountCkb: record?.argsDraft?.maxAmountCkb ?? formatCkbAmount(data.maximumAmount),
       auxAmountCkb: record?.argsDraft?.auxAmountCkb ?? formatCkbAmount(data.auxAmount),
       rewardCount: record?.argsDraft?.rewardCount ?? String(rewardCountValue),
+      raffleSupportPoolPercent: supportPoolPercent,
+      recurringSleepHours: record?.argsDraft?.recurringSleepHours ?? String(Number(data.sleepDurationSecs ?? 3_600n) / 3600),
+      winnerReductionPercent: record?.argsDraft?.winnerReductionPercent ?? String(Number((data.winnerReductionBps ?? 5_000n) / 100n)),
     },
     socialMetadata: {
       mentions,
@@ -295,8 +452,13 @@ export function useCampaignCardState({
     settledAt: record?.settledAt ?? null,
     settledByAddress: record?.settledByAddress ?? null,
     soldTicketCount: record?.soldTicketCount ?? null,
+    liveSoldTicketCount: record?.liveSoldTicketCount ?? null,
     settledParticipantCount: record?.settledParticipantCount ?? null,
     settledRecipients: record?.settledRecipients ?? null,
+    withdrawalTxHash: record?.withdrawalTxHash ?? null,
+    withdrawnAt: record?.withdrawnAt ?? null,
+    withdrawnByAddress: record?.withdrawnByAddress ?? null,
+    withdrawnAmountShannons: record?.withdrawnAmountShannons ?? null,
     mountables: record?.mountables,
   });
 
@@ -349,6 +511,7 @@ export function useCampaignCardState({
   }, [cardId, commentDiscardDecision]);
 
   const handleLike = async () => {
+    if (raffleApprovalFailed) return;
     if (!isConnected || isSavingLike) {
       return;
     }
@@ -428,12 +591,14 @@ export function useCampaignCardState({
   };
 
   const handleBookmark = () => {
+    if (raffleApprovalFailed) return;
     if (!isConnected) return;
     setUserBookmarked(!userBookmarked);
     setBookmarks((prev) => (userBookmarked ? prev - 1 : prev + 1));
   };
 
   const handleComment = () => {
+    if (raffleApprovalFailed) return;
     if (!isConnected) return;
     if (isLockedForInteractions) {
       setCommentError(lockAccessMessage);
@@ -445,7 +610,7 @@ export function useCampaignCardState({
   };
 
   useEffect(() => {
-    if (!isCommentComposerOpen) {
+    if (!isCommentComposerOpen || persistentCommentComposer) {
       return;
     }
 
@@ -475,9 +640,10 @@ export function useCampaignCardState({
     return () => {
       document.removeEventListener("mousedown", handleOutsidePointerDown);
     };
-  }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest]);
+  }, [cardId, commentDraft, isCommentComposerOpen, onCommentDiscardRequest, persistentCommentComposer]);
 
   const handleSubmitComment = async () => {
+    if (raffleApprovalFailed) return;
     const nextCommentText = commentDraft.trim();
     if (!nextCommentText) {
       setCommentError("Comment cannot be empty");
@@ -552,7 +718,7 @@ export function useCampaignCardState({
       if (commentInputRef.current) {
         commentInputRef.current.style.height = "32px";
       }
-      setIsCommentComposerOpen(false);
+      if (!persistentCommentComposer) setIsCommentComposerOpen(false);
     } catch (error) {
       setCommentError(error instanceof Error ? error.message : "Failed to save comment");
     } finally {
@@ -561,7 +727,8 @@ export function useCampaignCardState({
   };
 
   const handleReshare = async () => {
-    const freightUrl = `${window.location.origin}/campaign/${getCampaignStableId(c)}`;
+    if (raffleApprovalFailed) return;
+    const freightUrl = `${window.location.origin}/freight/${getCampaignStableId(c)}`;
 
     try {
       await copyText(freightUrl);
@@ -637,137 +804,151 @@ export function useCampaignCardState({
     }
   };
 
-  const handleDepositClick = () => {
-    if (isPurchaseDisabled) return;
-    setShowDepositModal(true);
-  };
+  const handleDepositSubmit = async (depositAmount: string) => {
+    if (!signer) throw new Error("Connect your wallet first");
+    if (isSupportDisabled) throw new Error("Support is unavailable for this freight");
+    await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
 
-  const handleDepositSubmit = async (e: { preventDefault: () => void }) => {
-    e.preventDefault();
-    if (!signer || !depositAmount || isPurchaseDisabled) return;
-
-    const parsedDepositAmount = Number.parseFloat(depositAmount);
+    const parsedDepositAmount = Number(depositAmount.trim());
     if (!Number.isFinite(parsedDepositAmount) || parsedDepositAmount <= 0) {
-      alert("Please enter a valid amount");
-      return;
+      throw new Error("Enter a valid amount");
     }
 
     const amountShannons = BigInt(Math.floor(parsedDepositAmount * 100_000_000));
-    const amountCkb = amountShannons / 100_000_000n;
-    if (amountCkb <= 0n) {
-      alert("Please enter at least 1 CKB");
-      return;
+    if (amountShannons <= 0n) {
+      throw new Error("Enter at least 0.01 CKB");
     }
 
-    const maxAmount = data.maximumAmount - data.currentDeposits;
-    if (amountShannons > maxAmount) {
-      alert(`Maximum deposit available: ${(Number(maxAmount) / 1e8).toFixed(2)} CKB`);
-      return;
-    }
+    const txHash = supportState.supportMode === "direct_creator"
+      ? await sendCreatorTipShannons(signer, c, amountShannons, record?.creatorAddress)
+      : await sendDepositShannons(signer, c, amountShannons);
+    await fetch("/api/campaign-deposits", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountShannons: amountShannons.toString(),
+        campaignId: getCampaignStableId(c),
+        campaignRecordId: record?._id ?? null,
+        depositedAt: new Date().toISOString(),
+        depositorAddress: await signer.getRecommendedAddress(),
+        kind: supportState.depositKind,
+        supportMode: supportState.supportMode,
+        txHash,
+      }),
+    }).catch(() => {
+      // Non-fatal — transaction history can miss this row, but the on-chain deposit still succeeded.
+    });
 
-    setIsDepositing(true);
-    try {
-      const txHash = await sendDeposit(signer, c, amountCkb);
-      await fetch("/api/campaign-deposits", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amountShannons: amountShannons.toString(),
-          campaignId: getCampaignStableId(c),
-          campaignRecordId: record?._id ?? null,
-          depositedAt: new Date().toISOString(),
-          depositorAddress: await signer.getRecommendedAddress(),
-          txHash,
-        }),
-      }).catch(() => {
-        // Non-fatal — transaction history can miss this row, but the on-chain deposit still succeeded.
-      });
-
-      const signed = await withSignedNonce("deposit");
+    const signed = supportState.supportMode === "direct_creator" ? null : await withSignedNonce("deposit");
+    for (let attempt = 0; attempt < 30; attempt += 1) {
       const depositResponse = await fetch("/api/fbars/deposit", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...signed,
+          address: await signer.getRecommendedAddress(),
           recordId: record?._id,
           txHash,
-          amountCkb: Number(amountCkb),
+          amountCkb: Number(amountShannons) / 1e8,
+          amountShannons: amountShannons.toString(),
+          kind: supportState.depositKind,
+          supportMode: supportState.supportMode,
         }),
       });
+      if (depositResponse.ok) break;
+      if (supportState.supportMode === "direct_creator" && depositResponse.status === 409 && attempt < 29) {
+        await new Promise((resolve) => setTimeout(resolve, 2_000));
+        continue;
+      }
       const depositPayload = await depositResponse.json().catch(() => null);
-      if (!depositResponse.ok) {
-        throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
-      }
-
-      alert(`Deposit sent! Tx: ${txHash}`);
-      setShowDepositModal(false);
-      setDepositAmount("");
-    } catch (error) {
-      alert(`Deposit failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsDepositing(false);
-    }
-  };
-
-  const handleGiftApprove = async () => {
-    if (!record?._id) {
-      showActionFeedback("like", "error", "Gift approvals are not available for this freight yet");
-      return;
+      throw new Error(depositPayload?.error ?? "Failed to award deposit FBARS");
     }
 
-    try {
-      const signed = await withSignedNonce("gift-approve");
-      const response = await fetch(`/api/campaign-records/${record._id}/approve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(signed),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to approve gift freight");
-      }
-
-      showActionFeedback("like", "success", payload?.approvalsSatisfied ? "Gift approvals satisfied" : "Gift approved");
-    } catch (error) {
-      showActionFeedback("like", "error", error instanceof Error ? error.message : "Failed to approve gift freight");
-    }
+    return txHash;
   };
 
   const handleGiftClaim = async () => {
-    if (!record?._id) {
-      showActionFeedback("reshare", "error", "Gift claims are not available for this freight yet");
-      return;
-    }
-
+    if (!signer || giftClaimBusy) return;
+    setGiftClaimBusy(true);
     try {
-      const signed = await withSignedNonce("gift-claim");
-      const response = await fetch(`/api/campaign-records/${record._id}/claim`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(signed),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "Failed to claim gift freight");
+      await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
+      const txHash = await sendGiftClaim(signer, c);
+      showActionFeedback("reshare", "success", "Gift claim sent. Waiting for confirmation…");
+      const receipt = await signer.client.waitTransaction(txHash, 1, 180_000);
+      if (!receipt || receipt.status !== "committed") throw new Error("Claim is pending. Refresh once confirmed.");
+      setActionFeedback(null);
+      const output = receipt.transaction.outputs[0];
+      if (!output?.type) throw new Error("Missing freight output");
+      const campaign: CampaignCell = { outPoint: { txHash, index: 0 }, data: decodeCampaignData(hexToBytes(receipt.transaction.outputsData[0])), capacityShannons: output.capacity, lock: output.lock, type: output.type };
+      window.dispatchEvent(new CustomEvent("freight:approval-chain-update", { detail: { campaign, campaignId: getCampaignStableId(campaign) } }));
+      try {
+        const participationResponse = await fetch("/api/campaign-participants", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            campaignId: cardId,
+            createdByHash: getCampaignCreatedByHash(c),
+            chainCreatedAt: getCampaignChainCreatedAt(c),
+            campaignType: c.data.campaignType,
+            participantAddress: await signer.getRecommendedAddress(),
+            participantKind: "gift_claim",
+            participantTxHash: txHash,
+            joinedAt: String(Date.now()),
+            status: "verified",
+          }),
+        });
+        if (!participationResponse.ok) throw new Error("Completion record rejected");
+      } catch {
+        showActionFeedback("reshare", "error", `Gift paid, but completion could not be recorded. Transaction: ${txHash}`);
+        return;
       }
-
-      showActionFeedback("reshare", "success", payload?.claimAmountLabel ? `Claim ready: ${payload.claimAmountLabel}` : "Gift claim submitted");
+      showInfoSuccess("Gift paid to your wallet.");
+      const address = await signer.getRecommendedAddress();
+      markProfileAnalyticsDirty({ address });
+      markProfileFreightsDirty({ address });
+      markProfileTransactionsDirty({ address });
+      refreshUserProfile();
     } catch (error) {
       showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Failed to claim gift freight");
+    } finally {
+      setGiftClaimBusy(false);
     }
   };
 
-  const handleGiftInfoClick = () => {
+  const handleGiftInfoClick = async () => {
     if (!giftDeliverable.enabled) {
       return;
+    }
+
+    const recipients: SettlementRecipient[] = [];
+    let recipientsError: string | null = null;
+    try {
+      if (data.gift?.slots.some((slot) => slot.claimed)) {
+        const response = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(cardId)}&participantKind=gift_claim`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Could not load gift recipients.");
+        const payload = await response.json();
+        const addresses = [...new Set<string>([
+          ...giftDeliverable.claimants.flatMap((user) => user.address ? [user.address.toLowerCase()] : []),
+          ...(payload.participants ?? []).flatMap((participant: { participantAddress?: string }) => participant.participantAddress ? [participant.participantAddress.toLowerCase()] : []),
+        ])];
+        const claimed = await Promise.all(addresses.map(async (address) => {
+          try {
+            const wallet = await ccc.Address.fromString(address, client);
+            const slot = data.gift!.slots.find((slot) => slot.claimed && bytesToHex(slot.claimant) === wallet.script.hash());
+            return slot ? { address, slot } : null;
+          } catch { return null; }
+        }));
+        const confirmed = claimed.filter((entry) => entry !== null);
+        const profilesResponse = confirmed.length ? await fetch(`/api/user-profiles?addresses=${encodeURIComponent(confirmed.map((entry) => entry.address).join(","))}`, { cache: "no-store" }) : null;
+        const profiles = profilesResponse?.ok ? (await profilesResponse.json()).profiles ?? [] : [];
+        for (const { address, slot } of confirmed) {
+          const profile = profiles.find((entry: { address?: string }) => entry.address?.toLowerCase() === address);
+          const handle = profile?.handle ?? giftDeliverable.claimants.find((entry) => entry.address?.toLowerCase() === address)?.handle ?? buildDefaultHandle(address);
+          recipients.push({ address, username: profile?.username ?? handle, handle, amountLabel: `${formatCkbAmount(slot.amount)} CKB`, amountShannons: slot.amount.toString() });
+        }
+      }
+    } catch (error) {
+      recipientsError = error instanceof Error ? error.message : "Could not load gift recipients.";
     }
 
     onSettlementInfoRequest({
@@ -775,38 +956,181 @@ export function useCampaignCardState({
       randomnessHash: "",
       randomnessPreimage: null,
       evidenceItems: [
-        `Gift approvals: ${giftDeliverable.approvals.length}/${giftDeliverable.requiredApprovalCount ?? 0}`,
-        `Claim mode: ${giftDeliverable.claimants.length > 0 ? "restricted" : "open"}`,
-        `Split mode: ${giftDeliverable.splitMode ?? "equal"}`,
+        `Gift approvals: ${giftApprovedCount}/${data.approval?.required ?? giftDeliverable.requiredApprovalCount ?? 0}`,
+        `Claim mode: ${data.gift ? data.gift.open ? "open" : "restricted" : "legacy"}`,
+        `Allocations: ${data.gift ? "fixed on-chain" : "legacy"}`,
       ],
-      recipients: giftPreview.allocations.map((allocation) => ({
-        address: "",
-        username: allocation.handle,
-        handle: allocation.handle,
-        amountLabel: allocation.amountLabel,
-        amountShannons: allocation.amountShannons,
-      })),
+      recipients,
       distributionTxHash: null,
-      errorMessage: giftPreview.error,
+      errorMessage: recipientsError ?? giftPreview.error,
       gift: {
-        approvalCount: giftDeliverable.approvals.length,
+        approvalCount: giftApprovedCount,
         canApprove: giftDeliverable.approvers.length > 0 && !giftApprovalSatisfied,
-        canClaim: giftClaimOpen,
+        canClaim: canGiftClaim,
         claimAmountLabel: giftPreview.perClaimAmountLabel,
         claimantsLabel: giftDeliverable.claimants.length > 0
           ? giftDeliverable.claimants.map((entry) => entry.handle).join(", ")
           : "Anyone can claim",
         errorMessage: giftPreview.error,
         giftEnabled: giftDeliverable.enabled,
-        requiredApprovalCount: giftDeliverable.requiredApprovalCount,
+        requiredApprovalCount: data.approval?.stage === "gift-commence" ? data.approval.required : giftDeliverable.requiredApprovalCount,
       },
       _campaign: c,
       _record: record,
     });
   };
 
+  const handleWithdrawClick = async () => {
+    if (!giftApprovalSatisfied && data.status !== CampaignStatus.Cancelled) { showActionFeedback("withdraw", "error", "Gift commencement approvals are still pending"); return; }
+    if (!signer || isWithdrawing) {
+      return;
+    }
+
+    if (!creatorWithdrawUiState.canWithdraw) {
+      showActionFeedback("withdraw", "error", "No creator-withdrawable escrow is available for this freight.");
+      return;
+    }
+
+    const userHasPermission = await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record);
+    if (!userHasPermission) {
+      showActionFeedback("withdraw", "error", "Only the freight creator can withdraw remaining creator support.");
+      return;
+    }
+
+    setIsWithdrawing(true);
+    setActionFeedback(null);
+
+    try {
+      await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
+      const { txHash, withdrawnAmountShannons } = await sendCreatorWithdraw(signer, c);
+      let withdrawnAt = new Date().toISOString();
+      let withdrawnByAddress = currentWalletAddress ?? await signer.getRecommendedAddress() ?? creatorAddress;
+
+      if (record?._id) {
+        try {
+          const signed = await withSignedNonce("creator-withdraw");
+          const withdrawResponse = await fetch(`/api/campaign-records/${record._id}/withdraw`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ...signed,
+              withdrawalTxHash: txHash,
+              withdrawnAt,
+              withdrawnAmountShannons: withdrawnAmountShannons.toString(),
+            }),
+          });
+          const withdrawPayload = await withdrawResponse.json().catch(() => null) as {
+            error?: string;
+            withdrawnAt?: string;
+            withdrawnByAddress?: string;
+            withdrawnAmountShannons?: string;
+            withdrawalTxHash?: string;
+          } | null;
+          if (!withdrawResponse.ok) {
+            throw new Error(withdrawPayload?.error ?? "Failed to record creator withdraw metadata");
+          }
+          withdrawnAt = typeof withdrawPayload?.withdrawnAt === "string" && withdrawPayload.withdrawnAt.trim()
+            ? withdrawPayload.withdrawnAt.trim()
+            : withdrawnAt;
+          withdrawnByAddress = typeof withdrawPayload?.withdrawnByAddress === "string" && withdrawPayload.withdrawnByAddress.trim()
+            ? withdrawPayload.withdrawnByAddress.trim()
+            : withdrawnByAddress;
+        } catch {
+          // Non-fatal — the on-chain withdraw still succeeded, so keep the local UI in sync.
+        }
+      }
+
+      onWithdrawalCompleted(
+        getCampaignStableId(c),
+        txHash,
+        withdrawnAt,
+        withdrawnByAddress,
+        withdrawnAmountShannons.toString(),
+      );
+      showActionFeedback("withdraw", "success", `Withdrew ${formatCkbAmount(withdrawnAmountShannons)} CKB creator support.`);
+    } catch (error) {
+      showActionFeedback("withdraw", "error", error instanceof Error ? error.message : "Failed to withdraw creator support");
+    } finally {
+      setIsWithdrawing(false);
+    }
+  };
+
   const handleSettlementClick = async () => {
+    if (raffleApprovalFailed || raffleCommencementPending || raffleDeliveryPending) return;
     if (!isRaffleCampaign) {
+      return;
+    }
+
+    if (isRecurringRaffle) {
+      if (!signer) {
+        showActionFeedback("reshare", "error", "Connect a wallet first");
+        return;
+      }
+      try {
+        const round = data.round ?? 1n;
+        const walletAddress = await signer.getRecommendedAddress();
+        if (!walletAddress) throw new Error("Unable to resolve wallet address");
+        const ownedRoundCells = await fetchParticipants(
+          client,
+          c,
+          100,
+          [walletAddress],
+          false,
+          [ParticipantStatus.Winner, ParticipantStatus.Eliminated],
+        );
+        const reclaimable = ownedRoundCells.find((entry) => (
+          entry.data.status === ParticipantStatus.Eliminated
+          || ((entry.data.round ?? 0n) < round && entry.data.status === ParticipantStatus.Winner)
+        ));
+        if (reclaimable) {
+          await assertFreightParentPreflight(cardId, walletAddress);
+          await sendReclaimRecurringParticipant(signer, c, reclaimable);
+          showActionFeedback("reshare", "success", "Ticket storage reclaimed.");
+          window.setTimeout(() => window.location.reload(), 1200);
+          return;
+        }
+        if (displayStatus === CampaignStatus.Active) {
+          if (Date.now() < recurringRoundEndsAt) throw new Error("This raffle round is still accepting tickets");
+          const userHasPermission = await hasSettlementCreatorPermission(signer, client, c, currentWalletAddress, record);
+          if (!userHasPermission) throw new Error("Only the freight creator can draw this round");
+          if (!record?.randomnessPreimage) throw new Error("The recurring raffle randomness preimage is unavailable");
+          await assertFreightParentPreflight(cardId, walletAddress);
+          const participants = (await fetchParticipants(client, c, 500, undefined, true))
+            .filter((entry) => entry.data.status === ParticipantStatus.Verified && (entry.data.round ?? 1n) === round);
+          await sendDrawRecurringRaffle(signer, c, participants, hexToBytes(record.randomnessPreimage));
+          showActionFeedback("reshare", "success", "Round drawn. Winner cash-out is now open.");
+        } else if (displayStatus === CampaignStatus.Sleeping) {
+          const winners = ownedRoundCells
+            .filter((entry) => (entry.data.round ?? 0n) === round);
+          if (winners.length > 0 && Date.now() <= recurringSleepEndsAt) {
+            await assertFreightParentPreflight(cardId, walletAddress);
+            const txHash = await sendClaimRecurringRaffle(signer, c, winners[0]);
+            if (record?._id) {
+              const key = `fon:pending-win:${record._id}:${txHash.toLowerCase()}`;
+              const body = { address: walletAddress, recordId: record._id, txHash };
+              const url = "/api/fbars/win";
+              try {
+                window.localStorage.setItem(key, JSON.stringify({ url, body }));
+              } catch {
+                // The award request can still complete without a browser retry cache.
+              }
+              void postPendingWin(key, url, body).catch(() => undefined);
+            }
+            showActionFeedback("reshare", "success", "Reward cashed out.");
+          } else if (Date.now() > recurringSleepEndsAt) {
+            await assertFreightParentPreflight(cardId, walletAddress);
+            await sendRolloverRecurringRaffle(signer, c);
+            showActionFeedback("reshare", "success", (data.roundWinnerCount ?? 0n) === 1n ? "Recurring raffle finished." : "Next raffle round started.");
+          } else {
+            throw new Error("You are not a winner in this round");
+          }
+        }
+        window.setTimeout(() => window.location.reload(), 1200);
+      } catch (error) {
+        showActionFeedback("reshare", "error", error instanceof Error ? error.message : "Recurring raffle action failed");
+      }
       return;
     }
 
@@ -814,6 +1138,13 @@ export function useCampaignCardState({
     const randomnessPreimage = record?.randomnessPreimage ?? null;
 
     if (record?.settlementTxHash && Array.isArray(record.settledRecipients) && record.settledRecipients.length > 0) {
+      const storedDistributedPool = record.settledRecipients.reduce<bigint>((total, recipient) => {
+        try {
+          return total + BigInt(recipient.amountShannons);
+        } catch {
+          return total;
+        }
+      }, 0n);
       onSettlementInfoRequest({
         campaignTitle: displayTitle,
         randomnessHash,
@@ -822,6 +1153,8 @@ export function useCampaignCardState({
           `Stored randomness hash: ${randomnessHash}`,
           `Verified participant count used: ${record.settledParticipantCount ?? "0"}`,
           `Reward count: ${String(data.rewardCount)}`,
+          `Support to pool: ${supportPoolPercent}%`,
+          `Distributed reward pool: ${formatCkbAmount(storedDistributedPool)} CKB`,
           "Winner ordering: deterministic by join time, participant address, then outpoint.",
         ],
         recipients: record.settledRecipients,
@@ -846,7 +1179,7 @@ export function useCampaignCardState({
     });
 
     try {
-      const participantIndexResponse = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(getCampaignStableId(c))}`, {
+      const participantIndexResponse = await fetch(`/api/campaign-participants?campaignId=${encodeURIComponent(getCampaignStableId(c))}&participantKind=raffle_ticket`, {
         cache: "no-store",
       });
       const participantIndexPayload = await participantIndexResponse.json().catch(() => null);
@@ -918,7 +1251,9 @@ export function useCampaignCardState({
       const effectiveWinnerCount = data.rewardCount === 0n
         ? BigInt(participants.length)
         : BigInt(Math.min(Number(data.rewardCount), participants.length));
-      const rewardPerWinner = effectiveWinnerCount > 0n ? data.currentDeposits / effectiveWinnerCount : 0n;
+      const supportPoolContribution = computeRaffleSupportPoolContribution(data);
+      const rewardPool = computeRaffleRewardPool(data);
+      const rewardPerWinner = effectiveWinnerCount > 0n ? rewardPool / effectiveWinnerCount : 0n;
       const recipientAmountLabel = `${formatCkbAmount(rewardPerWinner)} CKB`;
       const recipientAmountShannons = rewardPerWinner.toString();
       const recipients: SettlementRecipient[] = winnerAddresses.map((address) => {
@@ -937,6 +1272,10 @@ export function useCampaignCardState({
         `Stored randomness hash: ${randomnessHash}`,
         `Verified participant count used: ${participantCountText}`,
         `Reward count: ${String(data.rewardCount)}`,
+        `Support to pool: ${supportPoolPercent}%`,
+        `Support contribution: ${formatCkbAmount(supportPoolContribution)} CKB`,
+        `Reward pool: ${formatCkbAmount(rewardPool)} CKB`,
+        `Distributed per winner: ${recipientAmountLabel}`,
         "Winner ordering: deterministic by join time, participant address, then outpoint.",
       ];
 
@@ -952,6 +1291,7 @@ export function useCampaignCardState({
           errorMessage = "No eligible verified winners are available for settlement.";
         } else {
           try {
+            await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
             distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
           } catch (error) {
             if (error instanceof Error && /Transient CKB cell lookup failed/i.test(error.message)) {
@@ -962,26 +1302,28 @@ export function useCampaignCardState({
           let settledAt = new Date().toISOString();
 
           if (record?._id) {
+            const key = `fon:pending-win:${record._id}:${distributionTxHash.toLowerCase()}`;
+            const url = `/api/campaign-records/${record._id}/settle`;
+            const body = {
+              settlementTxHash: distributionTxHash,
+              settledAt,
+              settledByAddress: currentWalletAddress,
+              soldTicketCount: String(soldTickets),
+              settledParticipantCount: participantCountText,
+              settledRecipients: recipients,
+            };
             try {
-              const settleResponse = await fetch(`/api/campaign-records/${record._id}/settle`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  settlementTxHash: distributionTxHash,
-                  settledAt,
-                  settledByAddress: currentWalletAddress,
-                  soldTicketCount: String(soldTickets),
-                  settledParticipantCount: participantCountText,
-                  settledRecipients: recipients,
-                }),
-              });
-              const settlePayload = await settleResponse.json().catch(() => null);
-              if (settleResponse.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
+              window.localStorage.setItem(key, JSON.stringify({ url, body }));
+            } catch {
+              // The award request can still complete without a browser retry cache.
+            }
+            try {
+              const settleResponse = await postPendingWin(key, url, body);
+              const settlePayload = await settleResponse?.json().catch(() => null);
+              if (settleResponse?.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
                 settledAt = settlePayload.settledAt.trim();
               }
-              if (settleResponse.ok && Array.isArray(settlePayload?.settledRecipients)) {
+              if (settleResponse?.ok && Array.isArray(settlePayload?.settledRecipients)) {
                 recipients.splice(0, recipients.length, ...settlePayload.settledRecipients);
               }
             } catch {
@@ -1026,56 +1368,59 @@ export function useCampaignCardState({
     }
   };
 
+  const supportToPoolPercent = supportPoolPercent;
+
   return {
     bookmarks,
     commentComposerRef,
     commentDraft,
     commentError,
     commentInputRef,
+    commentList,
     comments,
     creatorAddress,
     creatorHandle,
-    depositAmount,
-    depositedCkb,
     displayDescription,
     displayTitle,
     giftDeliverable,
     handleBookmark,
     handleComment,
-    handleDepositClick,
     handleDepositSubmit,
-    handleGiftApprove,
     handleGiftClaim,
     handleGiftInfoClick,
     handleLike,
     handleReshare,
     handleSettlementClick,
     handleSubmitComment,
+    handleWithdrawClick,
     hasNotStartedRaffle,
-    hasReachedMaxAmount,
     hasSettledRewards,
     isCampaignInactive,
     isCommentComposerOpen,
     isConnected,
-    canGiftApprove,
     canGiftClaim,
-    isDepositing,
     isLockedForInteractions,
+    isSupportLocked,
     isPurchaseDisabled,
+    isSupportDisabled,
+    isWithdrawing,
     lockAccessMessage,
     isRaffleCampaign,
+    isRecurringRaffle,
+    recurringActionLabel,
+    supportState,
     isSavingComment,
     likes,
-    maxCkb,
     remainingTickets,
     reshares,
     rewardCountValue,
     setCommentDraft,
-    setDepositAmount,
     setIsCommentComposerOpen,
-    setShowDepositModal,
-    showDepositModal,
     shouldGlowSettlement,
+    showCreatorWithdrawAction,
+    creatorWithdrawAmountCkb,
+    supportDisplayCkb,
+    supportToPoolPercent,
     showSettlementAction,
     soldTickets,
     ticketPriceShannons,

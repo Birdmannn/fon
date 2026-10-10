@@ -1,9 +1,12 @@
 "use client";
 
 import { Copy, Fingerprint } from "lucide-react";
+import Link from "next/link";
 import { type MouseEventHandler, type ReactNode, type RefObject, useCallback } from "react";
 
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
+import { useWalletSeedNotice } from "@/app/_hooks/useUserProfile";
 import { useLightModePrimaryColor } from "@/app/providers";
 import {
   LIGHT_MODE_PRIMARY_COLOR_OPTIONS,
@@ -118,6 +121,9 @@ export default function AppShellHeader({
   walletActionLabel,
   walletActionOnly = false,
 }: AppShellHeaderProps) {
+  const showWalletSeedNotice = useWalletSeedNotice();
+  useInfoError(walletCopyFeedback === "error" ? "Copy failed" : null);
+  useInfoError(walletInfoError);
   const { lightModePrimaryColor, setLightModePrimaryColor } = useLightModePrimaryColor();
   const activeLightModePrimaryColor = currentLightModePrimaryColor ?? lightModePrimaryColor;
 
@@ -197,14 +203,13 @@ export default function AppShellHeader({
                             type="button"
                             className="wallet-info-copy-btn"
                             onClick={() => void onCopyWalletAddress()}
-                            title={walletAddress}
+                            data-tooltip={walletAddress}
                             aria-label="Copy wallet address"
                           >
                             <Copy size={14} strokeWidth={2} aria-hidden="true" />
                           </button>
                         </div>
                         {walletCopyFeedback === "copied" ? <span className="wallet-info-feedback">Copied</span> : null}
-                        {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                       </div>
                       <div className="wallet-info-section">
                         <span className="wallet-info-label">Balance</span>
@@ -218,7 +223,6 @@ export default function AppShellHeader({
                           </span>
                         </div>
                       </div>
-                      {walletInfoError ? <p className="wallet-info-error">{walletInfoError}</p> : null}
                     </>
                   ) : null}
                   {canEditLightModePrimaryColor || walletActionHref ? (
@@ -248,15 +252,16 @@ export default function AppShellHeader({
                         </div>
                       ) : null}
                       {walletActionHref ? (
-                        <a
+                        <Link
                           href={walletActionHref}
                           className="wallet-info-introspect-btn"
                           onClick={onWalletActionClick}
                           aria-label={walletActionLabel ?? "Introspect"}
-                          title={walletActionLabel ?? "Introspect"}
+                          data-tooltip={walletActionLabel ?? "Introspect"}
+                          scroll={false}
                         >
                           {walletActionIcon ?? <Fingerprint size={14} strokeWidth={2} aria-hidden="true" />}
-                        </a>
+                        </Link>
                       ) : null}
                     </div>
                   ) : null}
@@ -276,16 +281,21 @@ export default function AppShellHeader({
       </div>
 
       <FreightInfoModal
-        open={infoModalOpen}
-        closing={infoModalClosing}
-        ariaLabel={infoModalAriaLabel}
-        body={infoModalBody}
-        actions={infoModalActions}
-        backdropAriaLabel={infoModalBackdropAriaLabel}
-        backdropInteractive={infoModalBackdropInteractive}
-        onRequestClose={onInfoModalRequestClose}
-        onKeepOpen={onInfoModalKeepOpen}
-        onScheduleClose={onInfoModalScheduleClose}
+        open={infoModalOpen || showWalletSeedNotice}
+        closing={showWalletSeedNotice ? false : infoModalClosing}
+        ariaLabel={showWalletSeedNotice ? "Awarding FBARS" : infoModalAriaLabel}
+        body={showWalletSeedNotice ? (
+          <div className="create-info-constraints-copy" role="status" aria-live="polite">
+            <p className="mt-3 create-review-section-label">Awarding FBARS...</p>
+            <p className="create-info-constraint-item">Hold and sign the next transaction</p>
+          </div>
+        ) : infoModalBody}
+        actions={showWalletSeedNotice ? null : infoModalActions}
+        backdropAriaLabel={showWalletSeedNotice ? "Awarding FBARS in progress" : infoModalBackdropAriaLabel}
+        backdropInteractive={showWalletSeedNotice ? false : infoModalBackdropInteractive}
+        onRequestClose={showWalletSeedNotice ? () => undefined : onInfoModalRequestClose}
+        onKeepOpen={showWalletSeedNotice ? () => undefined : onInfoModalKeepOpen}
+        onScheduleClose={showWalletSeedNotice ? () => undefined : onInfoModalScheduleClose}
       />
     </div>
   );

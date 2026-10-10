@@ -7,6 +7,7 @@ import {
 } from "@/app/api/user-profiles/_lib/profileTarget";
 import type { ProfileTransactionRow, ProfileTransactionsCoverage } from "@/app/_types/profileTabs";
 import { buildStableCampaignId, normalizeHash } from "@/lib/campaignIdentity";
+import { reconcileAdsfForAddress, shannonsToUsdCents } from "@/lib/adsf";
 import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
 import { getAddressNetDeltaMap } from "@/lib/txBalanceDelta";
 import {
@@ -34,10 +35,18 @@ type CampaignRecordTransaction = {
   settledAt?: unknown;
   settledByAddress?: unknown;
   settledRecipients?: unknown;
+  withdrawalTxHash?: unknown;
+  withdrawnAt?: unknown;
+  withdrawnByAddress?: unknown;
+  withdrawnAmountShannons?: unknown;
   updatedAt?: unknown;
 };
 
 type CampaignParticipantTransaction = {
+  participantKind?: unknown;
+  claimChainVerified?: unknown;
+  claimAmountShannons?: unknown;
+  creditedUsdCents?: unknown;
   campaignId?: unknown;
   createdByHash?: unknown;
   chainCreatedAt?: unknown;
@@ -54,6 +63,8 @@ type CampaignDepositTransaction = {
   campaignRecordId?: unknown;
   depositedAt?: unknown;
   depositorAddress?: unknown;
+  kind?: unknown;
+  supportMode?: unknown;
   txHash?: unknown;
 };
 
@@ -189,6 +200,7 @@ export async function GET(request: Request) {
     }
 
     const targetAddressRegex = buildAddressRegex(targetAddress);
+    await reconcileAdsfForAddress(targetAddress);
     const [campaignRecordsCollection, campaignParticipantsCollection, campaignDepositsCollection, fbarEventsCollection] = await Promise.all([
       getMongoCollection(),
       getCampaignParticipantsCollection(),
@@ -196,7 +208,7 @@ export async function GET(request: Request) {
       getFbarEventsCollection(),
     ]);
 
-    const [createdRecords, activatedRecords, settlementRecords, rewardRecords, participantRows, depositRows, fbarEvents, legacyActivationCount, usdPerCkb] = await Promise.all([
+    const [createdRecords, activatedRecords, settlementRecords, withdrawalRecords, rewardRecords, participantRows, depositRows, fbarEvents, legacyActivationCount, usdPerCkb] = await Promise.all([
       campaignRecordsCollection.find(
         {
           status: "published",
@@ -239,8 +251,11 @@ export async function GET(request: Request) {
       campaignRecordsCollection.find(
         {
           status: "published",
-          settledByAddress: { $regex: targetAddressRegex },
           settlementTxHash: { $type: "string", $ne: "" },
+          $or: [
+            { settledByAddress: { $regex: targetAddressRegex } },
+            { settledByAddress: { $in: [null, ""] }, creatorAddress: { $regex: targetAddressRegex } },
+          ],
         },
         {
           projection: {
@@ -253,6 +268,32 @@ export async function GET(request: Request) {
             settlementTxHash: 1,
             settledAt: 1,
             settledByAddress: 1,
+            updatedAt: 1,
+          },
+        }
+      ).toArray() as Promise<CampaignRecordTransaction[]>,
+      campaignRecordsCollection.find(
+        {
+          status: "published",
+          withdrawalTxHash: { $type: "string", $ne: "" },
+          $or: [
+            { withdrawnByAddress: { $regex: targetAddressRegex } },
+            { withdrawnByAddress: { $in: [null, ""] }, creatorAddress: { $regex: targetAddressRegex } },
+          ],
+        },
+        {
+          projection: {
+            _id: 1,
+            title: 1,
+            campaignId: 1,
+            createdByHash: 1,
+            chainCreatedAt: 1,
+            campaignType: 1,
+            withdrawalTxHash: 1,
+            withdrawnAt: 1,
+            withdrawnByAddress: 1,
+            withdrawnAmountShannons: 1,
+            updatedAt: 1,
           },
         }
       ).toArray() as Promise<CampaignRecordTransaction[]>,
@@ -277,6 +318,7 @@ export async function GET(request: Request) {
             settlementTxHash: 1,
             settledAt: 1,
             settledRecipients: 1,
+            updatedAt: 1,
           },
         }
       ).toArray() as Promise<CampaignRecordTransaction[]>,
@@ -293,6 +335,10 @@ export async function GET(request: Request) {
             chainCreatedAt: 1,
             campaignType: 1,
             participantTxHash: 1,
+            participantKind: 1,
+            claimChainVerified: 1,
+            claimAmountShannons: 1,
+            creditedUsdCents: 1,
             joinedAt: 1,
             submittedAt: 1,
           },
@@ -310,6 +356,8 @@ export async function GET(request: Request) {
             campaignId: 1,
             campaignRecordId: 1,
             depositedAt: 1,
+            kind: 1,
+            supportMode: 1,
             txHash: 1,
           },
         }
@@ -317,7 +365,7 @@ export async function GET(request: Request) {
       fbarEventsCollection.find(
         {
           address: targetAddress,
-          kind: { $in: ["wallet-seed", "freight-create", "deposit"] },
+          kind: { $in: ["wallet-seed", "freight-create", "deposit", "creator-non-winning-interaction"] },
         },
         {
           projection: {
@@ -369,7 +417,7 @@ export async function GET(request: Request) {
 
     const recordByCampaignId = new Map<string, CampaignRecordTransaction>();
     const recordByTxHash = new Map<string, CampaignRecordTransaction>();
-    [...createdRecords, ...activatedRecords, ...settlementRecords, ...rewardRecords, ...referencedRecords].forEach((record) => {
+    [...createdRecords, ...activatedRecords, ...settlementRecords, ...withdrawalRecords, ...rewardRecords, ...referencedRecords].forEach((record) => {
       const campaignId = deriveCampaignId(record);
       if (campaignId && !recordByCampaignId.has(campaignId)) {
         recordByCampaignId.set(campaignId, record);
@@ -440,6 +488,7 @@ export async function GET(request: Request) {
       }
 
       if (kind === "deposit") {
+        const depositKind = asString(metadata.kind) === "simple_task_tip" ? "simple_task_tip" : "campaign_deposit";
         fbarRows.push({
           adsfUsdCentsDelta: null,
           amountLabel: null,
@@ -450,14 +499,37 @@ export async function GET(request: Request) {
           channel: "offchain",
           fbarsDelta: delta,
           id: buildRowId(["campaign-deposit-fbars", (resolvedTxHash ?? asString(event.eventKey)) || occurredAt]),
-          kind: "campaign_deposit",
+          kind: depositKind,
           occurredAt,
           onchainNetDeltaShannons: null,
           role: "actor",
-          summary: "Deposit FBARS",
+          summary: depositKind === "simple_task_tip" ? "Tip FBARS" : "Deposit FBARS",
           txHash: resolvedTxHash,
         });
         return;
+      }
+
+      if (kind === "creator-non-winning-interaction" && asString(metadata.supportMode) === "direct_creator") {
+        const amountShannons = asString(metadata.amountShannons);
+        const cents = asPositiveInteger(metadata.adsfUsdCents) ?? shannonsToUsdCents(amountShannons, usdPerCkb);
+        const record = createdRecords.find((entry) => entry._id?.toString() === asString(metadata.recordId));
+        fbarRows.push({
+          adsfUsdCentsDelta: cents,
+          amountLabel: amountLabelFromShannons(amountShannons),
+          campaignId: record ? deriveCampaignId(record) : null,
+          campaignRecordId: asString(metadata.recordId) || null,
+          campaignTitle: record ? normalizeTitle(record.title) : null,
+          ckbUsdCentsDelta: cents,
+          channel: "onchain",
+          fbarsDelta: null,
+          id: buildRowId(["creator-tip", resolvedTxHash ?? asString(event.eventKey)]),
+          kind: "simple_task_tip",
+          occurredAt,
+          onchainNetDeltaShannons: amountShannons || null,
+          role: "recipient",
+          summary: "Received creator tip",
+          txHash: resolvedTxHash,
+        });
       }
 
     });
@@ -466,6 +538,7 @@ export async function GET(request: Request) {
       ...createdRecords.map((record) => normalizeHash(asString(record.txHash))),
       ...activatedRecords.map((record) => normalizeHash(asString(record.activatedTxHash))),
       ...settlementRecords.map((record) => normalizeHash(asString(record.settlementTxHash))),
+      ...withdrawalRecords.map((record) => normalizeHash(asString(record.withdrawalTxHash))),
       ...rewardRecords.map((record) => normalizeHash(asString(record.settlementTxHash))),
       ...participantRows.map((row) => normalizeHash(asString(row.participantTxHash))),
       ...depositRows.map((row) => normalizeHash(asString(row.txHash))),
@@ -535,9 +608,10 @@ export async function GET(request: Request) {
       }
 
       const record = recordByCampaignId.get(campaignId);
+      const isGiftClaim = row.participantKind === "gift_claim";
       rows.push({
-        adsfUsdCentsDelta: null,
-        amountLabel: null,
+        adsfUsdCentsDelta: isGiftClaim && row.claimChainVerified === true ? asPositiveInteger(row.creditedUsdCents) ?? shannonsToUsdCents(row.claimAmountShannons, usdPerCkb) : null,
+        amountLabel: isGiftClaim ? amountLabelFromShannons(asString(row.claimAmountShannons)) : null,
         campaignId,
         campaignRecordId: typeof record?._id?.toString === "function" ? record._id.toString() : null,
         campaignTitle: normalizeTitle(record?.title),
@@ -548,8 +622,8 @@ export async function GET(request: Request) {
         kind: "campaign_participation",
         occurredAt,
         onchainNetDeltaShannons: deltaByTxHash[txHash] ?? null,
-        role: "actor",
-        summary: "Joined freight",
+        role: isGiftClaim ? "recipient" : "actor",
+        summary: isGiftClaim ? "Claimed gift" : "Joined freight",
         txHash,
       });
     });
@@ -564,6 +638,7 @@ export async function GET(request: Request) {
 
       const record = recordByCampaignId.get(campaignId);
       const amountShannons = asString(row.amountShannons);
+      const depositKind = asString(row.kind) === "simple_task_tip" ? "simple_task_tip" : "campaign_deposit";
       rows.push({
         adsfUsdCentsDelta: null,
         amountLabel: amountLabelFromShannons(amountShannons),
@@ -574,11 +649,11 @@ export async function GET(request: Request) {
         channel: "onchain",
         fbarsDelta: null,
         id: buildRowId(["campaign-deposit", txHash]),
-        kind: "campaign_deposit",
+        kind: depositKind,
         occurredAt,
         onchainNetDeltaShannons: deltaByTxHash[txHash] ?? null,
         role: "actor",
-        summary: "Deposited into freight",
+        summary: depositKind === "simple_task_tip" ? "Tipped freight creator" : "Deposited into freight",
         txHash,
       });
     });
@@ -609,6 +684,33 @@ export async function GET(request: Request) {
       });
     });
 
+    withdrawalRecords.forEach((record) => {
+      const txHash = normalizeHash(asString(record.withdrawalTxHash));
+      const occurredAt = toIsoDateTime(record.withdrawnAt ?? record.updatedAt);
+      if (!txHash || !occurredAt) {
+        return;
+      }
+
+      const amountShannons = asString(record.withdrawnAmountShannons);
+      rows.push({
+        adsfUsdCentsDelta: null,
+        amountLabel: amountLabelFromShannons(amountShannons),
+        campaignId: deriveCampaignId(record),
+        campaignRecordId: typeof record._id?.toString === "function" ? record._id.toString() : null,
+        campaignTitle: normalizeTitle(record.title),
+        ckbUsdCentsDelta: convertShannonsToUsdCentsSigned(deltaByTxHash[txHash] ?? null, usdPerCkb),
+        channel: "onchain",
+        fbarsDelta: null,
+        id: buildRowId(["campaign-withdrawal", txHash]),
+        kind: "campaign_withdrawal",
+        occurredAt,
+        onchainNetDeltaShannons: deltaByTxHash[txHash] ?? null,
+        role: "actor",
+        summary: "Withdrew creator support",
+        txHash,
+      });
+    });
+
     let hasMissingRewardCredits = false;
     rewardRecords.forEach((record) => {
       const txHash = normalizeHash(asString(record.settlementTxHash));
@@ -623,8 +725,10 @@ export async function GET(request: Request) {
       }
 
       const amountShannons = matchingRecipients.reduce((sum, recipient) => sum + BigInt(recipient.amountShannons), 0n).toString();
-      const adsfUsdCentsDelta = matchingRecipients.reduce((sum, recipient) => sum + (recipient.creditedUsdCents ?? 0), 0);
-      if (matchingRecipients.some((recipient) => recipient.creditedUsdCents === null || recipient.creditedUsdCents === undefined)) {
+      const creditedCents = matchingRecipients.map((recipient) => recipient.creditedUsdCents
+        ?? shannonsToUsdCents(recipient.amountShannons, usdPerCkb));
+      const adsfUsdCentsDelta = creditedCents.reduce<number>((sum, cents) => sum + (cents ?? 0), 0);
+      if (creditedCents.some((cents) => cents === null)) {
         hasMissingRewardCredits = true;
       }
 
@@ -652,7 +756,7 @@ export async function GET(request: Request) {
       coverageNotes.push("Some older raffle activations may be missing because activation metadata was not always recorded.");
     }
     if (hasMissingRewardCredits) {
-      coverageNotes.push("Some older reward rows may be missing ADSF deltas because recipient credit amounts were not yet persisted.");
+      coverageNotes.push("Some older reward rows may be missing ADSF deltas until a CKB price is available.");
     }
 
     const coverage: ProfileTransactionsCoverage = {

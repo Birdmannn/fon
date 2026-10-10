@@ -1,22 +1,30 @@
+import { assertGiftClaim, buildGiftPolicyConfig, validateGiftPolicy, type GiftPolicy } from "./giftPolicy";
+import type { GiftDeliverable } from "./giftDeliverables";
 import { ccc } from "@ckb-ccc/connector-react";
 import { blake2b } from "@nervosnetwork/ckb-sdk-utils";
-import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus } from "./contract";
+import { FREIGHT_CONTRACT, CampaignStatus, CampaignType, ParticipantStatus, Selector } from "./contract";
 import {
   encodeBatchDeliverArgs,
   encodeCreateCampaignArgs,
   encodeDepositArgs,
   encodeCampaignData,
   encodeParticipantData,
+  encodeVerifyRaffleTicketCount,
   encodeSummary,
   decodeCampaignData,
   decodeParticipantData,
   bytesToHex,
   hexToBytes,
   lockScriptToAddressBytes,
+  computeCreatorWithdrawableAmount,
+  computeRaffleRewardPool,
+  hasSplitSupportAccounting,
   CampaignData,
   ParticipantData,
 } from "./encoding";
 import { buildStableCampaignId } from "./campaignIdentity";
+import { nextRecurringWinnerCount } from "./recurringRaffle";
+import { assertRaffleApprovalAction, raffleApprovalThresholdMet, encodeRaffleApproval, validateCampaignApproval, type CampaignApprovalConfig, type RaffleApprovalConfig, type RaffleApprovalState } from "./raffleApproval";
 
 // ─── Cell dep for the freight contract ───────────────────────────────────────
 
@@ -33,6 +41,30 @@ export function freightScript(argsBytes: Uint8Array): ccc.ScriptLike {
     hashType: FREIGHT_CONTRACT.hashType,
     args: bytesToHex(argsBytes),
   };
+}
+
+export function freightStateLock(addressBytes: Uint8Array): ccc.ScriptLike {
+  if (addressBytes.length !== 20) throw new Error("State-lock address must be 20 bytes");
+  const args = new Uint8Array(21);
+  args[0] = Selector.StateLock;
+  args.set(addressBytes, 1);
+  return freightScript(args);
+}
+
+export function freightParticipantStateLock(
+  campaignCreatedBy: Uint8Array,
+  campaignCreatedAt: bigint,
+  participantAddress: Uint8Array,
+): ccc.ScriptLike {
+  if (campaignCreatedBy.length !== 20 || participantAddress.length !== 20) {
+    throw new Error("Campaign and participant addresses must be 20 bytes");
+  }
+  const args = new Uint8Array(49);
+  args[0] = Selector.StateLock;
+  args.set(campaignCreatedBy, 1);
+  new DataView(args.buffer).setBigUint64(21, campaignCreatedAt, true);
+  args.set(participantAddress, 29);
+  return freightScript(args);
 }
 
 function sleep(ms: number) {
@@ -77,14 +109,51 @@ export async function sendCreateCampaign(
     campaignType: CampaignType;
     maximumAmountCkb: bigint;
     auxAmountCkb: bigint; // ticket_price for Raffle (in CKB), 0 otherwise
+    ticketsPerUser?: bigint | null;
     rewardCount: bigint;
+    supportPoolBps: bigint;
     summary: string;
     randomnessHash: Uint8Array;
+    sleepDurationSecs?: bigint;
+    winnerReductionBps?: bigint;
+    raffleApproval?: RaffleApprovalConfig | null;
+    giftApproval?: CampaignApprovalConfig | null;
+    giftDeliverable?: GiftDeliverable | null;
   }
 ): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
-  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, rewardCount, summary, randomnessHash } = opts;
-  const maximumAmount = maximumAmountCkb * 100_000_000n;
+  const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, ticketsPerUser, rewardCount, supportPoolBps, summary, randomnessHash, sleepDurationSecs, winnerReductionBps } = opts;
+  const isRaffle = campaignType === CampaignType.Raffle || campaignType === CampaignType.RecurringRaffle;
+  const maximumAmount = isRaffle && auxAmountCkb === 0n
+    ? maximumAmountCkb
+    : maximumAmountCkb * 100_000_000n;
   const auxAmount = auxAmountCkb * 100_000_000n;
+  let approval: RaffleApprovalState | null = null;
+  if (opts.raffleApproval && opts.giftApproval) throw new Error("Choose one approval gate");
+  const approvalConfig = opts.giftApproval ?? opts.raffleApproval;
+  if (approvalConfig) {
+    validateCampaignApproval(approvalConfig, campaignType, startDurationSecs);
+    approval = {
+      stage: approvalConfig.stage,
+      confirmed: false,
+      required: approvalConfig.required,
+      approvers: await Promise.all(approvalConfig.approvers.map(async (entry) => {
+        if (!entry.address) throw new Error(`Resolve ${entry.handle}'s wallet before publishing`);
+        const address = await ccc.Address.fromString(entry.address, signer.client);
+        return { lockHash: hexToBytes(address.script.hash()), approved: false };
+      })),
+    };
+    encodeRaffleApproval(approval);
+  }
+
+  let gift: GiftPolicy | null = null;
+  const giftConfig = opts.giftDeliverable ? buildGiftPolicyConfig(opts.giftDeliverable, maximumAmount, rewardCount) : null;
+  if (giftConfig) {
+    if (campaignType !== CampaignType.FundedTask) throw new Error("Gift rules require FundedTask");
+    const hash = async (address: string | null) => address ? hexToBytes((await ccc.Address.fromString(address, signer.client)).script.hash()) : new Uint8Array(32);
+    gift = { creator: hexToBytes((await signer.getRecommendedAddressObj()).script.hash()), open: giftConfig.open, slots: await Promise.all(giftConfig.slots.map(async (slot) => ({ claimant: await hash(slot.claimantAddress), amount: slot.amount, claimed: false }))) };
+    validateGiftPolicy(gift, maximumAmount, BigInt(gift.slots.length), true);
+  }
+  const effectiveRewardCount = gift ? BigInt(gift.slots.length) : rewardCount;
 
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
@@ -107,7 +176,14 @@ export async function sendCreateCampaign(
     maximumAmount,
     auxAmount,
     randomnessHash,
-    rewardCount
+    effectiveRewardCount,
+    supportPoolBps,
+    isRaffle ? ticketsPerUser : null,
+    campaignType === CampaignType.RecurringRaffle
+      ? { sleepDurationSecs: sleepDurationSecs ?? 60n, winnerReductionBps: winnerReductionBps ?? 5_000n }
+      : null,
+    approval,
+    gift,
   );
 
   // Campaign cell data (174 bytes).
@@ -120,10 +196,23 @@ export async function sendCreateCampaign(
     maximumAmount,
     currentDeposits: 0n,
     status: CampaignStatus.Created,
-    rewardCount,
+    rewardCount: effectiveRewardCount,
     randomnessHash,
     summary: encodeSummary(summary),
     auxAmount,
+    ticketSalesTotal: 0n,
+    creatorSupportTotal: 0n,
+    supportPoolBps: isRaffle ? supportPoolBps : 0n,
+    dataLayout: campaignType === CampaignType.RecurringRaffle ? "recurring" : "split-support",
+    sleepDurationSecs: campaignType === CampaignType.RecurringRaffle ? sleepDurationSecs ?? 60n : undefined,
+    winnerReductionBps: campaignType === CampaignType.RecurringRaffle ? winnerReductionBps ?? 5_000n : undefined,
+    round: campaignType === CampaignType.RecurringRaffle ? 1n : undefined,
+    roundStartedAt: campaignType === CampaignType.RecurringRaffle ? tipHeader.timestamp + startDurationSecs * 1000n : undefined,
+    roundRewardPerWinner: 0n,
+    roundWinnerCount: 0n,
+    prizePool: 0n,
+    approval,
+    gift,
   });
 
   // Output: campaign cell.
@@ -132,7 +221,7 @@ export async function sendCreateCampaign(
   // data  = 102-byte campaign blob
   tx.addOutput(
     {
-      lock: addrObj.script,
+      lock: freightStateLock(createdBy),
       type: freightScript(typeArgs),
     },
     bytesToHex(campaignData)
@@ -155,6 +244,84 @@ export async function sendCreateCampaign(
 
 // ─── deposit ─────────────────────────────────────────────────────────────────
 
+export async function sendCampaignApproval(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
+  const approval = campaign.data.approval;
+  if (!approval) throw new Error("This freight does not require on-chain approval");
+  const wallet = await signer.getRecommendedAddressObj();
+  const lockHash = wallet.script.hash();
+  const index = approval.approvers.findIndex((entry) => bytesToHex(entry.lockHash) === lockHash);
+  if (index < 0) throw new Error("Only tagged approvers can approve this freight");
+  if (approval.approvers[index].approved) throw new Error("You already approved this freight");
+  const header = await signer.client.getTipHeader();
+  assertRaffleApprovalAction(campaign.data, "approve", Number(header.timestamp));
+  const updated: CampaignData = {
+    ...campaign.data,
+    approval: { ...approval, approvers: approval.approvers.map((entry, entryIndex) => entryIndex === index ? { ...entry, approved: true } : entry) },
+  };
+  return sendCampaignTransition(signer, campaign, updated, new Uint8Array([Selector.ApproveCampaign, index]));
+}
+
+export async function sendConfirmRaffleApproval(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
+  const approval = campaign.data.approval;
+  if (!approval || approval.stage !== "on-commence" || approval.confirmed || !raffleApprovalThresholdMet(approval)) throw new Error("No commencement approval to confirm");
+  const receipt = await signer.client.getTransaction(campaign.outPoint.txHash);
+  if (!receipt?.blockHash) throw new Error("Wait for the approval transaction to be confirmed");
+  const header = await signer.client.getHeaderByHash(receipt.blockHash);
+  if (!header || header.timestamp >= campaign.data.createdAt + campaign.data.startDurationSecs * 1000n) throw new Error("Approval deadline missed. Only cancellation is available.");
+  return sendCampaignTransition(signer, campaign, { ...campaign.data, approval: { ...approval, confirmed: true } }, new Uint8Array([Selector.ConfirmRaffleApproval]), receipt.blockHash);
+}
+
+export async function sendGiftClaim(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
+  const wallet = await signer.getRecommendedAddressObj();
+  const walletHash = hexToBytes(wallet.script.hash());
+  const tip = await signer.client.getTipHeader();
+  const index = assertGiftClaim(campaign.data, walletHash, tip.timestamp);
+  const policy = campaign.data.gift!;
+  const slot = policy.slots[index];
+  const slots = policy.slots.map((entry, i) => i === index ? { ...entry, claimant: walletHash, claimed: true } : entry);
+  const updated: CampaignData = { ...campaign.data, gift: { ...policy, slots }, currentDeposits: campaign.data.currentDeposits - slot.amount,
+    status: slots.every((entry) => entry.claimed) ? CampaignStatus.Completed : CampaignStatus.Active };
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  tx.headerDeps.push(tip.hash);
+  tx.addInput({ previousOutput: campaign.outPoint, since: "0x0", cellOutput: { capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, outputData: bytesToHex(encodeCampaignData(campaign.data)) });
+  tx.addOutput({ capacity: campaign.capacityShannons - slot.amount, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updated)));
+  tx.addOutput({ capacity: slot.amount, lock: wallet.script }, "0x");
+  const payout = tx.outputs[1];
+  const minimumCapacity = BigInt(payout.occupiedSize) * 100_000_000n;
+  if (payout.capacity < minimumCapacity) payout.capacity = minimumCapacity;
+  await tx.completeFeeBy(signer, 1000n);
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([Selector.ClaimGift, index, ...walletHash])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+  return signer.sendTransaction(tx);
+}
+
+export async function sendCancelCampaign(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
+  const wallet = await signer.getRecommendedAddressObj();
+  if (bytesToHex(lockScriptToAddressBytes(wallet.script)) !== bytesToHex(campaign.data.createdBy)) throw new Error("Only the creator can cancel this freight");
+  return sendCampaignTransition(signer, campaign, { ...campaign.data, status: CampaignStatus.Cancelled }, new Uint8Array([Selector.CancelCampaign]));
+}
+
+async function sendCampaignTransition(signer: ccc.Signer, campaign: CampaignCell, data: CampaignData, action: Uint8Array, inclusionHeader?: string): Promise<string> {
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  tx.headerDeps.push((await signer.client.getTipHeader()).hash);
+  if (inclusionHeader && !tx.headerDeps.includes(inclusionHeader as `0x${string}`)) tx.headerDeps.push(inclusionHeader as `0x${string}`);
+  tx.addInput({
+    previousOutput: campaign.outPoint,
+    since: "0x0",
+    cellOutput: { capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type },
+    outputData: bytesToHex(encodeCampaignData(campaign.data)),
+  });
+  tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(data)));
+  await tx.completeFeeBy(signer, 1000n);
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(action) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+  return signer.sendTransaction(tx);
+}
+
 export async function sendDepositShannons(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
@@ -166,14 +333,24 @@ export async function sendDepositShannons(
   // Include the tip header so the contract can read the current timestamp.
   const tipHeader = await signer.client.getTipHeader();
   tx.headerDeps.push(tipHeader.hash);
+  assertRaffleApprovalAction(campaignCell.data, "support", Number(tipHeader.timestamp));
 
   const actionArgsHex = bytesToHex(encodeDepositArgs(amountShannons)) as `0x${string}`;
 
   // Update campaign data with new deposits
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits + amountShannons,
-  };
+  const updatedCampaignData = (campaignCell.data.campaignType === CampaignType.Raffle || campaignCell.data.campaignType === CampaignType.RecurringRaffle) && hasSplitSupportAccounting(campaignCell.data)
+    ? {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+        creatorSupportTotal: campaignCell.data.creatorSupportTotal + amountShannons,
+        ...(campaignCell.data.campaignType === CampaignType.RecurringRaffle
+          ? { prizePool: (campaignCell.data.prizePool ?? 0n) + amountShannons * campaignCell.data.supportPoolBps / 10_000n }
+          : {}),
+      }
+    : {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+      };
 
   // Add the campaign cell as input (GroupInput[0])
   // Provide full cell data so ccc can resolve capacity without an extra RPC call.
@@ -208,6 +385,31 @@ export async function sendDepositShannons(
   return signer.sendTransaction(tx);
 }
 
+export const SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS = 61n * 100_000_000n;
+
+export async function resolveCreatorTipLock(
+  client: ccc.Client,
+  campaignCell: CampaignCell,
+  creatorAddress: string | null | undefined,
+): Promise<ccc.Script> {
+  let creatorLock: ccc.Script;
+  if (creatorAddress?.trim()) {
+    try {
+      creatorLock = (await ccc.Address.fromString(creatorAddress.trim(), client)).script;
+    } catch {
+      throw new Error("The freight creator's wallet address is invalid. Unable to send a direct tip.");
+    }
+  } else {
+    creatorLock = ccc.Script.from(campaignCell.lock);
+  }
+
+  const lockArgs = hexToBytes(creatorLock.args);
+  if (lockArgs.length < 20 || bytesToHex(lockArgs.slice(0, 20)) !== bytesToHex(campaignCell.data.createdBy)) {
+    throw new Error("The freight creator's wallet address is unavailable or does not match this freight.");
+  }
+  return creatorLock;
+}
+
 export async function sendDeposit(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
@@ -216,24 +418,95 @@ export async function sendDeposit(
   return sendDepositShannons(signer, campaignCell, amountCkb * 100_000_000n);
 }
 
-export async function sendVerifyParticipantRaffle(
+export async function sendCreatorTipShannons(
   signer: ccc.Signer,
-  campaignCell: CampaignCell
+  campaignCell: CampaignCell,
+  amountShannons: bigint,
+  creatorAddress?: string | null,
 ): Promise<string> {
+  if (amountShannons < SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS) {
+    throw new Error(`SimpleTask tips must be at least ${Number(SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS / 100_000_000n)} CKB so the creator can receive a standalone CKB cell.`);
+  }
+
+  const creatorLock = await resolveCreatorTipLock(signer.client, campaignCell, creatorAddress);
+  const minimumCapacity = BigInt(ccc.CellOutput.from({ lock: creatorLock }, "0x").capacity);
+  if (amountShannons < minimumCapacity) {
+    throw new Error(`Tips to this creator must be at least ${minimumCapacity / 100_000_000n} CKB to create a wallet cell.`);
+  }
+
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
 
   const tipHeader = await signer.client.getTipHeader();
   tx.headerDeps.push(tipHeader.hash);
 
+  const actionArgsHex = bytesToHex(encodeDepositArgs(amountShannons)) as `0x${string}`;
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits + amountShannons,
+  };
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  tx.addOutput({
+    capacity: amountShannons,
+    lock: creatorLock,
+  }, "0x");
+
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = actionArgsHex;
+  tx.setWitnessArgsAt(0, witness);
+
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
+export async function sendCreatorTip(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  amountCkb: bigint,
+  creatorAddress?: string | null,
+): Promise<string> {
+  return sendCreatorTipShannons(signer, campaignCell, amountCkb * 100_000_000n, creatorAddress);
+}
+
+export async function sendVerifyParticipantRaffle(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell,
+  ticketCount: bigint = 1n,
+): Promise<string> {
+  if (ticketCount < 1n || ticketCount > 100n) throw new Error("Choose between 1 and 100 tickets per purchase");
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+  assertRaffleApprovalAction(campaignCell.data, "participate", Number(tipHeader.timestamp));
+
   const depositorAddressObj = await signer.getRecommendedAddressObj();
   const depositorAddressBytes = lockScriptToAddressBytes(depositorAddressObj.script);
   const joinedAt = tipHeader.timestamp;
   const ticketPrice = campaignCell.data.auxAmount;
-
-  if (ticketPrice <= 0n) {
-    throw new Error("Ticket price is unavailable for this raffle");
-  }
+  const totalPrice = ticketPrice * ticketCount;
 
   // Input[0]: campaign cell — must be GroupInput[0] so the contract finds it
   // Provide full cell data so ccc can resolve capacity without an extra RPC call.
@@ -249,13 +522,22 @@ export async function sendVerifyParticipantRaffle(
   });
 
   // Output[0]: updated campaign cell with ticket price added to capacity + deposits
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits + ticketPrice,
-  };
+  const updatedCampaignData = hasSplitSupportAccounting(campaignCell.data)
+    ? {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + totalPrice,
+        ticketSalesTotal: campaignCell.data.ticketSalesTotal + (ticketPrice === 0n ? ticketCount : totalPrice),
+        ...(campaignCell.data.campaignType === CampaignType.RecurringRaffle
+          ? { prizePool: (campaignCell.data.prizePool ?? 0n) + totalPrice }
+          : {}),
+      }
+    : {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits + totalPrice,
+      };
   tx.addOutput(
     {
-      capacity: campaignCell.capacityShannons + ticketPrice,
+      capacity: campaignCell.capacityShannons + totalPrice,
       lock: campaignCell.lock,
       type: campaignCell.type,
     },
@@ -264,22 +546,34 @@ export async function sendVerifyParticipantRaffle(
 
   // Output[1]: participant cell
   // Minimum: cell overhead (61) + secp256k1 lock (~53) + data (73) = 187 bytes → 18_700_000_000 shannons
-  const PARTICIPANT_CELL_CAPACITY = 18_700_000_000n;
-  tx.addOutput(
-    {
-      capacity: PARTICIPANT_CELL_CAPACITY,
-      lock: depositorAddressObj.script,
-    },
-    bytesToHex(encodeParticipantData({
-      campaignCreatedBy: campaignCell.data.createdBy,
-      campaignCreatedAt: campaignCell.data.createdAt,
-      campaignType: campaignCell.data.campaignType,
-      participantAddress: depositorAddressBytes,
-      joinedAt,
-      status: ParticipantStatus.Verified,
-      depositedAmount: ticketPrice,
-    }))
-  );
+  const PARTICIPANT_CELL_CAPACITY = campaignCell.data.campaignType === CampaignType.RecurringRaffle
+    ? 20_500_000_000n
+    : 18_700_000_000n;
+  for (let entry = 0n; entry < ticketCount; entry++) {
+    tx.addOutput(
+      {
+        capacity: PARTICIPANT_CELL_CAPACITY,
+        lock: campaignCell.data.campaignType === CampaignType.Raffle || campaignCell.data.campaignType === CampaignType.RecurringRaffle
+          ? freightParticipantStateLock(
+              campaignCell.data.createdBy,
+              campaignCell.data.createdAt,
+              depositorAddressBytes,
+            )
+          : depositorAddressObj.script,
+      },
+      bytesToHex(encodeParticipantData({
+        campaignCreatedBy: campaignCell.data.createdBy,
+        campaignCreatedAt: campaignCell.data.createdAt,
+        campaignType: campaignCell.data.campaignType,
+        participantAddress: depositorAddressBytes,
+        joinedAt,
+        status: ParticipantStatus.Verified,
+        depositedAmount: ticketPrice,
+        round: campaignCell.data.round,
+        claimableAmount: 0n,
+      }))
+    );
+  }
 
   // Let completeFeeBy pull in whatever inputs are needed to cover:
   // ticket price (transferred to campaign cell) + participant cell + any required change + fee
@@ -287,7 +581,9 @@ export async function sendVerifyParticipantRaffle(
 
   // Set witness at index 0 (campaign cell position) with selector byte 0x03
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
-  witness.outputType = bytesToHex(new Uint8Array([3])) as `0x${string}`;
+  witness.outputType = bytesToHex(ticketCount === 1n
+    ? new Uint8Array([3])
+    : encodeVerifyRaffleTicketCount(ticketCount)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
   return signer.sendTransaction(tx);
@@ -302,6 +598,7 @@ export async function sendUpdateCampaignStatus(
 
   const tipHeader = await signer.client.getTipHeader();
   tx.headerDeps.push(tipHeader.hash);
+  assertRaffleApprovalAction(campaignCell.data, "participate", Number(tipHeader.timestamp));
 
   const nowMs = Number(tipHeader.timestamp);
   const createdAtMs = Number(campaignCell.data.createdAt);
@@ -313,7 +610,14 @@ export async function sendUpdateCampaignStatus(
   // Derive the new status the contract will compute and write it in the output cell.
   // The contract's update_campaign_status does exactly this same derivation.
   let newStatus: CampaignStatus;
-  if (nowMs >= endsAtMs) {
+  if (campaignCell.data.campaignType === CampaignType.RecurringRaffle) {
+    if (campaignCell.data.status !== CampaignStatus.Created || nowMs < startsAtMs) {
+      throw new Error("Recurring raffle is not ready to start");
+    }
+    newStatus = CampaignStatus.Active;
+  } else if (campaignCell.data.campaignType === CampaignType.SimpleTask && nowMs >= startsAtMs) {
+    newStatus = CampaignStatus.Active;
+  } else if (nowMs >= endsAtMs) {
     newStatus = CampaignStatus.Completed;
   } else if (nowMs >= startsAtMs) {
     newStatus = CampaignStatus.Active;
@@ -363,6 +667,7 @@ export async function sendBatchDeliver(
 
   const tipHeader = await signer.client.getTipHeader();
   tx.headerDeps.push(tipHeader.hash);
+  assertRaffleApprovalAction(campaignCell.data, "distribute", Number(tipHeader.timestamp));
 
   tx.addInput({
     previousOutput: campaignCell.outPoint,
@@ -394,15 +699,25 @@ export async function sendBatchDeliver(
   if (rewardCount <= 0n) {
     throw new Error("No eligible winners are available for settlement.");
   }
-  const rewardPerWinner = campaignCell.data.currentDeposits / rewardCount;
-  const updatedCampaignData = {
-    ...campaignCell.data,
-    currentDeposits: campaignCell.data.currentDeposits - rewardPerWinner * BigInt(winners.length),
-  };
+  const rewardPool = computeRaffleRewardPool(campaignCell.data);
+  const rewardPerWinner = rewardPool / rewardCount;
+  const totalPayout = rewardPerWinner * BigInt(winners.length);
+  const updatedCampaignData = campaignCell.data.campaignType === CampaignType.Raffle && hasSplitSupportAccounting(campaignCell.data)
+    ? {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits - totalPayout,
+        ticketSalesTotal: 0n,
+        creatorSupportTotal: campaignCell.data.currentDeposits - totalPayout,
+        supportPoolBps: 0n,
+      }
+    : {
+        ...campaignCell.data,
+        currentDeposits: campaignCell.data.currentDeposits - totalPayout,
+      };
 
   tx.addOutput(
     {
-      capacity: campaignCell.capacityShannons - rewardPerWinner * BigInt(winners.length),
+      capacity: campaignCell.capacityShannons - totalPayout,
       lock: campaignCell.lock,
       type: campaignCell.type,
     },
@@ -432,6 +747,308 @@ export async function sendBatchDeliver(
   return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
 }
 
+export async function sendCreatorWithdraw(
+  signer: ccc.Signer,
+  campaignCell: CampaignCell
+): Promise<{ txHash: string; withdrawnAmountShannons: bigint }> {
+  const withdrawAmount = computeCreatorWithdrawableAmount(campaignCell.data);
+  if (withdrawAmount <= 0n) {
+    throw new Error("No creator-withdrawable escrow is available for this freight.");
+  }
+
+  const creatorLock = (await signer.getRecommendedAddressObj()).script;
+  if (bytesToHex(lockScriptToAddressBytes(creatorLock)) !== bytesToHex(campaignCell.data.createdBy)) {
+    throw new Error("Connect the freight creator's wallet to withdraw support.");
+  }
+  if (campaignCell.data.gift && creatorLock.hash() !== bytesToHex(campaignCell.data.gift.creator)) throw new Error("Only the fixed gift creator wallet can recover escrow");
+
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+  assertRaffleApprovalAction(campaignCell.data, "withdraw", Number(tipHeader.timestamp));
+
+  const updatedCampaignData = {
+    ...campaignCell.data,
+    currentDeposits: campaignCell.data.currentDeposits - withdrawAmount,
+    creatorSupportTotal: campaignCell.data.gift ? 0n : campaignCell.data.creatorSupportTotal - withdrawAmount,
+    supportPoolBps: 0n,
+  };
+
+  tx.addInput({
+    previousOutput: campaignCell.outPoint,
+    since: "0x0",
+    cellOutput: {
+      capacity: campaignCell.capacityShannons,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaignCell.data)),
+  });
+
+  tx.addOutput(
+    {
+      capacity: campaignCell.capacityShannons - withdrawAmount,
+      lock: campaignCell.lock,
+      type: campaignCell.type,
+    },
+    bytesToHex(encodeCampaignData(updatedCampaignData))
+  );
+
+  tx.addOutput({
+    capacity: withdrawAmount,
+    lock: creatorLock,
+  }, "0x");
+  if (campaignCell.data.gift) {
+    const payout = tx.outputs[1];
+    const minimum = BigInt(payout.occupiedSize) * 100_000_000n;
+    if (payout.capacity < minimum) payout.capacity = minimum;
+  }
+
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = bytesToHex(new Uint8Array([Selector.CreatorWithdraw])) as `0x${string}`;
+  tx.setWitnessArgsAt(0, witness);
+
+  const txHash = await withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return {
+    txHash,
+    withdrawnAmountShannons: withdrawAmount,
+  };
+}
+
+function recurringAction(selector: Selector, preimage?: Uint8Array) {
+  const bytes = new Uint8Array(1 + (preimage?.length ?? 0));
+  bytes[0] = selector;
+  if (preimage) bytes.set(preimage, 1);
+  return bytesToHex(bytes) as `0x${string}`;
+}
+
+function addCampaignInput(tx: ccc.Transaction, campaign: CampaignCell) {
+  tx.addInput({
+    previousOutput: campaign.outPoint,
+    since: "0x0",
+    cellOutput: {
+      capacity: campaign.capacityShannons,
+      lock: campaign.lock,
+      type: campaign.type,
+    },
+    outputData: bytesToHex(encodeCampaignData(campaign.data)),
+  });
+}
+
+function addParticipantInput(tx: ccc.Transaction, participant: ParticipantCell) {
+  tx.addInput({
+    previousOutput: participant.outPoint,
+    since: "0x0",
+    cellOutput: {
+      capacity: participant.capacityShannons,
+      lock: participant.lock,
+      type: participant.type ?? undefined,
+    },
+    outputData: bytesToHex(encodeParticipantData(participant.data)),
+  });
+}
+
+export function previewRecurringRaffleWinners(
+  participants: ParticipantCell[],
+  rewardCount: bigint,
+  revealedPreimage: Uint8Array,
+  campaign: CampaignCell,
+) {
+  const ordered = [...participants].sort(compareParticipants);
+  if (ordered.length <= 1 || rewardCount >= BigInt(ordered.length)) return ordered;
+  const seedInput = new Uint8Array(32 + 20 + 8 + 8 + 8);
+  seedInput.set(revealedPreimage, 0);
+  seedInput.set(campaign.data.createdBy, 32);
+  const view = new DataView(seedInput.buffer);
+  view.setBigUint64(52, campaign.data.createdAt, true);
+  view.setBigUint64(60, campaign.data.round ?? 1n, true);
+  view.setBigUint64(68, BigInt(ordered.length), true);
+  const hasher = blake2b(32, null, null, null);
+  hasher.update(seedInput);
+  const seed = hasher.digest("binary") as Uint8Array;
+  const roundRef = { current: 0n };
+  for (let index = ordered.length - 1; index > 0; index -= 1) {
+    const target = drawUniformIndex(seed, roundRef, index + 1);
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+  }
+  return ordered;
+}
+
+export async function sendDrawRecurringRaffle(
+  signer: ccc.Signer,
+  campaign: CampaignCell,
+  participants: ParticipantCell[],
+  revealedPreimage: Uint8Array,
+) {
+  if (campaign.data.campaignType !== CampaignType.RecurringRaffle || campaign.data.status !== CampaignStatus.Active) {
+    throw new Error("Recurring raffle is not ready to draw");
+  }
+  if (participants.length === 0) {
+    const tipHeader = await signer.client.getTipHeader();
+    assertRaffleApprovalAction(campaign.data, "distribute", Number(tipHeader.timestamp));
+    const updatedData: CampaignData = {
+      ...campaign.data,
+      ticketSalesTotal: 0n,
+      round: (campaign.data.round ?? 1n) + 1n,
+      roundStartedAt: tipHeader.timestamp,
+      roundRewardPerWinner: 0n,
+      roundWinnerCount: 0n,
+    };
+    const tx = ccc.Transaction.default();
+    tx.addCellDeps(FREIGHT_CELL_DEP);
+    tx.headerDeps.push(tipHeader.hash);
+    addCampaignInput(tx, campaign);
+    tx.addOutput(
+      { capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type },
+      bytesToHex(encodeCampaignData(updatedData)),
+    );
+    await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+    const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+    witness.outputType = recurringAction(Selector.DrawRecurringRaffle, revealedPreimage);
+    tx.setWitnessArgsAt(0, witness);
+    return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  }
+  const ordered = previewRecurringRaffleWinners(participants, campaign.data.rewardCount, revealedPreimage, campaign);
+  const winnerCount = Math.min(Number(campaign.data.rewardCount), ordered.length);
+  const rewardPerWinner = (campaign.data.prizePool ?? 0n) / BigInt(winnerCount);
+  const updatedData: CampaignData = {
+    ...campaign.data,
+    status: CampaignStatus.Sleeping,
+    roundRewardPerWinner: rewardPerWinner,
+    roundWinnerCount: BigInt(winnerCount),
+  };
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  const tipHeader = await signer.client.getTipHeader();
+  assertRaffleApprovalAction(campaign.data, "distribute", Number(tipHeader.timestamp));
+  tx.headerDeps.push(tipHeader.hash);
+  addCampaignInput(tx, campaign);
+  participants.forEach((participant) => addParticipantInput(tx, participant));
+  tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updatedData)));
+  ordered.forEach((participant, index) => {
+    tx.addOutput(
+      { capacity: participant.capacityShannons, lock: participant.lock, type: participant.type ?? undefined },
+      bytesToHex(encodeParticipantData({
+        ...participant.data,
+        status: index < winnerCount ? ParticipantStatus.Winner : ParticipantStatus.Eliminated,
+        round: campaign.data.round,
+        claimableAmount: index < winnerCount ? rewardPerWinner : 0n,
+      })),
+    );
+  });
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = recurringAction(Selector.DrawRecurringRaffle, revealedPreimage);
+  tx.setWitnessArgsAt(0, witness);
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
+export async function sendClaimRecurringRaffle(
+  signer: ccc.Signer,
+  campaign: CampaignCell,
+  winner: ParticipantCell,
+) {
+  const amount = winner.data.claimableAmount ?? 0n;
+  if (amount <= 0n) throw new Error("This ticket has no claimable reward");
+  const address = await signer.getRecommendedAddressObj();
+  if (bytesToHex(lockScriptToAddressBytes(address.script)) !== bytesToHex(winner.data.participantAddress)) {
+    throw new Error("This reward belongs to another wallet");
+  }
+  const finalRound = (campaign.data.roundWinnerCount ?? 0n) === 1n;
+  const updatedData: CampaignData = {
+    ...campaign.data,
+    currentDeposits: campaign.data.currentDeposits - amount,
+    prizePool: finalRound ? 0n : (campaign.data.prizePool ?? 0n) - amount,
+    status: finalRound ? CampaignStatus.Finished : CampaignStatus.Sleeping,
+    ...(finalRound
+      ? {
+          ticketSalesTotal: 0n,
+          creatorSupportTotal: campaign.data.currentDeposits - amount,
+          supportPoolBps: 0n,
+        }
+      : {}),
+  };
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+  addCampaignInput(tx, campaign);
+  addParticipantInput(tx, winner);
+  tx.addOutput({ capacity: campaign.capacityShannons - amount, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updatedData)));
+  tx.addOutput({ capacity: winner.capacityShannons + amount, lock: address.script }, "0x");
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = recurringAction(Selector.ClaimRecurringRaffle);
+  tx.setWitnessArgsAt(0, witness);
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
+export async function sendRolloverRecurringRaffle(signer: ccc.Signer, campaign: CampaignCell) {
+  const finalRound = (campaign.data.roundWinnerCount ?? 0n) === 1n;
+  const nextWinnerCount = finalRound ? 1n : nextRecurringWinnerCount(
+    campaign.data.roundWinnerCount ?? 0n,
+    campaign.data.winnerReductionBps ?? 0n,
+  );
+  const tipHeader = await signer.client.getTipHeader();
+  const updatedData: CampaignData = finalRound
+    ? {
+        ...campaign.data,
+        status: CampaignStatus.Finished,
+        ticketSalesTotal: 0n,
+        creatorSupportTotal: campaign.data.currentDeposits,
+        supportPoolBps: 0n,
+        prizePool: 0n,
+      }
+    : {
+        ...campaign.data,
+        status: CampaignStatus.Active,
+        rewardCount: nextWinnerCount > 0n ? nextWinnerCount : 1n,
+        ticketSalesTotal: 0n,
+        round: (campaign.data.round ?? 1n) + 1n,
+        roundStartedAt: tipHeader.timestamp,
+        roundRewardPerWinner: 0n,
+        roundWinnerCount: 0n,
+      };
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  tx.headerDeps.push(tipHeader.hash);
+  addCampaignInput(tx, campaign);
+  tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updatedData)));
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = recurringAction(Selector.RolloverRecurringRaffle);
+  tx.setWitnessArgsAt(0, witness);
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
+export async function sendReclaimRecurringParticipant(
+  signer: ccc.Signer,
+  campaign: CampaignCell,
+  participant: ParticipantCell,
+) {
+  const address = await signer.getRecommendedAddressObj();
+  if (bytesToHex(lockScriptToAddressBytes(address.script)) !== bytesToHex(participant.data.participantAddress)) {
+    throw new Error("This ticket belongs to another wallet");
+  }
+  const tx = ccc.Transaction.default();
+  tx.addCellDeps(FREIGHT_CELL_DEP);
+  const tipHeader = await signer.client.getTipHeader();
+  tx.headerDeps.push(tipHeader.hash);
+  addCampaignInput(tx, campaign);
+  addParticipantInput(tx, participant);
+  tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(campaign.data)));
+  tx.addOutput({ capacity: participant.capacityShannons, lock: address.script }, "0x");
+  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
+  witness.outputType = recurringAction(Selector.ReclaimRecurringParticipant);
+  tx.setWitnessArgsAt(0, witness);
+  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+}
+
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────
 
 export interface CampaignCell {
@@ -440,6 +1057,16 @@ export interface CampaignCell {
   capacityShannons: bigint;
   lock: ccc.ScriptLike;
   type: ccc.ScriptLike;
+}
+
+export function getRaffleTicketsPerUser(campaign: CampaignCell): bigint {
+  const args = (campaign.type as { args?: string }).args;
+  if (!args) return 1n;
+  const bytes = hexToBytes(args);
+  if (bytes.length < 90 || bytes[0] !== Selector.CreateCampaign) return 1n;
+  const view = new DataView(bytes.buffer, bytes.byteOffset);
+  const limit = view.getBigUint64(82, true);
+  return limit > 0n ? limit : 1n;
 }
 
 export async function fetchCampaigns(
@@ -469,14 +1096,19 @@ export async function fetchCampaigns(
     try {
       const rawData = hexToBytes(cell.outputData);
       const typeScript = cell.cellOutput.type;
-      // Campaign cells are exactly 174 bytes; participant cells are 73 bytes.
-      if (rawData.length !== 174 || !typeScript) continue;
+      // Campaign cells use either the legacy 174-byte layout or the split-support 198-byte layout.
+      if (rawData.length < 174 || !typeScript) continue;
+      const data = decodeCampaignData(rawData);
+      if (data.approval?.stage === "on-commence" && !data.approval.confirmed && raffleApprovalThresholdMet(data.approval)) {
+        // Only pending quorum needs a receipt lookup; normal feed cells need none.
+        try { data.approval.recordedAt = (await client.getTransactionWithHeader(cell.outPoint.txHash))?.header?.timestamp; } catch { /* Confirmation still verifies the inclusion header on-chain. */ }
+      }
       results.push({
         outPoint: {
           txHash: cell.outPoint.txHash,
           index: Number(cell.outPoint.index),
         },
-        data: decodeCampaignData(rawData),
+        data,
         capacityShannons: cell.cellOutput.capacity,
         lock: cell.cellOutput.lock,
         type: typeScript,
@@ -501,13 +1133,16 @@ export async function fetchParticipants(
   client: ccc.Client,
   campaign: CampaignCell,
   limit = 500,
-  participantAddresses?: string[]
+  participantAddresses?: string[],
+  requireCompleteScan = false,
+  statuses: ParticipantStatus[] = [ParticipantStatus.Verified],
 ): Promise<ParticipantCell[]> {
   const results: ParticipantCell[] = [];
   const campaignCreatedByHex = bytesToHex(campaign.data.createdBy);
   const campaignCreatedAt = campaign.data.createdAt;
   const campaignType = campaign.data.campaignType;
   const normalizedAddresses = participantAddresses?.map((value) => value.trim()).filter(Boolean) ?? [];
+  const queryLimit = requireCompleteScan ? limit + 1 : limit;
 
   type IndexedCell = {
     outPoint: { txHash: string; index: string | number | bigint };
@@ -522,10 +1157,13 @@ export async function fetchParticipants(
   const collectFromCells = (cells: AsyncIterable<IndexedCell>) => (async () => {
     let count = 0;
     for await (const cell of cells) {
-      if (count++ >= limit) break;
+      if (count++ >= limit) {
+        if (requireCompleteScan) throw new Error("Wallet has too many cells to verify its raffle ticket count");
+        break;
+      }
       try {
         const rawData = hexToBytes(cell.outputData);
-        if (rawData.length !== 66) continue;
+        if (rawData.length !== 66 && rawData.length !== 82) continue;
         const data = decodeParticipantData(rawData);
         if (
           bytesToHex(data.campaignCreatedBy) !== campaignCreatedByHex ||
@@ -534,7 +1172,7 @@ export async function fetchParticipants(
         ) {
           continue;
         }
-        if (data.status !== ParticipantStatus.Verified) {
+        if (!statuses.includes(data.status)) {
           continue;
         }
         results.push({
@@ -556,17 +1194,42 @@ export async function fetchParticipants(
   if (normalizedAddresses.length > 0) {
     for (const address of normalizedAddresses) {
       const addressObj = await ccc.Address.fromString(address, client);
+      const participantLock = campaignType === CampaignType.Raffle || campaignType === CampaignType.RecurringRaffle
+        ? freightParticipantStateLock(
+            hexToBytes(campaignCreatedByHex),
+            campaignCreatedAt,
+            lockScriptToAddressBytes(addressObj.script),
+          )
+        : addressObj.script;
       await collectFromCells(client.findCells(
         {
-          script: addressObj.script,
+          script: participantLock,
           scriptType: "lock",
           scriptSearchMode: "exact",
           withData: true,
         },
         "asc",
-        limit
+        queryLimit
       ));
     }
+    return results;
+  }
+
+  if (campaignType === CampaignType.Raffle || campaignType === CampaignType.RecurringRaffle) {
+    await collectFromCells(client.findCells(
+      {
+        script: {
+          codeHash: FREIGHT_CONTRACT.codeHash,
+          hashType: FREIGHT_CONTRACT.hashType,
+          args: bytesToHex(new Uint8Array([Selector.StateLock])),
+        },
+        scriptType: "lock",
+        scriptSearchMode: "prefix",
+        withData: true,
+      },
+      "asc",
+      queryLimit,
+    ));
     return results;
   }
 
@@ -582,7 +1245,7 @@ export async function fetchParticipants(
       withData: true,
     },
     "asc",
-    limit
+    queryLimit
   ));
 
   return results;
@@ -669,3 +1332,6 @@ export function previewDeterministicWinners(
 
   return ordered.slice(0, winnerCount);
 }
+
+// Kept for callers of the original raffle approval helper.
+export const sendRaffleApproval = sendCampaignApproval;

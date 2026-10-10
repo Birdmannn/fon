@@ -1,6 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
-import { getCampaignParticipantsCollection } from "@/lib/mongodb";
+import { getCampaignParticipantsCollection, getMongoCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
+import { hasParticipantCreatedChildFreight, normalizeChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
+import { assertFreightParentAccess, dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
+import { verifyGiftClaimCredit } from "@/lib/giftClaimCredit";
+import { reconcileAdsfForAddress } from "@/lib/adsf";
 
 type CampaignParticipantPayload = {
   campaignId?: unknown;
@@ -18,6 +22,8 @@ type CampaignParticipantPayload = {
   claimUnits?: unknown;
   claimSplitMode?: unknown;
   mountableType?: unknown;
+  mountableInstanceId?: unknown;
+  mountableKey?: unknown;
   verificationProvider?: unknown;
   googleSub?: unknown;
   googleEmail?: unknown;
@@ -26,6 +32,12 @@ type CampaignParticipantPayload = {
   reviewedAt?: unknown;
   reviewedByAddress?: unknown;
   reviewNote?: unknown;
+  effectiveAt?: unknown;
+  sourceUpdatedAt?: unknown;
+  childSatisfied?: unknown;
+  parentSatisfied?: unknown;
+  criteriaState?: unknown;
+  statusMessage?: unknown;
 };
 
 function badRequest(message: string, status = 400) {
@@ -76,6 +88,18 @@ function ensureOptionalNumber(value: unknown, field: string) {
   return value;
 }
 
+function ensureOptionalArray(value: unknown, field: string) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error(`${field} must be an array when provided`);
+  }
+
+  return value;
+}
+
 function normalizePayload(payload: CampaignParticipantPayload) {
   const campaignId = ensureString(payload.campaignId, "campaignId").toLowerCase();
   const createdByHash = ensureString(payload.createdByHash, "createdByHash").toLowerCase();
@@ -92,6 +116,8 @@ function normalizePayload(payload: CampaignParticipantPayload) {
   const claimUnits = ensureOptionalNumber(payload.claimUnits, "claimUnits");
   const claimSplitMode = ensureOptionalString(payload.claimSplitMode, "claimSplitMode")?.toLowerCase() ?? null;
   const mountableType = ensureOptionalString(payload.mountableType, "mountableType")?.toLowerCase() ?? null;
+  const mountableInstanceId = ensureOptionalString(payload.mountableInstanceId, "mountableInstanceId");
+  const mountableKey = ensureOptionalString(payload.mountableKey, "mountableKey");
   const verificationProvider = ensureOptionalString(payload.verificationProvider, "verificationProvider")?.toLowerCase() ?? null;
   const googleSub = ensureOptionalString(payload.googleSub, "googleSub");
   const googleEmail = ensureOptionalString(payload.googleEmail, "googleEmail")?.toLowerCase() ?? null;
@@ -100,6 +126,12 @@ function normalizePayload(payload: CampaignParticipantPayload) {
   const reviewedAt = ensureOptionalString(payload.reviewedAt, "reviewedAt");
   const reviewedByAddress = ensureOptionalString(payload.reviewedByAddress, "reviewedByAddress")?.toLowerCase() ?? null;
   const reviewNote = ensureOptionalString(payload.reviewNote, "reviewNote");
+  const effectiveAt = ensureOptionalString(payload.effectiveAt, "effectiveAt");
+  const sourceUpdatedAt = ensureOptionalString(payload.sourceUpdatedAt, "sourceUpdatedAt");
+  const childSatisfied = ensureOptionalBoolean(payload.childSatisfied, "childSatisfied");
+  const parentSatisfied = ensureOptionalBoolean(payload.parentSatisfied, "parentSatisfied");
+  const criteriaState = ensureOptionalArray(payload.criteriaState, "criteriaState");
+  const statusMessage = ensureOptionalString(payload.statusMessage, "statusMessage");
 
   if (!Number.isInteger(campaignType)) {
     throw new Error("campaignType must be an integer");
@@ -125,6 +157,8 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     claimUnits,
     claimSplitMode,
     mountableType,
+    mountableInstanceId,
+    mountableKey,
     verificationProvider,
     googleSub,
     googleEmail,
@@ -133,14 +167,26 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     reviewedAt,
     reviewedByAddress,
     reviewNote,
+    effectiveAt,
+    sourceUpdatedAt,
+    childSatisfied,
+    parentSatisfied,
+    criteriaState,
+    statusMessage,
   };
 }
 
 export async function POST(request: Request) {
   try {
     const payload = normalizePayload((await request.json()) as CampaignParticipantPayload);
+    await assertFreightParentAccess(payload.campaignId, payload.participantAddress);
     const collection = await getCampaignParticipantsCollection();
     const now = new Date();
+    const giftCredit = payload.participantKind === "gift_claim" ? {
+      claimAmountShannons: await verifyGiftClaimCredit(payload.participantTxHash ?? "", payload.participantAddress, payload.campaignId),
+      claimChainVerified: true,
+      status: "verified",
+    } : {};
 
     const query = payload.googleSub
       ? {
@@ -163,6 +209,7 @@ export async function POST(request: Request) {
       {
         $set: {
           ...payload,
+          ...giftCredit,
           updatedAt: now,
         },
         $setOnInsert: {
@@ -171,6 +218,22 @@ export async function POST(request: Request) {
       },
       { upsert: true }
     );
+
+    if (payload.participantKind === "gift_claim") await reconcileAdsfForAddress(payload.participantAddress);
+
+    after(async () => {
+      const canonicalVerification = await finalizeCampaignParticipant({
+        campaignId: payload.campaignId,
+        participantAddress: payload.participantAddress,
+      });
+      await dispatchMountedAppRequestsForParticipant({
+        campaignId: payload.campaignId,
+        participantAddress: payload.participantAddress,
+        participant: payload,
+        canonicalVerification,
+        source: "participant-upsert",
+      });
+    });
 
     return NextResponse.json({ ok: true }, { status: 201 });
   } catch (error) {
@@ -187,9 +250,86 @@ export async function GET(request: Request) {
       return badRequest("campaignId is required");
     }
 
+    const participantAddress = url.searchParams.get("participantAddress")?.trim().toLowerCase();
+    const participantKind = url.searchParams.get("participantKind")?.trim().toLowerCase();
+    const mountableType = url.searchParams.get("mountableType")?.trim().toLowerCase();
+    const mountableInstanceId = url.searchParams.get("mountableInstanceId")?.trim();
+    const at = url.searchParams.get("at")?.trim();
+
+    if (at && mountableType !== "app") {
+      return badRequest("as-of queries currently require mountableType=app");
+    }
+
+    if (at) {
+      const historyCollection = await getMountableAppUpdatesCollection();
+      const historyQuery: Record<string, unknown> = {
+        campaignId,
+        effectiveAt: { $lte: at },
+      };
+      if (participantAddress) {
+        historyQuery.participantAddress = participantAddress;
+      }
+      if (mountableInstanceId) {
+        historyQuery.mountableInstanceId = mountableInstanceId;
+      }
+
+      const history = await historyCollection
+        .find(historyQuery, {
+          sort: {
+            participantAddress: 1,
+            mountableInstanceId: 1,
+            effectiveAt: -1,
+            createdAt: -1,
+          },
+        })
+        .toArray();
+
+      const latestByKey = new Map<string, Record<string, unknown>>();
+      for (const entry of history) {
+        const candidate = entry as Record<string, unknown>;
+        const addressKey = typeof candidate.participantAddress === "string" ? candidate.participantAddress.trim().toLowerCase() : "";
+        const instanceKey = typeof candidate.mountableInstanceId === "string" ? candidate.mountableInstanceId.trim() : "";
+        const dedupeKey = `${addressKey}:${instanceKey}`;
+        if (!addressKey || !instanceKey || latestByKey.has(dedupeKey)) {
+          continue;
+        }
+        latestByKey.set(dedupeKey, candidate);
+      }
+
+      return NextResponse.json({ participants: Array.from(latestByKey.values()) });
+    }
+
     const collection = await getCampaignParticipantsCollection();
+    const query: Record<string, unknown> = { campaignId };
+    if (participantAddress) {
+      query.participantAddress = participantAddress;
+    }
+    if (participantKind === "raffle_ticket") {
+      query.$or = [
+        { participantKind: "raffle_ticket" },
+        { participantKind: null, mountableType: null, status: "verified" },
+      ];
+    } else if (participantKind) {
+      query.participantKind = participantKind;
+    }
+    if (mountableType) {
+      query.mountableType = mountableType;
+    }
+    if (mountableInstanceId) {
+      query.mountableInstanceId = mountableInstanceId;
+    }
+
+    if (participantKind === "canonical_verification") {
+      const knownAddresses = await collection.distinct("participantAddress", query);
+      for (const address of knownAddresses) {
+        if (typeof address === "string" && address.trim()) {
+          await finalizeCampaignParticipant({ campaignId, participantAddress: address });
+        }
+      }
+    }
+
     const participants = await collection
-      .find({ campaignId }, { sort: { joinedAt: 1 } })
+      .find(query, { sort: { joinedAt: 1 } })
       .toArray();
 
     const sanitizedParticipants = participants.map((participant) => {
@@ -206,7 +346,18 @@ export async function GET(request: Request) {
       return rest;
     });
 
-    return NextResponse.json({ participants: sanitizedParticipants });
+    let childFreightSatisfied: boolean | undefined;
+    if (participantAddress && url.searchParams.get("includeChildFreight") === "1") {
+      const records = await getMongoCollection();
+      const record = await records.findOne({ campaignId, status: "published" }, { projection: { _id: 0, "mountables.childFreight": 1 } });
+      const config = normalizeChildFreightMountableConfig(record?.mountables?.childFreight);
+      if (config.enabled) {
+        const children = await records.find({ $or: [{ parentCampaignId: campaignId }, { parentCampaignIds: campaignId }], status: "published" }, { projection: { _id: 0, creatorAddress: 1, title: 1 } }).toArray();
+        childFreightSatisfied = hasParticipantCreatedChildFreight(participantAddress, config, children);
+      }
+    }
+
+    return NextResponse.json({ participants: sanitizedParticipants, childFreightSatisfied });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to fetch campaign participants";
     return badRequest(message, 500);

@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 import { SignerSignType } from "@ckb-ccc/core";
 
 import { verifyWalletSignature } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
+import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant } from "@/lib/mountableAppRuntime";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +88,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
     const recordCollection = await getMongoCollection();
     const campaignRecord = await recordCollection.findOne({ campaignId: normalizedCampaignId }, { projection: { creatorAddress: 1 } });
     if (!campaignRecord?.creatorAddress || normalizeAddress(campaignRecord.creatorAddress) !== reviewedByAddress) {
-      return badRequest("Only the campaign creator can review forms claims", 403);
+      return badRequest("Only the campaign creator can review mounted participant claims", 403);
     }
 
     const googleSub = ensureOptionalString(payload.googleSub, "googleSub");
@@ -98,10 +99,11 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
 
     const participantsCollection = await getCampaignParticipantsCollection();
     const now = new Date().toISOString();
-    const result = await participantsCollection.updateOne(
-      googleSub
+    const participantQuery = googleSub
         ? { campaignId: normalizedCampaignId, googleSub }
-        : { campaignId: normalizedCampaignId, participantAddress },
+        : { campaignId: normalizedCampaignId, participantAddress };
+    const result = await participantsCollection.updateOne(
+      participantQuery,
       {
         $set: {
           status,
@@ -115,6 +117,29 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
 
     if (result.matchedCount === 0) {
       return badRequest("Participant claim not found", 404);
+    }
+
+    const reviewedParticipant = await participantsCollection.findOne(
+      participantQuery,
+      { projection: { _id: 0, participantAddress: 1 } },
+    ) as { participantAddress?: unknown } | null;
+    const reviewedParticipantAddress = typeof reviewedParticipant?.participantAddress === "string"
+      ? reviewedParticipant.participantAddress.trim().toLowerCase()
+      : "";
+    if (reviewedParticipantAddress) {
+      after(async () => {
+        const canonicalVerification = await finalizeCampaignParticipant({
+          campaignId: normalizedCampaignId,
+          participantAddress: reviewedParticipantAddress,
+        });
+        await dispatchMountedAppRequestsForParticipant({
+          campaignId: normalizedCampaignId,
+          participantAddress: reviewedParticipantAddress,
+          canonicalVerification,
+          eventType: canonicalVerification?.status === "verified" ? "participant.finalized" : "participant.updated",
+          source: "participant-review",
+        });
+      });
     }
 
     return NextResponse.json({ ok: true });

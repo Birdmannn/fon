@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server";
+import { ObjectId } from "mongodb";
+import { after, NextResponse } from "next/server";
+import { ensureOptionalAppMountables } from "@/app/_lib/appMountablePayload";
+import { parseChildFreightMountableConfig } from "@/app/_lib/childFreightMountable";
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { normalizeLockMountableConfig, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
+import { parseRaffleApprovalConfig } from "@/lib/raffleApproval";
 import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
-import { getMongoCollection } from "@/lib/mongodb";
+import { getCampaignAttachmentsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
+import { activateMountedAppsForCampaignRecord } from "@/lib/mountableAppRuntime";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +26,16 @@ type CampaignRecordPayload = {
     maxAmountCkb?: unknown;
     auxAmountCkb?: unknown;
     rewardCount?: unknown;
+    raffleSupportPoolPercent?: unknown;
+    ticketsPerUser?: unknown;
+    recurringSleepHours?: unknown;
+    winnerReductionPercent?: unknown;
   };
   mountables?: {
+    childFreight?: unknown;
     forms?: unknown;
     lock?: unknown;
+    apps?: unknown;
   };
   socialMetadata?: {
     mentions?: unknown;
@@ -36,6 +47,8 @@ type CampaignRecordPayload = {
     resharedByAddresses?: unknown;
   };
   giftDeliverable?: unknown;
+  raffleApproval?: unknown;
+  attachments?: unknown;
   creatorAddress?: unknown;
   creatorHandle?: unknown;
   status?: unknown;
@@ -49,8 +62,13 @@ type CampaignRecordPayload = {
   settledAt?: unknown;
   settledByAddress?: unknown;
   soldTicketCount?: unknown;
+  liveSoldTicketCount?: unknown;
   settledParticipantCount?: unknown;
   settledRecipients?: unknown;
+  withdrawalTxHash?: unknown;
+  withdrawnAt?: unknown;
+  withdrawnByAddress?: unknown;
+  withdrawnAmountShannons?: unknown;
 };
 
 const SUMMARY_MAX_BYTES = 64;
@@ -154,6 +172,18 @@ function ensureOptionalRecipients(value: unknown) {
   });
 }
 
+function ensureAttachments(value: unknown) {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("attachments must be an array");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`attachments[${index}] must be an object`);
+    const item = entry as { id?: unknown; name?: unknown; contentType?: unknown };
+    const id = ensureString(item.id, `attachments[${index}].id`).trim();
+    if (!/^[a-f0-9]{24}$/i.test(id)) throw new Error(`attachments[${index}].id is invalid`);
+    return { id, name: ensureString(item.name, `attachments[${index}].name`).slice(0, 180), contentType: ensureString(item.contentType, `attachments[${index}].contentType`) };
+  });
+}
+
 async function ensureOptionalFormsMountable(value: unknown) {
   if (value === null || value === undefined) {
     return null;
@@ -227,12 +257,14 @@ function ensureOptionalLockMountable(value: unknown) {
   const candidate = value as {
     enabled?: unknown;
     criterion?: unknown;
+    rule?: unknown;
     minimumFbars?: unknown;
   };
 
   const normalized = normalizeLockMountableConfig({
     enabled: Boolean(candidate.enabled),
     criterion: candidate.criterion as "fbars" | undefined,
+    rule: candidate.rule as "block_below" | "block_at_or_above" | undefined,
     minimumFbars: typeof candidate.minimumFbars === "string"
       ? candidate.minimumFbars
       : candidate.minimumFbars === null || candidate.minimumFbars === undefined
@@ -266,6 +298,13 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const maxAmountCkb = ensureNumberString(payload.argsDraft?.maxAmountCkb, "argsDraft.maxAmountCkb");
   const auxAmountCkb = ensureNumberString(payload.argsDraft?.auxAmountCkb, "argsDraft.auxAmountCkb");
   const rewardCount = ensureNumberString(payload.argsDraft?.rewardCount, "argsDraft.rewardCount");
+  const raffleSupportPoolPercent = ensureNumberString(payload.argsDraft?.raffleSupportPoolPercent, "argsDraft.raffleSupportPoolPercent");
+  const ticketsPerUser = maxAmountCkb !== "0" && payload.argsDraft?.ticketsPerUser !== undefined
+    ? ensureNumberString(payload.argsDraft.ticketsPerUser, "argsDraft.ticketsPerUser") : undefined;
+  const recurringSleepHours = payload.argsDraft?.recurringSleepHours === undefined
+    ? "1" : ensureNumberString(payload.argsDraft.recurringSleepHours, "argsDraft.recurringSleepHours");
+  const winnerReductionPercent = payload.argsDraft?.winnerReductionPercent === undefined
+    ? "50" : ensureNumberString(payload.argsDraft.winnerReductionPercent, "argsDraft.winnerReductionPercent");
 
   const mentions = Array.isArray(payload.socialMetadata?.mentions)
     ? payload.socialMetadata?.mentions.map((value) => ensureString(value, "socialMetadata.mentions[]"))
@@ -296,11 +335,34 @@ async function normalizePayload(payload: CampaignRecordPayload) {
   const settledAt = ensureOptionalString(payload.settledAt, "settledAt");
   const settledByAddress = ensureOptionalString(payload.settledByAddress, "settledByAddress");
   const soldTicketCount = ensureOptionalString(payload.soldTicketCount, "soldTicketCount");
+  const liveSoldTicketCount = ensureOptionalString(payload.liveSoldTicketCount, "liveSoldTicketCount");
   const settledParticipantCount = ensureOptionalString(payload.settledParticipantCount, "settledParticipantCount");
   const settledRecipients = ensureOptionalRecipients(payload.settledRecipients);
+  const withdrawalTxHash = ensureOptionalString(payload.withdrawalTxHash, "withdrawalTxHash");
+  const withdrawnAt = ensureOptionalString(payload.withdrawnAt, "withdrawnAt");
+  const withdrawnByAddress = ensureOptionalString(payload.withdrawnByAddress, "withdrawnByAddress");
+  const withdrawnAmountShannons = ensureOptionalString(payload.withdrawnAmountShannons, "withdrawnAmountShannons");
   const formsMountable = await ensureOptionalFormsMountable(payload.mountables?.forms);
   const lockMountable = ensureOptionalLockMountable(payload.mountables?.lock);
+  const appMountables = ensureOptionalAppMountables(payload.mountables?.apps, {
+    baseTimestamp: chainCreatedAt,
+    taskStartDelayHours,
+    taskDurationHours,
+  });
   const giftDeliverable = parseStoredGiftDeliverable(payload.giftDeliverable);
+  const attachments = ensureAttachments(payload.attachments);
+  if (attachments.length > 0) {
+    if (!creatorAddress) throw new Error("creatorAddress is required for attachments");
+    const normalizedCreatorAddress = creatorAddress.toLowerCase();
+    const [profile, ownedAttachmentCount] = await Promise.all([
+      (await getUserProfilesCollection()).findOne({ address: normalizedCreatorAddress }, { projection: { _id: 0, fbars: 1 } }),
+      (await getCampaignAttachmentsCollection()).countDocuments({ _id: { $in: attachments.map((item) => new ObjectId(item.id)) }, creatorAddress: normalizedCreatorAddress }),
+    ]);
+    const fbars = typeof profile?.fbars === "number" ? profile.fbars : Number(profile?.fbars ?? 0);
+    const allowance = Math.max(0, Math.floor(fbars / 20));
+    if (attachments.length > allowance) throw new Error(`Your ${Math.trunc(fbars || 0)} FBARS allow ${allowance} photos`);
+    if (ownedAttachmentCount !== attachments.length) throw new Error("One or more attachments do not belong to this creator");
+  }
 
   return {
     title,
@@ -317,10 +379,16 @@ async function normalizePayload(payload: CampaignRecordPayload) {
       maxAmountCkb,
       auxAmountCkb,
       rewardCount,
+      raffleSupportPoolPercent,
+      recurringSleepHours,
+      winnerReductionPercent,
+      ...(ticketsPerUser === undefined ? {} : { ticketsPerUser }),
     },
     mountables: {
+      childFreight: parseChildFreightMountableConfig(payload.mountables?.childFreight),
       forms: formsMountable,
       lock: lockMountable,
+      apps: appMountables,
     },
     socialMetadata: {
       mentions,
@@ -336,6 +404,8 @@ async function normalizePayload(payload: CampaignRecordPayload) {
         : [],
     },
     giftDeliverable,
+    raffleApproval: parseRaffleApprovalConfig(payload.raffleApproval),
+    attachments,
     creatorAddress,
     creatorHandle,
     status,
@@ -349,8 +419,13 @@ async function normalizePayload(payload: CampaignRecordPayload) {
     settledAt,
     settledByAddress,
     soldTicketCount,
+    liveSoldTicketCount,
     settledParticipantCount,
     settledRecipients,
+    withdrawalTxHash,
+    withdrawnAt,
+    withdrawnByAddress,
+    withdrawnAmountShannons,
   };
 }
 
@@ -364,6 +439,9 @@ export async function POST(request: Request) {
       createdAt: now,
       updatedAt: now,
     });
+    if (payload.status === "published" && payload.campaignId) {
+      after(() => activateMountedAppsForCampaignRecord(payload));
+    }
 
     return NextResponse.json({ id: result.insertedId.toString() }, { status: 201 });
   } catch (error) {

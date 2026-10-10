@@ -37,6 +37,8 @@ export async function GET(request: Request) {
             mountables: 1,
             socialMetadata: 1,
             giftDeliverable: 1,
+            raffleApproval: 1,
+            attachments: 1,
             creatorAddress: 1,
             creatorHandle: 1,
             status: 1,

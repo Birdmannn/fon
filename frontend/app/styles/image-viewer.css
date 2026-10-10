@@ -1,0 +1,104 @@
+.campaign-attachment-expand {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.campaign-attachment-expand:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: -5px;
+}
+
+.campaign-attachment-overflow {
+  pointer-events: none;
+}
+
+.campaign-image-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+}
+
+.campaign-image-viewer::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.campaign-image-viewer-stage {
+  position: absolute;
+  inset: calc(4rem + env(safe-area-inset-top)) 4rem calc(4rem + env(safe-area-inset-bottom));
+  touch-action: pan-y pinch-zoom;
+}
+
+.campaign-image-viewer-stage img {
+  object-fit: contain;
+  user-select: none;
+}
+
+.campaign-image-viewer button {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+}
+
+.campaign-image-viewer button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.campaign-image-viewer button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.campaign-image-viewer-close {
+  top: calc(1rem + env(safe-area-inset-top));
+  right: calc(1rem + env(safe-area-inset-right));
+}
+
+.campaign-image-viewer-previous,
+.campaign-image-viewer-next {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.campaign-image-viewer-previous { left: calc(0.75rem + env(safe-area-inset-left)); }
+.campaign-image-viewer-next { right: calc(0.75rem + env(safe-area-inset-right)); }
+
+.campaign-image-viewer-counter {
+  position: absolute;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 639px) {
+  .campaign-image-viewer-stage {
+    left: 0;
+    right: 0;
+  }
+}

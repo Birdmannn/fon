@@ -1,5 +1,7 @@
+"use client";
+
 import { RefreshCw, Search } from "lucide-react";
-import type { RefObject } from "react";
+import { useLayoutEffect, useRef, type RefObject } from "react";
 
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
 
@@ -28,8 +30,35 @@ export default function CampaignFeedHeaderBar({
   searchInputRef,
   searchQuery,
 }: CampaignFeedHeaderBarProps) {
+  const barRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const shell = bar?.parentElement;
+    const header = shell?.querySelector<HTMLElement>(".campaign-shell-header");
+    if (!bar || !shell || !header) return;
+
+    const updateOffset = () => {
+      const headerBottom = header.getBoundingClientRect().bottom;
+      bar.style.setProperty("--campaign-feed-sticky-top", `${headerBottom}px`);
+      shell.style.setProperty("--campaign-feed-scroll-offset", `${headerBottom + bar.offsetHeight + 4}px`);
+    };
+
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(header);
+    observer.observe(bar);
+    window.addEventListener("resize", updateOffset);
+    updateOffset();
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateOffset);
+      shell.style.removeProperty("--campaign-feed-scroll-offset");
+    };
+  }, []);
+
   return (
-    <div className="campaign-header-bar">
+    <div ref={barRef} className="campaign-header-bar campaign-header-bar-sticky">
       <div className="campaign-heading-block">
         <div className="campaign-heading-row">
           <h2 className="text-lg sm:text-xl font-semibold">Freights</h2>

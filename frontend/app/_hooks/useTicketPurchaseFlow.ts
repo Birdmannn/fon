@@ -2,12 +2,13 @@
 
 import { useCallback, useRef, useState } from "react";
 
-import { canAccessLockMountable, getLockMountableBypassFbars } from "@/app/_lib/lockMountable";
+import { canAccessLockMountable, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
 import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
 import { bytesToHex } from "@/lib/encoding";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId } from "@/lib/campaignIdentity";
-import { fetchCampaigns, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
+import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
+import { fetchCampaigns, fetchParticipants, getRaffleTicketsPerUser, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
 
 type UseTicketPurchaseFlowArgs = {
@@ -16,11 +17,26 @@ type UseTicketPurchaseFlowArgs = {
   onTicketBuySuccess: (txHash: string) => void;
 };
 
+export type TicketPurchaseAvailability = {
+  liveSoldTickets: bigint;
+  remainingTickets: bigint;
+};
+
+async function fetchCurrentFbars(address: string | null | undefined) {
+  const normalizedAddress = address?.trim();
+  if (!normalizedAddress) return null;
+  const response = await fetch(`/api/user-profiles?address=${encodeURIComponent(normalizedAddress)}`, { cache: "no-store" });
+  const payload = await response.json().catch(() => null) as { profile?: { fbars?: unknown } | null } | null;
+  const fbars = payload?.profile?.fbars;
+  return response.ok && typeof fbars === "number" && Number.isFinite(fbars) ? fbars : null;
+}
+
 export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, onTicketBuySuccess }: UseTicketPurchaseFlowArgs) {
   const signer = ccc.useSigner();
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
-  const ticketBoughtCallbackRef = useRef<((campaignId: string, ticketPrice: bigint) => void) | null>(null);
+  const [ticketPurchaseAvailability, setTicketPurchaseAvailability] = useState<TicketPurchaseAvailability | null>(null);
+  const ticketBoughtCallbackRef = useRef<((campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void) | null>(null);
   const [ticketPurchaseQuantity, setTicketPurchaseQuantity] = useState("1");
   const [ticketPurchaseError, setTicketPurchaseError] = useState("");
   const [isPurchasingTickets, setIsPurchasingTickets] = useState(false);
@@ -28,15 +44,22 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
   const resetTicketPurchaseState = useCallback(() => {
     setTicketPurchaseCampaign(null);
     setTicketPurchaseRecord(null);
+    setTicketPurchaseAvailability(null);
     ticketBoughtCallbackRef.current = null;
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
     setIsPurchasingTickets(false);
   }, []);
 
-  const openTicketPurchaseInfoModal = useCallback((campaign: CampaignCell, record: CampaignRecord | null, onTicketBought: (campaignId: string, ticketPrice: bigint) => void) => {
+  const openTicketPurchaseInfoModal = useCallback((
+    campaign: CampaignCell,
+    record: CampaignRecord | null,
+    availability: TicketPurchaseAvailability,
+    onTicketBought: (campaignId: string, ticketPrice: bigint, nextSoldTickets: bigint) => void,
+  ) => {
     setTicketPurchaseCampaign(campaign);
     setTicketPurchaseRecord(record);
+    setTicketPurchaseAvailability(availability);
     ticketBoughtCallbackRef.current = onTicketBought;
     setTicketPurchaseQuantity("1");
     setTicketPurchaseError("");
@@ -48,43 +71,59 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       return;
     }
 
-    if (!canAccessLockMountable(ticketPurchaseRecord?.mountables?.lock, currentViewerFbars)) {
-      const bypassFbars = getLockMountableBypassFbars(ticketPurchaseRecord?.mountables?.lock);
-      setTicketPurchaseError(bypassFbars === null ? "This raffle is locked." : `Need ${bypassFbars} FBARS to bypass this lock`);
+    setIsPurchasingTickets(true);
+    setTicketPurchaseError("");
+    await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
+    try {
+      await assertFreightParentPreflight(getCampaignStableId(ticketPurchaseCampaign), await signer.getRecommendedAddress());
+    } catch (error) {
+      setTicketPurchaseError(error instanceof Error ? error.message : "Could not check parent freight completion");
+      setIsPurchasingTickets(false);
       return;
     }
 
-    const quantity = Number.parseInt(ticketPurchaseQuantity.trim(), 10);
-    if (!Number.isInteger(quantity) || quantity <= 0) {
+    const [liveViewerFbars, creatorCurrentFbars] = await Promise.all([
+      signer.getRecommendedAddress().then((address) => fetchCurrentFbars(address)).catch(() => currentViewerFbars ?? null),
+      fetchCurrentFbars(ticketPurchaseRecord?.creatorAddress).catch(() => null),
+    ]);
+    const effectiveViewerFbars = liveViewerFbars ?? currentViewerFbars;
+    if (!canAccessLockMountable(ticketPurchaseRecord?.mountables?.lock, effectiveViewerFbars, creatorCurrentFbars)) {
+      setTicketPurchaseError(lockMountableAccessMessage(ticketPurchaseRecord?.mountables?.lock, creatorCurrentFbars));
+      setIsPurchasingTickets(false);
+      return;
+    }
+
+    const quantity = Number(ticketPurchaseQuantity.trim());
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 100) {
       setTicketPurchaseError("Enter a valid number of tickets");
+      setIsPurchasingTickets(false);
       return;
     }
 
     const requestedTickets = BigInt(quantity);
-    if (requestedTickets !== 1n) {
-      setTicketPurchaseError("One ticket at a time for now");
-      return;
-    }
 
-    const totalCostShannons = ticketPurchaseCampaign.data.auxAmount;
-    if (totalCostShannons <= 0n) {
-      setTicketPurchaseError("Ticket price is unavailable for this raffle");
-      return;
-    }
-
-    const remainingCapacity = ticketPurchaseCampaign.data.maximumAmount > ticketPurchaseCampaign.data.currentDeposits
-      ? ticketPurchaseCampaign.data.maximumAmount - ticketPurchaseCampaign.data.currentDeposits
-      : 0n;
-    const remainingTickets = ticketPurchaseCampaign.data.auxAmount > 0n
-      ? remainingCapacity / ticketPurchaseCampaign.data.auxAmount
-      : 0n;
-    if (remainingTickets <= 0n || totalCostShannons > remainingCapacity) {
+    const remainingTickets = ticketPurchaseAvailability?.remainingTickets ?? 0n;
+    if (remainingTickets >= 0n && requestedTickets > remainingTickets) {
       setTicketPurchaseError(`Only ${String(remainingTickets)} tickets remain`);
+      setIsPurchasingTickets(false);
       return;
     }
 
-    setIsPurchasingTickets(true);
-    setTicketPurchaseError("");
+    try {
+      const walletAddress = await signer.getRecommendedAddress();
+      const priorEntries = await fetchParticipants(signer.client, ticketPurchaseCampaign, 5000, [walletAddress], true);
+      const perUserLimit = getRaffleTicketsPerUser(ticketPurchaseCampaign);
+      if (BigInt(priorEntries.length) + requestedTickets > perUserLimit) {
+        setTicketPurchaseError(`This raffle allows ${String(perUserLimit)} ticket${perUserLimit === 1n ? "" : "s"} per wallet`);
+        setIsPurchasingTickets(false);
+        return;
+      }
+    } catch (error) {
+      setTicketPurchaseError(error instanceof Error ? error.message : "Could not check existing tickets");
+      setIsPurchasingTickets(false);
+      return;
+    }
 
     try {
       const needsActivation =
@@ -132,7 +171,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
         setTicketPurchaseError("Step 2/2 — Buying ticket… Please hold…");
       }
 
-      const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase);
+      const txHash = await sendVerifyParticipantRaffle(signer, campaignForPurchase, requestedTickets);
       await fetch("/api/campaign-participants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -142,6 +181,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
           chainCreatedAt: getCampaignChainCreatedAt(campaignForPurchase),
           campaignType: campaignForPurchase.data.campaignType,
           participantAddress: await signer.getRecommendedAddress(),
+          participantKind: "raffle_ticket",
           participantTxHash: txHash,
           joinedAt: String(Date.now()),
           status: "verified",
@@ -149,7 +189,9 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       }).catch(() => {
         // Non-fatal — settlement can still fall back to on-chain discovery
       });
-      ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount);
+      const nextSoldTickets = (ticketPurchaseAvailability?.liveSoldTickets ?? 0n) + requestedTickets;
+      ticketBoughtCallbackRef.current?.(getCampaignStableId(campaignForPurchase), campaignForPurchase.data.auxAmount, nextSoldTickets);
+      setIsPurchasingTickets(false);
       onTicketBuySuccess(txHash);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to buy tickets";
@@ -157,7 +199,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
       setIsPurchasingTickets(false);
       onSubmissionError(message);
     }
-  }, [currentViewerFbars, onSubmissionError, onTicketBuySuccess, signer, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
+  }, [currentViewerFbars, onSubmissionError, onTicketBuySuccess, signer, ticketPurchaseAvailability, ticketPurchaseCampaign, ticketPurchaseRecord, ticketPurchaseQuantity]);
 
   return {
     handleTicketPurchaseSubmit,

@@ -4,6 +4,7 @@ import { SignerSignType } from "@ckb-ccc/core";
 
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { findGoogleFormResponseByEmail } from "@/lib/googleFormsApi";
+import { assertFreightParentAccess, dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
 import { verifyWalletSignature, walletActionNonceMatchesPurpose } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
@@ -126,6 +127,10 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       {
         projection: {
           campaignId: 1,
+          parentCampaignId: 1,
+          parentCampaignIds: 1,
+          linkedCampaignIds: 1,
+          requiresLinkedFreight: 1,
           createdByHash: 1,
           chainCreatedAt: 1,
           campaignType: 1,
@@ -133,11 +138,13 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
           mountables: 1,
         },
       },
-    );
+    ) as ({ creatorAddress?: unknown } & CampaignRecordMountableRuntime) | null;
 
     if (!record) {
       return badRequest("Campaign record not found", 404);
     }
+
+    await assertFreightParentAccess(String(record.campaignId ?? ""), address);
 
     const formsMountable = normalizeFormsMountableConfig(record.mountables?.forms ?? null);
     if (!formsMountable.enabled) {
@@ -234,10 +241,20 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       { upsert: true },
     );
 
+    const canonicalVerification = await finalizeCampaignParticipant({ campaignId, participantAddress: address, record });
+    await dispatchMountedAppRequestsForParticipant({
+      campaignId,
+      participantAddress: address,
+      record,
+      canonicalVerification,
+      source: "forms-claim",
+    });
+
     return NextResponse.json({
       ok: true,
       status,
       matchFound: Boolean(responseMatch),
+      canonicalVerification,
       googleEmail: linkedGoogleAccount.email,
       responseId: responseMatch?.responseId ?? normalizeOptionalString(existingClaim?.responseId),
       responseLastSubmittedTime: responseMatch?.lastSubmittedTime ?? normalizeOptionalString(existingClaim?.responseLastSubmittedTime),

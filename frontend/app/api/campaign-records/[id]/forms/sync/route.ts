@@ -4,6 +4,7 @@ import { SignerSignType } from "@ckb-ccc/core";
 
 import { normalizeFormsMountableConfig } from "@/app/_lib/formsMountable";
 import { findGoogleFormResponseByEmail } from "@/lib/googleFormsApi";
+import { dispatchMountedAppRequestsForParticipant, finalizeCampaignParticipant, type CampaignRecordMountableRuntime } from "@/lib/mountableAppRuntime";
 import { verifyWalletSignature, walletActionNonceMatchesPurpose } from "@/lib/googleAuth";
 import { getCampaignParticipantsCollection, getMongoCollection } from "@/lib/mongodb";
 
@@ -85,11 +86,15 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       {
         projection: {
           campaignId: 1,
+          parentCampaignId: 1,
+          parentCampaignIds: 1,
+          linkedCampaignIds: 1,
+          requiresLinkedFreight: 1,
           creatorAddress: 1,
           mountables: 1,
         },
       },
-    );
+    ) as ({ creatorAddress?: unknown } & CampaignRecordMountableRuntime) | null;
 
     if (!record) {
       return badRequest("Campaign record not found", 404);
@@ -128,6 +133,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
     ).toArray() as PendingFormsClaim[];
 
     let verifiedCount = 0;
+    const finalizedParticipants: Array<{ participantAddress: string; canonicalVerification: Awaited<ReturnType<typeof finalizeCampaignParticipant>> }> = [];
     for (const claim of pendingClaims) {
       const participantEmail = typeof claim.googleEmail === "string" ? claim.googleEmail.trim().toLowerCase() : "";
       if (!participantEmail) {
@@ -144,6 +150,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       }
 
       verifiedCount += 1;
+      const verifiedAt = new Date().toISOString();
       await participantsCollection.updateOne(
         { _id: claim._id },
         {
@@ -153,12 +160,31 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
             responseId: responseMatch.responseId,
             responseCreateTime: responseMatch.createTime,
             responseLastSubmittedTime: responseMatch.lastSubmittedTime,
-            lastVerifiedAt: new Date().toISOString(),
+            lastVerifiedAt: verifiedAt,
             updatedAt: new Date(),
           },
         },
       );
+      const refreshedClaim = await participantsCollection.findOne(
+        { _id: claim._id },
+        { projection: { _id: 0, participantAddress: 1 } },
+      ) as { participantAddress?: unknown } | null;
+      const participantAddress = typeof refreshedClaim?.participantAddress === "string" ? refreshedClaim.participantAddress.trim().toLowerCase() : "";
+      if (participantAddress) {
+        const canonicalVerification = await finalizeCampaignParticipant({ campaignId, participantAddress, record });
+        finalizedParticipants.push({ participantAddress, canonicalVerification });
+      }
     }
+
+    await Promise.all(
+      finalizedParticipants.map(({ participantAddress, canonicalVerification }) => dispatchMountedAppRequestsForParticipant({
+        campaignId,
+        participantAddress,
+        record,
+        canonicalVerification,
+        source: "forms-sync",
+      })),
+    );
 
     return NextResponse.json({
       ok: true,

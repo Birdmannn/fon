@@ -346,7 +346,7 @@ export async function GET(request: Request) {
         campaignRecordId: entry.campaignRecordId,
         creatorAddress: entry.creatorAddress,
         creatorHandle: entry.creatorHandle,
-        href: `/campaign/${encodeURIComponent(entry.campaignId)}`,
+        href: `/freight/${encodeURIComponent(entry.campaignId)}`,
         interactionKinds: Array.from(entry.interactionKinds).sort(
           (left, right) => INTERACTION_PRIORITY[right] - INTERACTION_PRIORITY[left]
         ) as ProfileFreightInteractionKind[],

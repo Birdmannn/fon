@@ -1,11 +1,37 @@
 import { ccc } from "@ckb-ccc/connector-react";
 
-import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex } from "@/lib/encoding";
+import { raffleApprovalsSatisfied } from "@/lib/raffleApproval";
+import { CampaignStatus, CampaignType } from "@/lib/contract";
+import { bytesToHex, computeCreatorWithdrawableAmount } from "@/lib/encoding";
 import type { CampaignCell } from "@/lib/transactions";
 
 export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date.now()) {
-  if (campaign.data.status === CampaignStatus.Cancelled || campaign.data.status === CampaignStatus.Completed) {
+  if (campaign.data.status === CampaignStatus.Cancelled) {
+    return campaign.data.status;
+  }
+
+  if (campaign.data.approval?.stage === "gift-commence" && !raffleApprovalsSatisfied(campaign.data.approval)) return CampaignStatus.Created;
+
+  if (campaign.data.gift) {
+    if (campaign.data.gift.slots.every((slot) => slot.claimed)) return CampaignStatus.Completed;
+    const hasClaims = campaign.data.gift.slots.some((slot) => slot.claimed);
+    return nowMs >= Number(campaign.data.createdAt + campaign.data.startDurationSecs * 1000n) && (hasClaims || campaign.data.currentDeposits >= campaign.data.maximumAmount) ? CampaignStatus.Active : CampaignStatus.Created;
+  }
+
+  if (campaign.data.campaignType === CampaignType.SimpleTask) {
+    return CampaignStatus.Active;
+  }
+
+  if (campaign.data.campaignType === CampaignType.RecurringRaffle) {
+    if (campaign.data.status === CampaignStatus.Sleeping || campaign.data.status === CampaignStatus.Finished) {
+      return campaign.data.status;
+    }
+    const roundStart = Number(campaign.data.roundStartedAt ?? campaign.data.createdAt);
+    if (nowMs < roundStart) return CampaignStatus.Created;
+    return CampaignStatus.Active;
+  }
+
+  if (campaign.data.status === CampaignStatus.Completed) {
     return campaign.data.status;
   }
 
@@ -27,6 +53,10 @@ export function deriveDisplayStatus(campaign: CampaignCell, nowMs: number = Date
 
 export function formatCkbAmount(value: bigint) {
   return (Number(value) / 1e8).toFixed(2);
+}
+
+export function formatWholeCkbAmount(value: bigint) {
+  return (value / 100_000_000n).toString();
 }
 
 export function buildDefaultUsername(addressHex: string) {
@@ -52,19 +82,19 @@ export function deriveRaffleSettlementUiState(args: {
   displayStatus: CampaignStatus;
   settlementTxHash?: string | null;
   soldTicketCount?: string | null;
+  liveSoldTickets?: bigint | null;
 }) {
-  const { campaign, displayStatus, settlementTxHash, soldTicketCount } = args;
-  const isRaffleCampaign = campaign.data.campaignType === 4;
-  const ticketPriceShannons = campaign.data.auxAmount > 0n ? campaign.data.auxAmount : 0n;
-  const liveSoldTickets = isRaffleCampaign && ticketPriceShannons > 0n ? campaign.data.currentDeposits / ticketPriceShannons : 0n;
+  const { campaign, displayStatus, settlementTxHash, soldTicketCount, liveSoldTickets: liveSoldTicketsOverride } = args;
+  const isRaffleCampaign = campaign.data.campaignType === CampaignType.Raffle;
   const hasSettlementRecord = typeof settlementTxHash === "string" && settlementTxHash.trim().length > 0;
   const snapshotSoldTickets = typeof soldTicketCount === "string" && soldTicketCount.trim().length > 0
     ? BigInt(soldTicketCount.trim())
     : null;
+  const liveSoldTickets = liveSoldTicketsOverride ?? 0n;
   const soldTickets = hasSettlementRecord && snapshotSoldTickets !== null ? snapshotSoldTickets : liveSoldTickets;
   const hasSettledRewards = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
-    && (campaign.data.currentDeposits === 0n || hasSettlementRecord);
+    && (hasSettlementRecord || soldTickets === 0n);
   const shouldGlowSettlement = isRaffleCampaign
     && displayStatus === CampaignStatus.Completed
     && campaign.data.rewardCount > 0n
@@ -78,6 +108,25 @@ export function deriveRaffleSettlementUiState(args: {
     showSettlementAction,
     shouldGlowSettlement,
     soldTickets,
+  };
+}
+
+export function deriveCreatorWithdrawUiState(args: {
+  campaign: CampaignCell;
+  displayStatus: CampaignStatus;
+  withdrawalTxHash?: string | null;
+}) {
+  const { campaign, displayStatus, withdrawalTxHash } = args;
+  const hasWithdrawalRecord = typeof withdrawalTxHash === "string" && withdrawalTxHash.trim().length > 0;
+  const withdrawableAmount = hasWithdrawalRecord ? 0n : computeCreatorWithdrawableAmount(campaign.data);
+  const completedWithdrawalReady = (displayStatus === CampaignStatus.Completed || displayStatus === CampaignStatus.Finished) && campaign.data.supportPoolBps === 0n;
+  const cancelledWithdrawalReady = displayStatus === CampaignStatus.Cancelled;
+  const canWithdraw = withdrawableAmount > 0n && (completedWithdrawalReady || cancelledWithdrawalReady);
+
+  return {
+    canWithdraw,
+    hasWithdrawalRecord,
+    withdrawableAmount,
   };
 }
 

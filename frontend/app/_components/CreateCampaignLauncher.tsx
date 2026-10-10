@@ -21,10 +21,12 @@ type CreateCampaignLauncherProps = {
   onDraftSelectionRequest: (draftId: string) => void;
   onInsufficientFbars?: () => void;
   onMountableSelectionRequired: () => void;
-  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; formsSelected: boolean; lockSelected: boolean }) => void;
+  onApprovalSetupRequired: () => void;
+  onTagSuggestionsRequested: (query: string) => void;
+  onMountableSelectionStateChange?: (state: { hasMountedHashtag: boolean; childFreightSelected: boolean; formsSelected: boolean; lockSelected: boolean; appMountablesSelected: number; approvalSelected: boolean }) => void;
   onOpenCreateModal: () => void;
   onPreviewErrorChange: (message: string) => void;
-  onPublishSuccess: (txHash: string, randomnessPreimage: string | null) => void;
+  onPublishSuccess: (txHash: string, randomnessPreimage: string | null, campaignId: string) => void;
   onRequestCloseCreateModal: () => void;
   onStepChange: (step: CreateModalStep) => void;
   showCreateModal: boolean;
@@ -42,6 +44,8 @@ export default function CreateCampaignLauncher({
   onDraftSelectionRequest,
   onInsufficientFbars,
   onMountableSelectionRequired,
+  onApprovalSetupRequired,
+  onTagSuggestionsRequested,
   onMountableSelectionStateChange,
   onOpenCreateModal,
   onPreviewErrorChange,
@@ -93,6 +97,8 @@ export default function CreateCampaignLauncher({
             onDraftListOpenChange={onDraftListOpenChange}
             onDraftSelectionRequest={onDraftSelectionRequest}
             onMountableSelectionRequired={onMountableSelectionRequired}
+            onApprovalSetupRequired={onApprovalSetupRequired}
+            onTagSuggestionsRequested={onTagSuggestionsRequested}
             onMountableSelectionStateChange={onMountableSelectionStateChange}
             onPublishSuccess={onPublishSuccess}
             availableFbars={availableFbars}

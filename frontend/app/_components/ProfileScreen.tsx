@@ -5,44 +5,51 @@ import {
   Check,
   CheckCircle,
   Copy,
-  DollarSign,
-  LockKeyhole,
-  Pencil,
-  Scroll,
+  Camera,
+  LoaderCircle,
   Search,
   Trophy,
 } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import AppShellHeader from "@/app/_components/AppShellHeader";
+import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import CreateCampaignHeaderActions from "@/app/_components/CreateCampaignHeaderActions";
 import CreateCampaignLauncher from "@/app/_components/CreateCampaignLauncher";
+import CreateReviewMountablesInfo from "@/app/_components/CreateReviewMountablesInfo";
+import RaffleApprovalConfigurator, { RaffleApprovalActions } from "@/app/_components/RaffleApprovalConfigurator";
+import { ChildFreightMountableConfigurator, FormsMountableConfigurator, LockMountableConfigurator } from "@/app/_components/BuiltInMountableConfigurator";
+import MountableAppsConfigurator from "@/app/_components/MountableAppsConfigurator";
+import MountableOptionsCatalog from "@/app/_components/MountableOptionsCatalog";
 import ProfileAnalyticsSection from "@/app/_components/ProfileAnalyticsSection";
 import ProfileFreightsSection from "@/app/_components/ProfileFreightsSection";
 import ProfileTransactionsSection from "@/app/_components/ProfileTransactionsSection";
 import ThreeDotLoader from "@/app/_components/ThreeDotLoader";
+import TagSuggestionsInfo from "@/app/_components/TagSuggestionsInfo";
 import {
   CREATE_INFO_CONSTRAINT_HEADING,
   CREATE_INFO_CONSTRAINT_ITEMS,
   CREATE_INFO_NOTE_HEADING,
   CREATE_INFO_NOTE_ITEMS,
   CREATE_INFO_PREVIEW_HEADING,
-  CREATE_INFO_PREVIEW_ITEMS,
+  CREATE_INFO_RAFFLE_SUPPORT_NOTE,
   CREATE_INFO_TYPING_HEADING,
   CREATE_INFO_TYPING_ITEMS,
 } from "@/app/_lib/createCampaignInfo";
 import { getLockMountableValidationState, parseLockMinimumFbars } from "@/app/_lib/lockMountable";
+import { lockBodyScroll } from "@/app/_lib/bodyScrollLock";
 import { useCreateCampaignFlow } from "@/app/_hooks/useCreateCampaignFlow";
 import { useInfoModalState } from "@/app/_hooks/useInfoModalState";
-import { useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
-import { useProfileFreights } from "@/app/_hooks/useProfileFreights";
-import { useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
-import { formatAdsfUsdParts, useUserProfile } from "@/app/_hooks/useUserProfile";
+import { markProfileAnalyticsDirty, useProfileAnalytics } from "@/app/_hooks/useProfileAnalytics";
+import { markProfileFreightsDirty, useProfileFreights } from "@/app/_hooks/useProfileFreights";
+import { markProfileTransactionsDirty, useProfileTransactions } from "@/app/_hooks/useProfileTransactions";
+import { formatAdsfUsdParts, useProfileViewState, useUserProfile } from "@/app/_hooks/useUserProfile";
 import { useWalletInfo } from "@/app/_hooks/useWalletInfo";
-import { formatCkbAmount } from "@/lib/campaignDisplay";
+import { buildDefaultUsername, formatCkbAmount } from "@/lib/campaignDisplay";
 import { markWalletSeedIntent } from "@/lib/walletSeed";
 
 const INFO_MODAL_ANIMATION_MS = 620;
@@ -53,8 +60,9 @@ const PROFILE_INFO_FBARS_MESSAGE = "Calculcation and Minting Coming Soon.";
 const PROFILE_INFO_ADSF_HEADING = "ADSF:";
 const PROFILE_INFO_ADSF_MESSAGE = "Amount Docked So Far";
 const INSUFFICIENT_FBARS_MESSAGE = "Interact more on chain to improve FBARS.";
+const MAX_PROFILE_PHOTO_BYTES = 4 * 1024 * 1024;
 
-type InfoModalMode = "about" | "edit-display-name" | "mountables" | "mountables-forms" | "mountables-lock" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
+type InfoModalMode = "about" | "create-error" | "tag-suggestions" | "edit-display-name" | "mountables" | "mountables-child-freight" | "mountables-forms" | "mountables-lock" | "mountables-apps" | "mountables-approval" | "save-draft-confirm" | "submission-success" | "submission-error" | "insufficient-fbars";
 type ProfileTabKey = "activity" | "freights" | "transactions";
 
 const PROFILE_TABS: Array<{ key: ProfileTabKey; label: string }> = [
@@ -78,6 +86,9 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const walletInfoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState("");
 
   const [infoModalMode, setInfoModalMode] = useState<InfoModalMode>("about");
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
@@ -88,7 +99,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isLeaderboardClosing, setIsLeaderboardClosing] = useState(false);
   const [leaderboardScope, setLeaderboardScope] = useState<"weekly" | "overall">("weekly");
-  const [activeTab, setActiveTab] = useState<ProfileTabKey>("activity");
   const [revealedProfileHeroCount, setRevealedProfileHeroCount] = useState(0);
 
   const resetInfoModalStateRef = useRef<() => void>(() => undefined);
@@ -133,20 +143,32 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     currentUserProfile,
     isSavingUserProfile,
     isUserProfileLoading,
+    markUserProfileDirty,
     overallLeaderboard,
+    profileCacheKey,
     saveDisplayName,
     saveLightModePrimaryColor,
+    setCurrentUserProfile,
     userProfileError,
     weeklyLeaderboard,
   } = useUserProfile(signer ?? null, targetHandle);
+  const {
+    currentUserProfile: connectedUserProfile,
+    markUserProfileDirty: markConnectedUserProfileDirty,
+  } = useUserProfile(signer ?? null);
+  const { activeTab, setActiveTab } = useProfileViewState(signer ?? null, targetHandle);
   const profileAddress = currentUserProfile?.address ?? (targetHandle ? null : (walletAddress || null));
 
   const {
     analytics: profileAnalytics,
     error: profileAnalyticsError,
     isLoading: isProfileAnalyticsLoading,
+    isRefreshing: isProfileAnalyticsRefreshing,
+    refresh: refreshProfileAnalytics,
   } = useProfileAnalytics({
     address: profileAddress,
+    cacheKey: profileCacheKey,
+    enabled: activeTab === "activity",
     handle: profileAddress ? null : targetHandle,
   });
   const {
@@ -158,6 +180,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileFreightRows,
   } = useProfileFreights({
     address: profileAddress,
+    cacheKey: profileCacheKey,
+    enabled: activeTab === "freights",
     handle: profileAddress ? null : targetHandle,
   });
   const {
@@ -170,11 +194,33 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     rows: profileTransactionRows,
   } = useProfileTransactions({
     address: profileAddress,
+    cacheKey: profileCacheKey,
+    enabled: activeTab === "transactions",
     handle: profileAddress ? null : targetHandle,
   });
   const adsfUsdParts = formatAdsfUsdParts(currentUserProfile?.adsfUsdCents);
 
+  const markProfileRouteDataDirty = useCallback((overrideArgs?: { address?: string | null; handle?: string | null }) => {
+    const nextAddress = overrideArgs?.address ?? currentUserProfile?.address ?? null;
+    const nextHandle = overrideArgs?.handle ?? currentUserProfile?.username ?? targetHandle ?? null;
+    const dirtyArgs = {
+      address: nextAddress,
+      cacheKey: profileCacheKey,
+      handle: nextAddress ? null : nextHandle,
+    };
+
+    markUserProfileDirty({
+      address: nextAddress,
+      handle: nextAddress ? null : nextHandle,
+    });
+    markProfileAnalyticsDirty(dirtyArgs);
+    markProfileFreightsDirty(dirtyArgs);
+    markProfileTransactionsDirty(dirtyArgs);
+  }, [currentUserProfile?.address, currentUserProfile?.username, markUserProfileDirty, profileCacheKey, targetHandle]);
+
   const {
+    advanceMountableSetup,
+    beginMountableSetup,
     constraintStatus,
     createModalContentRef,
     createModalStep,
@@ -182,17 +228,35 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     createStepBackSignal,
     finalizeCloseCreateModal,
     formsMountableSelected,
+    childFreightMountableSelected,
     lockMountableSelected,
     handleCreateTopRightAction,
+    handleCreateErrorChange,
     handleDraftSelectionRequest,
+    approvalSetup,
+    continueApprovalSetup,
+    openRaffleApprovalModal,
+    updateApprovalSetup,
+    handleMountableSelectionStateChange,
     handleSaveDraftChoice,
+    handleToggleSelectedMountablePrinciple,
+    handleUpdateSelectedMountablePrincipleParam,
+    handleToggleMountableAppSelection,
+    handleVerifySelectedMountableApp,
+    handleTagSuggestionsRequested,
+    handleTagSuggestionContinue,
     isCreateDraftListOpen,
     isCreateModalClosing,
     isMountableFormFocused,
     isMountableLockFocused,
     isMountablesContinuing,
+    isVerifyingMountableApp,
+    mountedAppConfigs,
+    mountableAppsError,
     mountableFormLinks,
     mountableLockFbars,
+    mountableChildFreightTitle,
+    mountableLockRule,
     mountableFormValidationState,
     mountableLockValidationState,
     mountablesPromptError,
@@ -200,13 +264,19 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     openMountablesModal,
     openSubmissionSuccessInfoModal,
     previewError,
+    registeredMountableApps,
     requestCloseCreateModal,
     resetCreateInfoModalState,
     resetCreateModal,
     saveDraftPromptError,
+    selectedMountableAppId,
+    selectedMountableAppIds,
+    selectedMountablePrincipleIds,
+    selectedMountablePrincipleParams,
     setConstraintStatus,
     setCreateModalStep,
     setFormsMountableSelected,
+    setChildFreightMountableSelected,
     setLockMountableSelected,
     setIsCreateDraftListOpen,
     setIsMountableFormFocused,
@@ -214,15 +284,19 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     setIsMountablesContinuing,
     setMountableFormLinks,
     setMountableLockFbars,
+    setMountableChildFreightTitle,
+    setMountableLockRule,
     setMountableFormValidationState,
     setMountableLockValidationState,
     setMountablesPromptError,
-    setPreviewError,
     showCreateModal,
     submissionSuccessTxHash,
-    transitionMountablesModal,
+    tagSuggestionQuery,
+    goBackMountableSetup,
   } = useCreateCampaignFlow<InfoModalMode>({
     animationMs: INFO_MODAL_ANIMATION_MS,
+    createErrorInfoModalMode: "create-error",
+    tagSuggestionsInfoModalMode: "tag-suggestions",
     initialInfoModalMode: "about",
     openWallet: openWalletWithSeed,
     signer,
@@ -358,12 +432,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       return;
     }
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return lockBodyScroll();
   }, [showLeaderboardModal]);
 
   useEffect(() => {
@@ -397,8 +466,77 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     };
   }, [closeInfoModal, closeLeaderboardModal, infoModalMode, requestCloseCreateModal, showCreateModal, showInfoModal, showLeaderboardModal]);
 
-  const shouldHideWalletAction = showCreateModal && !isCreateModalClosing;
+  const shouldHideWalletAction = (showCreateModal && !isCreateModalClosing) || (showLeaderboardModal && !isLeaderboardClosing);
   const canEditDisplayName = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
+  const isViewingAnotherUserProfile = Boolean(
+    signer
+    && connectedUserProfile?.address
+    && currentUserProfile?.address
+    && connectedUserProfile.address.toLowerCase() !== currentUserProfile.address.toLowerCase()
+  );
+  const connectedProfileUsername = connectedUserProfile?.username?.trim()
+    || (walletAddress ? buildDefaultUsername(walletAddress) : "");
+  const introspectHref = isViewingAnotherUserProfile && connectedProfileUsername
+    ? `/user/${encodeURIComponent(connectedProfileUsername)}`
+    : undefined;
+  const creatorAvailableFbars = connectedUserProfile?.fbars;
+  const photoVersion = currentUserProfile?.photoUpdatedAt;
+  const photoUrl = currentUserProfile?.address && photoVersion
+    ? `/api/user-profiles/photo?address=${encodeURIComponent(currentUserProfile.address)}&v=${encodeURIComponent(photoVersion)}`
+    : null;
+  const handlePhotoSelected = async (file: File | undefined) => {
+    if (!file || !signer || !canEditDisplayName || !currentUserProfile) return;
+    setPhotoUploadError("");
+    if (file.size === 0 || file.size > MAX_PROFILE_PHOTO_BYTES) {
+      setPhotoUploadError("Choose a photo no larger than 4 MB.");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setPhotoUploadError("Choose a JPEG, PNG, or WebP photo.");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    try {
+      const address = currentUserProfile.address;
+      const digestBytes = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+      const digest = Array.from(new Uint8Array(digestBytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const nonceResponse = await fetch("/api/wallet/nonce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, purpose: "profile-photo" }),
+      });
+      const noncePayload = await nonceResponse.json();
+      if (!nonceResponse.ok || typeof noncePayload.nonce !== "string") {
+        throw new Error(noncePayload.error ?? "Failed to authorize photo upload");
+      }
+
+      const nonce = `${noncePayload.nonce}:${digest}`;
+      const signature = await signer.signMessage(nonce);
+      const form = new FormData();
+      form.set("address", address);
+      form.set("nonce", nonce);
+      form.set("signature", JSON.stringify({
+        signature: signature.signature,
+        identity: signature.identity,
+        signType: signature.signType,
+      }));
+      form.set("photo", file);
+      const response = await fetch("/api/user-profiles/photo", { method: "POST", body: form });
+      const payload = await response.json();
+      if (!response.ok || typeof payload.photoUpdatedAt !== "string") {
+        throw new Error(payload.error ?? "Failed to upload photo");
+      }
+
+      setCurrentUserProfile((profile) => profile?.address === address
+        ? { ...profile, photoUpdatedAt: payload.photoUpdatedAt }
+        : profile);
+    } catch (error) {
+      setPhotoUploadError(error instanceof Error ? error.message : "Failed to upload photo");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
   const activeLeaderboard = leaderboardScope === "weekly" ? weeklyLeaderboard : overallLeaderboard;
   const activeLeaderboardLabel = leaderboardScope === "weekly" ? "Weekly" : "Overall";
   const activeLeaderboardTitle = `${activeLeaderboardLabel} Ranking`;
@@ -416,6 +554,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   const profileLoadErrorMessage = hasProfileErrors
     ? "Sorry, an error occurred. Hover on info for more."
     : "";
+  useInfoError(userProfileError);
+  useInfoError(photoUploadError);
   const hasCurrentProfile = Boolean(currentUserProfile);
   const currentProfileAddress = currentUserProfile?.address ?? "";
   const isProfileAvatarVisible = revealedProfileHeroCount >= 1;
@@ -556,7 +696,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       return;
     }
 
-    const nextValidationState = getLockMountableValidationState(mountableLockFbars, currentUserProfile?.fbars);
+    const nextValidationState = getLockMountableValidationState(mountableLockFbars, creatorAvailableFbars);
     setMountableLockValidationState(nextValidationState);
     if (nextValidationState !== "idle") {
       setIsMountableLockFocused(false);
@@ -566,11 +706,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     if (nextValidationState === "invalid") {
       if (
         parsedLockFbars !== null
-        && typeof currentUserProfile?.fbars === "number"
-        && Number.isFinite(currentUserProfile.fbars)
-        && parsedLockFbars > Math.trunc(currentUserProfile.fbars)
+        && typeof creatorAvailableFbars === "number"
+        && Number.isFinite(creatorAvailableFbars)
+        && parsedLockFbars > Math.trunc(creatorAvailableFbars)
       ) {
-        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(currentUserProfile.fbars)} FBARS.`);
+        setMountablesPromptError(`Lock cannot exceed your ${Math.trunc(creatorAvailableFbars)} FBARS.`);
       } else {
         setMountablesPromptError("Enter a positive FBARS amount.");
       }
@@ -578,9 +718,16 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     }
 
     setMountablesPromptError("");
-  }, [currentUserProfile?.fbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
+  }, [creatorAvailableFbars, infoModalMode, mountableLockFbars, setIsMountableLockFocused, setMountableLockValidationState, setMountablesPromptError]);
 
-  const infoModalBody = infoModalMode === "submission-success" ? (
+  const infoModalBody = infoModalMode === "tag-suggestions" ? (
+    <TagSuggestionsInfo initialQuery={tagSuggestionQuery} onContinue={handleTagSuggestionContinue} />
+  ) : infoModalMode === "create-error" ? (
+    <div className="create-info-constraints-copy">
+      <p className="mt-3 text-red-500 font-semibold">Errors:</p>
+      <p className="create-info-constraint-item text-red-500 break-words"><span>{previewError}</span></p>
+    </div>
+  ) : infoModalMode === "submission-success" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label" style={{ color: "#16a34a" }}>Submission successful</p>
       <p className="create-info-constraint-item text-gray-500 font-mono break-all">txhash:
@@ -629,156 +776,121 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
   ) : showCreateModal && infoModalMode === "mountables" ? (
     <div className="create-info-constraints-copy">
       <p className="mt-3 create-review-section-label text-gray-900">Mountables:</p>
-      <div className="create-mountable-options-row">
-        <button
-          type="button"
-          className={`create-mountable-option ${formsMountableSelected ? "create-mountable-option-selected" : ""}`}
-          aria-label={formsMountableSelected ? "Deselect forms mountable" : "Select forms mountable"}
-          aria-pressed={formsMountableSelected}
-          data-tooltip="Forms"
-          onClick={() => {
+      <MountableOptionsCatalog
+        childFreightMountableSelected={childFreightMountableSelected}
+        formsMountableSelected={formsMountableSelected}
+        lockMountableSelected={lockMountableSelected}
+        registeredMountableApps={registeredMountableApps}
+        selectedMountableAppIds={selectedMountableAppIds}
+        onToggleForms={() => {
             const nextSelected = !formsMountableSelected;
             createModalContentRef.current?.setFormsMountableEnabled(nextSelected);
             setFormsMountableSelected(nextSelected);
             setMountableFormLinks((current) => current.length > 0 ? current : [""]);
             setMountablesPromptError("");
-          }}
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <Scroll size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-            <span className="create-mountable-option-check" aria-hidden="true">
-              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className="create-mountable-option"
-          data-tooltip="Payable"
-          disabled
-          aria-label="Payable mountable coming soon"
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <DollarSign size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-        <button
-          type="button"
-          className={`create-mountable-option ${lockMountableSelected ? "create-mountable-option-selected" : ""}`}
-          aria-label={lockMountableSelected ? "Deselect lock mountable" : "Select lock mountable"}
-          aria-pressed={lockMountableSelected}
-          data-tooltip="Lock"
-          onClick={() => {
+        }}
+        onToggleChildFreight={() => {
+          const enabled = !childFreightMountableSelected;
+          createModalContentRef.current?.setChildFreightMountableEnabled(enabled);
+          setChildFreightMountableSelected(enabled);
+          setMountablesPromptError("");
+        }}
+        onToggleLock={() => {
             const nextSelected = !lockMountableSelected;
             createModalContentRef.current?.setLockMountableEnabled(nextSelected);
             setLockMountableSelected(nextSelected);
             setMountableLockFbars((current) => current || createModalContentRef.current?.getLockMountableConfig().minimumFbars || "");
             setMountablesPromptError("");
-          }}
-        >
-          <span className="create-mountable-option-icon-wrap">
-            <span className="create-mountable-option-icon-bg">
-              <LockKeyhole size={18} strokeWidth={2} aria-hidden="true" />
-            </span>
-            <span className="create-mountable-option-check" aria-hidden="true">
-              <Check size={12} strokeWidth={2.6} aria-hidden="true" />
-            </span>
-          </span>
-        </button>
-      </div>
+        }}
+        onToggleApp={handleToggleMountableAppSelection}
+      />
       {mountablesPromptError ? (
         <p className="create-info-constraint-item text-red-500 mt-3">
           <span>{mountablesPromptError}</span>
         </p>
       ) : null}
     </div>
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
+    <ChildFreightMountableConfigurator
+      title={mountableChildFreightTitle}
+      onTitleChange={(title) => {
+        setMountableChildFreightTitle(title);
+        createModalContentRef.current?.updateChildFreightMountableConfig({ title });
+      }}
+    />
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalConfigurator config={approvalSetup} onChange={updateApprovalSetup} errorMessage={mountablesPromptError} onBack={() => goBackMountableSetup("approval")} busy={isMountablesContinuing} />
   ) : showCreateModal && infoModalMode === "mountables-lock" ? (
-    <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config create-info-forms-config-tight">
-        <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Lock criteria:</p>
-          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
-        </div>
-        <div className="create-info-forms-row flex items-center gap-2">
-          <span className="create-review-section-label text-gray-900">With:</span>
-          <div className="create-info-ticket-input-wrap">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={mountableLockFbars}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setMountableLockFbars(nextValue);
-                createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
-                setMountablesPromptError("");
-              }}
-              onFocus={() => {
-                if (mountableLockValidationState === "idle") {
-                  setIsMountableLockFocused(true);
-                }
-              }}
-              onBlur={() => setIsMountableLockFocused(false)}
-              placeholder="0"
-              className={`create-info-ticket-input create-info-ticket-input-with-suffix ${mountableLockValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableLockValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableLockFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-              aria-label="Lock FBARS threshold"
-            />
-            <span className="create-info-ticket-input-suffix">FBARS</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <LockMountableConfigurator
+      errorMessage={mountablesPromptError}
+      fbars={mountableLockFbars}
+      isFocused={isMountableLockFocused}
+      onFbarsChange={(nextValue) => {
+        setMountableLockFbars(nextValue);
+        createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: nextValue });
+        setMountablesPromptError("");
+      }}
+      onFocusChange={setIsMountableLockFocused}
+      onRuleChange={(rule) => {
+        setMountableLockRule(rule);
+        createModalContentRef.current?.updateLockMountableConfig({ rule });
+      }}
+      rule={mountableLockRule}
+      validationState={mountableLockValidationState}
+    />
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
-    <div className="create-info-constraints-copy">
-      <div className="create-info-forms-config">
-        <div className="create-review-card-heading-row">
-          <p className="create-review-section-label text-gray-900">Forms (*For now you can only mount one form):</p>
-          {mountablesPromptError ? <p className="create-info-forms-inline-error">{mountablesPromptError}</p> : null}
-        </div>
-        {mountableFormLinks.map((value, index) => (
-          <div key={`forms-link-${index}`} className="create-info-forms-row">
-            <input
-              type="text"
-              value={value}
-              onChange={(event) => {
-                const nextValue = event.target.value;
-                setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
-                createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
-                setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
-                setMountablesPromptError("");
-              }}
-              onFocus={() => {
-                if (mountableFormValidationState === "idle") {
-                  setIsMountableFormFocused(true);
-                }
-              }}
-              onBlur={() => setIsMountableFormFocused(false)}
-              placeholder="Paste Google Forms responder link"
-              className={`create-info-ticket-input ${mountableFormValidationState === "invalid" ? "create-info-ticket-input-invalid" : mountableFormValidationState === "valid" ? "create-info-ticket-input-valid" : isMountableFormFocused ? "create-info-ticket-input-focused" : ""}`.trim()}
-              aria-label={`Forms link ${index + 1}`}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+    <FormsMountableConfigurator
+      errorMessage={mountablesPromptError}
+      formLinks={mountableFormLinks}
+      isFocused={isMountableFormFocused}
+      onFocusChange={setIsMountableFormFocused}
+      onLinkChange={(index, nextValue) => {
+        setMountableFormLinks((current) => current.map((entry, entryIndex) => entryIndex === index ? nextValue : entry));
+        createModalContentRef.current?.updateFormsMountableConfig({ formUrl: nextValue });
+        setMountableFormValidationState(nextValue.trim() ? "validating" : "idle");
+        setMountablesPromptError("");
+      }}
+      validationState={mountableFormValidationState}
+    />
+  ) : showCreateModal && infoModalMode === "mountables-apps" ? (
+    <MountableAppsConfigurator
+      errorMessage={mountableAppsError || mountablesPromptError}
+      mountedAppConfigs={mountedAppConfigs}
+      onToggleSelectedMountablePrinciple={handleToggleSelectedMountablePrinciple}
+      onUpdateSelectedMountablePrincipleParam={handleUpdateSelectedMountablePrincipleParam}
+      registeredMountableApps={registeredMountableApps}
+      selectedMountableAppId={selectedMountableAppId}
+      selectedMountablePrincipleIds={selectedMountablePrincipleIds}
+      selectedMountablePrincipleParams={selectedMountablePrincipleParams}
+    />
   ) : showCreateModal ? (
     <div className="create-info-constraints-copy">
       {createModalStep === "review" ? (
         <>
           <p>{CREATE_INFO_PREVIEW_HEADING}</p>
-          {CREATE_INFO_PREVIEW_ITEMS.map((item) => (
-            <p key={item} className="create-info-constraint-item">
-              <span>{item}</span>
-            </p>
-          ))}
+          <CreateReviewMountablesInfo
+            childFreightEnabled={childFreightMountableSelected}
+            childFreightTitle={mountableChildFreightTitle}
+            appMountables={mountedAppConfigs}
+            formsEnabled={formsMountableSelected}
+            formsUrl={mountableFormLinks[mountableFormLinks.length - 1] ?? ""}
+            lockEnabled={lockMountableSelected}
+            lockFbars={mountableLockFbars}
+            lockRule={mountableLockRule}
+          />
           {previewError ? (
             <>
               <p className="mt-3 text-red-500 font-semibold">Errors</p>
               <p className="create-info-constraint-item text-red-500">
                 <span>{previewError}</span>
+              </p>
+            </>
+          ) : null}
+          {constraintStatus.isRaffle ? (
+            <>
+              <p className="mt-3 font-semibold">Support to pool:</p>
+              <p className="create-info-constraint-item text-gray-500">
+                <span>{CREATE_INFO_RAFFLE_SUPPORT_NOTE}</span>
               </p>
             </>
           ) : null}
@@ -821,12 +933,22 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   ) : showLeaderboardModal ? (
     <div className="create-info-constraints-copy">
-      <p>{activeLeaderboardTitle}:</p>
-      {activeLeaderboard.slice(0, 5).map((entry) => (
-        <p key={entry.address} className="create-info-constraint-item text-gray-500">
-          <span>#{entry.rank} {entry.handle} — {entry.fbars} FBARS</span>
-        </p>
-      ))}
+      <p className="profile-leaderboard-info-heading">{activeLeaderboardTitle}:</p>
+      {activeLeaderboard.length > 0 ? (
+        <ol className="profile-leaderboard-info-list">
+          {activeLeaderboard.slice(0, 5).map((entry) => (
+            <li key={entry.address} className="profile-leaderboard-info-row">
+              <span className="profile-leaderboard-info-rank">#{entry.rank}</span>
+              <span className="profile-leaderboard-info-handle">{entry.handle}</span>
+              <span className="profile-leaderboard-info-fbars">{entry.fbars} FBARS</span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="create-info-constraint-item">No ranked users yet.</p>
+      )}
+      <p className="profile-leaderboard-info-heading mt-3">Perquisites:</p>
+      <p className="create-info-constraint-item">Weekly #1 can edit the marquee message up to twice per week.</p>
       {profilePageErrorMessages.length > 0 ? (
         <>
           <p className="mt-3 text-red-500 font-semibold">Errors:</p>
@@ -861,7 +983,35 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     </div>
   );
 
-  const infoModalActions = infoModalMode === "edit-display-name" ? (
+  const handleIgnoreBuiltInMountable = async (kind: "forms" | "lock") => {
+    try {
+      setIsMountablesContinuing(true);
+      setMountablesPromptError("");
+      if (kind === "forms") {
+        createModalContentRef.current?.setFormsMountableEnabled(false);
+        setFormsMountableSelected(false);
+      } else {
+        createModalContentRef.current?.setLockMountableEnabled(false);
+        setLockMountableSelected(false);
+      }
+      if (advanceMountableSetup(kind)) return;
+      await createModalContentRef.current?.persistCurrentDraft();
+      closeInfoModal(resetInfoModalState);
+      void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+    } catch (error) {
+      setMountablesPromptError(error instanceof Error ? error.message : `Failed to ignore mounted ${kind}`);
+    } finally {
+      setIsMountablesContinuing(false);
+    }
+  };
+
+  const infoModalActions = infoModalMode === "tag-suggestions" ? (
+    <div className="create-info-confirm-actions">
+      <button type="submit" form="tag-suggestions-form" className="create-info-confirm-btn create-info-confirm-btn-primary">
+        Continue
+      </button>
+    </div>
+  ) : infoModalMode === "edit-display-name" ? (
     <div className="profile-display-name-edit-row">
       <input
         type="text"
@@ -914,21 +1064,45 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         onClick={() => {
-          if (!formsMountableSelected && !lockMountableSelected) {
-            setMountablesPromptError("Select a mountable to continue.");
-            return;
-          }
-
-          transitionMountablesModal(lockMountableSelected ? "mountables-lock" : "mountables-forms");
-          setMountablesPromptError("");
+          beginMountableSetup();
         }}
       >
         Continue
       </button>
     </div>
-  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+  ) : showCreateModal && infoModalMode === "mountables-child-freight" ? (
     <div className="create-info-confirm-actions create-info-confirm-actions-tight">
-      <button
+      <button type="button" className="create-info-confirm-btn" disabled={isMountablesContinuing} onClick={() => goBackMountableSetup("child-freight")}>Back</button>
+      <button type="button" className="create-info-confirm-btn create-info-confirm-btn-primary" disabled={isMountablesContinuing} onClick={() => {
+        void (async () => {
+          try {
+            if (advanceMountableSetup("child-freight")) return;
+            setIsMountablesContinuing(true);
+            await createModalContentRef.current?.persistCurrentDraft();
+            closeInfoModal(resetInfoModalState);
+            await createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+          } catch (error) {
+            setMountablesPromptError(error instanceof Error ? error.message : "Failed to save child freight mountable");
+          } finally {
+            setIsMountablesContinuing(false);
+          }
+        })();
+      }}>Continue</button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-approval" ? (
+    <RaffleApprovalActions onContinue={() => void continueApprovalSetup()} busy={isMountablesContinuing} />
+  ) : showCreateModal && infoModalMode === "mountables-lock" ? (
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup("lock")}
+          disabled={isMountablesContinuing}
+        >
+          Back
+        </button>
+        <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         disabled={isMountablesContinuing || mountableLockValidationState !== "valid"}
@@ -943,9 +1117,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
 
               createModalContentRef.current?.updateLockMountableConfig({ minimumFbars: String(minimumFbars) });
 
-              if (formsMountableSelected) {
-                transitionMountablesModal("mountables-forms");
-                setMountablesPromptError("");
+              if (advanceMountableSetup("lock")) {
                 return;
               }
 
@@ -953,10 +1125,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               setMountablesPromptError("");
               await createModalContentRef.current?.persistCurrentDraft();
 
-              closeInfoModal(() => {
-                setInfoModalMode("about");
-                setMountablesPromptError("");
-              });
+              closeInfoModal(resetInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
               setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted lock");
@@ -967,11 +1136,29 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
       >
         {isMountablesContinuing ? "Hold..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing}
+        onClick={() => void handleIgnoreBuiltInMountable("lock")}
+      >
+        Ignore
       </button>
     </div>
   ) : showCreateModal && infoModalMode === "mountables-forms" ? (
-    <div className="create-info-confirm-actions create-info-confirm-actions-tight">
-      <button
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions create-info-confirm-actions-tight">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup("forms")}
+          disabled={isMountablesContinuing}
+        >
+          Back
+        </button>
+        <button
         type="button"
         className="create-info-confirm-btn create-info-confirm-btn-primary"
         disabled={isMountablesContinuing || mountableFormValidationState !== "valid"}
@@ -1010,12 +1197,14 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                 validatedAt,
               });
               setMountableFormLinks([canonicalFormUrl]);
+
+              if (advanceMountableSetup("forms")) {
+                return;
+              }
+
               await createModalContentRef.current?.persistCurrentDraft();
 
-              closeInfoModal(() => {
-                setInfoModalMode("about");
-                setMountablesPromptError("");
-              });
+              closeInfoModal(resetInfoModalState);
               void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
             } catch (error) {
               setMountablesPromptError(error instanceof Error ? error.message : "Failed to save the mounted Google Form");
@@ -1026,6 +1215,85 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         }}
       >
         {isMountablesContinuing ? "Hold..." : mountableFormValidationState === "validating" ? "Validating..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing}
+        onClick={() => void handleIgnoreBuiltInMountable("forms")}
+      >
+        Ignore
+      </button>
+    </div>
+  ) : showCreateModal && infoModalMode === "mountables-apps" ? (
+    <div className="create-info-mountable-app-actions">
+      <div className="create-info-confirm-actions">
+        <button
+          type="button"
+          className="create-info-confirm-btn"
+          onClick={() => goBackMountableSetup(`app:${selectedMountableAppId}`)}
+          disabled={isMountablesContinuing || isVerifyingMountableApp}
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          className="create-info-confirm-btn create-info-confirm-btn-primary"
+          disabled={isMountablesContinuing || isVerifyingMountableApp || !selectedMountableAppId}
+          onClick={() => {
+            void (async () => {
+              try {
+                setIsMountablesContinuing(true);
+                setMountablesPromptError("");
+                await handleVerifySelectedMountableApp();
+
+                if (advanceMountableSetup(`app:${selectedMountableAppId}`)) {
+                  return;
+                }
+
+                await createModalContentRef.current?.persistCurrentDraft();
+                closeInfoModal(resetInfoModalState);
+                void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+              } catch (error) {
+                setMountablesPromptError(error instanceof Error ? error.message : "Failed to set up mounted app");
+              } finally {
+                setIsMountablesContinuing(false);
+              }
+            })();
+          }}
+        >
+          {isMountablesContinuing || isVerifyingMountableApp ? "Hold..." : "Continue"}
+        </button>
+      </div>
+      <button
+        type="button"
+        className="create-info-confirm-btn create-info-confirm-btn-ignore"
+        disabled={isMountablesContinuing || isVerifyingMountableApp || !selectedMountableAppId}
+        onClick={() => {
+          void (async () => {
+            try {
+              const ignoredAppId = selectedMountableAppId;
+              handleToggleMountableAppSelection(ignoredAppId);
+
+              if (advanceMountableSetup(`app:${ignoredAppId}`)) {
+                return;
+              }
+
+              setIsMountablesContinuing(true);
+              setMountablesPromptError("");
+              await createModalContentRef.current?.persistCurrentDraft();
+              closeInfoModal(resetInfoModalState);
+              void createModalContentRef.current?.advanceToReviewAfterMountableSelection();
+            } catch (error) {
+              setMountablesPromptError(error instanceof Error ? error.message : "Failed to ignore mounted app");
+            } finally {
+              setIsMountablesContinuing(false);
+            }
+          })();
+        }}
+      >
+        Ignore
       </button>
     </div>
   ) : undefined;
@@ -1036,30 +1304,37 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         <AppShellHeader
           className={`campaign-shell-header campaign-shell-width ${showCreateModal || showLeaderboardModal ? "campaign-shell-header-transparent" : ""} fixed top-0 left-4 right-4 z-[70] mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`.trim()}
           infoButtonAriaLabel="Open Freight information"
-          infoModalAriaLabel={infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
+          infoModalAriaLabel={infoModalMode === "mountables-approval" ? "Raffle approval setup" : infoModalMode === "tag-suggestions" ? "Tag suggestions" : infoModalMode === "create-error" ? "Create freight errors" : infoModalMode === "submission-success" ? "Submission successful" : infoModalMode === "submission-error" ? "Transaction error" : infoModalMode === "insufficient-fbars" ? "Not enough FBARS" : showCreateModal ? "Create freight info" : "Freight information modal"}
           infoModalBackdropAriaLabel={infoModalMode === "save-draft-confirm" ? "Return to create freight modal" : "Close Freight information modal"}
-          infoModalBackdropInteractive={infoModalInteraction === "click" || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
+          infoModalBackdropInteractive={(infoModalInteraction === "click" && infoModalMode !== "create-error") || infoModalMode === "save-draft-confirm" || infoModalMode === "submission-success"}
           infoModalBody={infoModalBody}
           infoModalActions={infoModalActions}
           infoModalClosing={isInfoModalClosing}
           infoModalOpen={showInfoModal}
           isConnected={Boolean(signer)}
           onConnect={openWalletWithSeed}
-          onContainerClick={showCreateModal ? (event) => {
-            if (event.target === event.currentTarget) {
+          onContainerClick={(event) => {
+            if (event.target !== event.currentTarget) return;
+            if (showInfoModal) {
+              if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
+            } else if (showLeaderboardModal) {
+              closeLeaderboardModal();
+            } else if (showCreateModal) {
               requestCloseCreateModal();
             }
-          } : undefined}
+          }}
           onCopyWalletAddress={() => void handleCopyWalletAddress()}
           onDisconnect={disconnect}
-          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoButtonBlur={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoButtonClick={() => router.push("/")}
-          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
+          onInfoButtonFocus={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
           onInfoModalKeepOpen={keepInfoModalOpen}
-          onInfoModalRequestClose={() => closeInfoModal(resetInfoModalState)}
-          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
-          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms")}
-          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms", resetInfoModalState)}
+          onInfoModalRequestClose={() => {
+            if (infoModalMode !== "create-error") closeInfoModal(resetInfoModalState);
+          }}
+          onInfoModalScheduleClose={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
+          onInfoMouseEnter={() => openInfoModalFromHover(infoModalMode === "tag-suggestions" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps")}
+          onInfoMouseLeave={() => scheduleCloseInfoModal(infoModalMode === "tag-suggestions" || infoModalMode === "create-error" || infoModalMode === "save-draft-confirm" || infoModalMode === "edit-display-name" || infoModalMode === "mountables" || infoModalMode === "mountables-child-freight" || infoModalMode === "mountables-lock" || infoModalMode === "mountables-forms" || infoModalMode === "mountables-approval" || infoModalMode === "mountables-apps", resetInfoModalState)}
           onInfoWrapClick={(event) => event.stopPropagation()}
           onRightActionsClick={(event) => event.stopPropagation()}
           onWalletActionClick={closeWalletInfoModal}
@@ -1073,8 +1348,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
               onReset={resetCreateModal}
               onSecondaryAction={handleCreateTopRightAction}
             />
-          ) : undefined}
-          replaceWalletAction={showLeaderboardModal ? (
+          ) : showLeaderboardModal ? (
             <div className={`profile-header-replacement-actions ${isLeaderboardClosing ? "profile-header-replacement-actions-closing" : ""}`}>
               <button
                 type="button"
@@ -1114,6 +1388,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
           walletModalClosing={isWalletInfoClosing}
           walletModalOpen={showWalletInfoModal}
           walletUsdParts={walletUsdParts}
+          walletActionHref={introspectHref}
+          walletActionLabel="Introspect"
           walletActionOnly={false}
         />
 
@@ -1122,27 +1398,59 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
             <ThreeDotLoader label="Loading profile" />
           </div>
         ) : profileLoadErrorMessage ? (
-          <p className="profile-load-error">{profileLoadErrorMessage}</p>
+          null
         ) : (
           <>
             <div className="profile-hero-row">
               <div className={`profile-avatar-column profile-hero-item ${isProfileAvatarVisible ? "profile-hero-item-visible" : ""}`.trim()}>
-                <div className="profile-avatar-placeholder" aria-hidden="true">
-                  <span>Profile photo</span>
-                </div>
-                <div className="profile-handle-edit-row">
+                {canEditDisplayName ? (
+                  <input
+                    ref={photoInputRef}
+                    className="profile-photo-input"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    aria-label="Choose profile photo"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      void handlePhotoSelected(file);
+                    }}
+                  />
+                ) : null}
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-avatar-placeholder profile-avatar-editable"
+                    onClick={() => photoInputRef.current?.click()}
+                    aria-label={isUploadingPhoto ? "Uploading profile photo" : photoUrl ? "Change profile photo" : "Upload profile photo"}
+                    data-tooltip="Upload photo (max 4 MB)"
+                    disabled={isUploadingPhoto}
+                  >
+                    {isUploadingPhoto ? (
+                      <LoaderCircle className="profile-avatar-spinner" size={30} strokeWidth={2} aria-hidden="true" />
+                    ) : photoUrl ? (
+                      <Image src={photoUrl} alt="" fill unoptimized className="profile-avatar-image" />
+                    ) : (
+                      <Camera size={28} strokeWidth={1.8} aria-hidden="true" />
+                    )}
+                  </button>
+                ) : (
+                  <div className="profile-avatar-placeholder">
+                    {photoUrl ? <Image src={photoUrl} alt={`${currentUserProfile?.displayName ?? "User"}'s profile photo`} fill unoptimized className="profile-avatar-image" /> : <span>Profile photo</span>}
+                  </div>
+                )}
+                {canEditDisplayName ? (
+                  <button
+                    type="button"
+                    className="profile-handle profile-handle-under-avatar profile-handle-edit-trigger"
+                    onClick={openDisplayNameModal}
+                    aria-label={`Edit ${handleLabel}`}
+                  >
+                    {handleLabel}
+                  </button>
+                ) : (
                   <p className="profile-handle profile-handle-under-avatar">{handleLabel}</p>
-                  {canEditDisplayName ? (
-                    <button
-                      type="button"
-                      className="profile-display-name-edit-trigger"
-                      onClick={openDisplayNameModal}
-                      aria-label="Edit display name"
-                    >
-                      <Pencil size={14} strokeWidth={2} aria-hidden="true" />
-                    </button>
-                  ) : null}
-                </div>
+                )}
               </div>
 
               <section className="profile-summary-card">
@@ -1161,7 +1469,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-balance-inline-group profile-balance-inline-group-single-line">
                     <span className="profile-wallet-balance-note">ADSF:</span>
                     <div className="profile-usd-balance" aria-live="polite">
-                      <span>{adsfUsdParts?.whole ?? "--"} </span>
+                      <span>{adsfUsdParts?.whole ?? "--"}</span>
                       <span className="profile-usd-suffix">USD</span>
                     </div>
                   </div>
@@ -1175,7 +1483,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                         type="button"
                         className="wallet-info-copy-btn profile-address-copy-btn"
                         onClick={() => void handleCopyWalletAddress()}
-                        title={walletAddress}
+                        data-tooltip={walletAddress}
                         aria-label="Copy full wallet address"
                       >
                         {walletCopyFeedback === "copied" ? (
@@ -1187,7 +1495,6 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                     ) : null}
                   </div>
                   <p className="profile-address-chain text-xs text-blue-600">({walletChainLabel})</p>
-                  {walletCopyFeedback === "error" ? <span className="wallet-info-feedback wallet-info-feedback-error">Copy failed</span> : null}
                 </div>
               </section>
             </div>
@@ -1198,7 +1505,8 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                   <div className="profile-tab-bar" role="tablist" aria-label="Profile views">
                     {PROFILE_TABS.map((tab) => {
                       const isSelected = activeTab === tab.key;
-                      const isRefreshingActiveTab = (tab.key === "freights" && isProfileFreightsRefreshing)
+                      const isRefreshingActiveTab = (tab.key === "activity" && isProfileAnalyticsRefreshing)
+                        || (tab.key === "freights" && isProfileFreightsRefreshing)
                         || (tab.key === "transactions" && isProfileTransactionsRefreshing);
 
                       return (
@@ -1212,6 +1520,11 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
                           className={`profile-tab-button ${isSelected ? "profile-tab-button-active" : ""}`.trim()}
                           onClick={() => {
                             if (isSelected) {
+                              if (tab.key === "activity") {
+                                refreshProfileAnalytics();
+                                return;
+                              }
+
                               if (tab.key === "freights") {
                                 refreshProfileFreights();
                                 return;
@@ -1339,21 +1652,22 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
         onDraftSelectionRequest={handleDraftSelectionRequest}
         onInsufficientFbars={openInsufficientFbarsInfoModal}
         onMountableSelectionRequired={openMountablesModal}
-        onMountableSelectionStateChange={({ formsSelected, lockSelected }) => {
-          setFormsMountableSelected(formsSelected);
-          setLockMountableSelected(lockSelected);
-        }}
+        onApprovalSetupRequired={openRaffleApprovalModal}
+        onTagSuggestionsRequested={handleTagSuggestionsRequested}
+        onMountableSelectionStateChange={handleMountableSelectionStateChange}
         onOpenCreateModal={openCreateModal}
-        onPreviewErrorChange={setPreviewError}
+        onPreviewErrorChange={handleCreateErrorChange}
         onPublishSuccess={(txHash) => {
           finalizeCloseCreateModal();
+          markProfileRouteDataDirty();
+          markConnectedUserProfileDirty();
           openSubmissionSuccessInfoModal(txHash);
         }}
         onRequestCloseCreateModal={requestCloseCreateModal}
         onStepChange={setCreateModalStep}
         showCreateModal={showCreateModal}
         isCreateModalClosing={isCreateModalClosing}
-        availableFbars={currentUserProfile?.fbars}
+        availableFbars={creatorAvailableFbars}
       />
     </main>
   );

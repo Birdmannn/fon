@@ -13,6 +13,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: #ffffff;
   --background-light: #ffffff;
   --background-light-cream: #f2f0e4;
@@ -47,16 +48,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --tertiary-background: var(--tertiary-background-light);
-    --campaign-card-border: var(--campaign-card-border-light);
-    --marquee-border: var(--marquee-border-light);
-    --foreground: #ededed;
-  }
 }
 
 body {

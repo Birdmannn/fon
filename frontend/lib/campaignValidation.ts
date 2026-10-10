@@ -7,6 +7,8 @@ import {
   type GiftSplitMode,
   type GiftTaggedUser,
 } from "@/lib/giftDeliverables";
+import { CampaignType } from "@/lib/contract";
+import { raffleSupportPercentToBasisPoints } from "@/lib/raffleSupportPool";
 
 const SUMMARY_MAX_BYTES = 64;
 const MAX_DURATION_SECONDS = 365n * 24n * 60n * 60n;
@@ -25,6 +27,15 @@ function parseWholeNumberString(value: string, field: string) {
   }
 
   return BigInt(trimmed);
+}
+
+function parseWholePercentString(value: string, field: string) {
+  const parsed = parseWholeNumberString(value, field);
+  if (parsed > 100n) {
+    throw new Error(`${field} must be between 0 and 100`);
+  }
+
+  return parsed;
 }
 
 export function clampTimingMinutes(totalMinutes: number, minimumMinutes: number) {
@@ -68,13 +79,18 @@ export function buildTimingHoursFromParts(hoursPart: string, minutesPart: string
 }
 
 export type NormalizeCreateCampaignParamsInput = {
+  campaignType: CampaignType;
   maxAmountCkb: string;
+  raffleSupportPoolPercent: string;
   raffleTicketPriceCkb: string;
+  ticketsPerUser?: string;
   rewardCount: string;
   shouldCollectRaffleTicketPrice: boolean;
   summary: string;
   taskDurationHours: string;
   taskStartDelayHours: string;
+  recurringSleepHours?: string;
+  winnerReductionPercent?: string;
 };
 
 export type NormalizedCreateCampaignParams = {
@@ -82,7 +98,11 @@ export type NormalizedCreateCampaignParams = {
   maximumAmountCkb: bigint;
   rewardCount: bigint;
   startDurationSecs: bigint;
+  supportPoolBps: bigint;
   taskDurationSecs: bigint;
+  ticketsPerUser: bigint | null;
+  sleepDurationSecs: bigint;
+  winnerReductionBps: bigint;
 };
 
 export type GiftCreateValidationInput = {
@@ -143,13 +163,18 @@ export function validateGiftCreateConfiguration({
 }
 
 export function normalizeCreateCampaignParams({
+  campaignType,
   maxAmountCkb,
+  raffleSupportPoolPercent,
   raffleTicketPriceCkb,
+  ticketsPerUser = "1",
   rewardCount,
   shouldCollectRaffleTicketPrice,
   summary,
   taskDurationHours,
   taskStartDelayHours,
+  recurringSleepHours = "1",
+  winnerReductionPercent = "50",
 }: NormalizeCreateCampaignParamsInput): NormalizedCreateCampaignParams {
   const trimmedSummary = summary.trim();
   if (trimmedSummary.length === 0) {
@@ -160,8 +185,9 @@ export function normalizeCreateCampaignParams({
     throw new Error("Summary must be non-empty and fit within 64 UTF-8 bytes");
   }
 
-  const startDurationMinutes = parseStoredTimingHours(taskStartDelayHours, 0);
-  const taskDurationMinutes = parseStoredTimingHours(taskDurationHours, 0);
+  const isSimpleTask = campaignType === CampaignType.SimpleTask;
+  const startDurationMinutes = isSimpleTask ? 0 : parseStoredTimingHours(taskStartDelayHours, 0);
+  const taskDurationMinutes = isSimpleTask ? 0 : parseStoredTimingHours(taskDurationHours, 0);
   const startDurationSecs = BigInt(startDurationMinutes * 60);
   const taskDurationSecs = BigInt(taskDurationMinutes * 60);
 
@@ -169,7 +195,7 @@ export function normalizeCreateCampaignParams({
     throw new Error("Start delay cannot exceed 365 days");
   }
 
-  if (taskDurationSecs < MIN_TASK_DURATION_SECONDS) {
+  if (!isSimpleTask && taskDurationSecs < MIN_TASK_DURATION_SECONDS) {
     throw new Error("Duration must be at least 1 minute");
   }
 
@@ -185,26 +211,35 @@ export function normalizeCreateCampaignParams({
   if (shouldCollectRaffleTicketPrice) {
     const ticketCount = parseWholeNumberString(maxAmountCkb, "Number of tickets");
     const ticketPrice = parseWholeNumberString(raffleTicketPriceCkb, "Raffle ticket price");
-
-    if (ticketCount <= 0n) {
-      throw new Error("Please enter a valid number of tickets greater than 0");
+    const supportPoolPercent = parseWholePercentString(raffleSupportPoolPercent, "Raffle support pool percentage");
+    const isRecurring = campaignType === CampaignType.RecurringRaffle;
+    if (isRecurring && ticketPrice <= 0n) {
+      throw new Error("Recurring raffle ticket price must be greater than 0 CKB");
+    }
+    const sleepMinutes = isRecurring ? parseStoredTimingHours(recurringSleepHours, MIN_TASK_DURATION_MINUTES) : 0;
+    const reductionPercent = isRecurring ? parseWholePercentString(winnerReductionPercent, "Winner reduction percentage") : 0n;
+    if (isRecurring && (reductionPercent <= 0n || reductionPercent > 100n)) {
+      throw new Error("Winner reduction must be between 1% and 100%");
     }
 
-    if (ticketPrice <= 0n) {
-      throw new Error("Please enter a valid raffle ticket price greater than 0 CKB");
+    const perUserLimit = ticketCount === 0n ? null : parseWholeNumberString(ticketsPerUser, "Tickets per user");
+    if (perUserLimit !== null && perUserLimit <= 0n) {
+      throw new Error("Tickets per user must be at least 1");
     }
 
-    const maximumAmount = ticketCount * ticketPrice;
-    if (maximumAmount % ticketPrice !== 0n) {
-      throw new Error("Raffle total must be divisible by ticket price");
-    }
+    const maximumAmount = ticketPrice === 0n ? ticketCount : ticketCount * ticketPrice;
+    if (maximumAmount > 0xffff_ffff_ffff_ffffn) throw new Error("Raffle ticket capacity exceeds contract limit");
 
     return {
       auxAmountCkb: ticketPrice,
       maximumAmountCkb: maximumAmount,
       rewardCount: parsedRewardCount,
       startDurationSecs,
+      supportPoolBps: raffleSupportPercentToBasisPoints(supportPoolPercent),
       taskDurationSecs,
+      ticketsPerUser: perUserLimit,
+      sleepDurationSecs: BigInt(sleepMinutes * 60),
+      winnerReductionBps: reductionPercent * 100n,
     };
   }
 
@@ -218,6 +253,10 @@ export function normalizeCreateCampaignParams({
     maximumAmountCkb: maximumAmount,
     rewardCount: parsedRewardCount,
     startDurationSecs,
+    supportPoolBps: 0n,
     taskDurationSecs,
+    ticketsPerUser: null,
+    sleepDurationSecs: 0n,
+    winnerReductionBps: 0n,
   };
 }

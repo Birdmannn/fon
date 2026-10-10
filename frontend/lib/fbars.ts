@@ -87,6 +87,7 @@ export function getCurrentWeekKey(value = new Date()) {
 
 export function isWinningCampaignType(campaignType: number) {
   return campaignType === CampaignType.Raffle
+    || campaignType === CampaignType.RecurringRaffle
     || campaignType === CampaignType.TimedChallenge
     || campaignType === CampaignType.FundedTask;
 }
@@ -245,7 +246,15 @@ export async function awardFbarsEvent(params: FbarAwardParams & {
 
   const nextLifetimeFbars = Math.max(0, parseNonNegativeInteger(currentProfile?.fbars) + params.delta);
 
-  await params.eventsCollection.insertOne(insertedEvent);
+  try {
+    await params.eventsCollection.insertOne(insertedEvent);
+  } catch (error) {
+    if ((params.kind === "win" || params.kind === "freight-create" || params.metadata?.supportMode === "direct_creator")
+      && error && typeof error === "object" && "code" in error && error.code === 11000) {
+      return { applied: false, event: insertedEvent };
+    }
+    throw error;
+  }
   await params.profilesCollection.updateOne(
     { address: normalizedAddress },
     {

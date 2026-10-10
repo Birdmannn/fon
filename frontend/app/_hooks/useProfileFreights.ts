@@ -3,55 +3,91 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ProfileFreightRow } from "@/app/_types/profileTabs";
+import { normalizeUsername } from "@/lib/campaignDisplay";
 
 const profileFreightsCache = new Map<string, ProfileFreightRow[]>();
+const dirtyProfileFreightsKeys = new Set<string>();
 
 type UseProfileFreightsArgs = {
   address?: string | null;
+  cacheKey?: string | null;
   enabled?: boolean;
   handle?: string | null;
 };
 
-export function useProfileFreights({ address, enabled = true, handle }: UseProfileFreightsArgs) {
+function normalizeAddress(value: string | null | undefined) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function buildProfileFreightsCacheKey({ address, cacheKey, handle }: UseProfileFreightsArgs) {
+  const normalizedCacheKey = cacheKey?.trim().toLowerCase() ?? "";
+  if (normalizedCacheKey) {
+    return normalizedCacheKey;
+  }
+
+  const normalizedAddress = normalizeAddress(address);
+  if (normalizedAddress) {
+    return `address:${normalizedAddress}`;
+  }
+
+  const normalizedHandle = handle ? normalizeUsername(handle) : "";
+  if (normalizedHandle) {
+    return `handle:${normalizedHandle}`;
+  }
+
+  return null;
+}
+
+function buildProfileFreightsQuery({ address, handle }: Pick<UseProfileFreightsArgs, "address" | "handle">) {
+  const normalizedAddress = address?.trim();
+  if (normalizedAddress) {
+    return `address=${encodeURIComponent(normalizedAddress)}`;
+  }
+
+  const normalizedHandle = handle?.trim();
+  if (normalizedHandle) {
+    return `handle=${encodeURIComponent(normalizedHandle)}`;
+  }
+
+  return null;
+}
+
+export function markProfileFreightsDirty(args: Pick<UseProfileFreightsArgs, "address" | "cacheKey" | "handle">) {
+  const key = buildProfileFreightsCacheKey(args);
+  if (!key) {
+    return;
+  }
+
+  dirtyProfileFreightsKeys.add(key);
+}
+
+export function useProfileFreights({ address, cacheKey, enabled = true, handle }: UseProfileFreightsArgs) {
   const [rows, setRows] = useState<ProfileFreightRow[]>([]);
   const [error, setError] = useState("");
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const query = useMemo(() => {
-    if (!enabled) {
-      return null;
-    }
-
-    const normalizedAddress = address?.trim();
-    if (normalizedAddress) {
-      return `address=${encodeURIComponent(normalizedAddress)}`;
-    }
-
-    const normalizedHandle = handle?.trim();
-    if (normalizedHandle) {
-      return `handle=${encodeURIComponent(normalizedHandle)}`;
-    }
-
-    return null;
-  }, [address, enabled, handle]);
+  const resolvedCacheKey = useMemo(() => buildProfileFreightsCacheKey({ address, cacheKey, handle }), [address, cacheKey, handle]);
+  const query = useMemo(() => buildProfileFreightsQuery({ address, handle }), [address, handle]);
 
   const fetchRows = useCallback(async (forceRefresh = false) => {
-    if (!query) {
+    if (!resolvedCacheKey || !query) {
       return;
     }
 
-    const hasCachedRows = profileFreightsCache.has(query);
-    if (!forceRefresh && hasCachedRows) {
-      setRows(profileFreightsCache.get(query) ?? []);
+    const cachedRows = profileFreightsCache.get(resolvedCacheKey) ?? null;
+    const isDirty = dirtyProfileFreightsKeys.has(resolvedCacheKey);
+    if (!forceRefresh && cachedRows && !isDirty) {
+      setRows(cachedRows);
       setError("");
       setHasLoaded(true);
       setIsLoading(false);
+      setIsRefreshing(false);
       return;
     }
 
-    if (forceRefresh) {
+    if (forceRefresh || cachedRows) {
       setIsRefreshing(true);
     } else {
       setIsLoading(true);
@@ -68,11 +104,13 @@ export function useProfileFreights({ address, enabled = true, handle }: UseProfi
       }
 
       const nextRows = Array.isArray(payload?.rows) ? (payload.rows as ProfileFreightRow[]) : [];
-      profileFreightsCache.set(query, nextRows);
+      profileFreightsCache.set(resolvedCacheKey, nextRows);
+      dirtyProfileFreightsKeys.delete(resolvedCacheKey);
       setRows(nextRows);
+      setError("");
       setHasLoaded(true);
     } catch (nextError) {
-      if (!hasCachedRows) {
+      if (!cachedRows) {
         setRows([]);
         setError(nextError instanceof Error ? nextError.message : "Failed to load profile freights");
         setHasLoaded(true);
@@ -81,10 +119,10 @@ export function useProfileFreights({ address, enabled = true, handle }: UseProfi
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [query]);
+  }, [query, resolvedCacheKey]);
 
   useEffect(() => {
-    if (!query) {
+    if (!resolvedCacheKey) {
       setRows([]);
       setError("");
       setHasLoaded(false);
@@ -93,7 +131,7 @@ export function useProfileFreights({ address, enabled = true, handle }: UseProfi
       return;
     }
 
-    const cachedRows = profileFreightsCache.get(query);
+    const cachedRows = profileFreightsCache.get(resolvedCacheKey) ?? null;
     if (cachedRows) {
       setRows(cachedRows);
       setError("");
@@ -108,19 +146,26 @@ export function useProfileFreights({ address, enabled = true, handle }: UseProfi
     setHasLoaded(false);
     setIsLoading(false);
     setIsRefreshing(false);
-  }, [fetchRows, query]);
+  }, [resolvedCacheKey]);
 
   useEffect(() => {
-    if (!query || profileFreightsCache.has(query)) {
+    if (!enabled || !resolvedCacheKey || !query) {
       return;
     }
 
-    void fetchRows(false);
-  }, [fetchRows, query]);
+    if (!profileFreightsCache.has(resolvedCacheKey) || dirtyProfileFreightsKeys.has(resolvedCacheKey)) {
+      void fetchRows(false);
+    }
+  }, [enabled, fetchRows, query, resolvedCacheKey]);
 
   const refresh = useCallback(() => {
+    if (!resolvedCacheKey) {
+      return;
+    }
+
+    dirtyProfileFreightsKeys.add(resolvedCacheKey);
     void fetchRows(true);
-  }, [fetchRows]);
+  }, [fetchRows, resolvedCacheKey]);
 
   return {
     error,
