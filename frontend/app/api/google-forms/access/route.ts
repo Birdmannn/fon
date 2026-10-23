@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       throw new Error("Wallet nonce does not match Google Forms access verification");
     }
 
-    await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+    await verifyWalletSignature({ expectedPurpose: "google-forms-access", address, nonce, signature: nonceSignature });
 
     const access = await verifyGoogleFormResponseAccess({
       address,

@@ -3,6 +3,7 @@ import { Binary, MongoClient, MongoClientOptions } from "mongodb";
 const globalForMongo = globalThis as typeof globalThis & {
   __freightMongoClientPromise?: Promise<MongoClient>;
   __freightUserProfilesIndexPromise?: Promise<string>;
+  __freightPilotChallengesIndexPromise?: Promise<string>;
 };
 
 function getMongoClientPromise() {
@@ -47,6 +48,20 @@ export const MOUNTABLE_APPS_COLLECTION = "mountableApps";
 export const MOUNTABLE_APP_UPDATES_COLLECTION = "mountableAppUpdates";
 export const MOUNTABLE_APP_DELIVERIES_COLLECTION = "mountableAppDeliveries";
 export const CAMPAIGN_PARTICIPANT_FINALIZATIONS_COLLECTION = "campaignParticipantFinalizations";
+
+export type PilotChallengeRecord = {
+  _id: string; address: string; permission: string; origin: string; challenge: string;
+  expiresAt: Date; consumedAt?: Date;
+};
+export async function getPilotChallengesCollection() {
+  const client = await getMongoClientPromise();
+  const collection = client.db(MONGODB_DB_NAME).collection<PilotChallengeRecord>("pilotSigningChallenges");
+  globalForMongo.__freightPilotChallengesIndexPromise ??= collection.createIndex(
+    { expiresAt: 1 }, { expireAfterSeconds: 0, name: "pilot_challenge_expiry" },
+  ).catch(error => { globalForMongo.__freightPilotChallengesIndexPromise = undefined; throw error; });
+  await globalForMongo.__freightPilotChallengesIndexPromise;
+  return collection;
+}
 
 export async function getMongoCollection() {
   const client = await getMongoClientPromise();

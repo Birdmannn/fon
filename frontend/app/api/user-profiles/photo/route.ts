@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       typeof signature.signType !== "string" || !Object.values(SignerSignType).includes(signature.signType as SignerSignType)) {
       return errorResponse("Wallet signature is invalid", 403);
     }
-    await verifyWalletSignature({
+    await verifyWalletSignature({ expectedPurpose: "profile-photo",
       address: normalizedAddress,
       nonce,
       signature: {

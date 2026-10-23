@@ -1,5 +1,9 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
+import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
+
 import { ccc } from "@ckb-ccc/connector-react";
 import { ArrowRight, GitBranchPlus, HandCoins, LoaderCircle, LockKeyhole, Paperclip, RefreshCw, Scroll, SendHorizontal, Signature, Trash2 } from "lucide-react";
 
@@ -464,8 +468,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onMountableSelectionStateChange,
   availableFbars,
 }: CreateCampaignModalContentProps, ref) {
-  const { open } = ccc.useCcc();
-  const signer = ccc.useSigner();
+  const { open } = useFreightWallet();
+  const signer = useFreightSigner();
   const { currentUserProfile } = useUserProfile(signer ?? null);
   const {
     beginGoogleLink,
@@ -2413,7 +2417,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         throw new Error(noncePayload?.error ?? "Failed to create Google Forms access nonce");
       }
 
-      const signature = await signer.signMessage(noncePayload.nonce);
+      const signature = await signFreightMessage(signer, "google-forms-access", noncePayload.nonce);
       const accessResponse = await fetch("/api/google-forms/access", {
         method: "POST",
         headers: {

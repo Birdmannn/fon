@@ -1,5 +1,7 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
 import { ccc } from "@ckb-ccc/connector-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -68,7 +70,7 @@ export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: Use
         throw new Error(noncePayload?.error ?? "Failed to start Google link");
       }
 
-      const signature = await signer.signMessage(noncePayload.nonce);
+      const signature = await signFreightMessage(signer, purpose === "identity_link" ? "google-identity-link" : "google-forms-link", noncePayload.nonce);
       const startResponse = await fetch("/api/google/link/start", {
         method: "POST",
         headers: {

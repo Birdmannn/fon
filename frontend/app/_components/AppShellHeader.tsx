@@ -4,6 +4,7 @@ import { Copy, Fingerprint } from "lucide-react";
 import Link from "next/link";
 import { type MouseEventHandler, type ReactNode, type RefObject, useCallback, useId, useRef } from "react";
 
+import { useFreightWallet } from "@/app/_components/OwlWalletProvider";
 import FreightInfoModal from "@/app/_components/FreightInfoModal";
 import { useInfoError } from "@/app/_components/InfoErrorProvider";
 import { useWalletSeedNotice } from "@/app/_hooks/useUserProfile";
@@ -125,6 +126,7 @@ export default function AppShellHeader({
   walletActionLabel,
   walletActionOnly = false,
 }: AppShellHeaderProps) {
+  const { walletSelection } = useFreightWallet();
   const showWalletSeedNotice = useWalletSeedNotice();
   useInfoError(walletCopyFeedback === "error" ? "Copy failed" : null);
   useInfoError(walletInfoError);
@@ -323,22 +325,31 @@ export default function AppShellHeader({
       </div>
 
       <FreightInfoModal
-        open={infoModalOpen || showWalletSeedNotice}
-        closing={showWalletSeedNotice ? false : infoModalClosing}
-        ariaLabel={showWalletSeedNotice ? "Awarding FBARS" : infoModalAriaLabel}
-        body={showWalletSeedNotice ? (
+        open={walletSelection.open || infoModalOpen || showWalletSeedNotice}
+        closing={walletSelection.open ? walletSelection.closing : showWalletSeedNotice ? false : infoModalClosing}
+        ariaLabel={walletSelection.open ? "Connect Wallet" : showWalletSeedNotice ? "Awarding FBARS" : infoModalAriaLabel}
+        body={walletSelection.open ? (
+          <div className="create-info-constraints-copy">
+            <h2 id="connect-wallet-section-title" className="create-review-section-label campaign-freight-options-heading">Connect Wallet:</h2>
+          </div>
+        ) : showWalletSeedNotice ? (
           <div className="create-info-constraints-copy" role="status" aria-live="polite">
             <p className="mt-3 create-review-section-label">Awarding FBARS...</p>
             <p className="create-info-constraint-item">Hold and sign the next transaction</p>
           </div>
         ) : infoModalBody}
-        actions={showWalletSeedNotice ? null : infoModalActions}
-        backdropAriaLabel={showWalletSeedNotice ? "Awarding FBARS in progress" : infoModalBackdropAriaLabel}
-        backdropInteractive={showWalletSeedNotice ? false : infoModalBackdropInteractive}
-        onRequestClose={showWalletSeedNotice ? () => undefined : onInfoModalRequestClose}
-        onKeepOpen={showWalletSeedNotice ? () => undefined : onInfoModalKeepOpen}
+        actions={walletSelection.open ? (
+          <div className="campaign-freight-options-controls freight-wallet-options" aria-labelledby="connect-wallet-section-title">
+            <button type="button" className="create-info-confirm-btn freight-wallet-pilot" disabled={walletSelection.closing} onClick={walletSelection.pilot}>Pilot</button>
+            <button type="button" className="create-info-confirm-btn freight-wallet-joyid" disabled={walletSelection.closing} onClick={walletSelection.joyId}>JoyID</button>
+          </div>
+        ) : showWalletSeedNotice ? null : infoModalActions}
+        backdropAriaLabel={walletSelection.open ? "Close wallet selection" : showWalletSeedNotice ? "Awarding FBARS in progress" : infoModalBackdropAriaLabel}
+        backdropInteractive={walletSelection.open ? true : showWalletSeedNotice ? false : infoModalBackdropInteractive}
+        onRequestClose={walletSelection.open ? walletSelection.close : showWalletSeedNotice ? () => undefined : onInfoModalRequestClose}
+        onKeepOpen={walletSelection.open || showWalletSeedNotice ? () => undefined : onInfoModalKeepOpen}
         onScheduleClose={() => {
-          if (!showWalletSeedNotice && infoPointerTypeRef.current !== "touch") {
+          if (!walletSelection.open && !showWalletSeedNotice && infoPointerTypeRef.current !== "touch") {
             onInfoModalScheduleClose();
           }
         }}

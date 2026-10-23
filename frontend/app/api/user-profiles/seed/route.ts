@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     const address = normalizeAddress(ensureString(payload.address, "address"));
     const nonce = ensureString(payload.nonce, "nonce");
     const signature = parseVerifiedSignature(payload.signature);
-    await verifyWalletSignature({ address, nonce, signature });
+    await verifyWalletSignature({ expectedPurpose: "wallet-seed", address, nonce, signature });
 
     const [profilesCollection, eventsCollection] = await Promise.all([
       getUserProfilesCollection(),

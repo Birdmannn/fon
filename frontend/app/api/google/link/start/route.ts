@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       throw new Error("Google link nonce does not match the requested link purpose");
     }
 
-    await verifyWalletSignature({
+    await verifyWalletSignature({ expectedPurpose: purpose,
       address,
       nonce,
       signature: {

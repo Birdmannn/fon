@@ -1,5 +1,9 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
+import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
+
 import { ccc } from "@ckb-ccc/connector-react";
 import { CheckCircle, LoaderCircle } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
@@ -189,12 +193,12 @@ type FreightRelationChoice = "parent" | "child";
 type OwnedFreight = { campaignId: string; title: string };
 
 export default function CampaignDetailPage() {
-  const { open, disconnect, client } = ccc.useCcc();
+  const { open, disconnect, client } = useFreightWallet();
   const openWalletWithSeed = useCallback(() => {
     markWalletSeedIntent();
     open();
   }, [open]);
-  const signer = ccc.useSigner();
+  const signer = useFreightSigner();
   const router = useRouter();
   const params = useParams<{ campaignId: string }>();
   const encodedCampaignIdParam = Array.isArray(params.campaignId) ? (params.campaignId[0] ?? "") : (params.campaignId ?? "");
@@ -1265,7 +1269,7 @@ export default function CampaignDetailPage() {
       throw new Error(noncePayload?.error ?? `Failed to create ${purpose} nonce`);
     }
 
-    const signature = await signer.signMessage(noncePayload.nonce);
+    const signature = await signFreightMessage(signer, purpose, noncePayload.nonce);
     return {
       address,
       nonce: noncePayload.nonce,

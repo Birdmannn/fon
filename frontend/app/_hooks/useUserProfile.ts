@@ -1,5 +1,7 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { ccc } from "@ckb-ccc/connector-react";
@@ -513,7 +515,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
         throw new Error(noncePayload?.error ?? "Failed to create marquee edit nonce");
       }
 
-      const signature = await args.signer.signMessage(noncePayload.nonce);
+      const signature = await signFreightMessage(args.signer, "marquee-edit", noncePayload.nonce);
       const response = await fetch("/api/user-profiles", {
         method: "PATCH",
         headers: {
@@ -629,7 +631,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
       }
 
       await new Promise<void>((resolve) => window.setTimeout(resolve, Math.max(0, 800 - (Date.now() - noticeStartedAt))));
-      const signature = await args.signer.signMessage(noncePayload.nonce);
+      const signature = await signFreightMessage(args.signer, "wallet-seed", noncePayload.nonce);
       console.log("[wallet-seed] client signMessage result", {
         address,
         nonce: noncePayload.nonce,

@@ -36,3 +36,7 @@
   width: 0;
   height: 0;
 }
+
+/* External wallets retain their own permission review. Pilot mounts its own modal. */
+.freight-owl-dialog { width: min(560px, calc(100vw - 32px)); max-height: 88vh; margin: auto; }
+.freight-owl-dialog::backdrop { background: #08120ccc; backdrop-filter: blur(7px); }

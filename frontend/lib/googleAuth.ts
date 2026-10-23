@@ -5,6 +5,7 @@ import { type CredentialKeyType, verifyCredential } from "@joyid/ckb";
 import { type SigningAlg } from "@joyid/common";
 
 import { getPublicCkbClient } from "@/lib/ckbClient";
+import { verifyAndConsumePilotSignature } from "@/lib/pilotAuth";
 
 const joyidServerUrl = process.env.NEXT_PUBLIC_CKB_NETWORK?.trim().toLowerCase() === "mainnet"
   ? "https://api.joy.id/api/v1"
@@ -321,12 +322,17 @@ function parseJoyIdSignaturePayload(signature: string): { alg: SigningAlg; messa
 export async function verifyWalletSignature(params: {
   address: string;
   nonce: string;
+  expectedPurpose: string;
   signature: {
     signature: string;
     identity: string;
     signType: SignerSignType;
   };
 }) {
+  if (params.signature.signType === SignerSignType.Unknown) {
+    await verifyAndConsumePilotSignature(params);
+    return;
+  }
   console.log("[wallet-seed] verifyWalletSignature input", {
     address: params.address,
     nonce: params.nonce,

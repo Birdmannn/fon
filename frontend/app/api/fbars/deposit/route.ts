@@ -96,7 +96,7 @@ export async function POST(request: Request) {
     if (!isDirectTip) {
       const nonce = ensureString(payload.nonce, "nonce");
       const nonceSignature = parseVerifiedSignature(payload.nonceSignature);
-      await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+      await verifyWalletSignature({ expectedPurpose: "deposit", address, nonce, signature: nonceSignature });
     }
 
     const recordId = ensureString(payload.recordId, "recordId");

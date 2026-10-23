@@ -78,7 +78,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       ? payload.withdrawnAt.trim()
       : new Date().toISOString();
 
-    await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+    await verifyWalletSignature({ expectedPurpose: "creator-withdraw", address, nonce, signature: nonceSignature });
 
     const collection = await getMongoCollection();
     const existingRecord = await collection.findOne(

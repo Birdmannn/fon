@@ -119,7 +119,7 @@ export async function POST(request: Request, context: RouteContext<"/api/campaig
       throw new Error("Wallet nonce does not match forms claim verification");
     }
 
-    await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+    await verifyWalletSignature({ expectedPurpose: "forms-claim", address, nonce, signature: nonceSignature });
 
     const recordCollection = await getMongoCollection();
     const record = await recordCollection.findOne(

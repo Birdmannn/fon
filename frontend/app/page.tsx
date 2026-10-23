@@ -1,5 +1,9 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
+import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
+
 import { CheckCircle, LoaderCircle } from "lucide-react";
 import { ccc } from "@ckb-ccc/connector-react";
 import { useRouter } from "next/navigation";
@@ -73,12 +77,12 @@ type OwnedFreight = { campaignId: string; title: string };
 const DETAIL_CONTRACTING_FLAG = "freight:detail-contracting";
 
 export default function Home() {
-  const { open, disconnect, client } = ccc.useCcc();
+  const { open, disconnect, client } = useFreightWallet();
   const openWalletWithSeed = useCallback(() => {
     markWalletSeedIntent();
     open();
   }, [open]);
-  const signer = ccc.useSigner();
+  const signer = useFreightSigner();
   const { campaigns, recordIndexes, nowMs } = useCampaignFeed();
   const router = useRouter();
   const INFO_MODAL_ANIMATION_MS = 620;
@@ -744,7 +748,7 @@ export default function Home() {
     if (!nonceResponse.ok || typeof noncePayload?.nonce !== "string") {
       throw new Error(noncePayload?.error ?? "Failed to create freight-tree nonce");
     }
-    const signature = await signer.signMessage(noncePayload.nonce);
+    const signature = await signFreightMessage(signer, "freight-tree", noncePayload.nonce);
     return {
       address,
       nonce: noncePayload.nonce,

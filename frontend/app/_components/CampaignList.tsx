@@ -1,5 +1,7 @@
 "use client";
 
+import { useFreightSigner } from "@/app/_components/OwlWalletProvider";
+
 import { ccc } from "@ckb-ccc/connector-react";
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 
@@ -66,7 +68,7 @@ export default function CampaignList({
   onTicketPurchaseRequest,
   shouldScrollToNewest,
 }: CampaignListProps) {
-  const signer = ccc.useSigner();
+  const signer = useFreightSigner();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [currentWalletAddress, setCurrentWalletAddress] = useState<string | null>(null);
   const newestCampaignRef = useRef<HTMLDivElement | null>(null);

@@ -673,7 +673,7 @@ export async function PATCH(request: Request) {
     if (payload.weeklyMarqueeMessage !== undefined) {
       const nonce = ensureString(payload.nonce, "nonce");
       const signature = parseVerifiedSignature(payload.signature);
-      await verifyWalletSignature({
+      await verifyWalletSignature({ expectedPurpose: "marquee-edit",
         address,
         nonce,
         signature,
