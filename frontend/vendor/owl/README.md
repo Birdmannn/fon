@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `8939062faaf4e4485b228188c47b785bfab35200` (24 October 2026).
+commit `26baff9dd957520834a3905f34944bdaa3c6c7cf` (24 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required
@@ -25,8 +25,14 @@ the archives. Commit the updated lockfile and both archives together.
 
 The `/public/owl.png` asset is copied from the same revision's demo.
 
-This revision adds one-time owner passkey approvals for unselected message scopes
+Includes one-time owner passkey approvals for unselected message scopes
 and transaction effects, retained-session reconnection, and progress-aware request
 timeouts. FON keeps the same provider during action review; its server verifier
 accepts both selected-scope (v1) and owner-passkey (v2) scoped proofs. The hosted
 wallet must run this revision too to support these flows.
+
+The latest compatibility fix explicitly negotiates wallet progress events with
+`progress=1`, requires response methods to match their pending requests, and
+validates missing connection results. It fixes progress events being mistaken for
+connection responses during saved-passkey sign-in. The corresponding hosted-wallet
+fix also protects older SDK clients; users do not need to clear wallet storage.
