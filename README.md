@@ -88,3 +88,75 @@ before treating them as implementation or deployment instructions:
 - [Contract capacity and local testing](docs/CONTRACT_CELL_CAPACITY_AND_LOCAL_FRONTEND_TESTING.md)
 - [Devnet frontend signer workflow](docs/DEVNET_FRONTEND_SIGNER_WORKFLOW.md)
 - [Changelog](CHANGELOG.md)
+
+### Pilot passkey wallet and signing permissions
+
+The frontend integrates Pilot's separate passkey wallet using `PilotWalletProvider`
+and `PilotHostedSigner`. It defaults to `https://owl-pilot.vercel.app`, the hosted
+wallet used by the official Pilot demo. Override `NEXT_PUBLIC_PILOT_WALLET_URL` in
+`frontend/.env.local` for another deployment or `http://localhost:5176` when
+running the upstream wallet locally. The wallet must run on a different origin from Freight,
+with its own deployed contracts and configured paymaster. The wallet's setup and
+funding UI is provided upstream: https://github.com/Birdmannn/owl/blob/main/PILOT_WALLET.md.
+No wallet private keys or paymaster secrets are added to Freight.
+
+Connect Wallet opens the animated info modal with **Pilot** and **JoyID** stacked
+under “Connect Wallet:”. The CCC
+connector is restricted to JoyID's CKB signer. Selecting Pilot opens its embedded
+modal. Pilot owns account setup,
+permission checkboxes, spending-budget selection, balances, logs and recovery.
+No Freight permission picker precedes it. Closing the modal keeps its isolated
+iframe alive for approved automatic signing. The header Disconnect action reopens
+the account modal.
+
+All 28 signed actions have individual scoped permissions and are offered together
+in Pilot's permission catalog. The SDK permits up to 50 offered policies; the user
+may select at most 16 for each grant, including transaction cell/recipient rules.
+Nothing is checked by default. New transaction effects request a revised catalog
+with their explicit cell policies and all Freight actions. The requested action
+must be selected to continue. Approved session state is still validated against
+the 16-policy limit.
+Freight output policies pin lock/type hashes and permit state data to change under
+the Freight script, bounded by capacity and spending allowance. Other outputs pin
+actual data. These rules constrain effects; they do not interpret Freight method
+names on-chain. Replacing a grant requires passkey approval.
+
+A Pilot account has its own address. Existing profiles, creator permissions and
+freight owned by an external wallet do not move to it. External wallets retain
+Freight's selectable permission list and per-signature wallet approval. Disconnect
+settles receipts before removing the embedded signer; failed settlement keeps the
+connection available. Use Pilot's wallet controls to revoke the on-chain session.
+The header Disconnect action opens Pilot’s account/session modal first; it does
+not immediately settle, revoke or remove the connected signer.
+
+The wallet deployment must allow embedding and delegated WebAuthn. Any app CSP
+must allow its origin in `frame-src`. The updated SDK also pins the current
+embedded-passkey owner deployment; old accounts referencing reclaimed legacy code
+require the upstream recovery/deployment procedure.
+
+Freight builders skip generic fee/input completion for Pilot. The wallet adds its
+authority, change and sponsored fee input. Prepared transaction bytes and stable
+request IDs are persisted on Freight's origin before submission. An uncertain
+response blocks new spending until the original request is retried; retries reuse
+the saved bytes and ID. Keep browser storage and wallet receipts until resolved.
+
+API message signatures carry the public account descriptor, current authority state
+and scoped proof. Each receiving endpoint supplies its own expected action. The
+server verifies the exact address, scope, message, issuing origin, live on-chain
+authority, session signature and expiry through Pilot's verifier. MongoDB stores
+10-minute signing challenges and atomically consumes them once; an expired/used
+challenge requires a fresh request. A TTL index removes old records. A failed
+business-rule check after consumption also requires a fresh challenge.
+
+The upstream SDK/UI snapshots and pinned revision are documented in
+`frontend/vendor/owl/README.md`. `npm ci` installs the committed archives without a
+separate checkout. The action registry is `frontend/lib/owlPermissions.ts`, hosted
+signing/transaction retry logic is `frontend/lib/pilotWallet.ts`, and the server
+verifier is `frontend/lib/pilotAuth.ts`. Live hardware-passkey, funding and paymaster
+validation requires a configured wallet deployment; local checks use simulated
+wallet transport and transactions and do not claim public-testnet end-to-end success.
+
+JoyID uses the existing CCC connector, filtered to its CKB signer. The connector
+is remeasured when opened and when its scene resizes, because measuring while
+hidden can leave its panel at zero height behind a grey backdrop. Connection
+and signing errors use FON's animated info modal with the “Errors:” section.

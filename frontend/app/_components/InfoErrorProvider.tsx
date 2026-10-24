@@ -57,7 +57,7 @@ export function InfoErrorProvider({ children }: { children: React.ReactNode }) {
         backdropInteractive
         body={(
           <div className="create-info-constraints-copy" role={tone === "success" ? "status" : "alert"}>
-            <p className={`mt-3 font-semibold ${tone === "success" ? "text-green-600" : "text-red-500"}`}>{tone === "success" ? "Success:" : "Errors:"}</p>
+            <p className={`create-review-section-label font-bold ${tone === "success" ? "text-green-600" : "text-red-500"}`}>{tone === "success" ? "Success:" : "Errors:"}</p>
             <p className={`create-info-constraint-item break-words ${tone === "success" ? "text-green-600" : "text-red-500"}`}><span>{message}</span></p>
           </div>
         )}

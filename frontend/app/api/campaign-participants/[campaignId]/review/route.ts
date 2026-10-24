@@ -79,7 +79,7 @@ export async function PATCH(request: Request, context: RouteContext<"/api/campai
     const reviewedByAddress = normalizeAddress(ensureString(payload.reviewedByAddress, "reviewedByAddress"));
     const nonce = ensureString(payload.nonce, "nonce");
     const nonceSignature = parseVerifiedSignature(payload.nonceSignature);
-    await verifyWalletSignature({ address: reviewedByAddress, nonce, signature: nonceSignature });
+    await verifyWalletSignature({ expectedPurpose: "forms-review", address: reviewedByAddress, nonce, signature: nonceSignature });
     const status = ensureString(payload.status, "status").toLowerCase();
     if (status !== "verified" && status !== "rejected") {
       throw new Error("status must be verified or rejected");

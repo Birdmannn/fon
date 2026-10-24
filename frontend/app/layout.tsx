@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Press_Start_2P } from "next/font/google";
+import "@owl/pilot-react/styles.css";
 import "./globals.css";
 import { Providers } from "./providers";
 import ShellTooltip from "./_components/ShellTooltip";

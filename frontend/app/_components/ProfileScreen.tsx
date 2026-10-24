@@ -1,5 +1,9 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
+import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
+
 import {
   ArrowUp,
   Check,
@@ -76,12 +80,12 @@ type ProfileScreenProps = {
 };
 
 export default function ProfileScreen({ targetHandle = null }: ProfileScreenProps) {
-  const { open, disconnect, client } = ccc.useCcc();
+  const { open, disconnect, client } = useFreightWallet();
   const openWalletWithSeed = useCallback(() => {
     markWalletSeedIntent();
     open();
   }, [open]);
-  const signer = ccc.useSigner();
+  const signer = useFreightSigner();
   const router = useRouter();
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const walletInfoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -512,7 +516,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
       }
 
       const nonce = `${noncePayload.nonce}:${digest}`;
-      const signature = await signer.signMessage(nonce);
+      const signature = await signFreightMessage(signer, "profile-photo", nonce);
       const form = new FormData();
       form.set("address", address);
       form.set("nonce", nonce);

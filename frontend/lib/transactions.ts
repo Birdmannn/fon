@@ -1,3 +1,5 @@
+import { completeFreightFee } from "./pilotWallet";
+import { sendFreightTransaction, type FreightPermission } from "./owlPermissions";
 import { assertGiftClaim, buildGiftPolicyConfig, validateGiftPolicy, type GiftPolicy } from "./giftPolicy";
 import type { GiftDeliverable } from "./giftDeliverables";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -228,9 +230,9 @@ export async function sendCreateCampaign(
   );
 
   // Auto-select inputs + change output to cover outputs + fees.
-  await tx.completeFeeBy(signer, 1000n);
+  await completeFreightFee(tx, signer, 1000n);
 
-  const txHash = await signer.sendTransaction(tx);
+  const txHash = await sendFreightTransaction(signer, "create-campaign", tx);
   const createdByHash = bytesToHex(createdBy);
   const chainCreatedAt = tipHeader.timestamp.toString();
 
@@ -258,7 +260,7 @@ export async function sendCampaignApproval(signer: ccc.Signer, campaign: Campaig
     ...campaign.data,
     approval: { ...approval, approvers: approval.approvers.map((entry, entryIndex) => entryIndex === index ? { ...entry, approved: true } : entry) },
   };
-  return sendCampaignTransition(signer, campaign, updated, new Uint8Array([Selector.ApproveCampaign, index]));
+  return sendCampaignTransition(signer, campaign, updated, new Uint8Array([Selector.ApproveCampaign, index]), "approve-campaign");
 }
 
 export async function sendConfirmRaffleApproval(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
@@ -268,7 +270,7 @@ export async function sendConfirmRaffleApproval(signer: ccc.Signer, campaign: Ca
   if (!receipt?.blockHash) throw new Error("Wait for the approval transaction to be confirmed");
   const header = await signer.client.getHeaderByHash(receipt.blockHash);
   if (!header || header.timestamp >= campaign.data.createdAt + campaign.data.startDurationSecs * 1000n) throw new Error("Approval deadline missed. Only cancellation is available.");
-  return sendCampaignTransition(signer, campaign, { ...campaign.data, approval: { ...approval, confirmed: true } }, new Uint8Array([Selector.ConfirmRaffleApproval]), receipt.blockHash);
+  return sendCampaignTransition(signer, campaign, { ...campaign.data, approval: { ...approval, confirmed: true } }, new Uint8Array([Selector.ConfirmRaffleApproval]), "confirm-raffle-approval", receipt.blockHash);
 }
 
 export async function sendGiftClaim(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
@@ -290,20 +292,20 @@ export async function sendGiftClaim(signer: ccc.Signer, campaign: CampaignCell):
   const payout = tx.outputs[1];
   const minimumCapacity = BigInt(payout.occupiedSize) * 100_000_000n;
   if (payout.capacity < minimumCapacity) payout.capacity = minimumCapacity;
-  await tx.completeFeeBy(signer, 1000n);
+  await completeFreightFee(tx, signer, 1000n);
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(new Uint8Array([Selector.ClaimGift, index, ...walletHash])) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
-  return signer.sendTransaction(tx);
+  return sendFreightTransaction(signer, "gift-claim", tx);
 }
 
 export async function sendCancelCampaign(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
   const wallet = await signer.getRecommendedAddressObj();
   if (bytesToHex(lockScriptToAddressBytes(wallet.script)) !== bytesToHex(campaign.data.createdBy)) throw new Error("Only the creator can cancel this freight");
-  return sendCampaignTransition(signer, campaign, { ...campaign.data, status: CampaignStatus.Cancelled }, new Uint8Array([Selector.CancelCampaign]));
+  return sendCampaignTransition(signer, campaign, { ...campaign.data, status: CampaignStatus.Cancelled }, new Uint8Array([Selector.CancelCampaign]), "cancel-campaign");
 }
 
-async function sendCampaignTransition(signer: ccc.Signer, campaign: CampaignCell, data: CampaignData, action: Uint8Array, inclusionHeader?: string): Promise<string> {
+async function sendCampaignTransition(signer: ccc.Signer, campaign: CampaignCell, data: CampaignData, action: Uint8Array, permission: FreightPermission, inclusionHeader?: string): Promise<string> {
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
   tx.headerDeps.push((await signer.client.getTipHeader()).hash);
@@ -315,11 +317,11 @@ async function sendCampaignTransition(signer: ccc.Signer, campaign: CampaignCell
     outputData: bytesToHex(encodeCampaignData(campaign.data)),
   });
   tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(data)));
-  await tx.completeFeeBy(signer, 1000n);
+  await completeFreightFee(tx, signer, 1000n);
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(action) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
-  return signer.sendTransaction(tx);
+  return sendFreightTransaction(signer, permission, tx);
 }
 
 export async function sendDepositShannons(
@@ -376,13 +378,13 @@ export async function sendDepositShannons(
   );
 
   // Auto-select inputs + change output to cover outputs + fees
-  await tx.completeFeeBy(signer, 1000n);
+  await completeFreightFee(tx, signer, 1000n);
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = actionArgsHex;
   tx.setWitnessArgsAt(0, witness);
 
-  return signer.sendTransaction(tx);
+  return sendFreightTransaction(signer, "deposit", tx);
 }
 
 export const SIMPLE_TASK_DIRECT_TIP_MIN_SHANNONS = 61n * 100_000_000n;
@@ -471,13 +473,13 @@ export async function sendCreatorTipShannons(
     lock: creatorLock,
   }, "0x");
 
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = actionArgsHex;
   tx.setWitnessArgsAt(0, witness);
 
-  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "creator-tip", tx));
 }
 
 export async function sendCreatorTip(
@@ -577,7 +579,7 @@ export async function sendVerifyParticipantRaffle(
 
   // Let completeFeeBy pull in whatever inputs are needed to cover:
   // ticket price (transferred to campaign cell) + participant cell + any required change + fee
-  await tx.completeFeeBy(signer, 1000n);
+  await completeFreightFee(tx, signer, 1000n);
 
   // Set witness at index 0 (campaign cell position) with selector byte 0x03
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
@@ -586,7 +588,7 @@ export async function sendVerifyParticipantRaffle(
     : encodeVerifyRaffleTicketCount(ticketCount)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
-  return signer.sendTransaction(tx);
+  return sendFreightTransaction(signer, "buy-tickets", tx);
 }
 
 export async function sendUpdateCampaignStatus(
@@ -647,13 +649,13 @@ export async function sendUpdateCampaignStatus(
     bytesToHex(encodeCampaignData(updatedData))
   );
 
-  await tx.completeFeeBy(signer, 1000n);
+  await completeFreightFee(tx, signer, 1000n);
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(new Uint8Array([4])) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
-  return signer.sendTransaction(tx);
+  return sendFreightTransaction(signer, "update-campaign-status", tx);
 }
 
 export async function sendBatchDeliver(
@@ -738,13 +740,13 @@ export async function sendBatchDeliver(
     );
   }
 
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(encodeBatchDeliverArgs(revealedPreimage)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
-  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "batch-deliver", tx));
 }
 
 export async function sendCreatorWithdraw(
@@ -806,13 +808,13 @@ export async function sendCreatorWithdraw(
     if (payout.capacity < minimum) payout.capacity = minimum;
   }
 
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
 
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(new Uint8Array([Selector.CreatorWithdraw])) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
-  const txHash = await withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  const txHash = await withTransientNullOutputRetry(() => sendFreightTransaction(signer, "creator-withdraw", tx));
   return {
     txHash,
     withdrawnAmountShannons: withdrawAmount,
@@ -906,11 +908,11 @@ export async function sendDrawRecurringRaffle(
       { capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type },
       bytesToHex(encodeCampaignData(updatedData)),
     );
-    await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+    await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
     const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
     witness.outputType = recurringAction(Selector.DrawRecurringRaffle, revealedPreimage);
     tx.setWitnessArgsAt(0, witness);
-    return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+    return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "draw-recurring-raffle", tx));
   }
   const ordered = previewRecurringRaffleWinners(participants, campaign.data.rewardCount, revealedPreimage, campaign);
   const winnerCount = Math.min(Number(campaign.data.rewardCount), ordered.length);
@@ -940,11 +942,11 @@ export async function sendDrawRecurringRaffle(
       })),
     );
   });
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = recurringAction(Selector.DrawRecurringRaffle, revealedPreimage);
   tx.setWitnessArgsAt(0, witness);
-  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "draw-recurring-raffle", tx));
 }
 
 export async function sendClaimRecurringRaffle(
@@ -980,11 +982,11 @@ export async function sendClaimRecurringRaffle(
   addParticipantInput(tx, winner);
   tx.addOutput({ capacity: campaign.capacityShannons - amount, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updatedData)));
   tx.addOutput({ capacity: winner.capacityShannons + amount, lock: address.script }, "0x");
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = recurringAction(Selector.ClaimRecurringRaffle);
   tx.setWitnessArgsAt(0, witness);
-  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "claim-recurring-raffle", tx));
 }
 
 export async function sendRolloverRecurringRaffle(signer: ccc.Signer, campaign: CampaignCell) {
@@ -1018,11 +1020,11 @@ export async function sendRolloverRecurringRaffle(signer: ccc.Signer, campaign: 
   tx.headerDeps.push(tipHeader.hash);
   addCampaignInput(tx, campaign);
   tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(updatedData)));
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = recurringAction(Selector.RolloverRecurringRaffle);
   tx.setWitnessArgsAt(0, witness);
-  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "rollover-recurring-raffle", tx));
 }
 
 export async function sendReclaimRecurringParticipant(
@@ -1042,11 +1044,11 @@ export async function sendReclaimRecurringParticipant(
   addParticipantInput(tx, participant);
   tx.addOutput({ capacity: campaign.capacityShannons, lock: campaign.lock, type: campaign.type }, bytesToHex(encodeCampaignData(campaign.data)));
   tx.addOutput({ capacity: participant.capacityShannons, lock: address.script }, "0x");
-  await withTransientNullOutputRetry(() => tx.completeFeeBy(signer, 1000n));
+  await withTransientNullOutputRetry(() => completeFreightFee(tx, signer, 1000n));
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = recurringAction(Selector.ReclaimRecurringParticipant);
   tx.setWitnessArgsAt(0, witness);
-  return withTransientNullOutputRetry(() => signer.sendTransaction(tx));
+  return withTransientNullOutputRetry(() => sendFreightTransaction(signer, "reclaim-recurring-participant", tx));
 }
 
 // ─── Query all campaign cells from the CKB indexer ───────────────────────────

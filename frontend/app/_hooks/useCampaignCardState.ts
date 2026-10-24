@@ -1,5 +1,7 @@
 "use client";
 
+import { signFreightMessage } from "@/lib/owlPermissions";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShowInfoSuccess } from "@/app/_components/InfoErrorProvider";
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
@@ -484,7 +486,7 @@ export function useCampaignCardState({
       throw new Error(noncePayload?.error ?? `Failed to create ${purpose} nonce`);
     }
 
-    const signature = await signer.signMessage(noncePayload.nonce);
+    const signature = await signFreightMessage(signer, purpose, noncePayload.nonce);
     return {
       address,
       nonce: noncePayload.nonce,

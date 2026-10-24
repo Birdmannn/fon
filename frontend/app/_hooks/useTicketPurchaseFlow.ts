@@ -9,7 +9,7 @@ import { bytesToHex } from "@/lib/encoding";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId } from "@/lib/campaignIdentity";
 import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
 import { fetchCampaigns, fetchParticipants, getRaffleTicketsPerUser, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
-import { ccc } from "@ckb-ccc/connector-react";
+import { useFreightSigner } from "@/app/_components/OwlWalletProvider";
 
 type UseTicketPurchaseFlowArgs = {
   currentViewerFbars?: number | null;
@@ -32,7 +32,7 @@ async function fetchCurrentFbars(address: string | null | undefined) {
 }
 
 export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, onTicketBuySuccess }: UseTicketPurchaseFlowArgs) {
-  const signer = ccc.useSigner();
+  const signer = useFreightSigner();
   const [ticketPurchaseCampaign, setTicketPurchaseCampaign] = useState<CampaignCell | null>(null);
   const [ticketPurchaseRecord, setTicketPurchaseRecord] = useState<CampaignRecord | null>(null);
   const [ticketPurchaseAvailability, setTicketPurchaseAvailability] = useState<TicketPurchaseAvailability | null>(null);

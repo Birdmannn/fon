@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useFreightSigner } from "@/app/_components/OwlWalletProvider";
 
-import { ccc } from "@ckb-ccc/connector-react";
+import { useMemo } from "react";
 
 import { useUserProfile } from "@/app/_hooks/useUserProfile";
 
@@ -18,7 +18,7 @@ function buildMarqueeCopy(message: string, ownerLabel?: string | null) {
 }
 
 export default function MountablesPanel({ onEditMarquee }: { onEditMarquee: () => void }) {
-  const signer = ccc.useSigner();
+  const signer = useFreightSigner();
   const {
     activeWeeklyMarqueeEditsRemaining,
     activeWeeklyMarqueeMaxEdits,

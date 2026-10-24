@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const jiti = require("jiti")(import.meta.url, { alias: { "@": process.cwd() } });
 const { Transaction } = jiti("@ckb-ccc/core");
 const { freightStateLock, resolveCreatorTipLock, sendCreatorTipShannons } = jiti("../lib/transactions.ts");
+const { installPermissionHandler } = jiti("../lib/owlPermissions.ts");
 const { bytesToHex } = jiti("../lib/encoding.ts");
 
 const client = { addressPrefix: "ckt" } as Client;
@@ -39,11 +40,16 @@ test("creator tip supports older campaign cells locked directly to the creator",
 test("creator tip sends output 1 directly to the creator wallet", async () => {
   const originalCompleteFeeBy = Transaction.prototype.completeFeeBy;
   Transaction.prototype.completeFeeBy = async function () { return [0, false]; };
+  const cleanup = installPermissionHandler(async (_signer: unknown, permission: string, operation: (signer: unknown) => Promise<unknown>) => {
+    assert.equal(permission, "creator-tip");
+    return operation(_signer);
+  });
   try {
     const fullCampaign = {
       ...campaign,
       outPoint: { txHash: `0x${"44".repeat(32)}`, index: 0 },
-      capacityShannons: 200n * 100_000_000n,
+      // Fund the full occupied capacity of the encoded freight cell.
+      capacityShannons: 400n * 100_000_000n,
       type: Script.from({ codeHash: `0x${"55".repeat(32)}`, hashType: "type", args: "0x00" }),
       data: {
         createdAt: 1n,
@@ -76,6 +82,7 @@ test("creator tip sends output 1 directly to the creator wallet", async () => {
     };
     await sendCreatorTipShannons(signer, fullCampaign, 61n * 100_000_000n, walletAddress);
   } finally {
+    cleanup();
     Transaction.prototype.completeFeeBy = originalCompleteFeeBy;
   }
 });

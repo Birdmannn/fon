@@ -1,3 +1,4 @@
+import { registerPilotChallenge } from "@/lib/pilotAuth";
 import { NextResponse } from "next/server";
 
 import { buildGoogleNonce, normalizeGoogleLinkPurpose } from "@/lib/googleAuth";
@@ -26,9 +27,11 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as GoogleLinkNoncePayload;
     const address = ensureString(payload.address, "address");
     const purpose = normalizeGoogleLinkPurpose(payload.purpose);
+    const nonce = buildGoogleNonce(address, purpose);
+    await registerPilotChallenge(address, purpose, nonce, new URL(request.url).origin);
     return NextResponse.json({
       ok: true,
-      nonce: buildGoogleNonce(address, purpose),
+      nonce,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create Google link nonce";

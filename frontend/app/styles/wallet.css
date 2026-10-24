@@ -319,3 +319,27 @@
   }
 }
 
+
+/* Use the standard info-modal controls; only wallet brand colours differ. */
+.freight-wallet-pilot.create-info-confirm-btn {
+  background: #9ca3af;
+  border-color: #9ca3af;
+  color: #ffffff;
+}
+
+.freight-wallet-pilot.create-info-confirm-btn:not(:disabled):is(:hover, :focus-visible) {
+  background: #000000;
+  border-color: #000000;
+  color: #ffffff;
+}
+
+.freight-wallet-joyid.create-info-confirm-btn {
+  background: #ffffff;
+  color: #9ca3af;
+}
+
+.freight-wallet-joyid.create-info-confirm-btn:not(:disabled):is(:hover, :focus-visible) {
+  background: #ffffff;
+  border-color: #16a34a;
+  color: #16a34a;
+}

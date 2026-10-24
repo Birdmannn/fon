@@ -1,3 +1,4 @@
+import { registerPilotChallenge } from "@/lib/pilotAuth";
 import { NextResponse } from "next/server";
 
 import { buildWalletActionNonce } from "@/lib/googleAuth";
@@ -29,9 +30,11 @@ export async function POST(request: Request) {
       ? payload.purpose.trim().toLowerCase()
       : "wallet-action";
 
+    const nonce = buildWalletActionNonce(address, purpose);
+    await registerPilotChallenge(address, purpose, nonce, new URL(request.url).origin);
     return NextResponse.json({
       ok: true,
-      nonce: buildWalletActionNonce(address, purpose),
+      nonce,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create wallet nonce";

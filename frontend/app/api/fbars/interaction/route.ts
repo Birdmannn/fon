@@ -106,7 +106,7 @@ export async function POST(request: Request) {
     const address = normalizeAddress(ensureString(payload.address, "address"));
     const nonce = ensureString(payload.nonce, "nonce");
     const nonceSignature = parseVerifiedSignature(payload.nonceSignature);
-    await verifyWalletSignature({ address, nonce, signature: nonceSignature });
+    await verifyWalletSignature({ expectedPurpose: `interaction-${ensureString(payload.actionType, "actionType").toLowerCase()}`, address, nonce, signature: nonceSignature });
 
     const recordId = ensureString(payload.recordId, "recordId");
     if (!ObjectId.isValid(recordId)) {

@@ -186,7 +186,7 @@ export async function POST(request: Request) {
       || !Object.values(SignerSignType).includes(signType as SignerSignType)) {
       return errorResponse("A signed freight-tree action is required", 403);
     }
-    await verifyWalletSignature({
+    await verifyWalletSignature({ expectedPurpose: "freight-tree",
       address,
       nonce,
       signature: {
