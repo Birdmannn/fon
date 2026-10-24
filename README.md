@@ -105,6 +105,8 @@ Connect Wallet opens the animated info modal with **Pilot**, **JoyID**, and
 Connector opens CCC’s wallet chooser with JoyID excluded. Selecting Pilot opens
 its embedded modal. Pilot owns account setup,
 permission checkboxes, spending-budget selection, balances, logs and recovery.
+FON requests a maximum session budget of 1,000,000 CKB; users can choose a lower limit
+in Pilot before approving it.
 No Freight permission picker precedes it. Closing the modal keeps its isolated
 iframe alive for approved automatic signing. The header Disconnect action reopens
 the account modal.

@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `26baff9dd957520834a3905f34944bdaa3c6c7cf` (24 October 2026).
+commit `bcfb1eba133fb2668a5c3a3b3d8b42e7639bab1b` (24 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required
@@ -31,8 +31,14 @@ timeouts. FON keeps the same provider during action review; its server verifier
 accepts both selected-scope (v1) and owner-passkey (v2) scoped proofs. The hosted
 wallet must run this revision too to support these flows.
 
-The latest compatibility fix explicitly negotiates wallet progress events with
+The passkey compatibility fix explicitly negotiates wallet progress events with
 `progress=1`, requires response methods to match their pending requests, and
 validates missing connection results. It fixes progress events being mistaken for
 connection responses during saved-passkey sign-in. The corresponding hosted-wallet
 fix also protects older SDK clients; users do not need to clear wallet storage.
+
+The latest revision derives replacement-grant counters from the live authority
+under the wallet operation lock after pending receipts settle, preserving the
+reviewed budget and policies. SDK, hosted-wallet and React errors now use the
+idempotent `Pilot says: ` prefix; FON forwards SDK errors to its existing Errors
+info modal. No contract deployment or FON signing API change is required.

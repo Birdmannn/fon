@@ -63,7 +63,7 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
     if (provider.origin === location.origin) { provider.dispose(); throw new Error("Pilot must use a separate wallet origin."); }
     connecting.current = provider;
     try {
-      const connection = await provider.connect({ name: "Freight on Nervos", policies, budget: ccc.fixedPointFrom(200).toString() });
+      const connection = await provider.connect({ name: "Freight on Nervos", policies, budget: ccc.fixedPointFrom(1_000_000).toString() });
       const journal = await provider.request("logs") as PilotWalletJournal;
       if (!journal.state || journal.stopped) throw new Error("Pilot did not return an active session grant.");
       validatePilotPolicies(journal.state.policies);
