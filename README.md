@@ -100,10 +100,10 @@ with its own deployed contracts and configured paymaster. The wallet's setup and
 funding UI is provided upstream: https://github.com/Birdmannn/owl/blob/main/PILOT_WALLET.md.
 No wallet private keys or paymaster secrets are added to Freight.
 
-Connect Wallet opens the animated info modal with **Pilot** and **JoyID** stacked
-under “Connect Wallet:”. The CCC
-connector is restricted to JoyID's CKB signer. Selecting Pilot opens its embedded
-modal. Pilot owns account setup,
+Connect Wallet opens the animated info modal with **Pilot**, **JoyID**, and
+**Connector** stacked under “Connect Wallet:”. JoyID opens authentication directly;
+Connector opens CCC’s wallet chooser with JoyID excluded. Selecting Pilot opens
+its embedded modal. Pilot owns account setup,
 permission checkboxes, spending-budget selection, balances, logs and recovery.
 No Freight permission picker precedes it. Closing the modal keeps its isolated
 iframe alive for approved automatic signing. The header Disconnect action reopens
@@ -156,7 +156,9 @@ verifier is `frontend/lib/pilotAuth.ts`. Live hardware-passkey, funding and paym
 validation requires a configured wallet deployment; local checks use simulated
 wallet transport and transactions and do not claim public-testnet end-to-end success.
 
-JoyID uses the existing CCC connector, filtered to its CKB signer. The connector
-is remeasured when opened and when its scene resizes, because measuring while
-hidden can leave its panel at zero height behind a grey backdrop. Connection
-and signing errors use FON's animated info modal with the “Errors:” section.
+JoyID connects directly from FON's wallet chooser, using CCC's CKB signer without
+opening CCC's wallet-selection modal. Authentication starts from the button click
+so browsers can open JoyID's popup. CCC retains the connected signer and saved
+wallet selection. The Connector button opens CCC’s other wallet options, excluding
+JoyID, after FON’s info-modal closing transition. Connection and signing errors use FON's animated info modal
+with the “Errors:” section.
