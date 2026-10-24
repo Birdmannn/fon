@@ -67,5 +67,5 @@ export function signFreightMessage(signer: ccc.Signer, permission: string, messa
 
 export function sendFreightTransaction(signer: ccc.Signer, permission: FreightPermission, tx: ccc.Transaction) {
   return withFreightPermission(signer, permission, (activeSigner) => activeSigner instanceof FreightPilotSigner
-    ? activeSigner.sendFreightEffects(permission, tx) : activeSigner.sendTransaction(tx));
+    ? activeSigner.sendFreightEffects(tx) : activeSigner.sendTransaction(tx));
 }

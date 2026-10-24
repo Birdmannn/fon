@@ -112,14 +112,20 @@ the account modal.
 All 28 signed actions have individual scoped permissions and are offered together
 in Pilot's permission catalog. The SDK permits up to 50 offered policies; the user
 may select at most 16 for each grant, including transaction cell/recipient rules.
-Nothing is checked by default. New transaction effects request a revised catalog
-with their explicit cell policies and all Freight actions. The requested action
-must be selected to continue. Approved session state is still validated against
-the 16-policy limit.
-Freight output policies pin lock/type hashes and permit state data to change under
-the Freight script, bounded by capacity and spending allowance. Other outputs pin
-actual data. These rules constrain effects; they do not interpret Freight method
-names on-chain. Replacing a grant requires passkey approval.
+Nothing is checked by default. Selected message scopes sign automatically;
+unselected scopes or transaction effects reopen the same Pilot modal for one-time
+owner passkey approval. FON keeps the existing provider, address and session;
+it does not reconnect or replace a grant to request a signature. One-time approval
+leaves selected policies unchanged and transactions remain bound by the existing
+budget, live authority and sponsored fee checks. Cancelled reviews reject the
+action without disconnecting. Approved session state is still validated against
+the 16-policy limit. Transaction effect policies constrain actual cells and
+recipients; message scope names do not interpret Freight methods on-chain.
+
+Pilot can continue a retained, compatible session after passkey sign-in on the
+same wallet storage partition, preserving its original expiry. Request timeouts
+pause while the wallet waits for account selection, policy review or passkey input.
+These flows require the hosted wallet to be updated alongside FON's SDK.
 
 A Pilot account has its own address. Existing profiles, creator permissions and
 freight owned by an external wallet do not move to it. External wallets retain
@@ -143,7 +149,8 @@ the saved bytes and ID. Keep browser storage and wallet receipts until resolved.
 API message signatures carry the public account descriptor, current authority state
 and scoped proof. Each receiving endpoint supplies its own expected action. The
 server verifies the exact address, scope, message, issuing origin, live on-chain
-authority, session signature and expiry through Pilot's verifier. MongoDB stores
+authority, session signature or one-time owner passkey assertion, and expiry through
+Pilot's updated verifier (scoped proof versions 1 and 2). MongoDB stores
 10-minute signing challenges and atomically consumes them once; an expired/used
 challenge requires a fresh request. A TTL index removes old records. A failed
 business-rule check after consumption also requires a fresh challenge.

@@ -2,10 +2,10 @@
 
 import { useShowInfoError } from "@/app/_components/InfoErrorProvider";
 import { ccc } from "@ckb-ccc/connector-react";
-import { PilotWalletProvider, validatePilotPolicies, type PilotCellPolicy, type PilotWalletJournal } from "@owl/pilot";
+import { PilotWalletProvider, validatePilotPolicies, type PilotWalletJournal } from "@owl/pilot";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { FREIGHT_PERMISSIONS, installPermissionHandler, type FreightPermission } from "@/lib/owlPermissions";
-import { FreightPilotSigner, PilotPolicyReviewRequired } from "@/lib/pilotWallet";
+import { FreightPilotSigner } from "@/lib/pilotWallet";
 import { freightActionPolicy, mergePilotPolicyCatalog } from "@/lib/pilotProtocol";
 
 type WalletSelection = { open: boolean; closing: boolean; close: () => void; pilot: () => void; joyId: () => void; connector: () => void };
@@ -17,7 +17,7 @@ export function useFreightWallet() {
 }
 export function useFreightSigner() { return useFreightWallet().signer; }
 
-type HostedAccount = { provider: PilotWalletProvider; signer: FreightPilotSigner; address: string; policies: PilotCellPolicy[] };
+type HostedAccount = { provider: PilotWalletProvider; signer: FreightPilotSigner; address: string };
 export function OwlWalletProvider({ children, connectJoyId }: { children: ReactNode; connectJoyId: () => Promise<void> }) {
   const wallet = ccc.useCcc();
   const { close: closeWallet } = wallet;
@@ -49,16 +49,14 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
     showError(cause instanceof Error ? cause.message : String(cause));
   }, [showError, closeWallet]);
 
-  const grant = useCallback(async (permission?: FreightPermission, cells?: PilotCellPolicy[]) => {
+  const grant = useCallback(async () => {
     if (connecting.current) { connecting.current.open(); throw new Error("Finish the current Pilot approval first."); }
     if (!walletUrl) throw new Error("The Pilot wallet URL is not configured for this site yet.");
     if (process.env.NEXT_PUBLIC_CKB_NETWORK?.trim().toLowerCase() === "mainnet") throw new Error("Pilot currently supports testnet.");
     const previous = active.current;
     // Offer every Freight action. Pilot displays the complete catalog and lets
-    // the user choose at most 16 policies, including any transaction effects.
+    // the user choose at most 16 policies.
     const policies = mergePilotPolicyCatalog(
-      permission ? [freightActionPolicy(permission)] : [],
-      cells ?? previous?.policies.filter(p => p.direction !== "message") ?? [],
       FREIGHT_PERMISSIONS.map(([id]) => freightActionPolicy(id)),
     );
     const provider = new PilotWalletProvider({ url: walletUrl });
@@ -69,14 +67,11 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
       const journal = await provider.request("logs") as PilotWalletJournal;
       if (!journal.state || journal.stopped) throw new Error("Pilot did not return an active session grant.");
       validatePilotPolicies(journal.state.policies);
-      const next = { provider, signer: new FreightPilotSigner(wallet.client, provider), address: connection.address, policies: journal.state.policies.map(policy => ({ ...policy })) };
+      const next = { provider, signer: new FreightPilotSigner(wallet.client, provider), address: connection.address };
       identities.current.set(next.signer, next.address);
       active.current = next; setHosted(next);
       previous?.provider.dispose();
       if (previous && connection.address !== previous.address) throw new Error("Pilot account changed. Retry the action with the selected account.");
-      if (permission && !next.policies.some(p => p.direction === "message" && p.lockHash === freightActionPolicy(permission).lockHash)) {
-        throw new Error("The requested action was not selected in Pilot.");
-      }
       return next;
     } catch (cause) {
       if (active.current?.provider !== provider) provider.dispose();
@@ -131,15 +126,10 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
       const owner = active.current;
       if (owner) {
         if (identities.current.get(ownerSigner) !== owner.address) throw new Error("Wallet changed. Retry with the current account.");
-        let next = owner;
-        if (!owner.policies.some(p => p.direction === "message" && p.lockHash === freightActionPolicy(permission).lockHash)) next = await grant(permission);
-        if (!await next.signer.isConnected()) throw new Error("Reconnect Pilot to continue.");
-        try { return await operation(next.signer); }
-        catch (cause) {
-          if (!(cause instanceof PilotPolicyReviewRequired)) throw cause;
-          next = await grant(permission, cause.policies);
-          return await operation(next.signer);
-        }
+        if (!await owner.signer.isConnected()) throw new Error("Reconnect Pilot to continue.");
+        // Pilot reviews unselected actions once using the existing account's
+        // passkey. Keep this provider/session instead of replacing its grant.
+        return await operation(owner.signer);
       }
       if (external.current !== ownerSigner || !await ownerSigner.isConnected()) throw new Error("Reconnect your wallet to continue.");
       if (!externalApproved.current.includes(permission)) {
@@ -152,7 +142,7 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
       return await operation(ownerSigner);
     } catch (cause) { reportWalletError(cause); throw cause; }
     finally { inFlight.current = false; }
-  }), [grant, reportWalletError]);
+  }), [reportWalletError]);
 
   const disconnect = () => {
     if (inFlight.current || connecting.current) return;

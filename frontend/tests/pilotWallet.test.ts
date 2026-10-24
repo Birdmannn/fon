@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { ccc } from "@ckb-ccc/core";
 import { validatePilotPolicies, validatePilotPolicyCatalog } from "@owl/pilot";
 import type { PilotWalletProvider, PilotWalletConnection, PilotWalletState } from "@owl/pilot";
-import { FreightPilotSigner, PilotPolicyReviewRequired, completeFreightFee } from "../lib/pilotWallet.ts";
+import { FreightPilotSigner, completeFreightFee } from "../lib/pilotWallet.ts";
 import { FREIGHT_PERMISSIONS } from "../lib/owlPermissions.ts";
 import { freightActionPolicy, freightPilotChallenge, mergePilotPolicies, mergePilotPolicyCatalog } from "../lib/pilotProtocol.ts";
 
@@ -50,6 +50,7 @@ function fixture(t: TestContext) {
   t.after(() => { if (previous) Object.defineProperty(globalThis, "localStorage", previous); else Reflect.deleteProperty(globalThis, "localStorage"); });
   const calls: { method: string; params?: unknown }[] = [];
   let loseResponse = false;
+  let ownerApproval = false;
   const provider = {
     connected: true,
     account: { address, account: { version: 2 }, appOrigin: state.appOrigin, expiresAt: Date.now() + 60_000 } as PilotWalletConnection,
@@ -58,8 +59,8 @@ function fixture(t: TestContext) {
       if (method === "logs") return { state, stopped: false, receipts: [] };
       if (method === "prepare") return (params as { bytes: ccc.Hex }).bytes;
       if (method === "signMessage") return {
-        version: 1, accountHash: lock.hash(), appOrigin: state.appOrigin, publicKey: state.publicKey,
-        ...params as object, expiresAt: Date.now() + 60_000, signature: `0x${"aa".repeat(64)}`,
+        ...(ownerApproval ? { version: 2, passkey: { credentialId: "owner-passkey" }, assertion: { signature: "0xab" } } : { version: 1, signature: `0x${"aa".repeat(64)}` }), accountHash: lock.hash(), appOrigin: state.appOrigin, publicKey: state.publicKey,
+        ...params as object, expiresAt: Date.now() + 60_000,
       };
       if (method === "send") {
         assert.equal(storage.size, 1, "save before a wallet request can sign/broadcast");
@@ -69,7 +70,7 @@ function fixture(t: TestContext) {
       throw new Error("Unexpected wallet request");
     },
   } as unknown as PilotWalletProvider;
-  return { signer: new FreightPilotSigner(client, provider), calls, storage, loseResponse: () => { loseResponse = true; } };
+  return { signer: new FreightPilotSigner(client, provider), calls, storage, loseResponse: () => { loseResponse = true; }, ownerApproval: () => { ownerApproval = true; } };
 }
 
 test("scoped signing sends the server challenge and preserves the full API message", async t => {
@@ -94,35 +95,41 @@ test("lost wallet responses retry exact prepared bytes and the same stable ID", 
   const f = fixture(t);
   const tx = ccc.Transaction.from({ outputs: [{ lock, capacity: ccc.fixedPointFrom(61) }], outputsData: ["0x"] });
   f.loseResponse();
-  await assert.rejects(f.signer.sendFreightEffects("creator-tip", tx), /response lost/);
+  await assert.rejects(f.signer.sendFreightEffects(tx), /response lost/);
   const different = tx.clone(); different.outputs[0].capacity += 1n;
-  await assert.rejects(f.signer.sendFreightEffects("creator-tip", different), /unresolved/);
-  assert.equal(await f.signer.sendFreightEffects("creator-tip", tx), hex("77"));
+  await assert.rejects(f.signer.sendFreightEffects(different), /unresolved/);
+  assert.equal(await f.signer.sendFreightEffects(tx), hex("77"));
   assert.deepEqual(f.calls.filter(call => call.method === "send")[0].params, f.calls.filter(call => call.method === "send")[1].params);
   assert.equal(f.calls.filter(call => call.method === "prepare").length, 1);
   const sendCount = f.calls.filter(call => call.method === "send").length;
-  assert.equal(await f.signer.sendFreightEffects("creator-tip", tx), hex("77"));
+  assert.equal(await f.signer.sendFreightEffects(tx), hex("77"));
   assert.equal(f.calls.filter(call => call.method === "send").length, sendCount, "known success must not be sent again");
 });
 
-test("new recipients require wallet review before preparing or signing", async t => {
+test("new recipients reach the existing wallet for one-time approval without replacing the grant", async t => {
   const f = fixture(t);
   const recipient = ccc.Script.from({ ...lock, args: `0x${"44".repeat(20)}` });
   const tx = ccc.Transaction.from({ outputs: [{ lock: recipient, capacity: ccc.fixedPointFrom(61) }], outputsData: ["0x"] });
-  await assert.rejects(f.signer.sendFreightEffects("creator-tip", tx), cause => {
-    assert.ok(cause instanceof PilotPolicyReviewRequired);
-    assert.equal(cause.policies[0].lockHash, recipient.hash());
-    assert.equal(cause.policies[0].maxCapacity, ccc.fixedPointFrom(61).toString());
-    assert.equal(cause.policies[0].dataHash, ccc.hashCkb("0x"));
-    return true;
-  });
-  assert.equal(f.calls.some(call => ["send", "prepare"].includes(call.method)), false);
+  assert.equal(await f.signer.sendFreightEffects(tx), hex("77"));
+  assert.deepEqual(f.calls.map(call => call.method), ["logs", "prepare", "send"]);
+  assert.equal(f.calls.some(call => call.method === "connect"), false);
 });
 
-test("an action deselected in Pilot cannot use another action's cell policy", async t => {
+test("unselected scoped actions preserve one-time owner proofs for the receiving API", async t => {
   const f = fixture(t);
-  await assert.rejects(f.signer.sendFreightEffects("deposit", ccc.Transaction.default()), /not selected/);
-  assert.equal(f.calls.some(call => call.method === "send"), false);
+  f.ownerApproval();
+  const previous = Object.getOwnPropertyDescriptor(globalThis, "location");
+  Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: state.appOrigin } });
+  t.after(() => { if (previous) Object.defineProperty(globalThis, "location", previous); else Reflect.deleteProperty(globalThis, "location"); });
+  const message = `freight-wallet-seed:${address}:abcdefghijklmnopqrstuvwx`;
+  const signature = await f.signer.signFreightScope("wallet-seed", message);
+  const envelope = JSON.parse(signature.signature);
+  assert.equal(envelope.proof.version, 2);
+  assert.equal(envelope.proof.passkey.credentialId, "owner-passkey");
+  assert.equal(envelope.proof.assertion.signature, "0xab");
+  assert.equal(envelope.proof.scope, "freight.wallet-seed");
+  assert.deepEqual(envelope.state.policies, state.policies, "one-time approval must not expand the grant");
+  assert.equal(f.calls.some(call => call.method === "connect"), false);
 });
 
 test("Pilot builders skip generic CCC fee/input completion", async t => {
