@@ -77,6 +77,25 @@ export function useLightModePrimaryColor() {
   return useContext(LightModePrimaryColorContext);
 }
 
+// CCC measures its scene while the connector is hidden. Re-measure when it
+// opens and whenever the scene changes size, otherwise its panel can stay 0px tall.
+function JoyIdConnectorLayout() {
+  const { isOpen } = ccc.useCcc();
+  useEffect(() => {
+    if (!isOpen) return;
+    const connector = document.querySelector<ccc.WebComponentConnector>("ccc-connector");
+    if (!connector) return;
+    const resize = () => connector.updated();
+    const observer = new ResizeObserver(resize);
+    const frame = requestAnimationFrame(() => {
+      connector.shadowRoot?.querySelectorAll("ccc-selecting-scene, ccc-connected-scene").forEach(scene => observer.observe(scene));
+      resize();
+    });
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); };
+  }, [isOpen]);
+  return null;
+}
+
 function JoyIdConnectionError({ error }: { error?: { message: string } }) {
   const { close } = ccc.useCcc();
   const showError = useShowInfoError();
@@ -113,6 +132,7 @@ function WalletProviders({ children }: { children: React.ReactNode }) {
   }, []);
   return (
     <ccc.Provider defaultClient={defaultClient} signerFilter={joyIdOnly} name="Freight on Nervos">
+      <JoyIdConnectorLayout />
       <JoyIdConnectionError error={connectionError} />
       <OwlWalletProvider>
         <CampaignFeedProvider>

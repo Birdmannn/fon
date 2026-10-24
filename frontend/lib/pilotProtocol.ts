@@ -1,4 +1,5 @@
 import { ccc } from "@ckb-ccc/core";
+import { MAX_ACTION_CATALOG, MAX_DELEGATED_ACTIONS } from "@owl/pilot";
 import type { PilotCellPolicy, PilotScopedMessage, PilotWalletDescriptor, PilotWalletState } from "@owl/pilot";
 import { FREIGHT_PERMISSIONS, resolveFreightPermission, type FreightPermission } from "./owlPermissions.ts";
 
@@ -44,6 +45,14 @@ export function freightPermissionFromPurpose(purpose: string) {
 }
 
 export function mergePilotPolicies(...groups: readonly (readonly PilotCellPolicy[])[]): PilotCellPolicy[] {
+  return mergePolicies(MAX_DELEGATED_ACTIONS, groups);
+}
+
+export function mergePilotPolicyCatalog(...groups: readonly (readonly PilotCellPolicy[])[]): PilotCellPolicy[] {
+  return mergePolicies(MAX_ACTION_CATALOG, groups);
+}
+
+function mergePolicies(limit: number, groups: readonly (readonly PilotCellPolicy[])[]): PilotCellPolicy[] {
   const result: PilotCellPolicy[] = [];
   for (const policy of groups.flat()) {
     const existing = result.find(row => row.direction === policy.direction && row.lockHash === policy.lockHash && row.typeHash === policy.typeHash && row.dataHash === policy.dataHash);
@@ -51,6 +60,6 @@ export function mergePilotPolicies(...groups: readonly (readonly PilotCellPolicy
       if (BigInt(policy.maxCapacity) > BigInt(existing.maxCapacity)) existing.maxCapacity = policy.maxCapacity;
     } else result.push({ ...policy });
   }
-  if (result.length > 16) throw new Error("Pilot supports 16 policies per session. Select fewer actions or recipients before approving this transaction.");
+  if (result.length > limit) throw new Error(`Pilot supports ${limit} policies ${limit === MAX_DELEGATED_ACTIONS ? "per session" : "in the catalog"}. Select fewer actions or recipients before approving this transaction.`);
   return result;
 }

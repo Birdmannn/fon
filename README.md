@@ -109,12 +109,13 @@ No Freight permission picker precedes it. Closing the modal keeps its isolated
 iframe alive for approved automatic signing. The header Disconnect action reopens
 the account modal.
 
-All 28 signed actions have individual scoped permissions. The current upstream
-wallet validates proposals against a 16-policy limit, so it cannot display all 28
-in one grant. Initial connection offers profile/social actions. Other actions and
-new transaction recipients/cells request a revised grant in the Pilot modal when
-used. Existing permissions are proposed again where space allows, but all choices
-start unchecked in Pilot. The requested action must be selected to continue.
+All 28 signed actions have individual scoped permissions and are offered together
+in Pilot's permission catalog. The SDK permits up to 50 offered policies; the user
+may select at most 16 for each grant, including transaction cell/recipient rules.
+Nothing is checked by default. New transaction effects request a revised catalog
+with their explicit cell policies and all Freight actions. The requested action
+must be selected to continue. Approved session state is still validated against
+the 16-policy limit.
 Freight output policies pin lock/type hashes and permit state data to change under
 the Freight script, bounded by capacity and spending allowance. Other outputs pin
 actual data. These rules constrain effects; they do not interpret Freight method
@@ -154,3 +155,8 @@ signing/transaction retry logic is `frontend/lib/pilotWallet.ts`, and the server
 verifier is `frontend/lib/pilotAuth.ts`. Live hardware-passkey, funding and paymaster
 validation requires a configured wallet deployment; local checks use simulated
 wallet transport and transactions and do not claim public-testnet end-to-end success.
+
+JoyID uses the existing CCC connector, filtered to its CKB signer. The connector
+is remeasured when opened and when its scene resizes, because measuring while
+hidden can leave its panel at zero height behind a grey backdrop. Connection
+and signing errors use FON's animated info modal with the “Errors:” section.

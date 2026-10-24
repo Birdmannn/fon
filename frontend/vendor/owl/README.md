@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `c67259d91dd797e0689a20caf6b921f0767fd1af` (23 October 2026).
+commit `14d28fc4f10e4eb3030b9b052bf735e9f9d19173` (24 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required

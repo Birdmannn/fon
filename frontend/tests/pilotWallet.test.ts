@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { ccc } from "@ckb-ccc/core";
+import { validatePilotPolicies, validatePilotPolicyCatalog } from "@owl/pilot";
 import type { PilotWalletProvider, PilotWalletConnection, PilotWalletState } from "@owl/pilot";
 import { FreightPilotSigner, PilotPolicyReviewRequired, completeFreightFee } from "../lib/pilotWallet.ts";
 import { FREIGHT_PERMISSIONS } from "../lib/owlPermissions.ts";
-import { freightActionPolicy, freightPilotChallenge, mergePilotPolicies } from "../lib/pilotProtocol.ts";
+import { freightActionPolicy, freightPilotChallenge, mergePilotPolicies, mergePilotPolicyCatalog } from "../lib/pilotProtocol.ts";
 
 const hex = (byte: string) => `0x${byte.repeat(32)}` as ccc.Hex;
 const lock = ccc.Script.from({ codeHash: hex("11"), hashType: "type", args: `0x${"22".repeat(20)}` });
@@ -29,6 +30,17 @@ test("policy merging preserves recipient/type/data boundaries and the SDK's limi
   assert.equal(mergePilotPolicies([action], [{ ...action, maxCapacity: "2" }]).length, 1);
   assert.equal(mergePilotPolicies([action], [{ ...action, lockHash: hex("aa") }]).length, 2);
   assert.throws(() => mergePilotPolicies(FREIGHT_PERMISSIONS.slice(0, 17).map(([id]) => freightActionPolicy(id))), /16 policies/);
+});
+
+test("the full Freight catalog is offered while approved grants remain capped at sixteen", () => {
+  const catalog = mergePilotPolicyCatalog(FREIGHT_PERMISSIONS.map(([id]) => freightActionPolicy(id)));
+  assert.equal(catalog.length, 28);
+  assert.doesNotThrow(() => validatePilotPolicyCatalog(catalog));
+  assert.doesNotThrow(() => validatePilotPolicies(catalog.slice(0, 16)));
+  assert.throws(() => validatePilotPolicies(catalog.slice(0, 17)), /16/);
+  const distinct = Array.from({ length: 51 }, (_, index) => ({ ...catalog[0], lockHash: `0x${index.toString(16).padStart(64, "0")}` as ccc.Hex }));
+  assert.doesNotThrow(() => validatePilotPolicyCatalog(mergePilotPolicyCatalog(distinct.slice(0, 50))));
+  assert.throws(() => mergePilotPolicyCatalog(distinct), /50 policies/);
 });
 
 function fixture(t: TestContext) {

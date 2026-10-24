@@ -2,11 +2,11 @@
 
 import { useShowInfoError } from "@/app/_components/InfoErrorProvider";
 import { ccc } from "@ckb-ccc/connector-react";
-import { PilotWalletProvider, type PilotCellPolicy, type PilotWalletJournal } from "@owl/pilot";
+import { PilotWalletProvider, validatePilotPolicies, type PilotCellPolicy, type PilotWalletJournal } from "@owl/pilot";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { FREIGHT_PERMISSIONS, installPermissionHandler, type FreightPermission } from "@/lib/owlPermissions";
 import { FreightPilotSigner, PilotPolicyReviewRequired } from "@/lib/pilotWallet";
-import { freightActionPolicy, mergePilotPolicies } from "@/lib/pilotProtocol";
+import { freightActionPolicy, mergePilotPolicyCatalog } from "@/lib/pilotProtocol";
 
 type WalletSelection = { open: boolean; closing: boolean; close: () => void; pilot: () => void; joyId: () => void };
 const WalletContext = createContext<{ walletSelection: WalletSelection; open: () => void; disconnect: () => void; client: ccc.Client; signer?: ccc.Signer } | null>(null);
@@ -18,11 +18,6 @@ export function useFreightWallet() {
 export function useFreightSigner() { return useFreightWallet().signer; }
 
 type HostedAccount = { provider: PilotWalletProvider; signer: FreightPilotSigner; address: string; policies: PilotCellPolicy[] };
-// The wallet validates the proposal itself against the 16-policy chain limit.
-// Offer profile/social permissions initially; other actions get their own review
-// when requested. No permission is approved by the application.
-const initialPermissions = FREIGHT_PERMISSIONS.slice(15).map(([permission]) => permission);
-
 export function OwlWalletProvider({ children }: { children: ReactNode }) {
   const wallet = ccc.useCcc();
   const { close: closeWallet } = wallet;
@@ -59,15 +54,13 @@ export function OwlWalletProvider({ children }: { children: ReactNode }) {
     if (!walletUrl) throw new Error("The Pilot wallet URL is not configured for this site yet.");
     if (process.env.NEXT_PUBLIC_CKB_NETWORK?.trim().toLowerCase() === "mainnet") throw new Error("Pilot currently supports testnet.");
     const previous = active.current;
-    // Keep existing consent in the next proposal where it fits. Always include
-    // the requested action and its effects; never silently broaden cell rules.
-    const required = mergePilotPolicies(permission ? [freightActionPolicy(permission)] : [], cells ?? previous?.policies.filter(p => p.direction !== "message") ?? []);
-    const candidates = previous?.policies.filter(p => p.direction === "message") ?? initialPermissions.map(freightActionPolicy);
-    let policies = required;
-    for (const policy of candidates) {
-      try { policies = mergePilotPolicies(policies, [policy]); }
-      catch { /* The requested action takes precedence over optional proposals. */ }
-    }
+    // Offer every Freight action. Pilot displays the complete catalog and lets
+    // the user choose at most 16 policies, including any transaction effects.
+    const policies = mergePilotPolicyCatalog(
+      permission ? [freightActionPolicy(permission)] : [],
+      cells ?? previous?.policies.filter(p => p.direction !== "message") ?? [],
+      FREIGHT_PERMISSIONS.map(([id]) => freightActionPolicy(id)),
+    );
     const provider = new PilotWalletProvider({ url: walletUrl });
     if (provider.origin === location.origin) { provider.dispose(); throw new Error("Pilot must use a separate wallet origin."); }
     connecting.current = provider;
@@ -75,6 +68,7 @@ export function OwlWalletProvider({ children }: { children: ReactNode }) {
       const connection = await provider.connect({ name: "Freight on Nervos", policies, budget: ccc.fixedPointFrom(200).toString() });
       const journal = await provider.request("logs") as PilotWalletJournal;
       if (!journal.state || journal.stopped) throw new Error("Pilot did not return an active session grant.");
+      validatePilotPolicies(journal.state.policies);
       const next = { provider, signer: new FreightPilotSigner(wallet.client, provider), address: connection.address, policies: journal.state.policies.map(policy => ({ ...policy })) };
       identities.current.set(next.signer, next.address);
       active.current = next; setHosted(next);
