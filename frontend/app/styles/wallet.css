@@ -321,6 +321,10 @@
 
 
 /* Use the standard info-modal controls; only wallet brand colours differ. */
+.freight-wallet-options > :is(.freight-wallet-joyid, .freight-wallet-connector) {
+  transition: background-color 220ms ease, color 220ms ease, border-color 220ms ease, transform 220ms ease;
+}
+
 .freight-wallet-pilot.create-info-confirm-btn {
   background: #9ca3af;
   border-color: #9ca3af;
@@ -342,4 +346,9 @@
   background: #ffffff;
   border-color: #16a34a;
   color: #16a34a;
+}
+
+.freight-wallet-connector.create-info-confirm-btn:not(:disabled):is(:hover, :focus-visible) {
+  border-color: #f59e0b;
+  color: #f59e0b;
 }

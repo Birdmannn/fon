@@ -342,6 +342,7 @@ export default function AppShellHeader({
           <div className="campaign-freight-options-controls freight-wallet-options" aria-labelledby="connect-wallet-section-title">
             <button type="button" className="create-info-confirm-btn freight-wallet-pilot" disabled={walletSelection.closing} onClick={walletSelection.pilot}>Pilot</button>
             <button type="button" className="create-info-confirm-btn freight-wallet-joyid" disabled={walletSelection.closing} onClick={walletSelection.joyId}>JoyID</button>
+            <button type="button" className="create-info-confirm-btn freight-wallet-connector" disabled={walletSelection.closing} onClick={walletSelection.connector}>Connector</button>
           </div>
         ) : showWalletSeedNotice ? null : infoModalActions}
         backdropAriaLabel={walletSelection.open ? "Close wallet selection" : showWalletSeedNotice ? "Awarding FBARS in progress" : infoModalBackdropAriaLabel}

@@ -8,7 +8,7 @@ import { FREIGHT_PERMISSIONS, installPermissionHandler, type FreightPermission }
 import { FreightPilotSigner, PilotPolicyReviewRequired } from "@/lib/pilotWallet";
 import { freightActionPolicy, mergePilotPolicyCatalog } from "@/lib/pilotProtocol";
 
-type WalletSelection = { open: boolean; closing: boolean; close: () => void; pilot: () => void; joyId: () => void };
+type WalletSelection = { open: boolean; closing: boolean; close: () => void; pilot: () => void; joyId: () => void; connector: () => void };
 const WalletContext = createContext<{ walletSelection: WalletSelection; open: () => void; disconnect: () => void; client: ccc.Client; signer?: ccc.Signer } | null>(null);
 export function useFreightWallet() {
   const value = useContext(WalletContext);
@@ -18,7 +18,7 @@ export function useFreightWallet() {
 export function useFreightSigner() { return useFreightWallet().signer; }
 
 type HostedAccount = { provider: PilotWalletProvider; signer: FreightPilotSigner; address: string; policies: PilotCellPolicy[] };
-export function OwlWalletProvider({ children }: { children: ReactNode }) {
+export function OwlWalletProvider({ children, connectJoyId }: { children: ReactNode; connectJoyId: () => Promise<void> }) {
   const wallet = ccc.useCcc();
   const { close: closeWallet } = wallet;
   const [hosted, setHosted] = useState<HostedAccount>();
@@ -174,7 +174,12 @@ export function OwlWalletProvider({ children }: { children: ReactNode }) {
   const signer = hosted?.signer ?? wallet.signerInfo?.signer;
   return <WalletContext.Provider value={{ open, disconnect, client: wallet.client, signer, walletSelection: {
     open: choosingWallet, closing: walletSelectionClosing, close: () => closeSelection(),
-    joyId: () => closeSelection(() => { wallet.open(); }),
+    joyId: () => {
+      if (selectionTimer.current) return;
+      closeSelection();
+      void connectJoyId().catch(reportWalletError);
+    },
+    connector: () => closeSelection(() => { wallet.open(); }),
     pilot: () => closeSelection(() => {
       void grant().catch(reportWalletError);
     }),
