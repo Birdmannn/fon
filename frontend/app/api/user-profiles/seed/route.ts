@@ -76,6 +76,11 @@ export async function POST(request: Request) {
       getUserProfilesCollection(),
       getFbarEventsCollection(),
     ]);
+    // Two Pilot sessions for one owner may finish profile setup concurrently.
+    await eventsCollection.createIndex(
+      { eventKey: 1 },
+      { name: "unique_wallet_seed_event_key", unique: true, partialFilterExpression: { kind: "wallet-seed" } },
+    );
     const currentProfile = await profilesCollection.findOne(
       { address },
       {

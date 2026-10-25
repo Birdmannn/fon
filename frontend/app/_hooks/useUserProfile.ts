@@ -1,5 +1,7 @@
 "use client";
 
+import { getFreightProfileAddress } from "@/lib/profileIdentity";
+
 import { signFreightMessage } from "@/lib/owlPermissions";
 
 import { createContext, createElement, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -365,7 +367,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
     }
 
     const explicitAddress = normalizeAddress(args.address);
-    const signerAddress = explicitAddress || await args.signer?.getRecommendedAddress();
+    const signerAddress = explicitAddress || (args.signer ? await getFreightProfileAddress(args.signer) : undefined);
     if (!signerAddress) {
       throw new Error("Unable to resolve wallet address");
     }
@@ -443,7 +445,7 @@ export function UserProfileProvider({ children }: { children: React.ReactNode })
       return cachedAddress;
     }
 
-    const signerAddress = await args.signer?.getRecommendedAddress();
+    const signerAddress = (args.signer ? await getFreightProfileAddress(args.signer) : undefined);
     const normalizedSignerAddress = normalizeAddress(signerAddress);
     if (normalizedSignerAddress) {
       return normalizedSignerAddress;

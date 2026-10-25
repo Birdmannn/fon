@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `371b2b34fb5ed965569d4cad0858511450faa71d` (25 October 2026).
+commit `33f99920f78a89ffffa329e98beddcb9a44feef4` (25 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required
@@ -53,3 +53,7 @@ are sent after grant/resume UI work finishes, allowing FON's immediate logs requ
 to proceed without a spurious busy error. The fix lives in the hosted wallet and
 requires its redeployment; the SDK and React source APIs are unchanged in this
 revision. Shorter Pilot payment addresses remain an upstream V2 proposal.
+
+The latest UI revision gives the embedded close icon a light-green (#c7f881)
+stroke and the hosted-wallet content equal padding on all sides (28px, or 20px
+on narrow viewports). The padding requires the matching hosted-wallet deployment.

@@ -1,7 +1,8 @@
 import { ccc } from "@ckb-ccc/core";
 import { PilotHostedSigner, type PilotScopedMessage, type PilotWalletJournal } from "@owl/pilot";
 import type { FreightPermission } from "./owlPermissions.ts";
-import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, type FreightPilotProof } from "./pilotProtocol.ts";
+import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, isOwnerProfilePermission, type FreightPilotProof } from "./pilotProtocol.ts";
+import { getFreightProfileAddress } from "./profileIdentity.ts";
 
 interface Submission {
   account: string; requestId: string; effectHash: ccc.Hex; bytes: ccc.Hex; hash?: ccc.Hex;
@@ -14,7 +15,14 @@ export class FreightPilotSigner extends PilotHostedSigner {
   async signFreightScope(permission: FreightPermission, message: string) {
     const connection = this.provider.account;
     if (!connection || !this.provider.connected) throw new Error("Reconnect the Pilot wallet.");
-    const challenge = freightPilotChallenge(message, connection.address, permission);
+    const ownerAddress = await getFreightProfileAddress(this);
+    let challenge;
+    try { challenge = freightPilotChallenge(message, ownerAddress, permission); }
+    catch (cause) {
+      if (isOwnerProfilePermission(permission)) throw cause;
+      // Transaction receipts still bind the spending session address.
+      challenge = freightPilotChallenge(message, connection.address, permission);
+    }
     const proof = await this.provider.request("signMessage", {
       scope: freightPilotScope(permission), message, nonce: challenge.nonce,
     }) as PilotScopedMessage;

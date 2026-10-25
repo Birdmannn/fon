@@ -1,5 +1,7 @@
 "use client";
 
+import { getFreightProfileAddress } from "@/lib/profileIdentity";
+
 import { useCallback, useRef, useState } from "react";
 
 import { canAccessLockMountable, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
@@ -84,7 +86,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     }
 
     const [liveViewerFbars, creatorCurrentFbars] = await Promise.all([
-      signer.getRecommendedAddress().then((address) => fetchCurrentFbars(address)).catch(() => currentViewerFbars ?? null),
+      getFreightProfileAddress(signer).then((address) => fetchCurrentFbars(address)).catch(() => currentViewerFbars ?? null),
       fetchCurrentFbars(ticketPurchaseRecord?.creatorAddress).catch(() => null),
     ]);
     const effectiveViewerFbars = liveViewerFbars ?? currentViewerFbars;
