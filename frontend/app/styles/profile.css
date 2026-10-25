@@ -263,6 +263,11 @@
 }
 
 .profile-address-value {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
   margin: 0;
   min-width: 0;
   font-family: var(--font-mono, monospace);
@@ -1330,7 +1335,7 @@
   }
 }
 
-/* Middle layout: keep the username and address on single lines. */
+/* Middle layout: keep the username on one line. */
 @media (30rem < width <= 48.3rem) {
   .profile-handle-under-avatar {
     max-width: none;
@@ -1343,9 +1348,6 @@
 
   .profile-address-value {
     flex: 1 1 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 }
 
