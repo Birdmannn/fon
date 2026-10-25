@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `26a0652384606208cda1ecf24bb18201b55ce65b` (24 October 2026).
+commit `371b2b34fb5ed965569d4cad0858511450faa71d` (25 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required
@@ -43,7 +43,13 @@ reviewed budget and policies. SDK, hosted-wallet and React errors now use the
 idempotent `Pilot says: ` prefix; FON forwards SDK errors to its existing Errors
 info modal. No contract deployment or FON signing API change is required.
 
-The latest revision delegates clipboard writing to the wallet frame, adds manual
+The SDK delegates clipboard writing to the wallet frame, adds manual
 address selection when copying is blocked, and uses an accessible borderless
 close icon. The matching hosted-wallet balance UI counts total capacity including
 typed cells and distinguishes the spending allowance from available funds.
+
+This snapshot matches the hosted-wallet request-ordering fix: connection replies
+are sent after grant/resume UI work finishes, allowing FON's immediate logs request
+to proceed without a spurious busy error. The fix lives in the hosted wallet and
+requires its redeployment; the SDK and React source APIs are unchanged in this
+revision. Shorter Pilot payment addresses remain an upstream V2 proposal.
