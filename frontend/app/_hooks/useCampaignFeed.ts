@@ -16,6 +16,7 @@ import {
 import { bytesToHex, decodeSummary } from "@/lib/encoding";
 import type { CampaignStatus } from "@/lib/contract";
 import { fetchCampaigns, type CampaignCell } from "@/lib/transactions";
+import { isPublishedFreight } from "@/lib/freightPublication";
 
 export type MergedCampaign = {
   campaign: CampaignCell;
@@ -170,9 +171,10 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
           ))
         : {};
       const nextRecordIndexes = buildRecordIndexes(withLiveRaffleTicketCounts(chainCampaigns, records, participantCounts));
+      const publishedCampaigns = chainCampaigns.filter((campaign) => isPublishedFreight(findCampaignRecord(nextRecordIndexes, campaign)));
 
       if (!preserveVisibleList || activeVisibleCampaigns.length === 0) {
-        setCampaigns(chainCampaigns);
+        setCampaigns(publishedCampaigns);
         setRecordIndexes(nextRecordIndexes);
         setPendingCampaigns(null);
         setPendingRecordIndexes(null);
@@ -184,7 +186,7 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
       const currentKeys = new Set(activeVisibleCampaigns.map(getCampaignStableId));
       let nextUnseenCount = 0;
 
-      for (const campaign of chainCampaigns) {
+      for (const campaign of publishedCampaigns) {
         const key = getCampaignStableId(campaign);
         if (currentKeys.has(key)) {
           break;
@@ -193,14 +195,14 @@ export function CampaignFeedProvider({ children }: { children: React.ReactNode }
       }
 
       if (nextUnseenCount > 0) {
-        setPendingCampaigns(chainCampaigns);
+        setPendingCampaigns(publishedCampaigns);
         setPendingRecordIndexes(nextRecordIndexes);
         setUnseenCampaignCount(nextUnseenCount);
         hasLoadedOnceRef.current = true;
         return;
       }
 
-      setCampaigns(chainCampaigns);
+      setCampaigns(publishedCampaigns);
       setRecordIndexes(nextRecordIndexes);
       setPendingCampaigns(null);
       setPendingRecordIndexes(null);
@@ -478,14 +480,15 @@ export function useCampaignFeed() {
   }, [context.isSearchOpen]);
 
   const mergedCampaigns = useMemo(() => {
-    return context.campaigns.map((campaign) => {
+    return context.campaigns.flatMap((campaign) => {
       const matchedRecord = findCampaignRecord(context.recordIndexes, campaign);
+      if (!isPublishedFreight(matchedRecord)) return [];
 
-      return {
+      return [{
         campaign,
         record: matchedRecord,
         displayStatus: deriveDisplayStatus(campaign, nowMs),
-      };
+      }];
     });
   }, [context.campaigns, context.recordIndexes, nowMs]);
 
