@@ -1,14 +1,20 @@
 import { Address, Script, type Client } from "@ckb-ccc/core";
+import { parsePilotWalletDescriptor, pilotWalletLock } from "@owl/pilot";
 
 import { buildStableCampaignId } from "@/lib/campaignIdentity";
 import { CampaignStatus, FREIGHT_CONTRACT, Selector } from "@/lib/contract";
 import { bytesToHex, decodeCampaignData, hexToBytes, lockScriptToAddressBytes } from "@/lib/encoding";
 
-export async function verifyFreightCreateProof(client: Client, txHash: string, address: string, campaignId: string) {
+export async function verifyFreightCreateProof(client: Client, txHash: string, address: string, campaignId: string, pilotAccount?: unknown) {
   const response = await client.getTransaction(txHash);
   if (!response || response.status !== "committed") return false;
 
-  const creatorLock = (await Address.fromString(address, client)).script;
+  const profileLock = (await Address.fromString(address, client)).script;
+  const account = pilotAccount === undefined ? null : parsePilotWalletDescriptor(pilotAccount);
+  if (account && !Script.from(account.ownerLock).eq(profileLock)) {
+    throw new Error("Pilot owner does not match the FBARS profile");
+  }
+  const creatorLock = account ? pilotWalletLock(account) : profileLock;
   const creatorHash = bytesToHex(lockScriptToAddressBytes(creatorLock));
   const transaction = response.transaction;
   const output = transaction.outputs[0];

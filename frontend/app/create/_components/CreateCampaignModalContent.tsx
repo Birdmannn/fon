@@ -1,6 +1,9 @@
 "use client";
 
 import { signFreightMessage } from "@/lib/owlPermissions";
+import { getFreightProfileAddress } from "@/lib/profileIdentity";
+import { PilotHostedSigner } from "@owl/pilot";
+import { pendingFreightPublication, type PendingFreightPublication } from "@/lib/freightPublication";
 
 import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
 
@@ -351,15 +354,7 @@ type CampaignIdentityOverride = {
   chainCreatedAt?: string | null;
 };
 
-type PendingPublishedRecordSync = {
-  draftRecordId: string;
-  summaryDraft: string;
-  txHash: string;
-  campaignId: string;
-  createdByHash: string;
-  chainCreatedAt: string;
-  randomnessPreimage: string | null;
-};
+type PendingPublishedRecordSync = PendingFreightPublication;
 
 export type CreateCampaignModalContentHandle = {
   hasDraftableChanges: () => boolean;
@@ -1954,7 +1949,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setDraftSaveStatus("idle");
     setDraftSaveError("");
     setDraftListError("");
-    setPendingPublishedRecordSync(null);
+    setPendingPublishedRecordSync(pendingFreightPublication(record));
     setStatus("idle");
     setErrorMsg("");
     syncEditorsFromState(nextTitle, nextDescription);
@@ -2109,7 +2104,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       draftStatus: DraftRecordStatus,
       txHashValue: string | null,
       publishError: string | null,
-      randomnessPreimage: string | null = null,
+      randomnessPreimage: string | null = activeDraftRecord?.randomnessPreimage ?? null,
       identityOverride: CampaignIdentityOverride | null = null
     ) => {
       const creatorAddress = await getCreatorAddress();
@@ -2187,9 +2182,9 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     async (
       summaryDraft: string,
       draftStatus: DraftRecordStatus,
-      txHashValue: string | null = null,
+      txHashValue: string | null = activeDraftRecord?.txHash ?? null,
       publishError: string | null = null,
-      randomnessPreimage: string | null = null,
+      randomnessPreimage: string | null = activeDraftRecord?.randomnessPreimage ?? null,
       recordIdOverride: string | null = activeDraftRecordId,
       identityOverride: CampaignIdentityOverride | null = null
     ) => {
@@ -2785,14 +2780,14 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
 
   const applyFreightCreateCost = async (txHash: string, campaignId: string) => {
     if (!signer) throw new Error("Connect the creator wallet to finish publishing");
-    const address = await signer.getRecommendedAddress();
+    const address = await getFreightProfileAddress(signer);
     if (!address) throw new Error("Unable to resolve wallet address for FBARS update");
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const response = await fetch("/api/fbars/freight-create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, txHash, campaignId }),
+        body: JSON.stringify({ address, txHash, campaignId, pilotAccount: signer instanceof PilotHostedSigner ? signer.provider.account?.account : undefined }),
       });
       if (response.ok) return;
       if (response.status === 409 && attempt < 29) {
@@ -2805,20 +2800,23 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   };
 
   const handleRetryDraftSave = async () => {
-    setStatus("idle");
+    const pendingSync = pendingPublishedRecordSync ?? pendingFreightPublication(activeDraftRecord);
+    setStatus(pendingSync ? "pending" : "idle");
     setErrorMsg("");
 
     try {
-      if (pendingPublishedRecordSync) {
-        await applyFreightCreateCost(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.campaignId);
-        await finalizePublishedRecordSync(pendingPublishedRecordSync);
-        onPublishSuccess?.(pendingPublishedRecordSync.txHash, pendingPublishedRecordSync.randomnessPreimage, pendingPublishedRecordSync.campaignId);
+      if (pendingSync) {
+        await applyFreightCreateCost(pendingSync.txHash, pendingSync.campaignId);
+        await finalizePublishedRecordSync(pendingSync);
+        onPublishSuccess?.(pendingSync.txHash, pendingSync.randomnessPreimage, pendingSync.campaignId);
         setStatus("success");
         return;
       }
 
       await persistDraftRecord(activeReviewSummary, "draft");
-    } catch {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDraftSaveError(pendingSync ? `The transaction was already sent. Finalization needs retrying: ${message}` : message);
       setStatus("error");
     }
   };
@@ -2874,6 +2872,11 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       return;
     }
 
+    if (pendingPublishedRecordSync || pendingFreightPublication(activeDraftRecord)) {
+      await handleRetryDraftSave();
+      return;
+    }
+
     if (typeof availableFbars === "number" && availableFbars < 20) {
       setStatus("error");
       setErrorMsg("At least 20 FBARS are required to create a freight");
@@ -2892,6 +2895,17 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     setPendingPublishedRecordSync(null);
 
     try {
+      // Resolve and check the owner's current FBARS before requesting any transaction.
+      const preflight = await fetch("/api/fbars/freight-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: await getFreightProfileAddress(signer), phase: "preflight" }),
+      });
+      if (!preflight.ok) {
+        const payload = await preflight.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to check FBARS before publishing");
+      }
+
       const normalizedParams = normalizedCreateParams.value;
       if (!normalizedParams) {
         throw new Error(normalizedCreateParams.error ?? "Invalid campaign parameters");
@@ -2902,10 +2916,10 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       const randomnessHash = randomnessCommitment?.commitment ?? new Uint8Array(32);
       const randomnessPreimageHex = randomnessCommitment ? randomnessPreimageToHex(randomnessCommitment.preimage) : null;
 
-      if (isModal && randomnessPreimageHex) {
+      if (isModal) {
         stagedDraftRecordId = await persistDraftRecord(summaryToPublish, "draft", null, null, randomnessPreimageHex);
         if (!stagedDraftRecordId) {
-          throw new Error("Failed to save the raffle preimage before publishing");
+          throw new Error("Failed to save the freight before publishing");
         }
       }
 
@@ -2943,6 +2957,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
           chainCreatedAt: publishResult.chainCreatedAt,
           randomnessPreimage: randomnessPreimageHex,
         };
+        // Retain the transaction identity in the draft, so retrying never sends it twice.
+        await persistDraftRecord(summaryToPublish, "draft", publishResult.txHash, null, randomnessPreimageHex, draftRecordId, publishResult);
       }
 
       await applyFreightCreateCost(publishResult.txHash, publishResult.campaignId);
@@ -3668,7 +3684,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                 ) : null}
                 <button
                   type={isReviewStep && draftSaveStatus !== "error" && draftSaveStatus !== "saving" ? "submit" : "button"}
-                  disabled={
+                  disabled={status === "pending" || (
                     isReviewStep
                       ? draftSaveStatus === "saving"
                         ? true
@@ -3676,7 +3692,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
                           ? false
                           : isPublishDisabled
                       : isNextDisabled
-                  }
+                  )}
                   onClick={
                     isReviewStep
                       ? draftSaveStatus === "error"

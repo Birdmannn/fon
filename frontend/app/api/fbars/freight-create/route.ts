@@ -14,6 +14,8 @@ type FreightCreatePayload = {
   address?: unknown;
   txHash?: unknown;
   campaignId?: unknown;
+  phase?: unknown;
+  pilotAccount?: unknown;
 };
 
 function badRequest(message: string, status = 400) {
@@ -38,10 +40,18 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as FreightCreatePayload;
     const address = normalizeAddress(ensureString(payload.address, "address"));
+    if (payload.phase === "preflight") {
+      const profile = await (await getUserProfilesCollection()).findOne({ address }, { projection: { fbars: 1 } });
+      const fbars = Number(profile?.fbars ?? 0);
+      if (!Number.isFinite(fbars) || fbars < FREIGHT_CREATION_FBARS_COST) {
+        return badRequest("At least 20 FBARS are required to create a freight", 403);
+      }
+      return NextResponse.json({ ok: true, fbars });
+    }
     const txHash = ensureString(payload.txHash, "txHash").toLowerCase();
     const campaignId = ensureString(payload.campaignId, "campaignId").toLowerCase();
     if (!/^0x[0-9a-f]{64}$/.test(txHash)) return badRequest("Invalid transaction hash");
-    const confirmed = await verifyFreightCreateProof(getPublicCkbClient(), txHash, address, campaignId);
+    const confirmed = await verifyFreightCreateProof(getPublicCkbClient(), txHash, address, campaignId, payload.pilotAccount);
     if (!confirmed) return badRequest("Freight creation transaction is not confirmed yet", 409);
 
     const [profilesCollection, eventsCollection] = await Promise.all([
