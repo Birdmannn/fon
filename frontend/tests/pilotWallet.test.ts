@@ -3,7 +3,7 @@ import test, { type TestContext } from "node:test";
 import { ccc } from "@ckb-ccc/core";
 import { validatePilotPolicies, validatePilotPolicyCatalog, pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
 import type { PilotWalletProvider, PilotWalletConnection, PilotWalletState, PilotWalletDescriptor } from "@owl/pilot";
-import { getFreightProfileAddress } from "../lib/profileIdentity.ts";
+import { getFreightProfileAddress, getFreightWalletDisplayBalance } from "../lib/profileIdentity.ts";
 import { FreightPilotSigner, completeFreightFee } from "../lib/pilotWallet.ts";
 import { FREIGHT_PERMISSIONS } from "../lib/owlPermissions.ts";
 import { freightActionPolicy, freightPilotChallenge, mergePilotPolicies, mergePilotPolicyCatalog } from "../lib/pilotProtocol.ts";
@@ -172,4 +172,20 @@ test("Pilot profile proofs reject session-address seed challenges and inconsiste
   assert.equal(f.calls.length, 0);
   const inconsistent = new FreightPilotSigner(client, { account: { ...f.signer.provider.account!, ownerAddress: address } } as unknown as PilotWalletProvider);
   await assert.rejects(getFreightProfileAddress(inconsistent), /inconsistent/);
+});
+
+test("Pilot wallet displays query total owner capacity, never session balance", async t => {
+  const f = fixture(t);
+  const capacity = 2500n * 100_000_000n;
+  t.mock.method(client, "getCellsCapacity", async (query: ccc.ClientIndexerSearchKeyLike) => {
+    assert.equal(ccc.Script.from(query.script).hash(), ownerLock.hash());
+    assert.equal(query.scriptType, "lock");
+    assert.equal(query.scriptSearchMode, "exact");
+    return capacity;
+  });
+  t.mock.method(f.signer, "getBalance", async () => { throw new Error("Session balance must not be displayed"); });
+  assert.equal(await getFreightWalletDisplayBalance(client, f.signer), capacity);
+  const external = new ccc.SignerCkbPrivateKey(client, hex("12"));
+  t.mock.method(external, "getBalance", async () => 123n);
+  assert.equal(await getFreightWalletDisplayBalance(client, external), 123n);
 });

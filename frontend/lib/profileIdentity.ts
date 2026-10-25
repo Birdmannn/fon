@@ -13,3 +13,9 @@ export async function getFreightProfileAddress(signer: ccc.Signer): Promise<stri
   }
   return owner.toString();
 }
+
+export async function getFreightWalletDisplayBalance(client: ccc.Client, signer: ccc.Signer): Promise<bigint> {
+  if (!(signer instanceof PilotHostedSigner)) return signer.getBalance();
+  const address = await ccc.Address.fromString(await getFreightProfileAddress(signer), client);
+  return client.getCellsCapacity({ script: address.script, scriptType: "lock", scriptSearchMode: "exact" });
+}

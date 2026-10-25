@@ -264,7 +264,8 @@ export default function CampaignDetailPage() {
   const infoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     handleCopyWalletAddress,
-    walletAddress,
+    walletAddress: ownerAddress,
+    spendingAddress: walletAddress,
     walletAddressDisplay,
     walletBalance,
     walletBalanceIncreasing,
@@ -280,7 +281,7 @@ export default function CampaignDetailPage() {
     saveLightModePrimaryColor,
   } = useUserProfile(signer ?? null);
   const markCurrentProfileDataDirty = useCallback(() => {
-    const nextAddress = currentUserProfile?.address ?? walletAddress ?? null;
+    const nextAddress = currentUserProfile?.address ?? ownerAddress ?? null;
     const nextHandle = currentUserProfile?.username ?? null;
     const dirtyArgs = {
       address: nextAddress,
@@ -290,7 +291,7 @@ export default function CampaignDetailPage() {
     markProfileAnalyticsDirty(dirtyArgs);
     markProfileFreightsDirty(dirtyArgs);
     markProfileTransactionsDirty(dirtyArgs);
-  }, [currentUserProfile?.address, currentUserProfile?.username, walletAddress]);
+  }, [currentUserProfile?.address, currentUserProfile?.username, ownerAddress]);
   const {
     beginGoogleLink,
     googleLinkError,
@@ -321,10 +322,10 @@ export default function CampaignDetailPage() {
   const [creatorFormsActionNotice, setCreatorFormsActionNotice] = useState("");
   const [activeFormsReviewAddress, setActiveFormsReviewAddress] = useState<string | null>(null);
   const walletActionHref = useMemo(() => {
-    const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
+    const nextUsername = currentUserProfile?.username?.trim() || (ownerAddress ? buildDefaultUsername(ownerAddress) : "");
     return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
-  }, [currentUserProfile?.username, walletAddress]);
-  const canEditLightModePrimaryColor = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
+  }, [currentUserProfile?.username, ownerAddress]);
+  const canEditLightModePrimaryColor = Boolean(signer && ownerAddress && currentUserProfile?.address === ownerAddress);
   const formsMountableConfig = useMemo<FormsMountableConfig>(
     () => normalizeFormsMountableConfig(selectedRecord?.mountables?.forms ?? null),
     [selectedRecord?.mountables?.forms],
@@ -3026,7 +3027,7 @@ export default function CampaignDetailPage() {
           shouldHideWalletAction={shouldHideWalletAction}
           isSavingLightModePrimaryColor={isSavingUserProfile}
           onSaveLightModePrimaryColor={saveLightModePrimaryColor}
-          walletAddress={walletAddress}
+          walletAddress={ownerAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
           walletBalanceText={walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}

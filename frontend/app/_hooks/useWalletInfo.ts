@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { getFreightProfileAddress } from "@/lib/profileIdentity";
+import { getFreightProfileAddress, getFreightWalletDisplayBalance } from "@/lib/profileIdentity";
 import { copyText } from "@/lib/clipboard";
 import { deriveChainLabel } from "@/lib/campaignDisplay";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -45,8 +45,9 @@ async function fetchCkbUsdPrice() {
   return nextPrice;
 }
 
-export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, showWalletInfoModal: boolean, shouldFetch: boolean = false, profileIdentity: boolean = false) {
+export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, showWalletInfoModal: boolean, shouldFetch: boolean = false) {
   const [walletAddress, setWalletAddress] = useState("");
+  const [spendingAddress, setSpendingAddress] = useState("");
   const [walletBalance, setWalletBalance] = useState<bigint | null>(null);
   const [walletInfoError, setWalletInfoError] = useState("");
   const [walletInfoLoading, setWalletInfoLoading] = useState(false);
@@ -88,27 +89,30 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
   useEffect(() => {
     if (!signer) {
       setWalletAddress("");
+      setSpendingAddress("");
       return;
     }
 
     let cancelled = false;
 
-    void (profileIdentity ? getFreightProfileAddress(signer) : signer.getRecommendedAddress())
-      .then((nextAddress) => {
+    void Promise.all([getFreightProfileAddress(signer), signer.getRecommendedAddress()])
+      .then(([nextAddress, nextSpendingAddress]) => {
         if (!cancelled) {
           setWalletAddress(nextAddress ?? "");
+          setSpendingAddress(nextSpendingAddress ?? "");
         }
       })
       .catch(() => {
         if (!cancelled) {
           setWalletAddress("");
+          setSpendingAddress("");
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [signer, profileIdentity]);
+  }, [signer]);
 
   useEffect(() => {
     if (!signer) {
@@ -133,7 +137,7 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
       setWalletInfoLoading(true);
 
       try {
-        const nextAddress = await (profileIdentity ? getFreightProfileAddress(signer) : signer.getRecommendedAddress());
+        const nextAddress = await getFreightProfileAddress(signer);
         if (cancelled) {
           return;
         }
@@ -147,9 +151,7 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
       try {
         const shouldRefreshUsdPrice = !cachedCkbUsdPrice || (Date.now() - cachedCkbUsdPriceFetchedAt) >= CKB_PRICE_REFRESH_MS;
         const [nextBalance, nextUsdPrice] = await Promise.all([
-          profileIdentity
-            ? getFreightProfileAddress(signer).then(address => ccc.Address.fromString(address, client)).then(address => client.getBalance([address.script]))
-            : signer.getBalance(),
+          getFreightWalletDisplayBalance(client, signer),
           shouldRefreshUsdPrice
             ? fetchCkbUsdPrice().catch(() => cachedCkbUsdPrice)
             : Promise.resolve(cachedCkbUsdPrice),
@@ -197,11 +199,12 @@ export function useWalletInfo(client: ccc.Client, signer: ccc.Signer | null, sho
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [showWalletInfoModal, shouldFetch, signer, profileIdentity, client]);
+  }, [showWalletInfoModal, shouldFetch, signer, client]);
 
   return {
     handleCopyWalletAddress,
     walletAddress,
+    spendingAddress,
     walletAddressDisplay: truncateWalletAddress(walletAddress),
     walletBalance,
     walletBalanceIncreasing,
