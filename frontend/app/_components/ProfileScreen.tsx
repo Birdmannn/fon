@@ -142,7 +142,7 @@ export default function ProfileScreen({ targetHandle = null }: ProfileScreenProp
     walletInfoError,
     walletInfoLoading,
     walletUsdParts,
-  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true);
+  } = useWalletInfo(client, signer ?? null, showWalletInfoModal, true, true);
   const {
     currentUserProfile,
     isSavingUserProfile,

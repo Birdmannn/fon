@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { ccc } from "@ckb-ccc/core";
+import { pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
+import { FREIGHT_PILOT_PROTOCOL, freightActionPolicy } from "../lib/pilotProtocol.ts";
 import type { PilotSignatureDependencies } from "../lib/pilotAuth.ts";
 import type { PilotChallengeRecord } from "../lib/mongodb.ts";
 const require = createRequire(import.meta.url);
@@ -65,4 +68,41 @@ test("unknown protocols and oversized scoped proofs are rejected", async () => {
   const params = { address, message, identity: "hash", serialized: JSON.stringify({ protocol: "unknown" }), permission: "interaction-like" as const, origin: "https://freight.example", challenge };
   await assert.rejects(verifyFreightPilotProof(params), /Unknown Pilot proof/);
   await assert.rejects(verifyFreightPilotProof({ ...params, serialized: "x".repeat(32_769) }), /too large/);
+});
+
+
+test("profile authorization binds each live Pilot session to the same descriptor owner", async () => {
+  const h = (byte: string) => `0x${byte.repeat(32)}` as ccc.Hex;
+  const client = new ccc.ClientPublicTestnet();
+  const ownerLock = ccc.Script.from({ codeHash: PILOT_PASSKEY_CODE_HASH, hashType: "data2", args: `0x${"22".repeat(97)}` });
+  const owner = ccc.Address.fromScript(ownerLock, client).toString();
+  let verified = 0;
+  const verify: Parameters<typeof verifyFreightPilotProof>[2] = async (_client, descriptor, _state, proof, expected) => {
+    verified++;
+    assert.equal(ccc.Script.from(descriptor.ownerLock).hash(), ownerLock.hash());
+    assert.equal(proof.accountHash, pilotWalletLock(descriptor).hash());
+    assert.equal(expected.scope, "freight.wallet-seed");
+    assert.equal(expected.nonce, challenge);
+    return true;
+  };
+  for (const seed of ["11", "99"]) {
+    const account = {
+      version: 2 as const,
+      deployment: { network: "testnet" as const, genesisHash: h("aa"), codeHash: PILOT_WALLET_SESSION_CODE_HASH, outPoint: { txHash: h("bb"), index: 0 } },
+      ownerLock, stateType: { codeHash: PILOT_TYPE_ID, hashType: "type" as const, args: h(seed) },
+      poolLock: { codeHash: h("44"), hashType: "type" as const, args: "0x" }, maxFee: "100000",
+    };
+    const sessionLock = pilotWalletLock(account);
+    const session = ccc.Address.fromScript(sessionLock, client).toString();
+    const state = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightActionPolicy("wallet-seed")] };
+    const message = `freight-wallet-seed:${owner}:${challenge}`;
+    const proof = { version: 1, accountHash: sessionLock.hash(), appOrigin: state.appOrigin, publicKey: state.publicKey, scope: "freight.wallet-seed", message, nonce: challenge, expiresAt: Date.now() + 60_000, signature: h("55") };
+    const params = { address: owner, message, identity: sessionLock.hash(), serialized: JSON.stringify({ protocol: FREIGHT_PILOT_PROTOCOL, account, state, proof }), permission: "wallet-seed" as const, origin: state.appOrigin, challenge };
+    await verifyFreightPilotProof(params, client, verify);
+    await assert.rejects(verifyFreightPilotProof({ ...params, address: session }, client, verify), /different owner/);
+    await assert.rejects(verifyFreightPilotProof({ ...params, identity: ownerLock.hash() }, client, verify), /different owner/);
+    await assert.rejects(verifyFreightPilotProof({ ...params, address: ccc.Address.fromScript(account.poolLock, client).toString() }, client, verify), /different owner/);
+    await assert.rejects(verifyFreightPilotProof(params, client, async () => false), /invalid, revoked/);
+  }
+  assert.equal(verified, 2, "both sessions can authorize the same owner; rejected identities never reach signature verification");
 });

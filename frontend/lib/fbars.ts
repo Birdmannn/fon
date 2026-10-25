@@ -249,7 +249,7 @@ export async function awardFbarsEvent(params: FbarAwardParams & {
   try {
     await params.eventsCollection.insertOne(insertedEvent);
   } catch (error) {
-    if ((params.kind === "win" || params.kind === "freight-create" || params.metadata?.supportMode === "direct_creator")
+    if ((params.kind === "wallet-seed" || params.kind === "win" || params.kind === "freight-create" || params.metadata?.supportMode === "direct_creator")
       && error && typeof error === "object" && "code" in error && error.code === 11000) {
       return { applied: false, event: insertedEvent };
     }

@@ -1,5 +1,7 @@
 "use client";
 
+import { getFreightProfileAddress } from "@/lib/profileIdentity";
+
 import { signFreightMessage } from "@/lib/owlPermissions";
 
 import { ccc } from "@ckb-ccc/connector-react";
@@ -49,7 +51,7 @@ export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: Use
       throw new Error("Connect a wallet first");
     }
 
-    const address = await signer.getRecommendedAddress();
+    const address = await getFreightProfileAddress(signer);
     if (!address) {
       throw new Error("Unable to resolve wallet address");
     }
@@ -114,7 +116,7 @@ export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: Use
       return null;
     }
 
-    const address = await signer.getRecommendedAddress();
+    const address = await getFreightProfileAddress(signer);
     if (!address) {
       throw new Error("Unable to resolve wallet address");
     }
@@ -162,7 +164,7 @@ export function useGoogleLink(signer: ccc.Signer | null, currentUserProfile: Use
       return null;
     }
 
-    const address = await signer.getRecommendedAddress();
+    const address = await getFreightProfileAddress(signer);
     if (!address) {
       return null;
     }

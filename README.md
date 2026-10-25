@@ -129,8 +129,16 @@ same wallet storage partition, preserving its original expiry. Request timeouts
 pause while the wallet waits for account selection, policy review or passkey input.
 These flows require the hosted wallet to be updated alongside FON's SDK.
 
-A Pilot account has its own address. Existing profiles, creator permissions and
-freight owned by an external wallet do not move to it. External wallets retain
+Pilot profiles use the passkey owner address, so multiple session accounts for
+one owner load the same profile. The initial FBARS award queries that owner
+address's on-chain balance once (1 FBAR per 1,000 CKB, rounded down); session funds
+and spending allowances are not included. Profile photos, marquee edits and Google
+links use owner-address challenges. APIs verify that a valid live session proof's
+descriptor commits to that owner before authorizing profile actions, and reject
+session-address profile/seed proofs. Session addresses remain the spending identity
+for transactions and receipts. Previously stored session-address profiles are not
+automatically merged or credited again into the owner profile; existing on-chain
+freight ownership is unchanged. External wallets retain
 Freight's selectable permission list and per-signature wallet approval. Disconnect
 settles receipts before removing the embedded signer; failed settlement keeps the
 connection available. Use Pilot's wallet controls to revoke the on-chain session.

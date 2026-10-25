@@ -7,6 +7,10 @@ export const FREIGHT_PILOT_PROTOCOL = "freight-pilot-scoped-v1";
 export const ZERO_HASH = `0x${"00".repeat(32)}` as ccc.Hex;
 export const freightPilotScope = (permission: FreightPermission) => `freight.${permission}`;
 
+export const isOwnerProfilePermission = (permission: FreightPermission) => [
+  "wallet-seed", "marquee-edit", "profile-photo", "google-identity-link", "google-forms-link",
+].includes(permission);
+
 export interface FreightPilotProof {
   protocol: typeof FREIGHT_PILOT_PROTOCOL;
   account: PilotWalletDescriptor;

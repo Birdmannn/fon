@@ -3,7 +3,7 @@ import { ccc } from "@ckb-ccc/core";
 import { parsePilotWalletDescriptor, pilotWalletLock, validatePilotPolicies, verifyPilotScopedMessage } from "@owl/pilot";
 import { getPublicCkbClient } from "./ckbClient";
 import { getPilotChallengesCollection, type PilotChallengeRecord } from "./mongodb";
-import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, freightPermissionFromPurpose, type FreightPilotProof } from "./pilotProtocol";
+import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, freightPermissionFromPurpose, isOwnerProfilePermission, type FreightPilotProof } from "./pilotProtocol";
 import type { FreightPermission } from "./owlPermissions";
 
 const challengeId = (message: string) => createHash("sha256").update(message).digest("hex");
@@ -22,7 +22,7 @@ export async function registerPilotChallenge(address: string, purpose: string, m
 export async function verifyFreightPilotProof(params: {
   address: string; message: string; identity: string; serialized: string;
   permission: FreightPermission; origin: string; challenge: string;
-}, client: ccc.Client = getPublicCkbClient()) {
+}, client: ccc.Client = getPublicCkbClient(), verifyScoped: typeof verifyPilotScopedMessage = verifyPilotScopedMessage) {
   if (params.serialized.length > 32_768) throw new Error("Pilot proof is too large.");
   const envelope = JSON.parse(params.serialized) as FreightPilotProof;
   if (envelope.protocol !== FREIGHT_PILOT_PROTOCOL) throw new Error("Unknown Pilot proof protocol.");
@@ -30,8 +30,10 @@ export async function verifyFreightPilotProof(params: {
   validatePilotPolicies(envelope.state.policies);
   const lock = pilotWalletLock(account);
   const expected = await ccc.Address.fromString(params.address, client);
-  if (!lock.eq(expected.script) || params.identity !== lock.hash()) throw new Error("Pilot proof belongs to a different account.");
-  if (envelope.proof.message !== params.message || !(await verifyPilotScopedMessage(client, account, envelope.state, envelope.proof, {
+  const ownerMatches = ccc.Script.from(account.ownerLock).eq(expected.script);
+  const sessionMatches = !isOwnerProfilePermission(params.permission) && lock.eq(expected.script);
+  if ((!ownerMatches && !sessionMatches) || params.identity !== lock.hash()) throw new Error("Pilot proof belongs to a different owner or account.");
+  if (envelope.proof.message !== params.message || !(await verifyScoped(client, account, envelope.state, envelope.proof, {
     appOrigin: params.origin, scope: freightPilotScope(params.permission), nonce: params.challenge,
   }))) throw new Error("Pilot scoped signature is invalid, revoked, expired, or outside the selected action.");
 }

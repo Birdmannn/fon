@@ -135,6 +135,13 @@ export function decodeCreatedByAddress(campaign: CampaignCell) {
 }
 
 export function deriveChainLabel(client: ccc.Client) {
+  const seen = new Set<ccc.Client>();
+  while (!seen.has(client)) {
+    seen.add(client);
+    const inner = (client as ccc.Client & { [ccc.Proxy.inner]?: ccc.Client })[ccc.Proxy.inner];
+    if (!inner) break;
+    client = inner;
+  }
   if (client instanceof ccc.ClientPublicMainnet) {
     return "Mainnet";
   }

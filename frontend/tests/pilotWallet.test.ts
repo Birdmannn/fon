@@ -1,15 +1,24 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { ccc } from "@ckb-ccc/core";
-import { validatePilotPolicies, validatePilotPolicyCatalog } from "@owl/pilot";
-import type { PilotWalletProvider, PilotWalletConnection, PilotWalletState } from "@owl/pilot";
+import { validatePilotPolicies, validatePilotPolicyCatalog, pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
+import type { PilotWalletProvider, PilotWalletConnection, PilotWalletState, PilotWalletDescriptor } from "@owl/pilot";
+import { getFreightProfileAddress } from "../lib/profileIdentity.ts";
 import { FreightPilotSigner, completeFreightFee } from "../lib/pilotWallet.ts";
 import { FREIGHT_PERMISSIONS } from "../lib/owlPermissions.ts";
 import { freightActionPolicy, freightPilotChallenge, mergePilotPolicies, mergePilotPolicyCatalog } from "../lib/pilotProtocol.ts";
 
 const hex = (byte: string) => `0x${byte.repeat(32)}` as ccc.Hex;
-const lock = ccc.Script.from({ codeHash: hex("11"), hashType: "type", args: `0x${"22".repeat(20)}` });
 const client = new ccc.ClientPublicTestnet();
+const ownerLock = ccc.Script.from({ codeHash: PILOT_PASSKEY_CODE_HASH, hashType: "data2", args: `0x${"22".repeat(97)}` });
+const ownerAddress = ccc.Address.fromScript(ownerLock, client).toString();
+const account: PilotWalletDescriptor = {
+  version: 2,
+  deployment: { network: "testnet", genesisHash: hex("aa"), codeHash: PILOT_WALLET_SESSION_CODE_HASH, outPoint: { txHash: hex("bb"), index: 0 } },
+  ownerLock, stateType: { codeHash: PILOT_TYPE_ID, hashType: "type", args: hex("11") },
+  poolLock: { codeHash: hex("44"), hashType: "type", args: "0x" }, maxFee: "100000",
+};
+const lock = pilotWalletLock(account);
 const address = ccc.Address.fromScript(lock, client).toString();
 const state: PilotWalletState = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightActionPolicy("creator-tip")] };
 
@@ -53,7 +62,7 @@ function fixture(t: TestContext) {
   let ownerApproval = false;
   const provider = {
     connected: true,
-    account: { address, account: { version: 2 }, appOrigin: state.appOrigin, expiresAt: Date.now() + 60_000 } as PilotWalletConnection,
+    account: { address, ownerAddress, account, appOrigin: state.appOrigin, expiresAt: Date.now() + 60_000 } as PilotWalletConnection,
     request: async (method: string, params?: unknown) => {
       calls.push({ method, params });
       if (method === "logs") return { state, stopped: false, receipts: [] };
@@ -121,7 +130,7 @@ test("unselected scoped actions preserve one-time owner proofs for the receiving
   const previous = Object.getOwnPropertyDescriptor(globalThis, "location");
   Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: state.appOrigin } });
   t.after(() => { if (previous) Object.defineProperty(globalThis, "location", previous); else Reflect.deleteProperty(globalThis, "location"); });
-  const message = `freight-wallet-seed:${address}:abcdefghijklmnopqrstuvwx`;
+  const message = `freight-wallet-seed:${ownerAddress}:abcdefghijklmnopqrstuvwx`;
   const signature = await f.signer.signFreightScope("wallet-seed", message);
   const envelope = JSON.parse(signature.signature);
   assert.equal(envelope.proof.version, 2);
@@ -141,4 +150,26 @@ test("Pilot builders skip generic CCC fee/input completion", async t => {
   assert.equal(calls, 0);
   await completeFreightFee(tx, {} as ccc.Signer, 1000n);
   assert.equal(calls, 1);
+});
+
+
+test("different Pilot spending accounts share their owner's profile identity", async t => {
+  const f = fixture(t);
+  assert.equal(await getFreightProfileAddress(f.signer), ownerAddress);
+  assert.equal(await f.signer.getRecommendedAddress(), address, "transaction address remains the session account");
+  const otherAccount = { ...account, stateType: { ...ccc.Script.from(account.stateType), args: hex("99") } };
+  const otherAddress = ccc.Address.fromScript(pilotWalletLock(otherAccount), client).toString();
+  const other = new FreightPilotSigner(client, { account: { ...f.signer.provider.account!, account: otherAccount, address: otherAddress } } as unknown as PilotWalletProvider);
+  assert.notEqual(await other.getRecommendedAddress(), address);
+  assert.equal(await getFreightProfileAddress(other), ownerAddress);
+  const external = new ccc.SignerCkbPrivateKey(client, hex("12"));
+  assert.equal(await getFreightProfileAddress(external), await external.getRecommendedAddress());
+});
+
+test("Pilot profile proofs reject session-address seed challenges and inconsistent owner claims", async t => {
+  const f = fixture(t);
+  await assert.rejects(f.signer.signFreightScope("wallet-seed", `freight-wallet-seed:${address}:abcdefghijklmnopqrstuvwx`), /does not match/);
+  assert.equal(f.calls.length, 0);
+  const inconsistent = new FreightPilotSigner(client, { account: { ...f.signer.provider.account!, ownerAddress: address } } as unknown as PilotWalletProvider);
+  await assert.rejects(getFreightProfileAddress(inconsistent), /inconsistent/);
 });
