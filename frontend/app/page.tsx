@@ -150,7 +150,8 @@ export default function Home() {
   const headerInfoButtonRef = useRef<HTMLButtonElement>(null);
   const {
     handleCopyWalletAddress,
-    walletAddress,
+    walletAddress: ownerAddress,
+    spendingAddress: walletAddress,
     walletAddressDisplay,
     walletBalance,
     walletBalanceIncreasing,
@@ -169,12 +170,12 @@ export default function Home() {
     userProfileError,
   } = useUserProfile(signer ?? null);
   const walletActionHref = useMemo(() => {
-    const nextUsername = currentUserProfile?.username?.trim() || (walletAddress ? buildDefaultUsername(walletAddress) : "");
+    const nextUsername = currentUserProfile?.username?.trim() || (ownerAddress ? buildDefaultUsername(ownerAddress) : "");
     return nextUsername ? `/user/${encodeURIComponent(nextUsername)}` : undefined;
-  }, [currentUserProfile?.username, walletAddress]);
-  const canEditLightModePrimaryColor = Boolean(signer && walletAddress && currentUserProfile?.address === walletAddress);
+  }, [currentUserProfile?.username, ownerAddress]);
+  const canEditLightModePrimaryColor = Boolean(signer && ownerAddress && currentUserProfile?.address === ownerAddress);
   const markCurrentProfileDataDirty = useCallback(() => {
-    const nextAddress = currentUserProfile?.address ?? walletAddress ?? null;
+    const nextAddress = currentUserProfile?.address ?? ownerAddress ?? null;
     const nextHandle = currentUserProfile?.username ?? null;
     const dirtyArgs = {
       address: nextAddress,
@@ -184,7 +185,7 @@ export default function Home() {
     markProfileAnalyticsDirty(dirtyArgs);
     markProfileFreightsDirty(dirtyArgs);
     markProfileTransactionsDirty(dirtyArgs);
-  }, [currentUserProfile?.address, currentUserProfile?.username, walletAddress]);
+  }, [currentUserProfile?.address, currentUserProfile?.username, ownerAddress]);
 
   const clearWalletInfoCloseTimer = useCallback(() => {
     if (walletInfoCloseTimerRef.current) {
@@ -1782,7 +1783,7 @@ export default function Home() {
           shouldHideWalletAction={shouldHideWalletAction}
           isSavingLightModePrimaryColor={isSavingUserProfile}
           onSaveLightModePrimaryColor={saveLightModePrimaryColor}
-          walletAddress={walletAddress}
+          walletAddress={ownerAddress}
           walletAddressDisplay={walletAddressDisplay}
           walletBalanceIncreasing={walletBalanceIncreasing}
           walletBalanceText={walletBalance !== null ? `${formatCkbAmount(walletBalance)} CKB` : walletInfoLoading ? "Loading…" : "--"}

@@ -130,7 +130,11 @@ pause while the wallet waits for account selection, policy review or passkey inp
 These flows require the hosted wallet to be updated alongside FON's SDK.
 
 Pilot profiles use the passkey owner address, so multiple session accounts for
-one owner load the same profile. The initial FBARS award queries that owner
+one owner load the same profile. Shared wallet displays on the feed, freight
+detail and profile pages show and copy that owner address and query its total CKB
+capacity (including typed cells); transaction ownership checks use the session
+spending address. External-wallet balance queries retain their existing behavior.
+The initial FBARS award queries that owner
 address's on-chain balance once (1 FBAR per 1,000 CKB, rounded down); session funds
 and spending allowances are not included. Profile photos, marquee edits and Google
 links use owner-address challenges. APIs verify that a valid live session proof's
