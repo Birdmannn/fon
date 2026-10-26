@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `33f99920f78a89ffffa329e98beddcb9a44feef4` (25 October 2026).
+commit `e5a5e812d86181c613465dd089e405b2aca0859d` (25 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required
@@ -57,3 +57,11 @@ revision. Shorter Pilot payment addresses remain an upstream V2 proposal.
 The latest UI revision gives the embedded close icon a light-green (#c7f881)
 stroke and the hosted-wallet content equal padding on all sides (28px, or 20px
 on narrow viewports). The padding requires the matching hosted-wallet deployment.
+
+
+This revision adds the pre-approval public-account handoff through
+`connect({ buildPolicies })`. The wallet emits `accountSelected`; the SDK builds
+and validates the account-dependent catalog and returns `policiesReady`, bound to
+the current account selection. FON now supplies real publication and raffle-ticket
+output policies before the user approves a grant. The matching hosted wallet must
+support `accountPolicies=1`; account switching rebuilds the offered catalog.

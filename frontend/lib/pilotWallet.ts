@@ -1,6 +1,6 @@
 import { ccc } from "@ckb-ccc/core";
 import { PilotHostedSigner, type PilotScopedMessage, type PilotWalletJournal } from "@owl/pilot";
-import type { FreightPermission } from "./owlPermissions.ts";
+import { resolveFreightMessagePermission, type FreightPermission } from "./owlPermissions.ts";
 import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, isOwnerProfilePermission, type FreightPilotProof } from "./pilotProtocol.ts";
 import { getFreightProfileAddress } from "./profileIdentity.ts";
 
@@ -13,6 +13,7 @@ export class FreightPilotSigner extends PilotHostedSigner {
   private get storageKey() { return `freight:pilot:submission:v1:${this.provider.account!.address}`; }
 
   async signFreightScope(permission: FreightPermission, message: string) {
+    resolveFreightMessagePermission(permission);
     const connection = this.provider.account;
     if (!connection || !this.provider.connected) throw new Error("Reconnect the Pilot wallet.");
     const ownerAddress = await getFreightProfileAddress(this);

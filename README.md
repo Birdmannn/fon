@@ -111,9 +111,12 @@ No Freight permission picker precedes it. Closing the modal keeps its isolated
 iframe alive for approved automatic signing. The header Disconnect action reopens
 the account modal.
 
-All 28 signed actions have individual scoped permissions and are offered together
-in Pilot's permission catalog. The SDK permits up to 50 offered policies; the user
-may select at most 16 for each grant, including transaction cell/recipient rules.
+FON separates 28 app actions into transaction and message capabilities. Connection
+offers 15 real message scopes alongside account-dependent transaction policies.
+“Publish freight” and “Buy tickets” describe output effects, rather than misleading
+message permissions. The mixed support/withdrawal actions expose separately named
+“Sign support receipt” and “Sign withdrawal receipt” scopes for their API proofs.
+The SDK permits up to 50 offered policies; the user may select at most 16 per grant.
 Nothing is checked by default. Selected message scopes sign automatically;
 unselected scopes or transaction effects reopen the same Pilot modal for one-time
 owner passkey approval. FON keeps the existing provider, address and session;
@@ -123,6 +126,38 @@ budget, live authority and sponsored fee checks. Cancelled reviews reject the
 action without disconnecting. Approved session state is still validated against
 the 16-policy limit. Transaction effect policies constrain actual cells and
 recipients; message scope names do not interpret Freight methods on-chain.
+`freightTransactionPolicies` builds input/output policies from real app transaction
+effects and a selected public Pilot account: full lock/type hashes, explicit data
+rules, and capacity ceilings. Account change is exempt; account assets need input
+policies; authority and sponsor cells remain wallet-managed. Data defaults to an
+exact hash, with arbitrary data allowed only through the explicit `data: "any"`
+option. `freightPilotCatalog(cellPolicies)` combines those rules with message scopes.
+The builder is tested against Pilot's automatic transaction validator.
+
+The SDK snapshot is pinned to Owl commit `e5a5e812d86181c613465dd089e405b2aca0859d`.
+Connection uses `connect({ buildPolicies })`: Pilot hands over the selected public
+account before approval, FON builds real effects with that account, and Pilot
+presents the returned catalog for explicit selection. Account switching rebuilds
+the catalog; no signing authority is available to the policy builder.
+
+The publication rule comes from the currently mounted, valid composer draft,
+including its approval/gift configuration and retained raffle commitment. Without
+a valid open draft, FON offers the unchanged default SimpleTask configuration.
+Summary and chain timestamps may vary; lock/type hashes and capacity limits remain
+bound. Changing configuration after approval can require a different policy.
+
+Connection also examines up to 100 chain campaign cells and offers eligible raffle
+rules until the 50-policy catalog limit is reached, prioritizing the currently
+viewed freight. Each raffle needs **both** “Buy tickets …: raffle state” and
+“Buy tickets …: ticket entries” selected. These allow changing ticket quantities
+and raffle state within the reviewed capacity ceiling and session budget. New
+raffles or configurations outside the initial grant require owner review; grants
+cannot be silently expanded. Matching publication and purchase effects pass the
+SDK's automatic validator without owner review. No contract change is required.
+
+Ticket purchases refresh the raffle's live cell before preparing a transaction.
+Activation is decided from current chain state, not the record's activation hash;
+stage two waits for a committed activation and resolves its live successor.
 
 Pilot can continue a retained, compatible session after passkey sign-in on the
 same wallet storage partition, preserving its original expiry. Request timeouts
@@ -142,8 +177,9 @@ descriptor commits to that owner before authorizing profile actions, and reject
 session-address profile/seed proofs. Session addresses remain the spending identity
 for transactions and receipts. Previously stored session-address profiles are not
 automatically merged or credited again into the owner profile; existing on-chain
-freight ownership is unchanged. External wallets retain
-Freight's selectable permission list and per-signature wallet approval. Disconnect
+freight ownership is unchanged. External wallets other than JoyID retain
+Freight's selectable permission list and per-signature wallet approval. JoyID uses
+its own signing prompts without the extra FON permission selection. Disconnect
 settles receipts before removing the embedded signer; failed settlement keeps the
 connection available. Use Pilot's wallet controls to revoke the on-chain session.
 The header Disconnect action opens Pilot’s account/session modal first; it does
@@ -178,7 +214,9 @@ validation requires a configured wallet deployment; local checks use simulated
 wallet transport and transactions and do not claim public-testnet end-to-end success.
 
 JoyID connects directly from FON's wallet chooser, using CCC's CKB signer without
-opening CCC's wallet-selection modal. Authentication starts from the button click
+opening CCC's wallet-selection modal. JoyID actions go straight to its normal
+signing prompt without FON's external-wallet permission selection step.
+Authentication starts from the button click
 so browsers can open JoyID's popup. CCC retains the connected signer and saved
 wallet selection. The Connector button opens CCC’s other wallet options, excluding
 JoyID, after FON’s info-modal closing transition. Connection and signing errors use FON's animated info modal

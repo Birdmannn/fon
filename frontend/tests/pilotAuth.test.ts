@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import { ccc } from "@ckb-ccc/core";
 import { pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
-import { FREIGHT_PILOT_PROTOCOL, freightActionPolicy } from "../lib/pilotProtocol.ts";
+import { FREIGHT_PILOT_PROTOCOL, freightMessagePolicy } from "../lib/pilotProtocol.ts";
 import type { PilotSignatureDependencies } from "../lib/pilotAuth.ts";
 import type { PilotChallengeRecord } from "../lib/mongodb.ts";
 const require = createRequire(import.meta.url);
@@ -94,7 +94,7 @@ test("profile authorization binds each live Pilot session to the same descriptor
     };
     const sessionLock = pilotWalletLock(account);
     const session = ccc.Address.fromScript(sessionLock, client).toString();
-    const state = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightActionPolicy("wallet-seed")] };
+    const state = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightMessagePolicy("wallet-seed")] };
     const message = `freight-wallet-seed:${owner}:${challenge}`;
     const proof = { version: 1, accountHash: sessionLock.hash(), appOrigin: state.appOrigin, publicKey: state.publicKey, scope: "freight.wallet-seed", message, nonce: challenge, expiresAt: Date.now() + 60_000, signature: h("55") };
     const params = { address: owner, message, identity: sessionLock.hash(), serialized: JSON.stringify({ protocol: FREIGHT_PILOT_PROTOCOL, account, state, proof }), permission: "wallet-seed" as const, origin: state.appOrigin, challenge };

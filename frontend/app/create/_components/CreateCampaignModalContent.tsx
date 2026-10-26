@@ -57,7 +57,9 @@ import { createRandomnessCommitment, randomnessPreimageToHex } from "@/lib/rando
 import { buildGiftPolicyConfig } from "@/lib/giftPolicy";
 import { buildGiftApprovalConfig } from "@/lib/giftApproval";
 import { parseRaffleApprovalConfig, validateCampaignApproval, validateRaffleApproval, type RaffleApprovalConfig, type RaffleApprovalStage } from "@/lib/raffleApproval";
-import { sendCreateCampaign } from "@/lib/transactions";
+import { buildCreateCampaignTransaction, sendCreateCampaign } from "@/lib/transactions";
+import { freightTransactionPolicies } from "@/lib/pilotCellPolicies";
+import { FREIGHT_PILOT_BUDGET } from "@/lib/pilotConnectionPolicies";
 
 const CAMPAIGN_TYPE_LABELS: Record<CampaignType, string> = {
   [CampaignType.SimpleTask]: "SimpleTask",
@@ -463,7 +465,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   onMountableSelectionStateChange,
   availableFbars,
 }: CreateCampaignModalContentProps, ref) {
-  const { open } = useFreightWallet();
+  const { open, registerPilotPolicySource } = useFreightWallet();
   const signer = useFreightSigner();
   const { currentUserProfile } = useUserProfile(signer ?? null);
   const {
@@ -481,6 +483,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   const modalDescriptionRef = useRef<HTMLDivElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const attachmentGroupIdRef = useRef("");
+  const pilotRandomnessRef = useRef<ReturnType<typeof createRandomnessCommitment> | null>(null);
   const activeEditorRef = useRef<HTMLDivElement | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
   const tagInsertionPointRef = useRef<{
@@ -1174,6 +1177,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
   }, []);
 
   const resetComposer = useCallback(() => {
+    pilotRandomnessRef.current = null;
     setStatus("idle");
     setSummary("");
     setModalTitle("");
@@ -2778,6 +2782,21 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
     [persistDraftRecord]
   );
 
+  useEffect(() => registerPilotPolicySource(async (selectedSigner) => {
+    const params = normalizedCreateParams.value;
+    if (!params) return [];
+    const randomness = shouldCollectRaffleTicketPrice
+      ? (pilotRandomnessRef.current ??= createRandomnessCommitment()) : null;
+    const { tx } = await buildCreateCampaignTransaction(selectedSigner, {
+      ...params, campaignType, summary: activeReviewSummary,
+      randomnessHash: randomness?.commitment ?? new Uint8Array(32),
+      raffleApproval: raffleApprovalDraft, giftApproval: giftApprovalDraft, giftDeliverable: giftDeliverableDraft,
+    });
+    return freightTransactionPolicies({ client: selectedSigner.client, account: selectedSigner.provider.account!.account,
+      permission: "create-campaign", transaction: tx, data: "any", maxCapacity: FREIGHT_PILOT_BUDGET });
+  }), [registerPilotPolicySource, normalizedCreateParams, campaignType, activeReviewSummary,
+    shouldCollectRaffleTicketPrice, raffleApprovalDraft, giftApprovalDraft, giftDeliverableDraft]);
+
   const applyFreightCreateCost = async (txHash: string, campaignId: string) => {
     if (!signer) throw new Error("Connect the creator wallet to finish publishing");
     const address = await getFreightProfileAddress(signer);
@@ -2912,7 +2931,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       }
 
       // debug
-      const randomnessCommitment = shouldCollectRaffleTicketPrice ? createRandomnessCommitment() : null;
+      const randomnessCommitment = shouldCollectRaffleTicketPrice ? (pilotRandomnessRef.current ??= createRandomnessCommitment()) : null;
       const randomnessHash = randomnessCommitment?.commitment ?? new Uint8Array(32);
       const randomnessPreimageHex = randomnessCommitment ? randomnessPreimageToHex(randomnessCommitment.preimage) : null;
 

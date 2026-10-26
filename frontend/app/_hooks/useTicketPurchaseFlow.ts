@@ -7,10 +7,10 @@ import { useCallback, useRef, useState } from "react";
 import { canAccessLockMountable, lockMountableAccessMessage } from "@/app/_lib/lockMountable";
 import type { CampaignRecord } from "@/app/_hooks/useCampaignFeed";
 import { CampaignStatus } from "@/lib/contract";
-import { bytesToHex } from "@/lib/encoding";
+import { confirmRaffleActivation, resolveLiveRaffleCampaign } from "@/lib/rafflePurchaseState";
 import { getCampaignChainCreatedAt, getCampaignCreatedByHash, getCampaignStableId } from "@/lib/campaignIdentity";
 import { assertFreightParentPreflight } from "@/lib/freightParentPreflight";
-import { fetchCampaigns, fetchParticipants, getRaffleTicketsPerUser, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
+import { fetchParticipants, getRaffleTicketsPerUser, sendUpdateCampaignStatus, sendVerifyParticipantRaffle, type CampaignCell } from "@/lib/transactions";
 import { useFreightSigner } from "@/app/_components/OwlWalletProvider";
 
 type UseTicketPurchaseFlowArgs = {
@@ -77,7 +77,10 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     setTicketPurchaseError("");
     await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
 
+    let campaignForPurchase: CampaignCell;
     try {
+      campaignForPurchase = await resolveLiveRaffleCampaign(signer.client, ticketPurchaseCampaign);
+      setTicketPurchaseCampaign(campaignForPurchase);
       await assertFreightParentPreflight(getCampaignStableId(ticketPurchaseCampaign), await signer.getRecommendedAddress());
     } catch (error) {
       setTicketPurchaseError(error instanceof Error ? error.message : "Could not check parent freight completion");
@@ -114,8 +117,8 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
 
     try {
       const walletAddress = await signer.getRecommendedAddress();
-      const priorEntries = await fetchParticipants(signer.client, ticketPurchaseCampaign, 5000, [walletAddress], true);
-      const perUserLimit = getRaffleTicketsPerUser(ticketPurchaseCampaign);
+      const priorEntries = await fetchParticipants(signer.client, campaignForPurchase, 5000, [walletAddress], true);
+      const perUserLimit = getRaffleTicketsPerUser(campaignForPurchase);
       if (BigInt(priorEntries.length) + requestedTickets > perUserLimit) {
         setTicketPurchaseError(`This raffle allows ${String(perUserLimit)} ticket${perUserLimit === 1n ? "" : "s"} per wallet`);
         setIsPurchasingTickets(false);
@@ -128,16 +131,22 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     }
 
     try {
-      const needsActivation =
-        ticketPurchaseCampaign.data.status !== CampaignStatus.Active &&
-        !ticketPurchaseRecord?.activatedTxHash;
-
-      let campaignForPurchase = ticketPurchaseCampaign;
+      const needsActivation = campaignForPurchase.data.status !== CampaignStatus.Active;
+      if (needsActivation && campaignForPurchase.data.status !== CampaignStatus.Created) {
+        throw new Error("This raffle is not open for ticket purchases.");
+      }
 
       if (needsActivation) {
         setTicketPurchaseError("Step 1/2 — Activating raffle on-chain…");
 
-        const activateTxHash = await sendUpdateCampaignStatus(signer, ticketPurchaseCampaign);
+        const activateTxHash = await sendUpdateCampaignStatus(signer, campaignForPurchase);
+
+        setTicketPurchaseError("Step 1/2 — Waiting for confirmation…");
+        campaignForPurchase = await confirmRaffleActivation(signer.client, campaignForPurchase, activateTxHash);
+        setTicketPurchaseCampaign(campaignForPurchase);
+        if (campaignForPurchase.data.status !== CampaignStatus.Active) {
+          throw new Error("This raffle is not open for ticket purchases.");
+        }
 
         if (ticketPurchaseRecord?._id) {
           const activatedByAddress = await signer.getRecommendedAddress();
@@ -154,22 +163,6 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
           });
         }
 
-        setTicketPurchaseError("Step 1/2 — Waiting for confirmation…");
-        await new Promise((resolve) => setTimeout(resolve, 4000));
-
-        const updatedCampaigns = await fetchCampaigns(signer.client);
-        const updated = updatedCampaigns.find(
-          (c) =>
-            c.data.status === CampaignStatus.Active &&
-            bytesToHex(c.data.createdBy) === bytesToHex(ticketPurchaseCampaign.data.createdBy) &&
-            c.data.createdAt === ticketPurchaseCampaign.data.createdAt
-        );
-
-        if (!updated) {
-          throw new Error("Activation confirmed but updated campaign cell not found yet. Please try again in a moment.");
-        }
-
-        campaignForPurchase = updated;
         setTicketPurchaseError("Step 2/2 — Buying ticket… Please hold…");
       }
 

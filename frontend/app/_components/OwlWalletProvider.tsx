@@ -6,10 +6,10 @@ import { PilotWalletProvider, validatePilotPolicies, type PilotWalletJournal } f
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { FREIGHT_PERMISSIONS, installPermissionHandler, type FreightPermission } from "@/lib/owlPermissions";
 import { FreightPilotSigner } from "@/lib/pilotWallet";
-import { freightActionPolicy, mergePilotPolicyCatalog } from "@/lib/pilotProtocol";
+import { buildFreightConnectionPolicies, FREIGHT_PILOT_BUDGET, type FreightPilotPolicySource } from "@/lib/pilotConnectionPolicies";
 
 type WalletSelection = { open: boolean; closing: boolean; close: () => void; pilot: () => void; joyId: () => void; connector: () => void };
-const WalletContext = createContext<{ walletSelection: WalletSelection; open: () => void; disconnect: () => void; client: ccc.Client; signer?: ccc.Signer } | null>(null);
+const WalletContext = createContext<{ walletSelection: WalletSelection; open: () => void; disconnect: () => void; registerPilotPolicySource: (source: FreightPilotPolicySource) => () => void; client: ccc.Client; signer?: ccc.Signer } | null>(null);
 export function useFreightWallet() {
   const value = useContext(WalletContext);
   if (!value) throw new Error("Missing Owl wallet provider");
@@ -18,7 +18,7 @@ export function useFreightWallet() {
 export function useFreightSigner() { return useFreightWallet().signer; }
 
 type HostedAccount = { provider: PilotWalletProvider; signer: FreightPilotSigner; address: string };
-export function OwlWalletProvider({ children, connectJoyId }: { children: ReactNode; connectJoyId: () => Promise<void> }) {
+export function OwlWalletProvider({ children, connectJoyId, isJoyIdSigner }: { children: ReactNode; connectJoyId: () => Promise<void>; isJoyIdSigner: (signer: ccc.Signer) => boolean }) {
   const wallet = ccc.useCcc();
   const { close: closeWallet } = wallet;
   const [hosted, setHosted] = useState<HostedAccount>();
@@ -38,6 +38,11 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
   const identities = useRef(new WeakMap<ccc.Signer, string>());
   const inFlight = useRef(false);
   const connecting = useRef<PilotWalletProvider | undefined>(undefined);
+  const policySources = useRef(new Set<FreightPilotPolicySource>());
+  const registerPilotPolicySource = useCallback((source: FreightPilotPolicySource) => {
+    policySources.current.add(source);
+    return () => { policySources.current.delete(source); };
+  }, []);
   const walletUrl = process.env.NEXT_PUBLIC_PILOT_WALLET_URL?.trim() || "https://owl-pilot.vercel.app";
 
   const reportWalletError = useCallback((cause: unknown) => {
@@ -54,16 +59,14 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
     if (!walletUrl) throw new Error("The Pilot wallet URL is not configured for this site yet.");
     if (process.env.NEXT_PUBLIC_CKB_NETWORK?.trim().toLowerCase() === "mainnet") throw new Error("Pilot currently supports testnet.");
     const previous = active.current;
-    // Offer every Freight action. Pilot displays the complete catalog and lets
-    // the user choose at most 16 policies.
-    const policies = mergePilotPolicyCatalog(
-      FREIGHT_PERMISSIONS.map(([id]) => freightActionPolicy(id)),
-    );
     const provider = new PilotWalletProvider({ url: walletUrl });
     if (provider.origin === location.origin) { provider.dispose(); throw new Error("Pilot must use a separate wallet origin."); }
     connecting.current = provider;
     try {
-      const connection = await provider.connect({ name: "Freight on Nervos", policies, budget: ccc.fixedPointFrom(1_000_000).toString() });
+      const connection = await provider.connect({ name: "Freight on Nervos", budget: FREIGHT_PILOT_BUDGET.toString(),
+        buildPolicies: selected => buildFreightConnectionPolicies(wallet.client, selected, [...policySources.current],
+          location.pathname.startsWith("/freight/") ? decodeURIComponent(location.pathname.slice(9)) : undefined),
+      });
       const journal = await provider.request("logs") as PilotWalletJournal;
       if (!journal.state || journal.stopped) throw new Error("Pilot did not return an active session grant.");
       validatePilotPolicies(journal.state.policies);
@@ -82,11 +85,14 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
   const open = useCallback(() => {
     if (connecting.current) { connecting.current.open(); return; }
     if (active.current) { active.current.provider.open(); return; }
-    if (external.current) { setSelection([...externalApproved.current]); setExternalReview(true); return; }
+    if (external.current) {
+      if (isJoyIdSigner(external.current)) { wallet.open(); return; }
+      setSelection([...externalApproved.current]); setExternalReview(true); return;
+    }
     if (selectionTimer.current) clearTimeout(selectionTimer.current);
     selectionTimer.current = undefined;
     setWalletSelectionClosing(false); setChoosingWallet(true);
-  }, []);
+  }, [isJoyIdSigner, wallet]);
 
   const closeSelection = useCallback((after?: () => void) => {
     if (selectionTimer.current) return;
@@ -132,6 +138,8 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
         return await operation(owner.signer);
       }
       if (external.current !== ownerSigner || !await ownerSigner.isConnected()) throw new Error("Reconnect your wallet to continue.");
+      // JoyID authorizes each request in its own wallet; do not add FON approval.
+      if (isJoyIdSigner(ownerSigner)) return await operation(ownerSigner);
       if (!externalApproved.current.includes(permission)) {
         await new Promise<void>((resolve, reject) => {
           externalPending.current = { permission, resolve, reject };
@@ -142,7 +150,7 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
       return await operation(ownerSigner);
     } catch (cause) { reportWalletError(cause); throw cause; }
     finally { inFlight.current = false; }
-  }), [reportWalletError]);
+  }), [reportWalletError, isJoyIdSigner]);
 
   const disconnect = () => {
     if (inFlight.current || connecting.current) return;
@@ -162,7 +170,7 @@ export function OwlWalletProvider({ children, connectJoyId }: { children: ReactN
     externalPending.current = undefined; setExternalReview(false);
   };
   const signer = hosted?.signer ?? wallet.signerInfo?.signer;
-  return <WalletContext.Provider value={{ open, disconnect, client: wallet.client, signer, walletSelection: {
+  return <WalletContext.Provider value={{ open, disconnect, registerPilotPolicySource, client: wallet.client, signer, walletSelection: {
     open: choosingWallet, closing: walletSelectionClosing, close: () => closeSelection(),
     joyId: () => {
       if (selectionTimer.current) return;

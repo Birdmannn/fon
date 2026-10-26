@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { ccc } from "@ckb-ccc/core";
-import { validatePilotPolicies, validatePilotPolicyCatalog, pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
+import { buildPilotWalletTransaction, encodePilotWalletState, validatePilotPolicies, validatePilotPolicyCatalog, pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
 import type { PilotWalletProvider, PilotWalletConnection, PilotWalletState, PilotWalletDescriptor } from "@owl/pilot";
 import { getFreightProfileAddress, getFreightWalletDisplayBalance } from "../lib/profileIdentity.ts";
 import { FreightPilotSigner, completeFreightFee } from "../lib/pilotWallet.ts";
-import { FREIGHT_PERMISSIONS } from "../lib/owlPermissions.ts";
-import { freightActionPolicy, freightPilotChallenge, mergePilotPolicies, mergePilotPolicyCatalog } from "../lib/pilotProtocol.ts";
+import { FREIGHT_MESSAGE_PERMISSIONS } from "../lib/owlPermissions.ts";
+import { freightMessagePolicy, freightPilotCatalog, freightPilotChallenge, mergePilotPolicies, mergePilotPolicyCatalog } from "../lib/pilotProtocol.ts";
 
 const hex = (byte: string) => `0x${byte.repeat(32)}` as ccc.Hex;
 const client = new ccc.ClientPublicTestnet();
@@ -20,7 +20,7 @@ const account: PilotWalletDescriptor = {
 };
 const lock = pilotWalletLock(account);
 const address = ccc.Address.fromScript(lock, client).toString();
-const state: PilotWalletState = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightActionPolicy("creator-tip")] };
+const state: PilotWalletState = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightMessagePolicy("deposit")] };
 
 test("Freight challenges bind account, action, Google purpose, and photo digest", () => {
   const challenge = "abcdefghijklmnopqrstuvwx";
@@ -35,21 +35,46 @@ test("Freight challenges bind account, action, Google purpose, and photo digest"
 });
 
 test("policy merging preserves recipient/type/data boundaries and the SDK's limit", () => {
-  const action = freightActionPolicy("creator-tip");
+  const action = freightMessagePolicy("deposit");
   assert.equal(mergePilotPolicies([action], [{ ...action, maxCapacity: "2" }]).length, 1);
   assert.equal(mergePilotPolicies([action], [{ ...action, lockHash: hex("aa") }]).length, 2);
-  assert.throws(() => mergePilotPolicies(FREIGHT_PERMISSIONS.slice(0, 17).map(([id]) => freightActionPolicy(id))), /16 policies/);
+  assert.throws(() => mergePilotPolicies(Array.from({ length: 17 }, (_, index) => ({ ...action, lockHash: `0x${index.toString(16).padStart(64, "0")}` as ccc.Hex }))), /16 policies/);
 });
 
-test("the full Freight catalog is offered while approved grants remain capped at sixteen", () => {
-  const catalog = mergePilotPolicyCatalog(FREIGHT_PERMISSIONS.map(([id]) => freightActionPolicy(id)));
-  assert.equal(catalog.length, 28);
+test("the catalog separates actual message scopes and cell rules while grants remain capped at sixteen", () => {
+  const messages = freightPilotCatalog();
+  assert.equal(messages.length, FREIGHT_MESSAGE_PERMISSIONS.length);
+  assert.equal(messages.some(policy => policy.name === "Publish freight" || policy.name === "Buy raffle tickets"), false);
+  assert.equal(messages.find(policy => policy.name === "Sign support receipt")?.direction, "message");
+  const catalog = freightPilotCatalog([
+    { ...messages[0], name: "Publish freight: output 1", direction: "output", lockHash: hex("aa") },
+    { ...messages[0], name: "Buy raffle tickets: output 1", direction: "output", lockHash: hex("bb") },
+  ]);
+  assert.equal(catalog.length, 17);
   assert.doesNotThrow(() => validatePilotPolicyCatalog(catalog));
   assert.doesNotThrow(() => validatePilotPolicies(catalog.slice(0, 16)));
   assert.throws(() => validatePilotPolicies(catalog.slice(0, 17)), /16/);
   const distinct = Array.from({ length: 51 }, (_, index) => ({ ...catalog[0], lockHash: `0x${index.toString(16).padStart(64, "0")}` as ccc.Hex }));
   assert.doesNotThrow(() => validatePilotPolicyCatalog(mergePilotPolicyCatalog(distinct.slice(0, 50))));
   assert.throws(() => mergePilotPolicyCatalog(distinct), /50 policies/);
+});
+
+test("selected message scopes do not authorize transaction effects or wildcard type arguments", async () => {
+  const selected = { ...state, remaining: ccc.fixedPointFrom(1000).toString(), policies: [freightMessagePolicy("deposit"), freightMessagePolicy("creator-withdraw")] };
+  const anchor = ccc.Cell.from({ outPoint: { txHash: hex("55"), index: 0 },
+    cellOutput: { lock, type: account.stateType, capacity: ccc.fixedPointFrom(10000) }, outputData: encodePilotWalletState(selected) });
+  const mock = { findCellsByLock: async function* () { yield anchor; }, getCellLive: async () => anchor } as unknown as ccc.Client;
+  const effects = ccc.Transaction.from({ outputs: [{ lock: ownerLock, type: account.stateType, capacity: ccc.fixedPointFrom(500) }], outputsData: ["0x"] });
+  // Use an application type, distinct from the authority that Pilot builds itself.
+  effects.outputs[0].type = ccc.Script.from({ codeHash: hex("66"), hashType: "type", args: "0x00" });
+  await assert.rejects(buildPilotWalletTransaction(mock, account, selected, effects, false, anchor), /Output is outside session policies/);
+  assert.equal((await buildPilotWalletTransaction(mock, account, selected, effects, true, anchor)).outputs.length, 2);
+  const granted = { ...selected, policies: [{ name: "Exact output", direction: "output" as const,
+    lockHash: ownerLock.hash(), typeHash: effects.outputs[0].type.hash(), dataHash: hex("00"), maxCapacity: ccc.fixedPointFrom(500).toString() }] };
+  anchor.outputData = encodePilotWalletState(granted);
+  await buildPilotWalletTransaction(mock, account, granted, effects, false, anchor);
+  effects.outputs[0].type.args = "0x0001";
+  await assert.rejects(buildPilotWalletTransaction(mock, account, granted, effects, false, anchor), /Output is outside session policies/);
 });
 
 function fixture(t: TestContext) {
@@ -88,11 +113,11 @@ test("scoped signing sends the server challenge and preserves the full API messa
   Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: state.appOrigin } });
   t.after(() => { if (previous) Object.defineProperty(globalThis, "location", previous); else Reflect.deleteProperty(globalThis, "location"); });
   const nonce = "abcdefghijklmnopqrstuvwx";
-  const message = `freight-creator-tip:${address}:${nonce}`;
-  const signature = await f.signer.signFreightScope("creator-tip", message);
+  const message = `freight-deposit:${address}:${nonce}`;
+  const signature = await f.signer.signFreightScope("deposit", message);
   assert.equal(signature.signType, ccc.SignerSignType.Unknown);
   assert.equal(signature.identity, lock.hash());
-  assert.deepEqual(f.calls.find(call => call.method === "signMessage")!.params, { scope: "freight.creator-tip", message, nonce });
+  assert.deepEqual(f.calls.find(call => call.method === "signMessage")!.params, { scope: "freight.deposit", message, nonce });
   const envelope = JSON.parse(signature.signature);
   assert.equal(envelope.protocol, "freight-pilot-scoped-v1");
   assert.equal(envelope.proof.message, message);
