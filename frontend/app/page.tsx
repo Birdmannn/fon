@@ -1048,7 +1048,7 @@ export default function Home() {
     </div>
   ) : infoModalMode === "ticket-purchase" ? (
     <div className="create-info-constraints-copy">
-      <div className="create-info-section-heading-row mt-3">
+      <div className="create-info-section-heading-row">
         <p className="create-review-section-label text-gray-900">How many tickets?</p>
         {ticketPurchaseError ? (
           <p className={`create-review-section-label create-info-inline-status ${isPurchasingTickets ? "text-gray-500" : "text-red-500"}`} role={isPurchasingTickets ? "status" : "alert"}>
