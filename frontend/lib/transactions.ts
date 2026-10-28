@@ -1,5 +1,5 @@
 import { completeFreightFee } from "./pilotWallet";
-import { sendFreightTransaction, type FreightPermission } from "./owlPermissions";
+import { sendFreightTransaction, type FreightTransactionPermission } from "./owlPermissions";
 import { assertGiftClaim, buildGiftPolicyConfig, validateGiftPolicy, type GiftPolicy } from "./giftPolicy";
 import type { GiftDeliverable } from "./giftDeliverables";
 import { ccc } from "@ckb-ccc/connector-react";
@@ -103,7 +103,7 @@ export async function withTransientNullOutputRetry<T>(operation: () => Promise<T
 
 // ─── create_campaign ─────────────────────────────────────────────────────────
 
-export async function sendCreateCampaign(
+export async function buildCreateCampaignTransaction(
   signer: ccc.Signer,
   opts: {
     startDurationSecs: bigint;
@@ -122,7 +122,7 @@ export async function sendCreateCampaign(
     giftApproval?: CampaignApprovalConfig | null;
     giftDeliverable?: GiftDeliverable | null;
   }
-): Promise<{ txHash: string; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
+): Promise<{ tx: ccc.Transaction; campaignId: string; createdByHash: string; chainCreatedAt: string }> {
   const { startDurationSecs, taskDurationSecs, campaignType, maximumAmountCkb, auxAmountCkb, ticketsPerUser, rewardCount, supportPoolBps, summary, randomnessHash, sleepDurationSecs, winnerReductionBps } = opts;
   const isRaffle = campaignType === CampaignType.Raffle || campaignType === CampaignType.RecurringRaffle;
   const maximumAmount = isRaffle && auxAmountCkb === 0n
@@ -229,22 +229,23 @@ export async function sendCreateCampaign(
     bytesToHex(campaignData)
   );
 
-  // Auto-select inputs + change output to cover outputs + fees.
-  await completeFreightFee(tx, signer, 1000n);
-
-  const txHash = await sendFreightTransaction(signer, "create-campaign", tx);
   const createdByHash = bytesToHex(createdBy);
   const chainCreatedAt = tipHeader.timestamp.toString();
 
   return {
-    txHash,
+    tx,
     campaignId: buildStableCampaignId(createdByHash, chainCreatedAt, campaignType),
     createdByHash,
     chainCreatedAt,
   };
 }
 
-// ─── deposit ─────────────────────────────────────────────────────────────────
+export async function sendCreateCampaign(signer: ccc.Signer, opts: Parameters<typeof buildCreateCampaignTransaction>[1]) {
+  const { tx, ...identity } = await buildCreateCampaignTransaction(signer, opts);
+  await completeFreightFee(tx, signer, 1000n);
+  const txHash = await sendFreightTransaction(signer, "create-campaign", tx);
+  return { txHash, ...identity };
+}
 
 export async function sendCampaignApproval(signer: ccc.Signer, campaign: CampaignCell): Promise<string> {
   const approval = campaign.data.approval;
@@ -305,7 +306,7 @@ export async function sendCancelCampaign(signer: ccc.Signer, campaign: CampaignC
   return sendCampaignTransition(signer, campaign, { ...campaign.data, status: CampaignStatus.Cancelled }, new Uint8Array([Selector.CancelCampaign]), "cancel-campaign");
 }
 
-async function sendCampaignTransition(signer: ccc.Signer, campaign: CampaignCell, data: CampaignData, action: Uint8Array, permission: FreightPermission, inclusionHeader?: string): Promise<string> {
+async function sendCampaignTransition(signer: ccc.Signer, campaign: CampaignCell, data: CampaignData, action: Uint8Array, permission: FreightTransactionPermission, inclusionHeader?: string): Promise<string> {
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
   tx.headerDeps.push((await signer.client.getTipHeader()).hash);
@@ -491,11 +492,11 @@ export async function sendCreatorTip(
   return sendCreatorTipShannons(signer, campaignCell, amountCkb * 100_000_000n, creatorAddress);
 }
 
-export async function sendVerifyParticipantRaffle(
+export async function buildRaffleTicketTransaction(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
   ticketCount: bigint = 1n,
-): Promise<string> {
+): Promise<ccc.Transaction> {
   if (ticketCount < 1n || ticketCount > 100n) throw new Error("Choose between 1 and 100 tickets per purchase");
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
@@ -577,10 +578,6 @@ export async function sendVerifyParticipantRaffle(
     );
   }
 
-  // Let completeFeeBy pull in whatever inputs are needed to cover:
-  // ticket price (transferred to campaign cell) + participant cell + any required change + fee
-  await completeFreightFee(tx, signer, 1000n);
-
   // Set witness at index 0 (campaign cell position) with selector byte 0x03
   const witness = tx.getWitnessArgsAt(0) ?? ccc.WitnessArgs.from({});
   witness.outputType = bytesToHex(ticketCount === 1n
@@ -588,6 +585,12 @@ export async function sendVerifyParticipantRaffle(
     : encodeVerifyRaffleTicketCount(ticketCount)) as `0x${string}`;
   tx.setWitnessArgsAt(0, witness);
 
+  return tx;
+}
+
+export async function sendVerifyParticipantRaffle(signer: ccc.Signer, campaignCell: CampaignCell, ticketCount: bigint = 1n) {
+  const tx = await buildRaffleTicketTransaction(signer, campaignCell, ticketCount);
+  await completeFreightFee(tx, signer, 1000n);
   return sendFreightTransaction(signer, "buy-tickets", tx);
 }
 

@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import type { ccc } from "@ckb-ccc/connector-react";
-import { FREIGHT_PERMISSIONS, installPermissionHandler, resolveFreightPermission, signFreightMessage, sendFreightTransaction } from "../lib/owlPermissions.ts";
+import { FREIGHT_PERMISSIONS, FREIGHT_MESSAGE_PERMISSIONS, FREIGHT_TRANSACTION_PERMISSIONS, installPermissionHandler, resolveFreightMessagePermission, resolveFreightPermission, signFreightMessage, sendFreightTransaction } from "../lib/owlPermissions.ts";
 
 test("signing fails closed without an Owl permission controller", async () => {
   let called = false;
@@ -15,6 +15,18 @@ test("signing fails closed without an Owl permission controller", async () => {
 test("unregistered capabilities cannot reach a wallet", () => {
   assert.throws(() => resolveFreightPermission("arbitrary-transfer"), /Unknown Freight signing permission/);
   assert.equal(new Set(FREIGHT_PERMISSIONS.map(([id]) => id)).size, FREIGHT_PERMISSIONS.length);
+});
+
+test("transaction-only actions cannot be requested as message signatures", () => {
+  for (const id of ["create-campaign", "buy-tickets", "creator-tip"]) {
+    assert.throws(() => resolveFreightMessagePermission(id), /not a message permission/);
+    assert.throws(() => signFreightMessage({} as ccc.Signer, id, "nonce"), /not a message permission/);
+  }
+  for (const [id] of FREIGHT_PERMISSIONS) {
+    assert.ok([...FREIGHT_TRANSACTION_PERMISSIONS, ...FREIGHT_MESSAGE_PERMISSIONS].includes(id), id);
+  }
+  assert.equal(resolveFreightMessagePermission("deposit"), "deposit");
+  assert.equal(resolveFreightMessagePermission("creator-withdraw"), "creator-withdraw");
 });
 
 test("both transaction and message signing honor a denied capability", async () => {

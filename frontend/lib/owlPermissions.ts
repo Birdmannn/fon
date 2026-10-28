@@ -1,8 +1,7 @@
 import type { ccc } from "@ckb-ccc/connector-react";
 import { FreightPilotSigner } from "./pilotWallet.ts";
 
-// Each signed action is separately selectable. Hosted Pilot maps these to scoped
-// grants, with additional exact cell/recipient policies for transaction effects.
+// App action IDs are separate from Pilot's message/cell authorization rules.
 export const FREIGHT_PERMISSIONS = [
   ["create-campaign", "Publish freight", "Create and fund a freight cell."],
   ["approve-campaign", "Approve freight", "Record your tagged approval on-chain."],
@@ -35,6 +34,24 @@ export const FREIGHT_PERMISSIONS = [
 ] as const;
 
 export type FreightPermission = typeof FREIGHT_PERMISSIONS[number][0];
+export const FREIGHT_TRANSACTION_PERMISSIONS = [
+  "create-campaign", "approve-campaign", "confirm-raffle-approval", "cancel-campaign", "gift-claim",
+  "deposit", "creator-tip", "buy-tickets", "update-campaign-status", "batch-deliver", "creator-withdraw",
+  "draw-recurring-raffle", "claim-recurring-raffle", "rollover-recurring-raffle", "reclaim-recurring-participant",
+] as const satisfies readonly FreightPermission[];
+export const FREIGHT_MESSAGE_PERMISSIONS = [
+  "wallet-seed", "marquee-edit", "profile-photo", "interaction-like", "interaction-comment", "interaction-reshare",
+  "freight-tree", "google-identity-link", "google-forms-link", "google-forms-access", "forms-claim", "forms-sync", "forms-review",
+  "deposit", "creator-withdraw",
+] as const satisfies readonly FreightPermission[];
+export type FreightTransactionPermission = typeof FREIGHT_TRANSACTION_PERMISSIONS[number];
+export type FreightMessagePermission = typeof FREIGHT_MESSAGE_PERMISSIONS[number];
+
+export function resolveFreightMessagePermission(id: string): FreightMessagePermission {
+  const permission = FREIGHT_MESSAGE_PERMISSIONS.find(candidate => candidate === id);
+  if (!permission) throw new Error(`Freight action ${id} is not a message permission.`);
+  return permission;
+}
 export type PermissionHandler = <T>(signer: ccc.Signer, permission: FreightPermission, operation: (activeSigner: ccc.Signer) => Promise<T>) => Promise<T>;
 let handler: PermissionHandler | undefined;
 
@@ -56,6 +73,7 @@ export function withFreightPermission<T>(signer: ccc.Signer, id: string, operati
 }
 
 export function signFreightMessage(signer: ccc.Signer, permission: string, message: Parameters<ccc.Signer["signMessage"]>[0]) {
+  resolveFreightMessagePermission(permission);
   return withFreightPermission(signer, permission, (activeSigner) => {
     if (activeSigner instanceof FreightPilotSigner) {
       if (typeof message !== "string") throw new Error("Freight scoped messages must be text.");
@@ -65,7 +83,8 @@ export function signFreightMessage(signer: ccc.Signer, permission: string, messa
   });
 }
 
-export function sendFreightTransaction(signer: ccc.Signer, permission: FreightPermission, tx: ccc.Transaction) {
+export function sendFreightTransaction(signer: ccc.Signer, permission: FreightTransactionPermission, tx: ccc.Transaction) {
+  if (!FREIGHT_TRANSACTION_PERMISSIONS.includes(permission)) throw new Error(`Freight action ${permission} is not a transaction permission.`);
   return withFreightPermission(signer, permission, (activeSigner) => activeSigner instanceof FreightPilotSigner
     ? activeSigner.sendFreightEffects(tx) : activeSigner.sendTransaction(tx));
 }

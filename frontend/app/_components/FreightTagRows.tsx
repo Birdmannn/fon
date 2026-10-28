@@ -29,13 +29,13 @@ function TagRow({ role, users }: FreightTagGroup) {
     return () => observer.disconnect();
   }, [users]);
   const hidden = users.slice(visibleCount);
-  const chip = (user: FreightTag) => <span key={user.handle} className="campaign-tag-chip" title={user.displayName}>{user.displayName}</span>;
+  const chip = (user: FreightTag) => <span key={user.handle} className="campaign-tag-chip" title={`@${user.displayName}`}>@{user.displayName}</span>;
   return (
     <div className={`campaign-tag-line campaign-tag-line-${role}`} ref={rowRef} role="group" aria-label={ROLE_LABELS[role]}>
       {users.slice(0, visibleCount).map(chip)}
-      {hidden.length ? <span className="campaign-tag-chip campaign-tag-chip-overflow" title={hidden.map((user) => user.displayName).join(", ")} aria-label={`${hidden.length} more ${ROLE_LABELS[role].toLowerCase()}: ${hidden.map((user) => user.displayName).join(", ")}`}>+{hidden.length}</span> : null}
+      {hidden.length ? <span className="campaign-tag-chip campaign-tag-chip-overflow" title={hidden.map((user) => `@${user.displayName}`).join(", ")} aria-label={`${hidden.length} more ${ROLE_LABELS[role].toLowerCase()}: ${hidden.map((user) => `@${user.displayName}`).join(", ")}`}>+{hidden.length}</span> : null}
       <div className="campaign-tag-measure" ref={measureRef} aria-hidden="true">
-        {users.map((user) => <span key={user.handle} className="campaign-tag-chip" data-name>{user.displayName}</span>)}
+        {users.map((user) => <span key={user.handle} className="campaign-tag-chip" data-name>@{user.displayName}</span>)}
         {users.map((_, index) => <span key={index} className="campaign-tag-chip campaign-tag-chip-overflow" data-overflow>+{index + 1}</span>)}
       </div>
     </div>

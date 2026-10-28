@@ -1,7 +1,7 @@
 import { ccc } from "@ckb-ccc/core";
-import { MAX_ACTION_CATALOG, MAX_DELEGATED_ACTIONS } from "@owl/pilot";
+import { MAX_ACTION_CATALOG, MAX_DELEGATED_ACTIONS, validatePilotPolicyCatalog } from "@owl/pilot";
 import type { PilotCellPolicy, PilotScopedMessage, PilotWalletDescriptor, PilotWalletState } from "@owl/pilot";
-import { FREIGHT_PERMISSIONS, resolveFreightPermission, type FreightPermission } from "./owlPermissions.ts";
+import { FREIGHT_PERMISSIONS, FREIGHT_MESSAGE_PERMISSIONS, resolveFreightMessagePermission, type FreightPermission, type FreightMessagePermission } from "./owlPermissions.ts";
 
 export const FREIGHT_PILOT_PROTOCOL = "freight-pilot-scoped-v1";
 export const ZERO_HASH = `0x${"00".repeat(32)}` as ccc.Hex;
@@ -18,12 +18,26 @@ export interface FreightPilotProof {
   proof: PilotScopedMessage;
 }
 
-export function freightActionPolicy(permission: FreightPermission): PilotCellPolicy {
+export function freightMessagePolicy(permission: FreightMessagePermission): PilotCellPolicy {
+  resolveFreightMessagePermission(permission);
+  const name = permission === "deposit" ? "Sign support receipt"
+    : permission === "creator-withdraw" ? "Sign withdrawal receipt"
+    : FREIGHT_PERMISSIONS.find(([id]) => id === permission)![1];
   return {
-    name: FREIGHT_PERMISSIONS.find(([id]) => id === permission)![1],
+    name,
     direction: "message", lockHash: ccc.hashCkb(ccc.bytesFrom(freightPilotScope(permission), "utf8")),
     typeHash: ZERO_HASH, dataHash: ZERO_HASH, maxCapacity: "1",
   };
+}
+
+/** Transaction permissions describe effects or a committed whole-action template. */
+export function freightPilotCatalog(cellPolicies: readonly PilotCellPolicy[] = []) {
+  if (cellPolicies.some(policy => policy.direction === "message")) {
+    throw new Error("Transaction policies must describe input or output cells or transaction templates.");
+  }
+  const catalog = mergePilotPolicyCatalog(FREIGHT_MESSAGE_PERMISSIONS.map(freightMessagePolicy), cellPolicies);
+  validatePilotPolicyCatalog(catalog);
+  return catalog;
 }
 
 // Recover the server-issued challenge from the complete signed message. A photo
@@ -45,7 +59,7 @@ export function freightPilotChallenge(message: string, address: string, permissi
 export function freightPermissionFromPurpose(purpose: string) {
   if (purpose === "identity_link") return "google-identity-link";
   if (purpose === "forms_response_access") return "google-forms-link";
-  return resolveFreightPermission(purpose);
+  return resolveFreightMessagePermission(purpose);
 }
 
 export function mergePilotPolicies(...groups: readonly (readonly PilotCellPolicy[])[]): PilotCellPolicy[] {

@@ -2,7 +2,7 @@
 
 import { OwlWalletProvider } from "@/app/_components/OwlWalletProvider";
 import { ccc } from "@ckb-ccc/connector-react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { CampaignFeedProvider } from "@/app/_hooks/useCampaignFeed";
 import { InfoErrorProvider, useShowInfoError } from "@/app/_components/InfoErrorProvider";
@@ -121,6 +121,7 @@ function ConnectorPresentation({ error }: { error?: { message: string } }) {
 
 function WalletProviders({ children }: { children: React.ReactNode }) {
   const joyId = useRef<{ wallet: ccc.Wallet; signerInfo: ccc.SignerInfo } | undefined>(undefined);
+  const isJoyIdSigner = useCallback((signer: ccc.Signer) => joyId.current?.signerInfo.signer === signer, []);
   const [connectionError, setConnectionError] = useState<{ message: string }>();
   const wrapped = useRef(new WeakSet<ccc.Signer>());
   const signerFilter = useMemo(() => {
@@ -161,7 +162,7 @@ function WalletProviders({ children }: { children: React.ReactNode }) {
   return (
     <ccc.Provider defaultClient={defaultClient} signerFilter={signerFilter} name="Freight on Nervos">
       <ConnectorPresentation error={connectionError} />
-      <OwlWalletProvider connectJoyId={connectJoyId}>
+      <OwlWalletProvider connectJoyId={connectJoyId} isJoyIdSigner={isJoyIdSigner}>
         <CampaignFeedProvider>
           <UserProfileProvider>
             <LightModePrimaryColorController>
