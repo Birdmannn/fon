@@ -111,49 +111,51 @@ No Freight permission picker precedes it. Closing the modal keeps its isolated
 iframe alive for approved automatic signing. The header Disconnect action reopens
 the account modal.
 
-FON separates 28 app actions into transaction and message capabilities. Connection
-offers 15 real message scopes alongside account-dependent transaction policies.
-“Publish freight” and “Buy tickets” describe output effects, rather than misleading
-message permissions. The mixed support/withdrawal actions expose separately named
-“Sign support receipt” and “Sign withdrawal receipt” scopes for their API proofs.
-The SDK permits up to 50 offered policies; the user may select at most 16 per grant.
-Nothing is checked by default. Selected message scopes sign automatically;
-unselected scopes or transaction effects reopen the same Pilot modal for one-time
-owner passkey approval. FON keeps the existing provider, address and session;
-it does not reconnect or replace a grant to request a signature. One-time approval
-leaves selected policies unchanged and transactions remain bound by the existing
-budget, live authority and sponsored fee checks. Cancelled reviews reject the
-action without disconnecting. Approved session state is still validated against
-the 16-policy limit. Transaction effect policies constrain actual cells and
-recipients; message scope names do not interpret Freight methods on-chain.
-`freightTransactionPolicies` builds input/output policies from real app transaction
-effects and a selected public Pilot account: full lock/type hashes, explicit data
-rules, and capacity ceilings. Account change is exempt; account assets need input
-policies; authority and sponsor cells remain wallet-managed. Data defaults to an
-exact hash, with arbitrary data allowed only through the explicit `data: "any"`
-option. `freightPilotCatalog(cellPolicies)` combines those rules with message scopes.
-The builder is tested against Pilot's automatic transaction validator.
+FON separates 28 app actions into transaction and message capabilities. The SDK
+snapshot is pinned to Owl commit `9e52649a5df8b1df9be1d73610e9e4028051b7b8`.
+Connection requests `accountMode: "general"` and uses `buildPolicies` to validate
+the selected owner/account pair before offering 15 real message scopes and three
+whole-transaction templates:
 
-The SDK snapshot is pinned to Owl commit `e5a5e812d86181c613465dd089e405b2aca0859d`.
-Connection uses `connect({ buildPolicies })`: Pilot hands over the selected public
-account before approval, FON builds real effects with that account, and Pilot
-presents the returned catalog for explicit selection. Account switching rebuilds
-the catalog; no signing authority is available to the policy builder.
+- **Publish freight** permits new freight configurations, campaign types and raffle
+  commitments, with creator fields bound to the selected account's first 20 lock-argument
+  bytes (FON's existing on-chain identity format).
+- **Update freight status (includes raffle activation)** preserves campaign identity,
+  capacity and all data except status, and requires operation selector `0x04`.
+- **Buy raffle tickets** preserves the campaign lock/type and immutable fields,
+  requires selector `0x03`, and binds ticket beneficiaries to the selected account.
+  Both regular and recurring raffles, including future raffles, use this template.
 
-The publication rule comes from the currently mounted, valid composer draft,
-including its approval/gift configuration and retained raffle commitment. Without
-a valid open draft, FON offers the unchanged default SimpleTask configuration.
-Summary and chain timestamps may vary; lock/type hashes and capacity limits remain
-bound. Changing configuration after approval can require a different policy.
+Select both status and ticket permissions to purchase from a raffle that first needs
+activation. No chain scan or open composer draft is needed to build the catalog.
+Templates pin the deployed FON script identity while allowing configuration and
+instance fields to vary. The FON contract validates campaign layouts, ticket price
+accounting, raffle identity and recurring-round rules. Unexpected application
+inputs/outputs fail matching; ordinary account funding/change and authority cells
+remain wallet-managed.
 
-Connection also examines up to 100 chain campaign cells and offers eligible raffle
-rules until the 50-policy catalog limit is reached, prioritizing the currently
-viewed freight. Each raffle needs **both** “Buy tickets …: raffle state” and
-“Buy tickets …: ticket entries” selected. These allow changing ticket quantities
-and raffle state within the reviewed capacity ceiling and session budget. New
-raffles or configurations outside the initial grant require owner review; grants
-cannot be silently expanded. Matching publication and purchase effects pass the
-SDK's automatic validator without owner review. No contract change is required.
+The catalog has 18 policies; Pilot offers at most 50 and users may select 16.
+Nothing is selected by default. Selected message scopes and matching templates sign
+automatically. Unselected actions and transactions outside these templates require
+one-time owner passkey review in the same modal without replacing the grant.
+Other transaction actions currently use that one-time review. Pilot's template
+schema permits at most 64 occurrences per role: ticket batches of 1–64 can match
+this template; 65–100 still require owner review. JoyID retains its existing
+1–100 ticket path and direct wallet signing.
+
+General-mode action templates are enforced in Pilot wallet software, **not by the
+on-chain account lock**. The lock enforces the session key, authority continuity,
+cumulative net CKB allowance and sponsored fee rules. A stolen session key can
+bypass action-template restrictions, and the CKB allowance does not value tokens
+or NFTs. Pilot displays this distinction during approval. The same owner address
+continues to identify profiles and FBARS; general mode uses a fresh spending
+address and fresh owner-approved funding. Existing test sessions are not migrated.
+The hosted wallet and paymaster must use this revision's general deployment.
+
+`freightTransactionPolicies` remains an exact-cell effect utility;
+`freightTransactionTemplates` supplies the three connection templates. Tests use
+real FON builders with the SDK's automatic validator, including different future
+instances, malformed beneficiaries, operation selectors and unexpected payments.
 
 Ticket purchases refresh the raffle's live cell before preparing a transaction.
 Activation is decided from current chain state, not the record's activation hash;

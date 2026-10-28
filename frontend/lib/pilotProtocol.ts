@@ -30,10 +30,10 @@ export function freightMessagePolicy(permission: FreightMessagePermission): Pilo
   };
 }
 
-/** Include cell rules only when calculated from real effects and the selected account. */
+/** Transaction permissions describe effects or a committed whole-action template. */
 export function freightPilotCatalog(cellPolicies: readonly PilotCellPolicy[] = []) {
-  if (cellPolicies.some(policy => policy.direction !== "input" && policy.direction !== "output")) {
-    throw new Error("Transaction policies must describe input or output cells.");
+  if (cellPolicies.some(policy => policy.direction === "message")) {
+    throw new Error("Transaction policies must describe input or output cells or transaction templates.");
   }
   const catalog = mergePilotPolicyCatalog(FREIGHT_MESSAGE_PERMISSIONS.map(freightMessagePolicy), cellPolicies);
   validatePilotPolicyCatalog(catalog);

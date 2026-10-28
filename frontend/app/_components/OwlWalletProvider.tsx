@@ -2,14 +2,14 @@
 
 import { useShowInfoError } from "@/app/_components/InfoErrorProvider";
 import { ccc } from "@ckb-ccc/connector-react";
-import { PilotWalletProvider, validatePilotPolicies, type PilotWalletJournal } from "@owl/pilot";
+import { PILOT_WALLET_GENERAL_CODE_HASH, PilotWalletProvider, validatePilotPolicies, type PilotWalletJournal } from "@owl/pilot";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { FREIGHT_PERMISSIONS, installPermissionHandler, type FreightPermission } from "@/lib/owlPermissions";
 import { FreightPilotSigner } from "@/lib/pilotWallet";
-import { buildFreightConnectionPolicies, FREIGHT_PILOT_BUDGET, type FreightPilotPolicySource } from "@/lib/pilotConnectionPolicies";
+import { buildFreightConnectionPolicies, FREIGHT_PILOT_BUDGET } from "@/lib/pilotConnectionPolicies";
 
 type WalletSelection = { open: boolean; closing: boolean; close: () => void; pilot: () => void; joyId: () => void; connector: () => void };
-const WalletContext = createContext<{ walletSelection: WalletSelection; open: () => void; disconnect: () => void; registerPilotPolicySource: (source: FreightPilotPolicySource) => () => void; client: ccc.Client; signer?: ccc.Signer } | null>(null);
+const WalletContext = createContext<{ walletSelection: WalletSelection; open: () => void; disconnect: () => void; client: ccc.Client; signer?: ccc.Signer } | null>(null);
 export function useFreightWallet() {
   const value = useContext(WalletContext);
   if (!value) throw new Error("Missing Owl wallet provider");
@@ -38,11 +38,6 @@ export function OwlWalletProvider({ children, connectJoyId, isJoyIdSigner }: { c
   const identities = useRef(new WeakMap<ccc.Signer, string>());
   const inFlight = useRef(false);
   const connecting = useRef<PilotWalletProvider | undefined>(undefined);
-  const policySources = useRef(new Set<FreightPilotPolicySource>());
-  const registerPilotPolicySource = useCallback((source: FreightPilotPolicySource) => {
-    policySources.current.add(source);
-    return () => { policySources.current.delete(source); };
-  }, []);
   const walletUrl = process.env.NEXT_PUBLIC_PILOT_WALLET_URL?.trim() || "https://owl-pilot.vercel.app";
 
   const reportWalletError = useCallback((cause: unknown) => {
@@ -63,12 +58,14 @@ export function OwlWalletProvider({ children, connectJoyId, isJoyIdSigner }: { c
     if (provider.origin === location.origin) { provider.dispose(); throw new Error("Pilot must use a separate wallet origin."); }
     connecting.current = provider;
     try {
-      const connection = await provider.connect({ name: "Freight on Nervos", budget: FREIGHT_PILOT_BUDGET.toString(),
-        buildPolicies: selected => buildFreightConnectionPolicies(wallet.client, selected, [...policySources.current],
-          location.pathname.startsWith("/freight/") ? decodeURIComponent(location.pathname.slice(9)) : undefined),
+      const connection = await provider.connect({ name: "Freight on Nervos", accountMode: "general", budget: FREIGHT_PILOT_BUDGET.toString(),
+        buildPolicies: selected => buildFreightConnectionPolicies(wallet.client, selected),
       });
       const journal = await provider.request("logs") as PilotWalletJournal;
       if (!journal.state || journal.stopped) throw new Error("Pilot did not return an active session grant.");
+      if (connection.account.deployment.codeHash !== PILOT_WALLET_GENERAL_CODE_HASH || journal.state.mode !== "templates") {
+        throw new Error("Pilot must approve a general signing account for FON transaction templates.");
+      }
       validatePilotPolicies(journal.state.policies);
       const next = { provider, signer: new FreightPilotSigner(wallet.client, provider), address: connection.address };
       identities.current.set(next.signer, next.address);
@@ -170,7 +167,7 @@ export function OwlWalletProvider({ children, connectJoyId, isJoyIdSigner }: { c
     externalPending.current = undefined; setExternalReview(false);
   };
   const signer = hosted?.signer ?? wallet.signerInfo?.signer;
-  return <WalletContext.Provider value={{ open, disconnect, registerPilotPolicySource, client: wallet.client, signer, walletSelection: {
+  return <WalletContext.Provider value={{ open, disconnect, client: wallet.client, signer, walletSelection: {
     open: choosingWallet, closing: walletSelectionClosing, close: () => closeSelection(),
     joyId: () => {
       if (selectionTimer.current) return;

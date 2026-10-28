@@ -1,7 +1,7 @@
 # Owl Pilot dependency snapshots
 
 These npm package archives were built from https://github.com/Birdmannn/owl at
-commit `e5a5e812d86181c613465dd089e405b2aca0859d` (25 October 2026).
+commit `9e52649a5df8b1df9be1d73610e9e4028051b7b8` (28 October 2026).
 They contain the upstream SDK and React UI without source modifications.
 Keeping the archives in this repository makes `npm ci` independent of a sibling
 checkout or a private package registry. CCC core is pinned to `1.23.0`, as required
@@ -65,3 +65,13 @@ and validates the account-dependent catalog and returns `policiesReady`, bound t
 the current account selection. FON now supplies real publication and raffle-ticket
 output policies before the user approves a grant. The matching hosted wallet must
 support `accountPolicies=1`; account switching rebuilds the offered catalog.
+
+
+General signing mode is enabled in FON through `accountMode: "general"` and
+`pilotTemplatePolicy`. The snapshot includes the general-account testnet deployment
+pin and wallet-enforced whole-transaction templates, with script/data fields,
+relations and witness rules. FON supplies its own publish, status and ticket
+patterns. Template semantics are not enforced by the general account contract;
+the cumulative CKB allowance, signature and authority continuity are. The hosted
+wallet/paymaster must run the matching deployment. General mode creates a new
+spending address; old test sessions are not migrated.

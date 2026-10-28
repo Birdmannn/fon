@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 import { ccc } from "@ckb-ccc/core";
-import { pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
+import { pilotWalletLock, PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_SESSION_CODE_HASH, PILOT_WALLET_GENERAL_CODE_HASH, PILOT_TYPE_ID } from "@owl/pilot";
 import { FREIGHT_PILOT_PROTOCOL, freightMessagePolicy } from "../lib/pilotProtocol.ts";
 import type { PilotSignatureDependencies } from "../lib/pilotAuth.ts";
 import type { PilotChallengeRecord } from "../lib/mongodb.ts";
@@ -85,16 +85,16 @@ test("profile authorization binds each live Pilot session to the same descriptor
     assert.equal(expected.nonce, challenge);
     return true;
   };
-  for (const seed of ["11", "99"]) {
+  for (const [seed, codeHash] of [["11", PILOT_WALLET_SESSION_CODE_HASH], ["99", PILOT_WALLET_GENERAL_CODE_HASH]] as const) {
     const account = {
       version: 2 as const,
-      deployment: { network: "testnet" as const, genesisHash: h("aa"), codeHash: PILOT_WALLET_SESSION_CODE_HASH, outPoint: { txHash: h("bb"), index: 0 } },
+      deployment: { network: "testnet" as const, genesisHash: h("aa"), codeHash, outPoint: { txHash: h("bb"), index: 0 } },
       ownerLock, stateType: { codeHash: PILOT_TYPE_ID, hashType: "type" as const, args: h(seed) },
       poolLock: { codeHash: h("44"), hashType: "type" as const, args: "0x" }, maxFee: "100000",
     };
     const sessionLock = pilotWalletLock(account);
     const session = ccc.Address.fromScript(sessionLock, client).toString();
-    const state = { publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightMessagePolicy("wallet-seed")] };
+    const state = { ...(codeHash === PILOT_WALLET_GENERAL_CODE_HASH ? {mode: "templates"} : {}), publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightMessagePolicy("wallet-seed")] };
     const message = `freight-wallet-seed:${owner}:${challenge}`;
     const proof = { version: 1, accountHash: sessionLock.hash(), appOrigin: state.appOrigin, publicKey: state.publicKey, scope: "freight.wallet-seed", message, nonce: challenge, expiresAt: Date.now() + 60_000, signature: h("55") };
     const params = { address: owner, message, identity: sessionLock.hash(), serialized: JSON.stringify({ protocol: FREIGHT_PILOT_PROTOCOL, account, state, proof }), permission: "wallet-seed" as const, origin: state.appOrigin, challenge };
