@@ -1,27 +1,28 @@
-import { Address } from "@ckb-ccc/core";
+import { Address, type Client } from "@ckb-ccc/core";
 
 import { getPublicCkbClient } from "@/lib/ckbClient";
+import { isProfileHistoryScript } from "./profileHistoryIdentity";
 
 function normalizeTxHash(value: string) {
   return value.trim().toLowerCase();
 }
 
-export async function getAddressNetDeltaShannons(txHash: string, address: string): Promise<string | null> {
+export async function getAddressNetDeltaShannons(txHash: string, address: string | readonly string[], client: Client = getPublicCkbClient()): Promise<string | null> {
   const normalizedTxHash = normalizeTxHash(txHash);
   if (!normalizedTxHash) {
     return null;
   }
 
-  const client = getPublicCkbClient();
-  const addressObj = await Address.fromString(address, client);
-  const targetScript = addressObj.script;
-  const tx = await client.getTransaction(normalizedTxHash);
+  const addresses = typeof address === "string" ? [address] : [...new Set(address)];
+  const scripts = await Promise.all(addresses.map(async value => (await Address.fromString(value, client)).script));
+  const matches = (script: typeof scripts[number]) => scripts.some(owner => isProfileHistoryScript(owner, script));
+  const tx = await client.getTransaction(normalizedTxHash).catch(() => null);
   if (!tx) {
     return null;
   }
 
   const outputTotal = tx.transaction.outputs.reduce((sum, output) => {
-    return output.lock.eq(targetScript) ? sum + BigInt(output.capacity) : sum;
+    return matches(output.lock) ? sum + BigInt(output.capacity) : sum;
   }, 0n);
 
   const inputCells = await Promise.all(
@@ -34,18 +35,20 @@ export async function getAddressNetDeltaShannons(txHash: string, address: string
     })
   );
 
+  if (inputCells.some(cell => !cell)) return null;
+
   const inputTotal = inputCells.reduce((sum, cell) => {
     if (!cell) {
       return sum;
     }
 
-    return cell.cellOutput.lock.eq(targetScript) ? sum + BigInt(cell.cellOutput.capacity) : sum;
+    return matches(cell.cellOutput.lock) ? sum + BigInt(cell.cellOutput.capacity) : sum;
   }, 0n);
 
   return (outputTotal - inputTotal).toString();
 }
 
-export async function getAddressNetDeltaMap(txHashes: string[], address: string) {
+export async function getAddressNetDeltaMap(txHashes: string[], address: string | readonly string[]) {
   const uniqueTxHashes = Array.from(new Set(txHashes.map(normalizeTxHash).filter(Boolean)));
   const entries = await Promise.all(
     uniqueTxHashes.map(async (txHash) => [txHash, await getAddressNetDeltaShannons(txHash, address)] as const)

@@ -261,3 +261,16 @@ hash against the on-chain creator prefix. This also recovers the owner of record
 that stored a spending address. Tree nonces are signed for the owner address;
 JoyID continues using its normal address. Parent/child, cycle and FBARS
 encroachment checks still apply.
+
+Profile transaction history, activity charts and freight interactions include the
+owner address and recorded Pilot spending accounts whose complete script commits
+to that owner's lock hash. Both session and general accounts are supported,
+including multiple historical accounts. Candidate addresses are discovered with
+bounded owner-specific prefixes, then validated against the complete code hash,
+hash type, argument length and owner commitment. Ordinary wallets use their exact
+address. The sources are FON's campaign, participant, deposit and FBARS records;
+reading history does not migrate profiles or change balances. Transaction CKB
+deltas include owner-bound account inputs/outputs, count internal transfers once,
+and exclude unrelated wallets and sponsors. Unavailable chain inputs produce an
+unknown amount with a coverage note. Tests exercise all three profile endpoints
+with two sessions and a separate unrelated owner.
