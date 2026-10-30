@@ -1067,8 +1067,12 @@
 .campaign-comment-input {
   width: 100%;
   min-height: 2rem;
+  /* Three text lines plus bottom padding and the border, in both layouts. */
+  max-height: calc(4.2em + 0.35rem + 2px);
+  box-sizing: border-box;
   resize: none;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   border: none;
   border-bottom: 2px solid #9ca3af;
   border-radius: 0;
@@ -1972,6 +1976,31 @@
   line-height: 1.5;
   color: #374151;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.campaign-detail-comment-text-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.campaign-comment-read-more {
+  display: block;
+  margin-top: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6b7280;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.campaign-comment-read-more:hover,
+.campaign-comment-read-more:focus-visible {
+  text-decoration: underline;
 }
 
 .campaign-detail-comment-actions {
