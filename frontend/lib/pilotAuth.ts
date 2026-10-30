@@ -6,6 +6,10 @@ import { getPilotChallengesCollection, type PilotChallengeRecord } from "./mongo
 import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, freightPermissionFromPurpose, isOwnerProfilePermission, type FreightPilotProof } from "./pilotProtocol";
 import type { FreightPermission } from "./owlPermissions";
 
+// Scoped proofs include the selected templates; the largest 16 FON policies
+// currently occupy about 86 KB before the descriptor and signature envelope.
+export const MAX_FREIGHT_PILOT_PROOF_BYTES = 128 * 1024;
+
 const challengeId = (message: string) => createHash("sha256").update(message).digest("hex");
 
 export async function registerPilotChallenge(address: string, purpose: string, message: string, origin: string) {
@@ -23,7 +27,7 @@ export async function verifyFreightPilotProof(params: {
   address: string; message: string; identity: string; serialized: string;
   permission: FreightPermission; origin: string; challenge: string;
 }, client: ccc.Client = getPublicCkbClient(), verifyScoped: typeof verifyPilotScopedMessage = verifyPilotScopedMessage) {
-  if (params.serialized.length > 32_768) throw new Error("Pilot proof is too large.");
+  if (Buffer.byteLength(params.serialized, "utf8") > MAX_FREIGHT_PILOT_PROOF_BYTES) throw new Error("Pilot proof is too large.");
   const envelope = JSON.parse(params.serialized) as FreightPilotProof;
   if (envelope.protocol !== FREIGHT_PILOT_PROTOCOL) throw new Error("Unknown Pilot proof protocol.");
   const account = parsePilotWalletDescriptor(envelope.account);

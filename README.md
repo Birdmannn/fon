@@ -114,17 +114,36 @@ the account modal.
 FON separates 28 app actions into transaction and message capabilities. The SDK
 snapshot is pinned to Owl commit `9e52649a5df8b1df9be1d73610e9e4028051b7b8`.
 Connection requests `accountMode: "general"` and uses `buildPolicies` to validate
-the selected owner/account pair before offering 15 real message scopes and three
-whole-transaction templates:
+the selected owner/account pair before offering 15 real message scopes and
+26 whole-transaction templates covering all 15 FON transaction action IDs:
 
-- **Publish freight** permits new freight configurations, campaign types and raffle
-  commitments, with creator fields bound to the selected account's first 20 lock-argument
-  bytes (FON's existing on-chain identity format).
-- **Update freight status (includes raffle activation)** preserves campaign identity,
-  capacity and all data except status, and requires operation selector `0x04`.
-- **Buy raffle tickets** preserves the campaign lock/type and immutable fields,
-  requires selector `0x03`, and binds ticket beneficiaries to the selected account.
-  Both regular and recurring raffles, including future raffles, use this template.
+- **Publish freight**, **Update freight status (includes raffle activation)** and
+  **Buy raffle tickets** cover future campaign configurations and regular/recurring
+  raffles. Publishing binds creator fields to the selected account's first 20
+  lock-argument bytes (FON's on-chain identity format); ticket purchases bind the
+  beneficiary to that account.
+- **Approve freight**, **Confirm raffle approval**, **Cancel freight**, **Claim a
+  gift**, **Deposit support** and **Withdraw support** each require their own
+  operation selector. Cancellation and withdrawal bind the creator to the account;
+  gift and withdrawal payouts must return to that account. Their occupied-capacity
+  top-ups are bounded to 1,000 CKB, also subject to the selected session budget.
+- **Tip a creator** has separate recipient-script policies for JoyID, secp256k1,
+  OmniLock, Pilot general accounts and Pilot passkeys. Each binds the recipient's
+  first 20 lock-argument bytes to the campaign creator, as required by the deployed
+  FON contract. Unsupported recipient scripts require owner review. A Pilot owner
+  address whose lock-argument prefix differs from the on-chain creator cannot
+  receive a direct tip under the current contract; this integration does not
+  change that contract rule.
+- **Deliver rewards** has eight batch-size policies for 1–8 raffle winners. Every
+  winner's lock and identity is preserved, and all entries must belong to the
+  campaign. The SDK has no `foreach` relation, so the rules explicitly compare
+  every input/output pair. Select the batch sizes you intend to use. Larger batches
+  and other participant lock/type layouts require owner review.
+- **Draw recurring raffle**, **Claim raffle reward**, **Roll over raffle** and
+  **Reclaim raffle entry** use separate selectors and pin recurring campaign
+  layouts. Claims/reclaims bind the entry beneficiary to the selected account.
+  Draws support up to 64 entries; the FON contract additionally verifies each
+  output lock, capacity, participant identity, winner order and claimable amount.
 
 Select both status and ticket permissions to purchase from a raffle that first needs
 activation. No chain scan or open composer draft is needed to build the catalog.
@@ -134,13 +153,12 @@ accounting, raffle identity and recurring-round rules. Unexpected application
 inputs/outputs fail matching; ordinary account funding/change and authority cells
 remain wallet-managed.
 
-The catalog has 18 policies; Pilot offers at most 50 and users may select 16.
+The catalog has 41 policies; Pilot offers at most 50 and users may select 16.
 Nothing is selected by default. Selected message scopes and matching templates sign
 automatically. Unselected actions and transactions outside these templates require
 one-time owner passkey review in the same modal without replacing the grant.
-Other transaction actions currently use that one-time review. Pilot's template
-schema permits at most 64 occurrences per role: ticket batches of 1–64 can match
-this template; 65–100 still require owner review. JoyID retains its existing
+Pilot's template schema permits at most 64 occurrences per role: ticket batches
+of 1–64 can match automatically; 65–100 still require owner review. JoyID retains its existing
 1–100 ticket path and direct wallet signing.
 
 General-mode action templates are enforced in Pilot wallet software, **not by the
@@ -153,9 +171,12 @@ address and fresh owner-approved funding. Existing test sessions are not migrate
 The hosted wallet and paymaster must use this revision's general deployment.
 
 `freightTransactionPolicies` remains an exact-cell effect utility;
-`freightTransactionTemplates` supplies the three connection templates. Tests use
+`freightTransactionTemplates` supplies the connection templates. Tests use
 real FON builders with the SDK's automatic validator, including different future
-instances, malformed beneficiaries, operation selectors and unexpected payments.
+instances, all transaction builders, every supported reward batch size, malformed
+beneficiaries, operation selectors and unexpected payments. Scoped proofs include
+the selected templates; the server accepts at most 128 KiB so a valid selection of
+16 large FON policies fits without bypassing signature or live-authority checks.
 
 Ticket purchases refresh the raffle's live cell before preparing a transaction.
 Activation is decided from current chain state, not the record's activation hash;
