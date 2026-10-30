@@ -1,6 +1,7 @@
 "use client";
 
 import { signFreightMessage } from "@/lib/owlPermissions";
+import { getFreightProfileAddress } from "@/lib/profileIdentity";
 
 import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
 
@@ -1250,7 +1251,7 @@ export default function CampaignDetailPage() {
       throw new Error("Connect a wallet first");
     }
 
-    const address = await signer.getRecommendedAddress();
+    const address = purpose === "freight-tree" ? await getFreightProfileAddress(signer) : await signer.getRecommendedAddress();
     if (!address) {
       throw new Error("Unable to resolve wallet address");
     }

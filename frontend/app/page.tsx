@@ -1,6 +1,7 @@
 "use client";
 
 import { signFreightMessage } from "@/lib/owlPermissions";
+import { getFreightProfileAddress } from "@/lib/profileIdentity";
 
 import { useFreightSigner, useFreightWallet } from "@/app/_components/OwlWalletProvider";
 
@@ -738,7 +739,7 @@ export default function Home() {
       openWalletWithSeed();
       throw new Error("Connect a wallet first");
     }
-    const address = await signer.getRecommendedAddress();
+    const address = await getFreightProfileAddress(signer);
     if (!address) throw new Error("Unable to resolve wallet address");
     const nonceResponse = await fetch("/api/wallet/nonce", {
       method: "POST",

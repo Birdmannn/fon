@@ -1,10 +1,10 @@
-import { Address, SignerSignType } from "@ckb-ccc/core";
+import { SignerSignType } from "@ckb-ccc/core";
 import type { Document, UpdateFilter } from "mongodb";
 import { NextResponse } from "next/server";
 
-import { buildStableCampaignId } from "@/lib/campaignIdentity";
+import { campaignCreatorAddress, loadCampaignPublications, type CampaignPublication } from "@/lib/campaignCreatorIdentity";
+import { verifyFreightTreeCreator } from "@/lib/freightTreeCreator";
 import { getPublicCkbClient } from "@/lib/ckbClient";
-import { bytesToHex, lockScriptToAddressBytes } from "@/lib/encoding";
 import { ancestorIds, canEncroach, parentIds, sharesDirectChild, wouldCreateCycle } from "@/lib/freightTree";
 import { verifyWalletSignature, walletActionNonceMatchesPurpose } from "@/lib/googleAuth";
 import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
@@ -17,6 +17,7 @@ type FreightRow = {
   title?: string;
   description?: string;
   creatorAddress?: string;
+  txHash?: string;
   createdByHash?: string;
   chainCreatedAt?: string;
   campaignType?: number;
@@ -44,9 +45,11 @@ function normalizeAddress(value: unknown) {
 async function loadFreights() {
   const rows = await (await getMongoCollection()).find(
     { status: "published", campaignId: { $type: "string" } },
-    { projection: { _id: 0, campaignId: 1, title: 1, description: 1, creatorAddress: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, parentCampaignId: 1, parentCampaignIds: 1, parentLinkedByAddress: 1, parentLinks: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1 } },
+    { projection: { _id: 0, campaignId: 1, title: 1, description: 1, creatorAddress: 1, txHash: 1, createdByHash: 1, chainCreatedAt: 1, campaignType: 1, parentCampaignId: 1, parentCampaignIds: 1, parentLinkedByAddress: 1, parentLinks: 1, linkedCampaignIds: 1, requiresLinkedFreight: 1 } },
   ).toArray() as unknown as FreightRow[];
-  return new Map(rows.map((row) => [row.campaignId.trim().toLowerCase(), row]));
+  const publications = await loadCampaignPublications(rows);
+  return { publications, rows: new Map(rows.map((row) => [row.campaignId.trim().toLowerCase(),
+    { ...row, creatorAddress: campaignCreatorAddress(row, publications) }])) };
 }
 
 function treeFor(campaignId: string, rows: Map<string, FreightRow>) {
@@ -103,17 +106,8 @@ function descendantIds(campaignId: string, rows: Map<string, FreightRow>) {
   return result;
 }
 
-async function verifiedCreatorAddress(row: FreightRow) {
-  const address = normalizeAddress(row.creatorAddress);
-  const stableId = buildStableCampaignId(row.createdByHash, row.chainCreatedAt, row.campaignType);
-  if (!address || !stableId || stableId !== row.campaignId.toLowerCase()) {
-    throw new Error("Freight creator identity is incomplete");
-  }
-  const parsed = await Address.fromString(address, getPublicCkbClient());
-  if (bytesToHex(lockScriptToAddressBytes(parsed.script)) !== row.createdByHash?.toLowerCase()) {
-    throw new Error("Freight creator address does not match its on-chain identity");
-  }
-  return address;
+async function verifiedCreatorAddress(row: FreightRow, publications: readonly CampaignPublication[]) {
+  return verifyFreightTreeCreator(getPublicCkbClient(), row, publications);
 }
 
 async function refreshSubtree(campaignId: string, rows: Map<string, FreightRow>, onlyAddress?: string) {
@@ -147,14 +141,14 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const campaignId = requiredString(params.get("campaignId"), "campaignId").toLowerCase();
-    const rows = await loadFreights();
+    const { rows, publications } = await loadFreights();
     const ownedBy = normalizeAddress(params.get("ownedBy"));
     if (ownedBy) {
       const owned = await Promise.all([...rows.values()]
         .filter((row) => normalizeAddress(row.creatorAddress) === ownedBy && row.campaignId.toLowerCase() !== campaignId)
         .map(async (row) => {
           try {
-            return await verifiedCreatorAddress(row) === ownedBy
+            return await verifiedCreatorAddress(row, publications) === ownedBy
               ? { campaignId: row.campaignId, title: row.title?.trim() || "Untitled freight" }
               : null;
           } catch {
@@ -196,12 +190,12 @@ export async function POST(request: Request) {
       },
     });
 
-    const rows = await loadFreights();
+    const { rows, publications } = await loadFreights();
     const current = rows.get(campaignId);
     const other = otherCampaignId ? rows.get(otherCampaignId) : null;
     if (!current || (otherCampaignId && !other)) return errorResponse("Both freights must be published", 404);
-    const currentCreator = await verifiedCreatorAddress(current);
-    const otherCreator = other ? await verifiedCreatorAddress(other) : "";
+    const currentCreator = await verifiedCreatorAddress(current, publications);
+    const otherCreator = other ? await verifiedCreatorAddress(other, publications) : "";
     const collection = await getMongoCollection();
 
     if ((relation === "parent" || relation === "child") && otherCreator !== address) {
@@ -216,7 +210,7 @@ export async function POST(request: Request) {
         { campaignId, status: "published" },
         { $set: { requiresLinkedFreight: body.required, updatedAt: new Date() } },
       );
-      const updatedRows = await loadFreights();
+      const { rows: updatedRows } = await loadFreights();
       await refreshSubtree(campaignId, updatedRows);
       return NextResponse.json(treeFor(campaignId, updatedRows));
     }
@@ -229,7 +223,7 @@ export async function POST(request: Request) {
         { campaignId, status: "published" },
         { $addToSet: { linkedCampaignIds: otherCampaignId }, $set: { updatedAt: new Date() } },
       );
-      const updatedRows = await loadFreights();
+      const { rows: updatedRows } = await loadFreights();
       if (current.requiresLinkedFreight) await refreshSubtree(campaignId, updatedRows, otherCreator);
       return NextResponse.json(treeFor(campaignId, updatedRows));
     }
@@ -276,7 +270,7 @@ export async function POST(request: Request) {
     );
     if (!linked.modifiedCount) return errorResponse("This freight was linked by another request", 409);
 
-    const refreshedRows = await loadFreights();
+    const { rows: refreshedRows } = await loadFreights();
     await refreshSubtree(childId, refreshedRows);
     await refreshSubtree(parentId, refreshedRows, childCreator);
     return NextResponse.json(treeFor(campaignId, refreshedRows));

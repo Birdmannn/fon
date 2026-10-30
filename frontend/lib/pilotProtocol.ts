@@ -8,7 +8,7 @@ export const ZERO_HASH = `0x${"00".repeat(32)}` as ccc.Hex;
 export const freightPilotScope = (permission: FreightPermission) => `freight.${permission}`;
 
 export const isOwnerProfilePermission = (permission: FreightPermission) => [
-  "wallet-seed", "marquee-edit", "profile-photo", "google-identity-link", "google-forms-link",
+  "wallet-seed", "marquee-edit", "profile-photo", "google-identity-link", "google-forms-link", "freight-tree",
 ].includes(permission);
 
 export interface FreightPilotProof {
