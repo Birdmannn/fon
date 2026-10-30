@@ -253,3 +253,11 @@ so browsers can open JoyID's popup. CCC retains the connected signer and saved
 wallet selection. The Connector button opens CCC’s other wallet options, excluding
 JoyID, after FON’s info-modal closing transition. Connection and signing errors use FON's animated info modal
 with the “Errors:” section.
+
+Freight-tree actions use the same owner profile identity as the feed. For Pilot
+creators, tree ownership checks require the verified publication receipt for the
+exact creation transaction and stable campaign ID, then check the owner's lock
+hash against the on-chain creator prefix. This also recovers the owner of records
+that stored a spending address. Tree nonces are signed for the owner address;
+JoyID continues using its normal address. Parent/child, cycle and FBARS
+encroachment checks still apply.
