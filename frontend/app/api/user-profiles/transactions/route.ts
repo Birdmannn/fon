@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import {
-  buildAddressRegex,
   resolveTargetAddress,
   toIsoDateTime,
 } from "@/app/api/user-profiles/_lib/profileTarget";
@@ -9,6 +8,7 @@ import type { ProfileTransactionRow, ProfileTransactionsCoverage } from "@/app/_
 import { buildStableCampaignId, normalizeHash } from "@/lib/campaignIdentity";
 import { reconcileAdsfForAddress, shannonsToUsdCents } from "@/lib/adsf";
 import { fetchCkbUsdPrice } from "@/lib/ckbPrice";
+import { profileHistoryAddresses, profileHistoryAddressRegex } from "@/lib/profileHistoryIdentity";
 import { getAddressNetDeltaMap } from "@/lib/txBalanceDelta";
 import {
   getCampaignDepositsCollection,
@@ -199,7 +199,9 @@ export async function GET(request: Request) {
       return badRequest("User profile not found", 404);
     }
 
-    const targetAddressRegex = buildAddressRegex(targetAddress);
+    const historyAddresses = await profileHistoryAddresses(targetAddress);
+    const historyAddressSet = new Set(historyAddresses);
+    const targetAddressRegex = profileHistoryAddressRegex(historyAddresses);
     await reconcileAdsfForAddress(targetAddress);
     const [campaignRecordsCollection, campaignParticipantsCollection, campaignDepositsCollection, fbarEventsCollection] = await Promise.all([
       getMongoCollection(),
@@ -324,7 +326,7 @@ export async function GET(request: Request) {
       ).toArray() as Promise<CampaignRecordTransaction[]>,
       campaignParticipantsCollection.find(
         {
-          participantAddress: targetAddress,
+          participantAddress: { $regex: targetAddressRegex },
           participantTxHash: { $type: "string", $ne: "" },
         },
         {
@@ -346,7 +348,7 @@ export async function GET(request: Request) {
       ).toArray() as Promise<CampaignParticipantTransaction[]>,
       campaignDepositsCollection.find(
         {
-          depositorAddress: targetAddress,
+          depositorAddress: { $regex: targetAddressRegex },
           txHash: { $type: "string", $ne: "" },
         },
         {
@@ -364,7 +366,7 @@ export async function GET(request: Request) {
       ).toArray() as Promise<CampaignDepositTransaction[]>,
       fbarEventsCollection.find(
         {
-          address: targetAddress,
+          address: { $regex: targetAddressRegex },
           kind: { $in: ["wallet-seed", "freight-create", "deposit", "creator-non-winning-interaction"] },
         },
         {
@@ -544,7 +546,7 @@ export async function GET(request: Request) {
       ...depositRows.map((row) => normalizeHash(asString(row.txHash))),
     ].filter(Boolean)));
 
-    const deltaByTxHash = await getAddressNetDeltaMap(txHashes, targetAddress);
+    const deltaByTxHash = await getAddressNetDeltaMap(txHashes, historyAddresses);
     const rows: ProfileTransactionRow[] = [...fbarRows];
 
     createdRecords.forEach((record) => {
@@ -719,7 +721,7 @@ export async function GET(request: Request) {
         return;
       }
 
-      const matchingRecipients = parseRecipients(record.settledRecipients).filter((recipient) => recipient.address === targetAddress);
+      const matchingRecipients = parseRecipients(record.settledRecipients).filter((recipient) => historyAddressSet.has(recipient.address));
       if (matchingRecipients.length === 0) {
         return;
       }
@@ -752,6 +754,9 @@ export async function GET(request: Request) {
     });
 
     const coverageNotes: string[] = [];
+    if (Object.values(deltaByTxHash).some(delta => delta === null)) {
+      coverageNotes.push("Some transaction amounts are unavailable because their chain data could not be fully resolved.");
+    }
     if (legacyActivationCount > 0) {
       coverageNotes.push("Some older raffle activations may be missing because activation metadata was not always recorded.");
     }
@@ -764,9 +769,10 @@ export async function GET(request: Request) {
       notes: coverageNotes,
     };
 
-    rows.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+    const uniqueRows = [...new Map(rows.map(row => [row.id, row])).values()];
+    uniqueRows.sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
 
-    return NextResponse.json({ coverage, rows });
+    return NextResponse.json({ coverage, rows: uniqueRows });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load profile transactions";
     return badRequest(message, 500);

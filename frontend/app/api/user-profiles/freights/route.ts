@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
+import { profileHistoryAddresses, profileHistoryAddressRegex } from "@/lib/profileHistoryIdentity";
+import { resolveCampaignCreatorIdentities } from "@/lib/campaignCreatorIdentity";
 
 import {
-  buildAddressRegex,
   formatUsernameHandle,
   normalizeAddress,
   resolveTargetAddress,
@@ -21,6 +22,7 @@ type CampaignRecordFreight = {
   chainCreatedAt?: unknown;
   campaignType?: unknown;
   creatorAddress?: unknown;
+  txHash?: unknown;
   creatorHandle?: unknown;
   createdAt?: unknown;
   settledAt?: unknown;
@@ -174,13 +176,15 @@ export async function GET(request: Request) {
       return badRequest("User profile not found", 404);
     }
 
-    const targetAddressRegex = buildAddressRegex(targetAddress);
+    const historyAddresses = await profileHistoryAddresses(targetAddress);
+    const historyAddressSet = new Set(historyAddresses);
+    const targetAddressRegex = profileHistoryAddressRegex(historyAddresses);
     const [campaignRecordsCollection, campaignParticipantsCollection] = await Promise.all([
       getMongoCollection(),
       getCampaignParticipantsCollection(),
     ]);
 
-    const [createdRecords, rewardedRecords, commentRecords, participantRows] = await Promise.all([
+    const [storedCreatedRecords, storedRewardedRecords, storedCommentRecords, participantRows] = await Promise.all([
       campaignRecordsCollection.find(
         { status: "published", creatorAddress: { $regex: targetAddressRegex } },
         {
@@ -192,6 +196,7 @@ export async function GET(request: Request) {
             chainCreatedAt: 1,
             campaignType: 1,
             creatorAddress: 1,
+            txHash: 1,
             creatorHandle: 1,
             createdAt: 1,
           },
@@ -215,6 +220,7 @@ export async function GET(request: Request) {
             chainCreatedAt: 1,
             campaignType: 1,
             creatorAddress: 1,
+            txHash: 1,
             creatorHandle: 1,
             settledAt: 1,
             updatedAt: 1,
@@ -239,13 +245,14 @@ export async function GET(request: Request) {
             chainCreatedAt: 1,
             campaignType: 1,
             creatorAddress: 1,
+            txHash: 1,
             creatorHandle: 1,
             socialMetadata: 1,
           },
         }
       ).toArray() as Promise<CampaignRecordFreight[]>,
       campaignParticipantsCollection.find(
-        { participantAddress: targetAddress },
+        { participantAddress: { $regex: targetAddressRegex } },
         {
           projection: {
             _id: 0,
@@ -261,6 +268,12 @@ export async function GET(request: Request) {
       ).toArray() as Promise<CampaignParticipantFreight[]>,
     ]);
 
+    const enrichedRecords = await resolveCampaignCreatorIdentities([
+      ...storedCreatedRecords, ...storedRewardedRecords, ...storedCommentRecords,
+    ]);
+    const createdRecords = enrichedRecords.slice(0, storedCreatedRecords.length);
+    const rewardedRecords = enrichedRecords.slice(storedCreatedRecords.length, storedCreatedRecords.length + storedRewardedRecords.length);
+    const commentRecords = enrichedRecords.slice(storedCreatedRecords.length + storedRewardedRecords.length);
     const aggregates = new Map<string, FreightAggregate>();
 
     createdRecords.forEach((record) => {
@@ -320,7 +333,7 @@ export async function GET(request: Request) {
       const matchingDates = record.socialMetadata.comments
         .filter((entry) => !!entry && typeof entry === "object")
         .map((entry) => entry as { creatorAddress?: unknown; createdAt?: unknown })
-        .filter((entry) => typeof entry.creatorAddress === "string" && normalizeAddress(entry.creatorAddress) === targetAddress)
+        .filter((entry) => typeof entry.creatorAddress === "string" && historyAddressSet.has(normalizeAddress(entry.creatorAddress)))
         .map((entry) => toIsoDateTime(entry.createdAt))
         .filter((value): value is string => Boolean(value));
 

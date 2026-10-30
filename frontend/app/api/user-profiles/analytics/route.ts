@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { profileHistoryAddresses, profileHistoryAddressRegex } from "@/lib/profileHistoryIdentity";
 
 import { getCampaignParticipantsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 
@@ -122,10 +123,6 @@ function buildDayRange(days: number) {
   };
 }
 
-function buildAddressRegex(address: string) {
-  const escaped = address.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^${escaped}$`, "i");
-}
 
 function bucketEvent(
   pointsByDate: Map<string, AnalyticsPoint>,
@@ -146,7 +143,7 @@ function bucketEvent(
   point[field] += amount;
 }
 
-function countMatchingRecipients(value: unknown, targetAddress: string) {
+function countMatchingRecipients(value: unknown, addresses: ReadonlySet<string>) {
   if (!Array.isArray(value)) {
     return 0;
   }
@@ -161,7 +158,7 @@ function countMatchingRecipients(value: unknown, targetAddress: string) {
       return count;
     }
 
-    return normalizeAddress(candidate.address) === targetAddress ? count + 1 : count;
+    return addresses.has(normalizeAddress(candidate.address)) ? count + 1 : count;
   }, 0);
 }
 
@@ -204,7 +201,9 @@ export async function GET(request: Request) {
 
     const { startDate, endDate, points } = buildDayRange(ANALYTICS_RANGE_DAYS);
     const pointsByDate = new Map(points.map((point) => [point.date, point]));
-    const targetAddressRegex = buildAddressRegex(targetAddress);
+    const historyAddresses = await profileHistoryAddresses(targetAddress);
+    const historyAddressSet = new Set(historyAddresses);
+    const targetAddressRegex = profileHistoryAddressRegex(historyAddresses);
 
     const [campaignRecordsCollection, campaignParticipantsCollection] = await Promise.all([
       getMongoCollection(),
@@ -227,7 +226,7 @@ export async function GET(request: Request) {
       ).toArray() as Promise<CampaignRecordAnalytics[]>,
       campaignParticipantsCollection.find(
         {
-          participantAddress: targetAddress,
+          participantAddress: { $regex: targetAddressRegex },
         },
         {
           projection: {
@@ -265,7 +264,7 @@ export async function GET(request: Request) {
     });
 
     rewardedRecords.forEach((record) => {
-      const rewardedCount = countMatchingRecipients(record.settledRecipients, targetAddress);
+      const rewardedCount = countMatchingRecipients(record.settledRecipients, historyAddressSet);
       if (rewardedCount <= 0) {
         return;
       }
