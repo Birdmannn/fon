@@ -112,10 +112,12 @@ iframe alive for approved automatic signing. The header Disconnect action reopen
 the account modal.
 
 FON separates 28 app actions into transaction and message capabilities. The SDK
-snapshot is pinned to Owl commit `9e52649a5df8b1df9be1d73610e9e4028051b7b8`.
+and React packages are pinned to Owl commit
+`288628434e10a24b740bceb97de5fe5362c06d33`, including bounded repeated-entry
+templates. See `frontend/vendor/owl/README.md` for provenance.
 Connection requests `accountMode: "general"` and uses `buildPolicies` to validate
 the selected owner/account pair before offering 15 real message scopes and
-26 whole-transaction templates covering all 15 FON transaction action IDs:
+19 whole-transaction templates covering all 15 FON transaction action IDs:
 
 - **Publish freight**, **Update freight status (includes raffle activation)** and
   **Buy raffle tickets** cover future campaign configurations and regular/recurring
@@ -134,11 +136,13 @@ the selected owner/account pair before offering 15 real message scopes and
   address whose lock-argument prefix differs from the on-chain creator cannot
   receive a direct tip under the current contract; this integration does not
   change that contract rule.
-- **Deliver rewards** has eight batch-size policies for 1–8 raffle winners. Every
-  winner's lock and identity is preserved, and all entries must belong to the
-  campaign. The SDK has no `foreach` relation, so the rules explicitly compare
-  every input/output pair. Select the batch sizes you intend to use. Larger batches
-  and other participant lock/type layouts require owner review.
+- **Distribute rewards** is one permission for variable batches of 1–64 raffle
+  winners. Pilot's bounded `forEach` rule preserves every entry's full lock and
+  identity fields and binds every entry to the campaign. Inputs/outputs pair by
+  role occurrence order with equal counts. Changed recipients or identities,
+  missing/duplicated counterparts and reordered identities reject automatic
+  signing. The FON contract retains winner selection and reward arithmetic.
+  Larger batches and other participant lock/type layouts require owner review.
 - **Draw recurring raffle**, **Claim raffle reward**, **Roll over raffle** and
   **Reclaim raffle entry** use separate selectors and pin recurring campaign
   layouts. Claims/reclaims bind the entry beneficiary to the selected account.
@@ -153,7 +157,7 @@ accounting, raffle identity and recurring-round rules. Unexpected application
 inputs/outputs fail matching; ordinary account funding/change and authority cells
 remain wallet-managed.
 
-The catalog has 41 policies; Pilot offers at most 50 and users may select 16.
+The catalog has 34 policies; Pilot offers at most 50 and users may select 16.
 Nothing is selected by default. Selected message scopes and matching templates sign
 automatically. Unselected actions and transactions outside these templates require
 one-time owner passkey review in the same modal without replacing the grant.
@@ -168,12 +172,17 @@ bypass action-template restrictions, and the CKB allowance does not value tokens
 or NFTs. Pilot displays this distinction during approval. The same owner address
 continues to identify profiles and FBARS; general mode uses a fresh spending
 address and fresh owner-approved funding. Existing test sessions are not migrated.
-The hosted wallet and paymaster must use this revision's general deployment.
+The hosted wallet must include the repeated-entry matcher; its public asset was
+checked on 30 October 2026 and includes this schema. FON and its message-verifying
+backend must use the pinned SDK and catalog. No contract redeployment is needed. Existing
+fixed-size permissions are not silently expanded: settle pending receipts and
+explicitly approve a replacement grant containing Distribute rewards. Live
+reward distribution after redeployment remains unverified.
 
 `freightTransactionPolicies` remains an exact-cell effect utility;
 `freightTransactionTemplates` supplies the connection templates. Tests use
 real FON builders with the SDK's automatic validator, including different future
-instances, all transaction builders, every supported reward batch size, malformed
+instances, all transaction builders, representative reward batch sizes through 64, malformed
 beneficiaries, operation selectors and unexpected payments. Scoped proofs include
 the selected templates; the server accepts at most 128 KiB so a valid selection of
 16 large FON policies fits without bypassing signature or live-authority checks.

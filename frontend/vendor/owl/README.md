@@ -1,5 +1,45 @@
 # Owl Pilot dependency snapshots
 
+## Current revision: 2886284 (30 October 2026)
+
+`owl-pilot-2886284.tgz` and `owl-pilot-react-2886284.tgz` are built from the clean
+upstream commit `288628434e10a24b740bceb97de5fe5362c06d33` at
+https://github.com/Birdmannn/owl, without source changes. Both dependencies and
+lockfile integrity hashes pin these archives. The SDK's compiled files match the
+previous local `owl-pilot-batch-20261030.tgz` snapshot byte for byte; its README
+now comes from the committed upstream revision.
+
+This revision adds bounded `forEach` template comparisons. FON's existing
+uncommitted integration matches that API and offers one Distribute rewards
+permission for 1–64 raffle entries. Every paired entry preserves its full lock
+and identity and is bound to the shared campaign. The catalog contains 34
+choices, of which at most 16 may be selected. No contract redeployment is needed.
+
+The hosted wallet must run the updated matcher. Its public asset
+`wallet-DVQ_SwT2.js` was checked on 30 October 2026 and contains both the `forEach`
+schema and `each` index resolution. Live funded reward distribution has not been
+verified. Existing fixed-size grants are not silently expanded; replacing one
+requires owner approval after pending receipts settle. Message verifiers must
+also install this SDK to validate proofs containing the new template schema.
+
+To reproduce the archives from a clean checkout of this commit:
+
+```sh
+npm ci --ignore-scripts
+npm run build
+npm ci --ignore-scripts --prefix packages/react
+npm run build --prefix packages/react
+npm pack --pack-destination /absolute/path/to/output
+cd packages/react
+npm pack --pack-destination /absolute/path/to/output
+```
+
+Rename the generated archives with the commit suffix, update both `file:`
+dependencies, and run `npm install` in `frontend`. Commit the dependency manifest,
+lockfile and archives together. CCC core remains pinned to `1.23.0`.
+
+## Historical revision: 9e52649
+
 These npm package archives were built from https://github.com/Birdmannn/owl at
 commit `9e52649a5df8b1df9be1d73610e9e4028051b7b8` (28 October 2026).
 They contain the upstream SDK and React UI without source modifications.

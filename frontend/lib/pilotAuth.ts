@@ -7,7 +7,7 @@ import { FREIGHT_PILOT_PROTOCOL, freightPilotChallenge, freightPilotScope, freig
 import type { FreightPermission } from "./owlPermissions";
 
 // Scoped proofs include the selected templates; the largest 16 FON policies
-// currently occupy about 86 KB before the descriptor and signature envelope.
+// currently occupy about 45 KB before the descriptor and signature envelope.
 export const MAX_FREIGHT_PILOT_PROOF_BYTES = 128 * 1024;
 
 const challengeId = (message: string) => createHash("sha256").update(message).digest("hex");

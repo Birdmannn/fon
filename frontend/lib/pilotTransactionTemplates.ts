@@ -1,6 +1,6 @@
 import { ccc } from "@ckb-ccc/core";
 import { PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_GENERAL_CODE_HASH, pilotTemplatePolicy,
-  type PilotScriptPattern, type PilotTemplateCell, type PilotTemplateField, type PilotTransactionTemplate } from "@owl/pilot";
+  type PilotScriptPattern, type PilotTemplateCell, type PilotTemplateField, type PilotTemplateRepeatedField, type PilotTransactionTemplate } from "@owl/pilot";
 import { FREIGHT_CONTRACT } from "./contract";
 import type { FreightTransactionPermission } from "./owlPermissions";
 
@@ -37,7 +37,7 @@ export async function freightRecipientScripts(client: ccc.Client): Promise<Freig
     { name: "Pilot passkey", codeHash: PILOT_PASSKEY_CODE_HASH, hashType: "data2" as const }];
 }
 
-export const PILOT_AUTOMATIC_DELIVERY_LIMIT = 8;
+export const PILOT_AUTOMATIC_DELIVERY_LIMIT = 64;
 const entry: PilotTemplateCell = { role: "entry", lock: app({ prefix: "0xff", length: 49 }), type: null,
   data: { minLength: 66, maxLength: 82 } };
 const ownEntry: PilotTemplateCell = { ...entry,
@@ -121,27 +121,27 @@ export function freightTransactionTemplates(recipients: readonly FreightRecipien
         { left: field("input", "campaign", "data", 24, 20), right: field("output", "creator", "lockArgs", 0, 20) }],
     }, true);
   }
-  // There is no foreach relation in this SDK revision. Each batch size has a
-  // separate rule so every recipient lock and identity is preserved explicitly.
-  for (let count = 1; count <= PILOT_AUTOMATIC_DELIVERY_LIMIT; count++) {
-    const relation = (key: PilotTemplateField["field"], index: number, offset?: number, length?: number) => ({
-      left: { ...field("input", "entry", key, offset, length), index },
-      right: { ...field("output", "entry", key, offset, length), index },
-    });
-    const inputEntry: PilotTemplateCell = { ...entry, min: count, max: count,
-      data: { length: 66, fields: [{ offset: 57, value: "0x01" }] } };
-    const outputEntry: PilotTemplateCell = { ...entry, min: count, max: count,
-      data: { length: 66, fields: [{ offset: 57, value: "0x02" }] } };
-    add("batch-deliver", `Deliver rewards (raffle, ${count} ${count === 1 ? "winner" : "winners"})`, "0x02", {
-      id: `freight.batch-deliver.${count}`, inputs: [campaign, inputEntry], outputs: [campaign, outputEntry],
-      relations: [...campaignIdentity, ...Array.from({ length: count }, (_, index) => [
-        relation("lock", index), relation("data", index, 0, 57), relation("data", index, 58),
-        ...entryCampaign.map(r => ({ left: { ...r.left, index }, right: r.right })),
-        { left: { ...field("input", "entry", "lockArgs", 1, 28), index }, right: { ...field("input", "entry", "data", 0, 28), index } },
-        { left: { ...field("input", "entry", "lockArgs", 29, 20), index }, right: { ...field("input", "entry", "data", 29, 20), index } },
-      ]).flat()],
-    }, true);
-  }
+  // One permission covers bounded variable batches. Every entry pair preserves
+  // its lock/identity and each input is bound to the shared campaign.
+  const eachEntry = (source: "input" | "output", key: PilotTemplateField["field"], offset?: number, length?: number): PilotTemplateRepeatedField => ({
+    ...field(source, "entry", key, offset, length), index: "each",
+  });
+  const preserveEntry = (key: PilotTemplateField["field"], offset?: number, length?: number) => ({
+    left: eachEntry("input", key, offset, length), right: eachEntry("output", key, offset, length),
+  });
+  add("batch-deliver", "Distribute rewards", "0x02", {
+    inputs: [campaign, { ...entry, min: 1, max: PILOT_AUTOMATIC_DELIVERY_LIMIT,
+      data: { length: 66, fields: [{ offset: 57, value: "0x01" }] } }],
+    outputs: [campaign, { ...entry, min: 1, max: PILOT_AUTOMATIC_DELIVERY_LIMIT,
+      data: { length: 66, fields: [{ offset: 57, value: "0x02" }] } }],
+    relations: campaignIdentity,
+    forEach: [{ inputRole: "entry", outputRole: "entry", relations: [
+      preserveEntry("lock"), preserveEntry("data", 0, 57), preserveEntry("data", 58),
+      ...entryCampaign.map(r => ({ left: { ...r.left, index: "each" as const }, right: r.right })),
+      { left: eachEntry("input", "lockArgs", 1, 28), right: eachEntry("input", "data", 0, 28) },
+      { left: eachEntry("input", "lockArgs", 29, 20), right: eachEntry("input", "data", 29, 20) },
+    ] }],
+  }, true);
   add("creator-withdraw", "Withdraw support", "0x08", {
     inputs: [ownCampaign], outputs: [ownCampaign], maxSpend: ccc.fixedPointFrom(1000).toString(),
     relations: [...campaignIdentity, preserve("data", 0, 53), preserve("data", 61, 113)],
