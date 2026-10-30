@@ -1,6 +1,7 @@
 "use client";
 
 import { signFreightMessage } from "@/lib/owlPermissions";
+import { PilotHostedSigner } from "@owl/pilot";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShowInfoSuccess } from "@/app/_components/InfoErrorProvider";
@@ -296,8 +297,9 @@ export function useCampaignCardState({
       : []
   ), [record?.socialMetadata?.resharedByAddresses]);
   const normalizedCurrentWalletAddress = normalizeHash(currentWalletAddress);
+  const viewerOwnerAddress = signer instanceof PilotHostedSigner ? normalizeHash(signer.provider.account?.ownerAddress) : normalizedCurrentWalletAddress;
   const isCreatorViewer = normalizedCurrentWalletAddress.length > 0
-    && normalizeHash(creatorAddress) === normalizedCurrentWalletAddress;
+    && [normalizedCurrentWalletAddress, viewerOwnerAddress].includes(normalizeHash(creatorAddress));
   const lockMountable = record?.mountables?.lock ?? null;
   const lockThresholdFbars = getLockMountableThresholdFbars(lockMountable);
   const isLockedForInteractions = raffleApprovalFailed || lockThresholdFbars !== null && !canAccessLockMountable(lockMountable, currentViewerFbars, creatorCurrentFbars);

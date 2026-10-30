@@ -12,8 +12,8 @@
   "dependencies": {
     "@ckb-ccc/connector-react": "^1.1.9",
     "@ckb-ccc/core": "1.23.0",
-    "@owl/pilot": "file:vendor/owl/owl-pilot-9e52649.tgz",
-    "@owl/pilot-react": "file:vendor/owl/owl-pilot-react-9e52649.tgz",
+    "@owl/pilot": "file:vendor/owl/owl-pilot-2886284.tgz",
+    "@owl/pilot-react": "file:vendor/owl/owl-pilot-react-2886284.tgz",
     "lucide-react": "^1.14.0",
     "mongodb": "^7.2.0",
     "next": "16.2.0",

@@ -1,9 +1,9 @@
 "use client";
 
-import { Bookmark, Heart, Quote, Share2, UserRound } from "lucide-react";
+import { Bookmark, Heart, Quote, Share, UserRound } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { buildDefaultHandle } from "@/lib/campaignDisplay";
 
@@ -33,6 +33,40 @@ function CommentAvatar({ address, name }: { address: string; name: string }) {
         <Image src={`/api/user-profiles/photo?address=${encodeURIComponent(address)}`} alt="" fill unoptimized onError={() => setPhotoFailed(true)} />
       ) : <UserRound size={18} aria-hidden="true" />}
     </span>
+  );
+}
+
+function CommentText({ text }: { text: string }) {
+  const textRef = useRef<HTMLParagraphElement>(null);
+  const textId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const [overflows, setOverflows] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (!element) return;
+    const measure = () => {
+      const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+      setOverflows(element.scrollHeight > lineHeight * 3 + 1);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    document.fonts.addEventListener("loadingdone", measure);
+    return () => {
+      observer.disconnect();
+      document.fonts.removeEventListener("loadingdone", measure);
+    };
+  }, [text]);
+
+  return (
+    <>
+      <p ref={textRef} id={textId} className={`campaign-detail-comment-text${expanded ? "" : " campaign-detail-comment-text-collapsed"}`}>{text}</p>
+      {overflows ? (
+        <button type="button" className="campaign-comment-read-more" aria-controls={textId} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Show less" : "Read more..."}
+        </button>
+      ) : null}
+    </>
   );
 }
 
@@ -174,7 +208,7 @@ export default function CampaignCommentsPanel({
                     <span className="campaign-detail-comment-identity"><span className="campaign-detail-comment-author">{author}</span><span className="campaign-detail-comment-handle">({handle})</span></span>
                     {date ? <time className="campaign-detail-comment-date" dateTime={comment.createdAt}>{date}</time> : null}
                   </div>
-                  <p className="campaign-detail-comment-text">{comment.text}</p>
+                  <CommentText text={comment.text} />
                   <div className="campaign-detail-comment-actions">
                     <button type="button" onClick={() => toggleReaction(key, "like")} disabled={!normalizedWallet}
                       className={selected.includes("like") ? "campaign-detail-comment-action-active" : ""}
@@ -182,7 +216,7 @@ export default function CampaignCommentsPanel({
                     <button type="button" onClick={() => toggleReaction(key, "save")} disabled={!normalizedWallet}
                       className={selected.includes("save") ? "campaign-detail-comment-action-active" : ""}
                       aria-label="Save comment" aria-pressed={selected.includes("save")} data-tooltip={normalizedWallet ? "Save" : "Connect wallet to save"}><Bookmark size={16} aria-hidden="true" /></button>
-                    <button type="button" onClick={() => void shareComment(anchor)} aria-label="Share comment" data-tooltip={copiedComment === anchor ? "Link copied" : "Share"}><Share2 size={16} aria-hidden="true" /></button>
+                    <button type="button" onClick={() => void shareComment(anchor)} aria-label="Share comment" data-tooltip={copiedComment === anchor ? "Link copied" : "Share"}><Share size={16} aria-hidden="true" /></button>
                     <button type="button" onClick={() => referenceComment(comment, author, handle, anchor)} aria-label="Reference comment in new freight" data-tooltip="Reference"><Quote size={16} aria-hidden="true" /></button>
                   </div>
                 </div>

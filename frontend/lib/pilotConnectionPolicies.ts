@@ -3,7 +3,7 @@ import { PILOT_WALLET_GENERAL_CODE_HASH, type PilotWalletProvider, type PilotWal
 import { FreightPilotSigner } from "./pilotWallet";
 import { getFreightProfileAddress } from "./profileIdentity";
 import { freightPilotCatalog } from "./pilotProtocol";
-import { freightTransactionTemplates } from "./pilotTransactionTemplates";
+import { freightRecipientScripts, freightTransactionTemplates } from "./pilotTransactionTemplates";
 export { FREIGHT_PILOT_BUDGET } from "./pilotTransactionTemplates";
 
 /** Public selected context, with no signing authority before approval. */
@@ -19,5 +19,5 @@ export async function buildFreightConnectionPolicies(client: ccc.Client, selecte
     throw new Error("FON requires Pilot's general signing account. Update the Pilot wallet and reconnect.");
   }
   await getFreightProfileAddress(selectedAccountSigner(client, selected));
-  return freightPilotCatalog(freightTransactionTemplates());
+  return freightPilotCatalog(freightTransactionTemplates(await freightRecipientScripts(client)));
 }

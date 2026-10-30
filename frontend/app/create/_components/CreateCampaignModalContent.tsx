@@ -1700,7 +1700,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       throw new Error("Connect wallet to manage drafts");
     }
 
-    const creatorAddress = await signer.getRecommendedAddress();
+    const creatorAddress = await getFreightProfileAddress(signer);
     if (!creatorAddress) {
       throw new Error("Unable to resolve wallet address for drafts");
     }
@@ -2148,7 +2148,8 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
         raffleApproval: raffleApprovalDraft,
         attachments,
         creatorAddress,
-        creatorHandle: deriveDefaultCreatorHandle(creatorAddress),
+        creatorHandle: currentUserProfile?.address?.toLowerCase() === creatorAddress.toLowerCase()
+          ? currentUserProfile.handle : deriveDefaultCreatorHandle(creatorAddress),
         status: draftStatus,
         txHash: txHashValue,
         publishError,
@@ -2160,6 +2161,7 @@ const CreateCampaignModalContent = forwardRef<CreateCampaignModalContentHandle, 
       allMentions,
       campaignType,
       getCreatorAddress,
+      currentUserProfile,
       giftDeliverableDraft,
       raffleApprovalDraft,
       attachments,

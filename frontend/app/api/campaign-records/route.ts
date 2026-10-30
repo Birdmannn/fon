@@ -9,6 +9,7 @@ import { parseStoredGiftDeliverable } from "@/lib/giftDeliverables";
 import { validateGoogleFormUrl } from "@/lib/googleForms";
 import { getCampaignAttachmentsCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 import { activateMountedAppsForCampaignRecord } from "@/lib/mountableAppRuntime";
+import { resolveCampaignCreatorIdentities } from "@/lib/campaignCreatorIdentity";
 
 export const dynamic = "force-dynamic";
 
@@ -502,7 +503,8 @@ export async function GET(request: Request) {
         record,
       });
 
-      return NextResponse.json({ record });
+      const [resolved] = record ? await resolveCampaignCreatorIdentities([record]) : [];
+      return NextResponse.json({ record: resolved ?? null });
     }
 
     const records = await collection
@@ -520,7 +522,7 @@ export async function GET(request: Request) {
       count: records.length,
     });
 
-    return NextResponse.json({ records });
+    return NextResponse.json({ records: await resolveCampaignCreatorIdentities(records) });
   } catch (error) {
     console.error("GET /api/campaign-records error:", error);
     const message = error instanceof Error ? error.message : "Failed to fetch campaign records";

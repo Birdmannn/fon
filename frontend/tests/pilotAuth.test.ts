@@ -67,7 +67,7 @@ test("an invalid live authority/signature never consumes the challenge", async (
 test("unknown protocols and oversized scoped proofs are rejected", async () => {
   const params = { address, message, identity: "hash", serialized: JSON.stringify({ protocol: "unknown" }), permission: "interaction-like" as const, origin: "https://freight.example", challenge };
   await assert.rejects(verifyFreightPilotProof(params), /Unknown Pilot proof/);
-  await assert.rejects(verifyFreightPilotProof({ ...params, serialized: "x".repeat(32_769) }), /too large/);
+  await assert.rejects(verifyFreightPilotProof({ ...params, serialized: "x".repeat(128 * 1024 + 1) }), /too large/);
 });
 
 
@@ -76,6 +76,9 @@ test("profile authorization binds each live Pilot session to the same descriptor
   const client = new ccc.ClientPublicTestnet();
   const ownerLock = ccc.Script.from({ codeHash: PILOT_PASSKEY_CODE_HASH, hashType: "data2", args: `0x${"22".repeat(97)}` });
   const owner = ccc.Address.fromScript(ownerLock, client).toString();
+  const { freightTransactionTemplates, freightRecipientScripts } = jiti("../lib/pilotTransactionTemplates.ts") as typeof import("../lib/pilotTransactionTemplates.ts");
+  const largeSelection = freightTransactionTemplates(await freightRecipientScripts(client))
+    .sort((a, b) => JSON.stringify(b).length - JSON.stringify(a).length).slice(0, 15);
   let verified = 0;
   const verify: Parameters<typeof verifyFreightPilotProof>[2] = async (_client, descriptor, _state, proof, expected) => {
     verified++;
@@ -94,10 +97,11 @@ test("profile authorization binds each live Pilot session to the same descriptor
     };
     const sessionLock = pilotWalletLock(account);
     const session = ccc.Address.fromScript(sessionLock, client).toString();
-    const state = { ...(codeHash === PILOT_WALLET_GENERAL_CODE_HASH ? {mode: "templates"} : {}), publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightMessagePolicy("wallet-seed")] };
+    const state = { ...(codeHash === PILOT_WALLET_GENERAL_CODE_HASH ? {mode: "templates"} : {}), publicKey: `0x02${"33".repeat(32)}`, remaining: "10000000000", sequence: "0", appOrigin: "https://freight.example", policies: [freightMessagePolicy("wallet-seed"), ...(codeHash === PILOT_WALLET_GENERAL_CODE_HASH ? largeSelection : [])] };
     const message = `freight-wallet-seed:${owner}:${challenge}`;
     const proof = { version: 1, accountHash: sessionLock.hash(), appOrigin: state.appOrigin, publicKey: state.publicKey, scope: "freight.wallet-seed", message, nonce: challenge, expiresAt: Date.now() + 60_000, signature: h("55") };
     const params = { address: owner, message, identity: sessionLock.hash(), serialized: JSON.stringify({ protocol: FREIGHT_PILOT_PROTOCOL, account, state, proof }), permission: "wallet-seed" as const, origin: state.appOrigin, challenge };
+    if (codeHash === PILOT_WALLET_GENERAL_CODE_HASH) assert.ok(params.serialized.length > 32_768, "large valid grants must fit the server proof limit");
     await verifyFreightPilotProof(params, client, verify);
     await assert.rejects(verifyFreightPilotProof({ ...params, address: session }, client, verify), /different owner/);
     await assert.rejects(verifyFreightPilotProof({ ...params, identity: ownerLock.hash() }, client, verify), /different owner/);
