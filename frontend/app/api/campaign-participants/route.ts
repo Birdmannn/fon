@@ -1,3 +1,4 @@
+import { requiresParentParticipation } from "@/lib/mountableAppRuntimeRules";
 import { Address } from "@ckb-ccc/core";
 import { getPublicCkbClient } from "@/lib/ckbClient";
 import { isRaffleProfileOwner } from "@/lib/rafflePayout";
@@ -189,7 +190,7 @@ export async function POST(request: Request) {
       const [owner, wallet] = await Promise.all([payload.profileAddress, payload.participantAddress].map(address => Address.fromString(address, client)));
       if (!isRaffleProfileOwner(owner.script, wallet.script)) throw new Error("Participant profile does not own this wallet");
     }
-    await assertFreightParentAccess(payload.campaignId, payload.participantAddress);
+    if (requiresParentParticipation(payload)) await assertFreightParentAccess(payload.campaignId, payload.profileAddress ?? payload.participantAddress);
     const collection = await getCampaignParticipantsCollection();
     const now = new Date();
     const giftCredit = payload.participantKind === "gift_claim" ? {

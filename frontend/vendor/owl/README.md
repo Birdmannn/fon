@@ -1,6 +1,29 @@
 # Owl Pilot dependency snapshots
 
-## Current revision: 1e16e9c (1 November 2026)
+## Current revision: 239221c (1 November 2026)
+
+`owl-pilot-239221c.tgz` and `owl-pilot-react-239221c.tgz` are built without
+source changes from a clean checkout of upstream commit
+`239221c60b798063ed2fbce19a3526372ca9110f`. Both archive integrity hashes are
+pinned in the lockfile. CCC core remains pinned to `1.23.0`.
+
+This revision adds connected-session permission and remaining-budget editing in
+the hosted wallet. Its replacement grant retains the account, session key and
+original expiry, with up to 16 selected policies from FON's current catalog and
+a budget within FON's requested maximum. The SDK sends `cancelSessionEdit` when
+its modal closes; unsigned edits are discarded. The wallet pauses new transaction
+requests while editing and reconciles saved receipts before replacing authority.
+No contract deployment or change to FON's policy templates is needed.
+
+FON continues to reopen the same connected provider from its Disconnect action.
+The hosted wallet asset `wallet-QDcbHlbF.js`, checked on 1 November 2026,
+contains Review permissions, Save changes with passkey and cancelSessionEdit.
+This confirms those editor controls are deployed; public-testnet permission
+editing with a real passkey has not been exercised by FON. All 49 upstream
+wallet/template tests and all 163 FON tests pass, and FON’s production build
+succeeds.
+
+## Previous revision: 1e16e9c (1 November 2026)
 
 `owl-pilot-1e16e9c.tgz` and `owl-pilot-react-1e16e9c.tgz` are built from a clean
 checkout of upstream commit `1e16e9ccf689cdcdd0bc2347c9825f16d6408a60` at

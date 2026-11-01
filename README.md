@@ -113,8 +113,10 @@ the account modal.
 
 FON separates 28 app actions into transaction and message capabilities. The SDK
 uses SDK and React archives built from upstream Owl commit
-`1e16e9ccf689cdcdd0bc2347c9825f16d6408a60`, including bounded script and identity
-alternatives. Its compiled SDK matches the earlier local mixed-payout snapshot.
+`239221c60b798063ed2fbce19a3526372ca9110f`, including bounded script and identity
+alternatives and connected-session permission editing. Closing the SDK modal
+cancels unsigned permission edits. The permission editor itself is provided by
+the matching hosted Pilot wallet.
 See `frontend/vendor/owl/README.md` for provenance.
 Connection requests `accountMode: "general"` and uses `buildPolicies` to validate
 the selected owner/account pair before offering 15 real message scopes and
@@ -163,7 +165,7 @@ accounting, raffle identity and recurring-round rules. Unexpected application
 inputs/outputs fail matching; ordinary account funding/change and authority cells
 remain wallet-managed.
 
-The catalog has 34 policies; Pilot offers at most 50 and users may select 16.
+The catalog has 30 policies; Pilot offers at most 50 and users may select 16.
 Nothing is selected by default. Selected message scopes and matching templates sign
 automatically. Unselected actions and transactions outside these templates require
 one-time owner passkey review in the same modal without replacing the grant.

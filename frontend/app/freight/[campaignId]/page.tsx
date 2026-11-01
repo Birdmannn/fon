@@ -1593,7 +1593,7 @@ export default function CampaignDetailPage() {
 
     try {
       if (!selectedRecord.campaignId) throw new Error("This freight is missing its campaign id");
-      await assertFreightParentPreflight(selectedRecord.campaignId, await signer.getRecommendedAddress());
+      await assertFreightParentPreflight(selectedRecord.campaignId, await getFreightProfileAddress(signer));
       const signed = await createSignedWalletAction("forms-claim");
       const response = await fetch(`/api/campaign-records/${selectedRecord._id}/forms/claim`, {
         method: "POST",

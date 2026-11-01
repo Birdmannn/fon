@@ -1,3 +1,5 @@
+import { CampaignType } from "./contract.ts";
+
 export function areRequiredPrinciplesSatisfied(
   selectedPrinciples: Array<{ principleId: string; required?: boolean }>,
   principleStates: Array<{ principleId: string; fulfilled: boolean }>,
@@ -9,12 +11,34 @@ export function areRequiredPrinciplesSatisfied(
   return requiredIds.every((principleId) => statesById.get(principleId) === true);
 }
 
+/** Only configured participation and raffle entry require parent clearance. */
+export function requiresParentParticipation(input: {
+  campaignType?: unknown; participantKind?: unknown; mountableType?: unknown;
+}) {
+  return input.participantKind === "raffle_ticket" || input.participantKind === "forms_claim"
+    || input.mountableType === "forms" || input.mountableType === "app" || input.participantKind === "app_update"
+    || ((Number(input.campaignType) === CampaignType.Raffle || Number(input.campaignType) === CampaignType.RecurringRaffle)
+      && !input.participantKind && !input.mountableType);
+}
+
+export function hasRequiredBaseParticipation(campaignType: unknown, rows: Array<{
+  participantKind?: unknown; mountableType?: unknown; status?: unknown;
+}>) {
+  // Non-raffles have no implicit activity requirement beyond configured criteria.
+  if (Number(campaignType) !== CampaignType.Raffle && Number(campaignType) !== CampaignType.RecurringRaffle) return true;
+  return rows.some(row => row.status === "verified" && (row.participantKind === "raffle_ticket"
+    || (!row.participantKind && !row.mountableType)));
+}
+
 export function isCanonicalParticipantVerified(input: {
   baseParticipationSatisfied: boolean;
   formsSatisfied: boolean;
   appPrinciplesSatisfied: boolean;
+  lockSatisfied?: boolean;
+  signableSatisfied?: boolean;
 }) {
-  return input.baseParticipationSatisfied && input.formsSatisfied && input.appPrinciplesSatisfied;
+  return input.baseParticipationSatisfied && input.formsSatisfied && input.appPrinciplesSatisfied
+    && input.lockSatisfied !== false && input.signableSatisfied !== false;
 }
 
 export function isMountedAppPollingEnabled(value: string | undefined) {
