@@ -81,7 +81,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
     try {
       campaignForPurchase = await resolveLiveRaffleCampaign(signer.client, ticketPurchaseCampaign);
       setTicketPurchaseCampaign(campaignForPurchase);
-      await assertFreightParentPreflight(getCampaignStableId(ticketPurchaseCampaign), await signer.getRecommendedAddress());
+      await assertFreightParentPreflight(getCampaignStableId(ticketPurchaseCampaign), await getFreightProfileAddress(signer));
     } catch (error) {
       setTicketPurchaseError(error instanceof Error ? error.message : "Could not check parent freight completion");
       setIsPurchasingTickets(false);

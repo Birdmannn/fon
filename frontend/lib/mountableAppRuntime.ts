@@ -1,3 +1,10 @@
+import type { CampaignRecord } from "@/app/_types/campaignRecords";
+import { canAccessLockMountable, isLockMountableEnabled } from "@/app/_lib/lockMountable";
+import { freightApprovalConstraintSatisfied } from "@/lib/freightConstraintState";
+import { getPublicCkbClient } from "@/lib/ckbClient";
+import { Address } from "@ckb-ccc/core";
+import { isRaffleProfileOwner } from "@/lib/rafflePayout";
+import { profileHistoryAddresses } from "@/lib/profileHistoryIdentity";
 import { randomBytes } from "node:crypto";
 
 import { normalizeAppMountableConfigs } from "@/app/_lib/appMountable";
@@ -19,10 +26,10 @@ import {
   normalizeMountableAppId,
   normalizeMountedAppPrincipleStates,
 } from "@/lib/fonMountablesSdk";
-import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMountableAppDeliveriesCollection, getMountableAppsCollection, getMountableAppUpdatesCollection, getMongoCollection } from "@/lib/mongodb";
+import { getCampaignParticipantFinalizationsCollection, getCampaignParticipantsCollection, getMountableAppDeliveriesCollection, getMountableAppsCollection, getMountableAppUpdatesCollection, getMongoCollection, getUserProfilesCollection } from "@/lib/mongodb";
 import { effectiveParticipantStatus, hasParticipantCreatedLinkedFreight, parentIds } from "@/lib/freightTree";
 import { deriveMountableWindow, mountableWindowDurationSeconds } from "@/lib/mountableTiming";
-import { areRequiredPrinciplesSatisfied, isCanonicalParticipantVerified, isMountedAppPollDue, isMountedAppPollingEnabled, mountedAppWindowState } from "@/lib/mountableAppRuntimeRules";
+import { areRequiredPrinciplesSatisfied, hasRequiredBaseParticipation, isCanonicalParticipantVerified, isMountedAppPollDue, isMountedAppPollingEnabled, mountedAppWindowState } from "@/lib/mountableAppRuntimeRules";
 
 export type CampaignRecordMountableRuntime = {
   campaignId?: unknown;
@@ -33,11 +40,15 @@ export type CampaignRecordMountableRuntime = {
   createdByHash?: unknown;
   chainCreatedAt?: unknown;
   campaignType?: unknown;
+  creatorAddress?: string | null;
+  giftDeliverable?: CampaignRecord["giftDeliverable"];
+  raffleApproval?: CampaignRecord["raffleApproval"];
   argsDraft?: {
     taskStartDelayHours?: unknown;
     taskDurationHours?: unknown;
   } | null;
   mountables?: {
+    lock?: NonNullable<CampaignRecord["mountables"]>["lock"];
     childFreight?: unknown;
     forms?: unknown;
     apps?: unknown;
@@ -46,6 +57,7 @@ export type CampaignRecordMountableRuntime = {
 
 export type CampaignParticipantRuntimeRow = {
   participantAddress?: unknown;
+  profileAddress?: unknown;
   participantKind?: unknown;
   status?: unknown;
   mountableType?: unknown;
@@ -163,6 +175,9 @@ async function loadCampaignRecordByCampaignId(campaignId: string) {
         campaignType: 1,
         argsDraft: 1,
         mountables: 1,
+        creatorAddress: 1,
+        giftDeliverable: 1,
+        raffleApproval: 1,
       },
     },
   ) as Promise<CampaignRecordMountableRuntime | null>;
@@ -181,7 +196,7 @@ export async function finalizeCampaignParticipant(params: {
     return null;
   }
 
-  const record = params.record ?? await loadCampaignRecordByCampaignId(campaignId);
+  const record = await loadCampaignRecordByCampaignId(campaignId) ?? params.record;
   if (!record) {
     return null;
   }
@@ -193,16 +208,18 @@ export async function finalizeCampaignParticipant(params: {
 
   const participantsCollection = await getCampaignParticipantsCollection();
   const finalizationsCollection = await getCampaignParticipantFinalizationsCollection();
+  const participantAddresses = await profileHistoryAddresses(participantAddress);
   const rows = await participantsCollection.find(
     {
       campaignId,
-      participantAddress,
+      participantAddress: { $in: participantAddresses },
       participantKind: { $ne: "canonical_verification" },
     },
     {
       projection: {
         _id: 0,
         participantAddress: 1,
+        profileAddress: 1,
         participantKind: 1,
         status: 1,
         mountableType: 1,
@@ -220,14 +237,28 @@ export async function finalizeCampaignParticipant(params: {
 
   const enabledMountedApps = normalizeAppMountableConfigs(record.mountables?.apps).filter((entry) => entry.enabled);
   const formsMountable = normalizeFormsMountableConfig(record.mountables?.forms ?? null);
-  const hasBaseParticipation = rows.some((row) => {
-    const participantKind = normalizeString(row.participantKind);
-    const mountableType = normalizeString(row.mountableType);
-    return normalizeString(row.status) === "verified"
-      && mountableType !== "app"
-      && mountableType !== "forms"
-      && participantKind !== "app_update"
-      && participantKind !== "forms_claim";
+  const hasBaseParticipation = hasRequiredBaseParticipation(record.campaignType, rows);
+  let lockSatisfied = true;
+  if (isLockMountableEnabled(record.mountables?.lock)) {
+    let profileAddress = participantAddress;
+    const ownerRow = rows.find(row => typeof row.profileAddress === "string");
+    const indexedOwner = ownerRow?.profileAddress;
+    if (typeof indexedOwner === "string") {
+      const client = getPublicCkbClient();
+      const [owner, wallet] = await Promise.all([indexedOwner, normalizeAddress(ownerRow?.participantAddress) || participantAddress].map(address => Address.fromString(address, client)));
+      if (isRaffleProfileOwner(owner.script, wallet.script)) profileAddress = indexedOwner.toLowerCase();
+    }
+    const profiles = await getUserProfilesCollection();
+    const [participant, creator] = await Promise.all([
+      profiles.findOne({address: profileAddress}, {projection: {fbars: 1}}),
+      record.creatorAddress ? profiles.findOne({address: record.creatorAddress.toLowerCase()}, {projection: {fbars: 1}}) : null,
+    ]);
+    lockSatisfied = canAccessLockMountable(record.mountables?.lock, participant?.fbars, creator?.fbars);
+  }
+  const signableSatisfied = await freightApprovalConstraintSatisfied(getPublicCkbClient(), {
+    campaignId, createdByHash: normalizeString(record.createdByHash),
+    chainCreatedAt: normalizeString(record.chainCreatedAt), campaignType: Number(record.campaignType),
+    giftDeliverable: record.giftDeliverable, raffleApproval: record.raffleApproval,
   });
   const formsSatisfied = !formsMountable.enabled || rows.some((row) => normalizeString(row.participantKind) === "forms_claim" && normalizeString(row.status) === "verified");
   const appPrinciplesSatisfied = enabledMountedApps.length === 0 || enabledMountedApps.every((mountable) => rows.some((row) => normalizeString(row.mountableType) === "app" && normalizeString(row.mountableInstanceId) === mountable.mountableInstanceId && row.childSatisfied === true));
@@ -261,8 +292,10 @@ export async function finalizeCampaignParticipant(params: {
 
   const reasons: string[] = [];
   if (!hasBaseParticipation) {
-    reasons.push("No participant activity recorded yet");
+    reasons.push("Buy a raffle ticket to complete participation");
   }
+  if (!lockSatisfied) reasons.push("The configured FBARS constraint is not fulfilled");
+  if (!signableSatisfied) reasons.push("Required on-chain approvals are still pending");
   if (!formsSatisfied) {
     reasons.push("Forms verification is still pending");
   }
@@ -290,6 +323,8 @@ export async function finalizeCampaignParticipant(params: {
     baseParticipationSatisfied: hasBaseParticipation,
     formsSatisfied,
     appPrinciplesSatisfied,
+    lockSatisfied,
+    signableSatisfied,
   });
   const isVerified = effectiveParticipantStatus(ownSatisfied, [freightParentSatisfied, linkedFreightSatisfied, childFreightSatisfied]) === "verified";
   const previousVerifiedAt = previousFinalization?.canonicalVerification?.status === "verified"
@@ -409,7 +444,7 @@ export async function assertFreightParentAccess(campaignId: string, participantA
   })));
   const pendingCount = snapshots.filter((snapshot) => snapshot?.status !== "verified").length;
   if (pendingCount > 0) {
-    throw new Error(`Complete ${pendingCount === 1 ? "the parent freight" : "all parent freights"} before interacting with this child freight`);
+    throw new Error(`Complete ${pendingCount === 1 ? "the parent freight" : "all parent freights"} before participating in this child freight`);
   }
 }
 
