@@ -12,6 +12,7 @@ Options:
   --profile <default|fresh>  Deployment profile (default: default)
   --rpc-url <url>            CKB RPC URL (default: https://testnet.ckb.dev/rpc)
   --skip-build               Skip rebuilding build/release/freight before deploy
+  --resume                   Sign and apply the already-generated profile transaction
   -h, --help                 Show this help
 
 Examples:
@@ -28,6 +29,7 @@ RPC_URL="${RPC_URL:-https://testnet.ckb.dev/rpc}"
 FROM_ADDRESS=""
 FROM_ACCOUNT=""
 SKIP_BUILD=0
+RESUME=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --profile) PROFILE="$2"; shift 2 ;;
     --rpc-url) RPC_URL="$2"; shift 2 ;;
     --skip-build) SKIP_BUILD=1; shift ;;
+    --resume) RESUME=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -68,17 +71,24 @@ esac
 
 mkdir -p build/release deployment/txs "$MIGRATION_DIR"
 
-if [[ "$SKIP_BUILD" -eq 0 ]]; then
+if [[ "$RESUME" -eq 1 && ! -f "$INFO_FILE" ]]; then
+  echo "Error: no prepared deployment at $INFO_FILE" >&2
+  exit 1
+fi
+
+if [[ "$RESUME" -eq 0 && "$SKIP_BUILD" -eq 0 ]]; then
   echo "==> Building freight contract"
   make -e -C contracts/freight build "TOP=${REPO_ROOT}/" BUILD_DIR=build/release MODE=release
 fi
 
-echo "==> Generating deployment transactions"
-ckb-cli --url "$RPC_URL" deploy gen-txs \
-  --from-address "$FROM_ADDRESS" \
-  --deployment-config "$DEPLOY_TOML" \
-  --info-file "$INFO_FILE" \
-  --migration-dir "$MIGRATION_DIR"
+if [[ "$RESUME" -eq 0 ]]; then
+  echo "==> Generating deployment transactions"
+  ckb-cli --url "$RPC_URL" deploy gen-txs \
+    --from-address "$FROM_ADDRESS" \
+    --deployment-config "$DEPLOY_TOML" \
+    --info-file "$INFO_FILE" \
+    --migration-dir "$MIGRATION_DIR"
+fi
 
 echo "==> Signing deployment transactions"
 ckb-cli --url "$RPC_URL" deploy sign-txs \

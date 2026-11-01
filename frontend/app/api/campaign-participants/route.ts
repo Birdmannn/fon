@@ -1,3 +1,6 @@
+import { Address } from "@ckb-ccc/core";
+import { getPublicCkbClient } from "@/lib/ckbClient";
+import { isRaffleProfileOwner } from "@/lib/rafflePayout";
 import { after, NextResponse } from "next/server";
 
 import { getCampaignParticipantsCollection, getMongoCollection, getMountableAppUpdatesCollection } from "@/lib/mongodb";
@@ -12,6 +15,7 @@ type CampaignParticipantPayload = {
   chainCreatedAt?: unknown;
   campaignType?: unknown;
   participantAddress?: unknown;
+  profileAddress?: unknown;
   participantTxHash?: unknown;
   joinedAt?: unknown;
   status?: unknown;
@@ -147,6 +151,7 @@ function normalizePayload(payload: CampaignParticipantPayload) {
     chainCreatedAt,
     campaignType,
     participantAddress,
+    profileAddress: ensureOptionalString(payload.profileAddress, "profileAddress")?.toLowerCase() ?? null,
     participantTxHash,
     joinedAt,
     status,
@@ -179,6 +184,11 @@ function normalizePayload(payload: CampaignParticipantPayload) {
 export async function POST(request: Request) {
   try {
     const payload = normalizePayload((await request.json()) as CampaignParticipantPayload);
+    if (payload.profileAddress) {
+      const client = getPublicCkbClient();
+      const [owner, wallet] = await Promise.all([payload.profileAddress, payload.participantAddress].map(address => Address.fromString(address, client)));
+      if (!isRaffleProfileOwner(owner.script, wallet.script)) throw new Error("Participant profile does not own this wallet");
+    }
     await assertFreightParentAccess(payload.campaignId, payload.participantAddress);
     const collection = await getCampaignParticipantsCollection();
     const now = new Date();

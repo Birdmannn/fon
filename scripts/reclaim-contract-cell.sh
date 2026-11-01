@@ -14,7 +14,7 @@ Options:
   --from-account <account>   Account used for signing (defaults to --from-address)
   --to-address <address>     Address that receives the reclaimed capacity (defaults to --from-address)
   --tx-hash <hash>           Contract cell tx hash (default: current fresh deployment)
-  --index <index>            Contract cell output index (default: 0)
+  --index <index>            Contract cell output index (default: fresh deployment index, or 0 with --tx-hash)
   --capacity <ckb>           Output capacity in CKB (default: live cell minus 0.01 CKB fee)
   --rpc-url <url>            CKB RPC URL (default: https://testnet.ckb.dev/rpc)
   --expected-lock-args <hex> Expected lock args for safety check (default: fresh deployment owner)
@@ -38,8 +38,8 @@ RPC_URL="${RPC_URL:-https://testnet.ckb.dev/rpc}"
 FROM_ADDRESS=""
 FROM_ACCOUNT=""
 TO_ADDRESS=""
-TX_HASH="0xd5baeb3225bc7cb8558b849148e5a77c6616edc1c228dbe701dcff52e98495a3"
-INDEX="0"
+TX_HASH=""
+INDEX=""
 EXPECTED_LOCK_ARGS="0x8da4d7725a1fc36984f5d3b81ddaa148b80aca84"
 TX_FILE="/tmp/freight-reclaim-tx.json"
 CAPACITY_CKB=""
@@ -67,6 +67,36 @@ if [[ -z "$FROM_ADDRESS" ]]; then
   usage >&2
   exit 1
 fi
+
+# Resolve the last recorded fresh deployment at invocation time. Never use
+# deploy-info's proposed recipe: it may describe an unbroadcast transaction.
+if [[ -z "$TX_HASH" ]]; then
+  FRESH_OUTPOINT="$(python3 - <<'PYRECIPE'
+import json
+import re
+from pathlib import Path
+
+recipes = sorted(Path("deployment/migration-fresh").glob("*.json"))
+if not recipes:
+    raise SystemExit("No fresh deployment migration found. Supply --tx-hash and --index explicitly.")
+recipe = json.loads(recipes[-1].read_text())
+cells = [cell for cell in recipe.get("cell_recipes", []) if cell.get("name") == "freight"]
+if len(cells) != 1:
+    raise SystemExit("Latest fresh migration must contain exactly one freight code cell.")
+cell = cells[0]
+if not re.fullmatch(r"0x[0-9a-fA-F]{64}", cell.get("tx_hash", "")):
+    raise SystemExit("Invalid freight transaction hash in fresh migration.")
+index = cell.get("index")
+if type(index) is not int or not 0 <= index <= 0xffffffff:
+    raise SystemExit("Invalid freight output index in fresh migration.")
+print(cell["tx_hash"], index)
+PYRECIPE
+)"
+  read -r TX_HASH FRESH_INDEX <<< "$FRESH_OUTPOINT"
+  INDEX="${INDEX:-$FRESH_INDEX}"
+fi
+INDEX="${INDEX:-0}"
+echo "Target fresh contract cell: $TX_HASH#$INDEX" >&2
 
 FROM_ACCOUNT="${FROM_ACCOUNT:-$FROM_ADDRESS}"
 TO_ADDRESS="${TO_ADDRESS:-$FROM_ADDRESS}"

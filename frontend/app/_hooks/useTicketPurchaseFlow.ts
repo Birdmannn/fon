@@ -176,6 +176,7 @@ export function useTicketPurchaseFlow({ currentViewerFbars, onSubmissionError, o
           chainCreatedAt: getCampaignChainCreatedAt(campaignForPurchase),
           campaignType: campaignForPurchase.data.campaignType,
           participantAddress: await signer.getRecommendedAddress(),
+          profileAddress: await getFreightProfileAddress(signer),
           participantKind: "raffle_ticket",
           participantTxHash: txHash,
           joinedAt: String(Date.now()),

@@ -1,3 +1,4 @@
+import { isSupportedRafflePayoutLock, rafflePayoutMatchesIdentity } from "./rafflePayout";
 import { completeFreightFee } from "./pilotWallet";
 import { sendFreightTransaction, type FreightTransactionPermission } from "./owlPermissions";
 import { assertGiftClaim, buildGiftPolicyConfig, validateGiftPolicy, type GiftPolicy } from "./giftPolicy";
@@ -665,8 +666,26 @@ export async function sendBatchDeliver(
   signer: ccc.Signer,
   campaignCell: CampaignCell,
   winners: ParticipantCell[],
-  revealedPreimage?: Uint8Array
+  revealedPreimage?: Uint8Array,
+  recipientAddresses: readonly string[] = [],
 ): Promise<string> {
+  if (campaignCell.data.campaignType !== CampaignType.Raffle) {
+    throw new Error("Direct reward distribution requires a regular raffle.");
+  }
+  if (recipientAddresses.length !== winners.length || winners.length === 0) {
+    throw new Error("Every winning ticket must have a wallet payout address.");
+  }
+  const recipientLocks = await Promise.all(recipientAddresses.map(async (address, index) => {
+    const lock = (await ccc.Address.fromString(address, signer.client)).script;
+    if (!isSupportedRafflePayoutLock(lock)) throw new Error("This raffle recipient uses an unsupported wallet payout script.");
+    if (lock.codeHash === FREIGHT_CONTRACT.codeHash
+      || !rafflePayoutMatchesIdentity(lock, bytesToHex(winners[index].data.participantAddress))) {
+      throw new Error("Reward wallet does not match its winning ticket.");
+    }
+    return lock;
+  }));
+  const ticketIds = winners.map(winner => `${winner.outPoint.txHash}:${winner.outPoint.index}`);
+  if (new Set(ticketIds).size !== ticketIds.length) throw new Error("A winning ticket cannot be paid twice.");
   const tx = ccc.Transaction.default();
   tx.addCellDeps(FREIGHT_CELL_DEP);
 
@@ -729,17 +748,12 @@ export async function sendBatchDeliver(
     bytesToHex(encodeCampaignData(updatedCampaignData))
   );
 
-  for (const winner of winners) {
+  // Consume each escrow ticket and return its occupied capacity together with
+  // the reward in an ordinary, immediately spendable participant wallet cell.
+  for (const [index, winner] of winners.entries()) {
     tx.addOutput(
-      {
-        capacity: winner.capacityShannons + rewardPerWinner,
-        lock: winner.lock,
-        type: winner.type ?? undefined,
-      },
-      bytesToHex(encodeParticipantData({
-        ...winner.data,
-        status: ParticipantStatus.Rewarded,
-      }))
+      { capacity: winner.capacityShannons + rewardPerWinner, lock: recipientLocks[index] },
+      "0x",
     );
   }
 
@@ -1143,6 +1157,7 @@ export async function fetchParticipants(
   statuses: ParticipantStatus[] = [ParticipantStatus.Verified],
 ): Promise<ParticipantCell[]> {
   const results: ParticipantCell[] = [];
+  const seenTickets = new Set<string>();
   const campaignCreatedByHex = bytesToHex(campaign.data.createdBy);
   const campaignCreatedAt = campaign.data.createdAt;
   const campaignType = campaign.data.campaignType;
@@ -1180,6 +1195,9 @@ export async function fetchParticipants(
         if (!statuses.includes(data.status)) {
           continue;
         }
+        const ticketId = `${cell.outPoint.txHash.toLowerCase()}:${Number(cell.outPoint.index)}`;
+        if (seenTickets.has(ticketId)) continue;
+        seenTickets.add(ticketId);
         results.push({
           outPoint: {
             txHash: cell.outPoint.txHash,

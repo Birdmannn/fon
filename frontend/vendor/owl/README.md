@@ -1,6 +1,35 @@
 # Owl Pilot dependency snapshots
 
-## Current revision: 2886284 (30 October 2026)
+## Current revision: 1e16e9c (1 November 2026)
+
+`owl-pilot-1e16e9c.tgz` and `owl-pilot-react-1e16e9c.tgz` are built from a clean
+checkout of upstream commit `1e16e9ccf689cdcdd0bc2347c9825f16d6408a60` at
+https://github.com/Birdmannn/owl. The lockfile pins both archive integrity hashes.
+The SDK's compiled files exactly match the earlier local
+`owl-pilot-mixed-payouts-20261101.tgz` snapshot; the React compiled files also match
+the previous `2886284` snapshot. The other session's FON integration therefore
+uses the committed API without local SDK patches. Older archives remain for
+provenance.
+
+FON offers one Distribute rewards permission for 1–64 mixed-wallet payouts.
+Script `anyOf` choices and guarded `forEach.anyOf` identity branches bind each
+recipient wallet program to its ticket identity. Common campaign checks, equal
+counts, empty payout data and no type remain mandatory. `includeAccountOutputs`
+keeps ordinary payouts to the signing account in those same checks.
+
+The updated SDK is installed in both FON's client and message verifiers. The
+hosted wallet asset `wallet-Cv5U1yon.js`, checked on 1 November 2026, contains
+`anyOf`, `outputLock` and `includeAccountOutputs`. This confirms the matcher
+fields are present; it does not establish a funded end-to-end distribution.
+Changed grants require explicit replacement approval and never silently broaden.
+No Pilot contract deployment is required. FON's direct wallet-payout contract
+was freshly deployed and verified on testnet on 1 November 2026; see
+`contracts/freight/README.md` for its new identity. Live funded mixed-wallet
+distribution remains unverified.
+
+## Earlier SDK status (superseded by the mixed-wallet snapshot)
+
+## Previous revision: 2886284 (30 October 2026)
 
 `owl-pilot-2886284.tgz` and `owl-pilot-react-2886284.tgz` are built from the clean
 upstream commit `288628434e10a24b740bceb97de5fe5362c06d33` at
@@ -9,18 +38,30 @@ lockfile integrity hashes pin these archives. The SDK's compiled files match the
 previous local `owl-pilot-batch-20261030.tgz` snapshot byte for byte; its README
 now comes from the committed upstream revision.
 
-This revision adds bounded `forEach` template comparisons. FON's existing
-uncommitted integration matches that API and offers one Distribute rewards
-permission for 1–64 raffle entries. Every paired entry preserves its full lock
-and identity and is bound to the shared campaign. The catalog contains 34
-choices, of which at most 16 may be selected. No contract redeployment is needed.
+This revision adds bounded `forEach` template comparisons. The current FON
+catalog contains 33 choices, of which at most 16 may be selected.
 
-The hosted wallet must run the updated matcher. Its public asset
-`wallet-DVQ_SwT2.js` was checked on 30 October 2026 and contains both the `forEach`
-schema and `each` index resolution. Live funded reward distribution has not been
-verified. Existing fixed-size grants are not silently expanded; replacing one
-requires owner approval after pending receipts settle. Message verifiers must
-also install this SDK to validate proofs containing the new template schema.
+The old Distribute rewards template preserved each ticket's FON lock and data.
+That authorized an escrow update, not a spendable wallet payout. It has been
+removed as part of the regular raffle payout correction. Regular distribution
+now creates empty-data, untyped participant wallet outputs and requires an
+updated FON contract deployment. The pinned Pilot SDK cannot express different
+wallet script programs as alternatives in one repeated output role. Distribution
+therefore uses Pilot's existing one-time transaction review; its automatic
+policies for other actions remain available.
+
+Pilot needs script-pattern alternatives for a repeated payout role (including
+mixed JoyID, secp256k1, OmniLock and Pilot recipients), with per-entry identity and
+amount comparisons, before FON can offer one automatic Distribute rewards
+permission for these wallet payouts. Updating only the SDK label or keeping the
+old escrow-preserving matcher would not authorize the actual payment. FON has
+not patched the vendored SDK or broadened previously approved grants.
+
+The hosted wallet's public asset `wallet-DVQ_SwT2.js` was checked on
+30 October 2026 and contains the `forEach` schema and `each` index resolution.
+Live funded distribution with the corrected payout contract has not been
+performed. Message verifiers must also install this SDK to validate proofs
+containing the new template schema.
 
 To reproduce the archives from a clean checkout of this commit:
 
