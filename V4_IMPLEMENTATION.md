@@ -1,5 +1,41 @@
 # V4 Implementation Notes
 
+## Top Priority (P0): Enforce Participation Eligibility On-Chain
+
+**Status: planned; not enforced by the current deployment.** This takes priority over the participant-cell redesign and other v4 work below.
+
+### Current gap
+
+FON checks parent completion, forms, mounted-app results, FBARS, and other configured participation constraints in its frontend/server. The contract does not verify those app-level results. Purchasing a raffle ticket creates a participant marked `Verified` on-chain, but that status establishes a valid ticket, not completion of all configured constraints.
+
+An independently built transaction can bypass FON's eligibility checks. Current distribution validates contract rules such as timing, participant records, randomness, and payouts, but does not establish app-level eligibility. The regular batch-distribution entry point also has no explicit creator-signature check; the creator-only button is an application restriction. Pilot permissions restrict the connected wallet's signing and do not make these requirements universal contract rules.
+
+### Required outcome
+
+- Enforce eligibility at the contract boundary, including transactions submitted outside FON or without Pilot.
+- Require every configured parent/ancestor constraint before child participation, then the child's own configured constraints. Raffle participation also requires buying a valid ticket.
+- Keep ticket ownership/payment distinct from constraint clearance and reward eligibility. A paid ticket alone must not authorize an otherwise ineligible reward payout.
+- Do not make tipping, support, management, withdrawals, or recovery of a participant's own storage capacity depend on unrelated parent participation. Existing independent financial and authorization rules still apply.
+
+### Proposed implementation
+
+1. Commit the applicable constraint configuration and parent relationships on-chain, with an explicit version/hash so off-chain metadata edits cannot silently change eligibility rules.
+2. Validate chain-verifiable conditions directly where feasible. For external conditions such as forms and mounted-app results, require a cryptographically verified eligibility attestation from an explicitly authorized verifier. This introduces trust in that verifier for external facts; it does not make those facts independently observable by the chain.
+3. Bind each attestation to the deployment/network, stable freight identity, participant identity, constraint version, and raffle round where applicable. Define validity, replay protection, verifier rotation/revocation, and when clearance becomes final. Pilot sessions must resolve to the intended stable owner identity without accepting editable profile labels as proof.
+4. Require the eligibility proof or a contract-validated eligibility state during child entry and reward selection/distribution/claim, as appropriate to each campaign type. Reject missing, forged, stale, wrong-participant, wrong-freight, and wrong-round approvals. Establish a contract-validated eligible participant set so callers cannot manufacture eligibility or bias winner selection by supplying an arbitrary subset.
+5. Decide explicitly whether settlement is permissionless once all eligibility and payout proofs are valid, or requires creator authorization. If creator authorization is required, enforce it in the contract rather than relying on the UI.
+6. Update FON's verifier, transaction builders, indexing, and Pilot templates for the new proofs and transitions. This requires contract changes and a fresh deployment; an SDK or frontend update alone cannot close the gap.
+
+### Acceptance checks
+
+- Transactions built outside FON cannot enter a gated child or obtain rewards without the required eligibility proofs, even with a paid ticket.
+- Valid proofs permit eligible participants to receive the correct payout across supported wallet types, including Pilot owner/session identities.
+- Missing parent clearance, unmet own constraints, fabricated participant records, replayed or mismatched attestations, and caller-selected participant subsets cannot bypass eligibility or winner-selection rules.
+- Direct tipping and unrelated management/recovery operations remain available without parent clearance, subject to their own contract rules.
+- Contract tests cover both regular and recurring raffles, applicable non-raffle rewards, and the chosen settlement authorization model.
+
+---
+
 ## Context
 
 During the raffle settlement debugging work in v3, we uncovered a deeper architectural issue in how participant cells are modeled and discovered.
