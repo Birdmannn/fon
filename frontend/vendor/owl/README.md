@@ -11,7 +11,10 @@ the previous `2886284` snapshot. The other session's FON integration therefore
 uses the committed API without local SDK patches. Older archives remain for
 provenance.
 
-FON offers one Distribute rewards permission for 1–64 mixed-wallet payouts.
+FON offers one Tip a creator permission across supported recipient wallet
+programs and one Distribute rewards permission for 1–64 mixed-wallet payouts.
+The catalog contains 30 choices (15 message and 15 transaction policies), with
+at most 16 selected per session.
 Script `anyOf` choices and guarded `forEach.anyOf` identity branches bind each
 recipient wallet program to its ticket identity. Common campaign checks, equal
 counts, empty payout data and no type remain mandatory. `includeAccountOutputs`
