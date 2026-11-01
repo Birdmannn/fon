@@ -77,10 +77,10 @@ function raffle(f: Awaited<ReturnType<typeof fixture>>, recurring = false, nonce
 
 test("fresh general connection offers message scopes and all transaction actions without chain scans", async () => {
   const f = await fixture();
-  assert.equal(f.catalog.length, 34);
-  assert.equal(f.policies.length, 19);
-  validatePilotPolicies(f.policies.slice(0, 16));
-  assert.throws(() => validatePilotPolicies(f.policies.slice(0, 17)), /16/);
+  assert.equal(f.catalog.length, 30);
+  assert.equal(f.policies.length, 15);
+  validatePilotPolicies(f.catalog.slice(0, 16));
+  assert.throws(() => validatePilotPolicies(f.catalog.slice(0, 17)), /16/);
   assert.ok(f.catalog.filter(p => p.direction !== "message").every(p => p.direction === "template"));
   await assert.rejects(f.signer.provider.request("send"), /before signing authority/);
   await assert.rejects(buildFreightConnectionPolicies(f.client, { ...f.selected, ownerAddress: f.selected.address }), /inconsistent/);
@@ -258,20 +258,35 @@ test("gift claims accept only account payouts and preserve the fixed campaign fi
   await assert.rejects(f.validate(redirected, "freight.gift-claim"), /approved action template/);
 });
 
-test("direct tip builders bind supported recipients to the campaign creator and reject redirects", async () => {
+test("one tip permission accepts supported wallet programs and rejects redirects", async () => {
   const f = await fixture(); const recipients = await freightRecipientScripts(f.client);
+  assert.equal(f.policies.filter(p => p.template?.id.startsWith("freight.creator-tip")).length, 1);
+  assert.equal(f.policies.find(p => p.template?.id === "freight.creator-tip")?.name, "Tip a creator");
   for (const [index, recipient] of recipients.entries()) {
     const c = raffle(f, false, 40 + index); c.data.campaignType = CampaignType.SimpleTask;
     const recipientLock = ccc.Script.from({codeHash: recipient.codeHash, hashType: recipient.hashType,
       args: ccc.hexFrom(new Uint8Array(recipient.name === "Pilot passkey" ? 97 : 32).fill(index + 1))});
     c.data.createdBy = ccc.bytesFrom(recipientLock.args).slice(0, 20); c.lock = freightStateLock(c.data.createdBy); syncCampaign(f, c);
-    const policyId = `freight.creator-tip.${recipient.name.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    const policyId = "freight.creator-tip";
     const tx = await capture(f, "creator-tip", () => transactions.sendCreatorTipShannons(f.signer, c,
       ccc.fixedPointFrom(200), ccc.Address.fromScript(recipientLock, f.client).toString()), policyId);
     const changed = tx.clone(); const args = ccc.bytesFrom(changed.outputs[1].lock.args); args[0] ^= 1;
     changed.outputs[1].lock.args = ccc.hexFrom(args);
     await assert.rejects(f.validate(changed, policyId), /approved action template/);
+    const unsupported = tx.clone(); unsupported.outputs[1].lock.codeHash = h("98");
+    await assert.rejects(f.validate(unsupported, policyId), /approved action template/);
+    const wrongHashType = tx.clone(); wrongHashType.outputs[1].lock.hashType = "data1";
+    await assert.rejects(f.validate(wrongHashType, policyId), /approved action template/);
+    const typed = tx.clone(); typed.outputs[1].type = c.type;
+    await assert.rejects(f.validate(typed, policyId), /approved action template/);
+    const withData = tx.clone(); withData.outputsData[1] = "0x01";
+    await assert.rejects(f.validate(withData, policyId), /approved action template/);
   }
+  const own = raffle(f, false, 49); own.data.campaignType = CampaignType.SimpleTask;
+  own.data.createdBy = ccc.bytesFrom(lock.args).slice(0, 20);
+  own.lock = freightStateLock(own.data.createdBy); syncCampaign(f, own);
+  await capture(f, "creator-tip", () => transactions.sendCreatorTipShannons(f.signer, own,
+    ccc.fixedPointFrom(200), f.selected.address), "freight.creator-tip");
 });
 
 test("one reward permission accepts mixed wallet payouts and binds every recipient to its ticket", async () => {

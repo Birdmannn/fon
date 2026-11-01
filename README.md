@@ -118,7 +118,7 @@ alternatives. Its compiled SDK matches the earlier local mixed-payout snapshot.
 See `frontend/vendor/owl/README.md` for provenance.
 Connection requests `accountMode: "general"` and uses `buildPolicies` to validate
 the selected owner/account pair before offering 15 real message scopes and
-19 whole-transaction templates covering all 15 FON transaction action IDs:
+15 whole-transaction templates covering all 15 FON transaction action IDs:
 
 - **Publish freight**, **Update freight status (includes raffle activation)** and
   **Buy raffle tickets** cover future campaign configurations and regular/recurring
@@ -130,8 +130,8 @@ the selected owner/account pair before offering 15 real message scopes and
   operation selector. Cancellation and withdrawal bind the creator to the account;
   gift and withdrawal payouts must return to that account. Their occupied-capacity
   top-ups are bounded to 1,000 CKB, also subject to the selected session budget.
-- **Tip a creator** has separate recipient-script policies for JoyID, secp256k1,
-  OmniLock, Pilot general accounts and Pilot passkeys. Each binds the recipient's
+- **Tip a creator** is one policy with script alternatives for JoyID, secp256k1,
+  OmniLock, Pilot general accounts and Pilot passkeys. It binds the recipient's
   first 20 lock-argument bytes to the campaign creator, as required by the deployed
   FON contract. Unsupported recipient scripts require owner review. A Pilot owner
   address whose lock-argument prefix differs from the on-chain creator cannot

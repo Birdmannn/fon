@@ -110,16 +110,15 @@ export function freightTransactionTemplates(recipients: readonly FreightRecipien
     maxSpend: FREIGHT_PILOT_BUDGET.toString(),
     relations: [...campaignIdentity, preserve("data", 0, 53), preserve("data", 61, 121)],
   }, true);
-  for (const recipient of recipients) {
-    add("creator-tip", `Tip a creator (${recipient.name})`, "0x01", {
-      id: `freight.creator-tip.${recipient.name.replace(/[^a-zA-Z0-9_-]/g, "-")}`,
-      maxSpend: FREIGHT_PILOT_BUDGET.toString(),
-      outputs: [campaign, { role: "creator", lock: { codeHash: recipient.codeHash, hashType: recipient.hashType,
-        args: {} }, type: null, data: { length: 0 }, capacity: { max: FREIGHT_PILOT_BUDGET.toString() } }],
-      relations: [...campaignIdentity, preserve("capacity"), preserve("data", 0, 53), preserve("data", 61),
-        { left: field("input", "campaign", "data", 24, 20), right: field("output", "creator", "lockArgs", 0, 20) }],
-    }, true);
-  }
+  add("creator-tip", "Tip a creator", "0x01", {
+    includeAccountOutputs: true,
+    maxSpend: FREIGHT_PILOT_BUDGET.toString(),
+    outputs: [campaign, { role: "creator", lock: { anyOf: recipients.map(recipient => ({
+      codeHash: recipient.codeHash, hashType: recipient.hashType, args: {},
+    })) }, type: null, data: { length: 0 }, capacity: { max: FREIGHT_PILOT_BUDGET.toString() } }],
+    relations: [...campaignIdentity, preserve("capacity"), preserve("data", 0, 53), preserve("data", 61),
+      { left: field("input", "campaign", "data", 24, 20), right: field("output", "creator", "lockArgs", 0, 20) }],
+  }, true);
   // Every ticket pairs with one plain wallet payout. Script guards bind each
   // identity comparison to its intended wallet program; branches never mix.
   const each = (source: "input" | "output", role: string, key: PilotTemplateField["field"], offset?: number, length?: number): PilotTemplateRepeatedField => ({
