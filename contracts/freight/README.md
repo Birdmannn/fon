@@ -101,19 +101,20 @@ No deployment is performed by building or testing these changes.
 
 ## Current testnet deployment
 
-The fresh profile was redeployed on 2026-10-10 after reclaiming the previous
+The fresh profile was redeployed on 2026-11-01 after reclaiming the previous
 code cell. The transaction is committed, and the live bytes exactly match the tested `build/release/freight`,
-including `APV1` approvals and `GFT1` claim policies.
+including `APV1` approvals, `GFT1` claim policies and direct regular-raffle wallet payouts.
 
-- Transaction: `0xd5baeb3225bc7cb8558b849148e5a77c6616edc1c228dbe701dcff52e98495a3`, output 0.
-- Type script hash: `0x5724d09f04556e046c2deb3cb870883526545a1eedf67779e09b2cce0559ce3c`.
-- Binary data hash: `0x5a644fe5590e290cffd45523940eff02f9d0b33e6bd03909bfa564987a7a5b3b`.
-- Contract capacity: 167,694 CKB; deployment fee: 0.00168169 CKB.
-- Reclaim transaction: `0x85f316c3622736bd38a1cb5b690102a8bb4b9296e0f7bf190e80c6baf6eaa013`.
+- Transaction: `0x31cd234ecd9f82bcd824d80dddf56a203e40d7c2f8f9d57a8d1a5dbd9d986e69`, output 0.
+- Type script hash: `0x53a6f56d36efe23b00b41c2743542969b7d1852f0a2abe8e2a81f8c8de4ce40c`.
+- Binary data hash: `0xe8442857aec2750fbbe46d0805e6bcb3f1b05d399f95d08e857fa6ee0790c65a`.
+- Contract capacity: 169,710 CKB; deployment fee: 0.00170185 CKB.
+- Reclaim transaction: `0xf0ae7209a36629eecb41f3caf8d3f09283ab3be877b091a4dc9f28fa1780e1a9`.
 - Reclaimed capacity: 167,693.99 CKB; reclaim fee: 0.01 CKB.
 
 Previous fresh-profile records are retained in
-`deployment/archive-fresh-20261010-225702`, including the reclaim transaction.
+`deployment/archive-fresh-20261101`, including the reclaim transaction.
+The earlier October deployment is retained in `deployment/archive-fresh-20261010-225702`.
 Earlier records remain in `deployment/archive-fresh-20261009-212258` and
 `deployment/archive-fresh-20261009-203824`. The deployed contract enforces gift
 approvals, tagged claimant eligibility, fixed equal/ratio allocations, one claim
@@ -121,3 +122,31 @@ per wallet, and direct claim payouts. `@receive` payment streaming is unsupporte
 Older gifts need recreation to obtain immutable claim rules. This fresh deployment
 has a new type script hash; cells referencing the consumed deployment cannot use
 this replacement as their original code dependency.
+
+## Regular raffle wallet payouts
+
+Selector 2 consumes winning regular-raffle ticket cells and requires a separate
+plain wallet output for each ticket. Each output has no type script and empty
+data; its exact capacity is the consumed ticket capacity plus that ticket's
+reward. A FON state lock cannot be the recipient. The campaign capacity and
+recorded deposits both fall by the distributed reward total. One payout output
+cannot satisfy two winning tickets, including two tickets owned by one wallet.
+
+Existing ticket identities store only 20 bytes. Distribution pins supported
+wallet programs (JoyID, secp256k1, OmniLock, and Pilot account/passkey scripts)
+instead of accepting any script with copied identity arguments. Wallet arguments
+must match that identity; a Pilot owner payout may instead match the first 20
+bytes of its wallet script hash. The application additionally verifies the full
+Pilot owner hash before accepting a participant's profile address. New ticket
+records retain that owner address, and distribution uses it for wallet payouts,
+profile labels and settlement credits. Records without an owner address fall
+back to their registered wallet. Repeated account queries deduplicate tickets
+by outpoint.
+
+The payout contract was deployed under a fresh identity on 2026-11-01, after
+reclaiming the old code-cell capacity. Frontend defaults and local environment
+settings reference the new type hash and code outpoint listed above.
+
+Old test freights, tickets and previously locked rewards are intentionally left
+behind. They are not migrated or repaid by the new deployment. Recurring raffle
+cash-out remains its existing separate action.

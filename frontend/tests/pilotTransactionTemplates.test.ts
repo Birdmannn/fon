@@ -43,11 +43,11 @@ async function fixture() {
   }, outputData: encodePilotWalletState(state) });
   cells.push(anchor);
   const signer = selectedAccountSigner(client, selected);
-  const validate = (tx: ccc.Transaction, policyId?: string) => {
+  const validate = (tx: ccc.Transaction, policyId?: string, ownerApproved = false) => {
     const selectedState = { ...state, policies: policyId ? policies.filter(p => p.template?.id === policyId) : state.policies };
     const selectedAnchor = anchor.clone(); selectedAnchor.outputData = encodePilotWalletState(selectedState);
     cells[0] = selectedAnchor;
-    return buildPilotWalletTransaction(client, account, selectedState, tx, false, selectedAnchor);
+    return buildPilotWalletTransaction(client, account, selectedState, tx, ownerApproved, selectedAnchor);
   };
   return { cells, client, selected, catalog, policies, state, anchor, signer, validate };
 }
@@ -196,8 +196,8 @@ function syncCampaign(f: Awaited<ReturnType<typeof fixture>>, c: import("../lib/
   cell.cellOutput.lock = ccc.Script.from(c.lock);
   cell.outputData = ccc.hexFrom(encodeCampaignData(c.data));
 }
-function participant(f: Awaited<ReturnType<typeof fixture>>, c: import("../lib/transactions.ts").CampaignCell, index = 1, own = false) {
-  const participantAddress = own ? ccc.bytesFrom(lock.args).slice(0, 20) : new Uint8Array(20).fill(index + 30);
+function participant(f: Awaited<ReturnType<typeof fixture>>, c: import("../lib/transactions.ts").CampaignCell, index = 1, own = false, beneficiary?: Uint8Array) {
+  const participantAddress = beneficiary ?? (own ? ccc.bytesFrom(lock.args).slice(0, 20) : new Uint8Array(20).fill(index + 30));
   const data: import("../lib/encoding.ts").ParticipantData = { campaignCreatedBy: c.data.createdBy, campaignCreatedAt: c.data.createdAt,
     campaignType: c.data.campaignType, participantAddress, joinedAt: 10n, status: ParticipantStatus.Verified,
     depositedAmount: ccc.fixedPointFrom(1), ...(c.data.campaignType === CampaignType.RecurringRaffle ? {round: 1n, claimableAmount: 0n} : {}) };
@@ -209,7 +209,7 @@ function participant(f: Awaited<ReturnType<typeof fixture>>, c: import("../lib/t
     data, lock: entryLock, type: null, capacityShannons: cell.cellOutput.capacity };
 }
 
-test("every FON transaction permission has a selectable template, separate from receipt messages", async () => {
+test("all supported FON transactions have selectable templates including mixed wallet payouts", async () => {
   const f = await fixture();
   const legacy = { "create-campaign": "freight.publish", "update-campaign-status": "freight.status" };
   for (const permission of FREIGHT_TRANSACTION_PERMISSIONS) {
@@ -274,38 +274,80 @@ test("direct tip builders bind supported recipients to the campaign creator and 
   }
 });
 
-test("one reward permission preserves every winner lock and identity for variable batches up to 64", async () => {
-  for (const count of [1, 2, 8, 9, 16, 32, 64]) {
+test("one reward permission accepts mixed wallet payouts and binds every recipient to its ticket", async () => {
+  for (const count of [1, 2, 5, 8, 9, 16, 32, 64]) {
     const f = await fixture(); const c = raffle(f, false, 50);
     c.data.currentDeposits = ccc.fixedPointFrom(400); c.data.ticketSalesTotal = c.data.currentDeposits;
     c.data.rewardCount = BigInt(count); c.data.status = CampaignStatus.Completed; syncCampaign(f, c);
-    const winners = Array.from({length: count}, (_, i) => participant(f, c, i + 1));
+    const programs = await freightRecipientScripts(f.client);
+    const recipientLocks = Array.from({length: count}, (_, index) => {
+      if (index === count - 1) return ccc.Script.from(account.ownerLock);
+      if (count > 5 && index === count - 2) return lock.clone(); // The signing account can also receive its own reward.
+      const program = programs[index % programs.length];
+      const argumentLength = program.name === "Pilot passkey" ? 97 : program.name === "Pilot account" ? 104 : 22;
+      return ccc.Script.from({codeHash: program.codeHash, hashType: program.hashType,
+        args: ccc.hexFrom(new Uint8Array(argumentLength).fill(index + 31))});
+    });
+    const winners = recipientLocks.map((recipient, i) => participant(f, c, i + 1, false,
+      ccc.bytesFrom(recipient.codeHash === PILOT_PASSKEY_CODE_HASH ? recipient.hash() : recipient.args).slice(0, 20)));
+    const addresses = recipientLocks.map(lock => ccc.Address.fromScript(lock, f.client).toString());
     const id = "freight.batch-deliver";
-    assert.equal(f.policies.filter(p => p.template?.id.startsWith(id)).length, 1);
-    const tx = await capture(f, "batch-deliver", () => transactions.sendBatchDeliver(f.signer, c, winners, new Uint8Array(32)), id);
-    for (const i of new Set([1, Math.ceil(count / 2), count])) {
-      const redirected = tx.clone(); const args = ccc.bytesFrom(redirected.outputs[i].lock.args); args[29] ^= 1;
-      redirected.outputs[i].lock.args = ccc.hexFrom(args);
-      await assert.rejects(f.validate(redirected, id), /approved action template/);
-      const data = tx.clone(); const bytes = ccc.bytesFrom(data.outputsData[i]); bytes[29] ^= 1; data.outputsData[i] = ccc.hexFrom(bytes);
-      await assert.rejects(f.validate(data, id), /approved action template/);
-    }
-    const missing = tx.clone(); missing.outputs.pop(); missing.outputsData.pop();
-    await assert.rejects(f.validate(missing, id), /approved action template/);
-    if (count > 1) {
-      const duplicate = tx.clone(); duplicate.outputs[count] = duplicate.outputs[1].clone(); duplicate.outputsData[count] = duplicate.outputsData[1];
-      await assert.rejects(f.validate(duplicate, id), /approved action template/);
-      const reordered = tx.clone();
-      [reordered.outputs[1], reordered.outputs[count]] = [reordered.outputs[count], reordered.outputs[1]];
-      [reordered.outputsData[1], reordered.outputsData[count]] = [reordered.outputsData[count], reordered.outputsData[1]];
-      await assert.rejects(f.validate(reordered, id), /approved action template/);
-    }
+    assert.equal(f.policies.filter(p => p.template?.id === id).length, 1);
+    let submitted: ccc.Transaction | undefined;
+    const cleanup = installPermissionHandler(async (_signer, permission, operation) => {
+      assert.equal(permission, "batch-deliver");
+      return operation({sendTransaction: async (tx: ccc.Transaction) => {submitted = tx; return h("33");}} as unknown as ccc.Signer);
+    });
+    try {
+      await transactions.sendBatchDeliver(f.signer, c, winners, new Uint8Array(32), addresses);
+      const tx = submitted!;
+      for (const [index, winner] of winners.entries()) {
+        assert.ok(tx.outputs[index + 1].lock.eq(recipientLocks[index]));
+        assert.equal(tx.outputs[index + 1].type, undefined);
+        assert.equal(tx.outputsData[index + 1], "0x");
+        assert.equal(tx.outputs[index + 1].capacity, winner.capacityShannons + c.data.currentDeposits / BigInt(count));
+      }
+      await f.validate(tx, id); // Automatic template path: no ownerApproved bypass.
+      for (const i of new Set([1, Math.ceil(count / 2), count])) {
+        const redirected = tx.clone(); const args = ccc.bytesFrom(redirected.outputs[i].lock.args); args[0] ^= 1;
+        redirected.outputs[i].lock.args = ccc.hexFrom(args);
+        await assert.rejects(f.validate(redirected, id), /approved action template/);
+      }
+      const wrongScript = tx.clone(); wrongScript.outputs[1].lock.codeHash = h("98");
+      await assert.rejects(f.validate(wrongScript, id), /approved action template/);
+      const wrongHashType = tx.clone(); wrongHashType.outputs[1].lock.hashType = "data1";
+      await assert.rejects(f.validate(wrongHashType, id), /approved action template/);
+      const typed = tx.clone(); typed.outputs[1].type = ccc.Script.from({codeHash:h("98"),hashType:"data2",args:"0x"});
+      await assert.rejects(f.validate(typed, id), /approved action template/);
+      const withData = tx.clone(); withData.outputsData[1] = "0x01";
+      await assert.rejects(f.validate(withData, id), /approved action template/);
+      const missing = tx.clone(); missing.outputs.pop(); missing.outputsData.pop();
+      await assert.rejects(f.validate(missing, id), /approved action template/);
+      const extra = tx.clone(); extra.addOutput(tx.outputs[1], "0x");
+      await assert.rejects(f.validate(extra, id), /approved action template/);
+      if (count > 1) {
+        const duplicated = tx.clone(); duplicated.outputs[count] = duplicated.outputs[1].clone();
+        await assert.rejects(f.validate(duplicated, id), /approved action template/);
+      }
+      await assert.rejects(transactions.sendBatchDeliver(f.signer, c, winners, new Uint8Array(32)), /wallet payout address/);
+      const redirected = [...addresses];
+      redirected[0] = ccc.Address.fromScript({codeHash: programs[0].codeHash, hashType: programs[0].hashType,
+        args: `0x${"99".repeat(22)}`}, f.client).toString();
+      await assert.rejects(transactions.sendBatchDeliver(f.signer, c, winners, new Uint8Array(32), redirected), /does not match/);
+    } finally {cleanup();}
   }
+});
+
+test("participant scans count a ticket once when multiple Pilot sessions share its identity", async () => {
   const f = await fixture(); const c = raffle(f, false, 50);
-  c.data.currentDeposits = ccc.fixedPointFrom(400); c.data.ticketSalesTotal = c.data.currentDeposits;
-  c.data.rewardCount = 65n; c.data.status = CampaignStatus.Completed; syncCampaign(f, c);
-  const winners = Array.from({length: 65}, (_, i) => participant(f, c, i + 1));
-  await assert.rejects(capture(f, "batch-deliver", () => transactions.sendBatchDeliver(f.signer, c, winners, new Uint8Array(32)), "freight.batch-deliver"), /approved action template/);
+  const ticket = participant(f, c, 1, true);
+  const stored = f.cells.find(cell => cell.outPoint.eq(ticket.outPoint))!;
+  f.client.findCells = async function* () {yield stored;};
+  const secondLock = lock.clone();
+  const args = ccc.bytesFrom(secondLock.args); args[103] ^= 1; secondLock.args = ccc.hexFrom(args);
+  const addresses = [lock, secondLock].map(script => ccc.Address.fromScript(script, f.client).toString());
+  const found = await transactions.fetchParticipants(f.client, c, 500, addresses);
+  assert.equal(found.length, 1);
 });
 
 test("recurring draw, rollover, claim and reclaim use their real builders and bind claims to this account", async () => {

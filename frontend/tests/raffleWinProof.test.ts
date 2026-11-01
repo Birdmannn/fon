@@ -9,12 +9,13 @@ const jiti = require("jiti")(import.meta.url, { alias: { "@": process.cwd() } })
 const { verifyRaffleSettlement, verifyRecurringRaffleCashout } = jiti("../lib/raffleWinProof.ts");
 const { bytesToHex, encodeCampaignData, encodeParticipantData } = jiti("../lib/encoding.ts");
 const { CampaignType, FREIGHT_CONTRACT, ParticipantStatus } = jiti("../lib/contract.ts");
+const { isRaffleProfileOwner, rafflePayoutMatchesIdentity } = jiti("../lib/rafflePayout.ts");
 const { awardFbarsEvent, computeRewardFbars } = jiti("../lib/fbars.ts");
 
 const client = { addressPrefix: "ckt" } as Client;
 const createdBy = new Uint8Array(20).fill(0x11);
 const participantAddress = new Uint8Array(20).fill(0x22);
-const walletScript = Script.from({ codeHash: `0x${"33".repeat(32)}`, hashType: "type", args: bytesToHex(participantAddress) });
+const walletScript = Script.from({ codeHash: "0x9bd7e06f3ecf4be0f2fcd2188b23f1b9fcc88e5d4b65a8637b17723bbda3cce8", hashType: "type", args: bytesToHex(participantAddress) });
 const walletAddress = Address.fromScript(walletScript, client).toString();
 const campaignLock = Script.from({ codeHash: `0x${"44".repeat(32)}`, hashType: "type", args: bytesToHex(createdBy) });
 const campaignTypeScript = Script.from({ codeHash: FREIGHT_CONTRACT.codeHash, hashType: FREIGHT_CONTRACT.hashType, args: "0x00" });
@@ -80,11 +81,11 @@ function transaction(campaignType: number, reward: bigint) {
     inputs: [{ getCell: async () => campaignCell }, { getCell: async () => participantCell }],
     outputs: [
       { capacity: 20_000n - reward, lock: campaignLock, type: campaignTypeScript },
-      { capacity: 1_000n + reward, lock: recurring ? walletScript : ticketLock },
+      { capacity: 1_000n + reward, lock: walletScript },
     ],
     outputsData: [
       bytesToHex(encodeCampaignData(after)),
-      recurring ? "0x" : bytesToHex(encodeParticipantData({ ...participant, status: ParticipantStatus.Rewarded })),
+      "0x",
     ],
   };
 }
@@ -100,6 +101,44 @@ test("standard settlement awards the proven ticket owner and chain amount", asyn
     ]),
     /does not match the chain/,
   );
+});
+
+test("standard settlement rejects escrow outputs, locked data, redirects and inflated capacity", async () => {
+  for (const mutation of ["escrow", "data", "redirect", "type", "capacity"] as const) {
+    const tx = transaction(CampaignType.Raffle, 1_000n);
+    if (mutation === "escrow") tx.outputs[1].lock = ticketLock;
+    if (mutation === "data") tx.outputsData[1] = "0x01";
+    if (mutation === "redirect") tx.outputs[1].lock = campaignLock;
+    if (mutation === "type") Object.assign(tx.outputs[1], {type: campaignTypeScript});
+    if (mutation === "capacity") tx.outputs[0].capacity += 1n;
+    await assert.rejects(verifyRaffleSettlement(client, tx, record(CampaignType.Raffle), [
+      {address: walletAddress, amountShannons: "1000"},
+    ]), /wallet output|freight escrow/);
+  }
+});
+
+test("Pilot owner payouts bind to the ticket identity and the complete session owner commitment", async () => {
+  const owner = Script.from({codeHash: "0x2ba431b27a844a3664e24c548ecd175cea3ba005590f4f362bee5a94acac92e6",
+    hashType: "data2", args: `0x${"22".repeat(97)}`});
+  const session = Script.from({codeHash: "0x37d1ff519ae19f7b16cd7ee9b4f726300cdcc6fece923bf8bee40466a15cef28",
+    hashType: "data2", args: `${owner.hash()}${"00".repeat(72)}`});
+  const identity = owner.hash().slice(0, 42);
+  assert.ok(isRaffleProfileOwner(owner, session));
+  assert.ok(rafflePayoutMatchesIdentity(owner, identity));
+  const forgedSession = session.clone();
+  forgedSession.args = `${identity}${"ff".repeat(12)}${"00".repeat(72)}` as `0x${string}`;
+  assert.equal(isRaffleProfileOwner(owner, forgedSession), false);
+  const foreign = owner.clone(); foreign.args = `0x${"23".repeat(97)}`;
+  assert.equal(rafflePayoutMatchesIdentity(foreign, identity), false);
+  const tx = transaction(CampaignType.Raffle, 1_000n);
+  const ticket = await tx.inputs[1].getCell();
+  const data = new Uint8Array(Buffer.from(ticket.outputData.slice(2), "hex"));
+  data.set(Buffer.from(identity.slice(2), "hex"), 29);
+  ticket.outputData = bytesToHex(data);
+  tx.outputs[1].lock = owner;
+  const address = Address.fromScript(owner, client).toString();
+  const awards = await verifyRaffleSettlement(client, tx, record(CampaignType.Raffle), [{address, amountShannons: "1000"}]);
+  assert.equal(awards[0].address, address.toLowerCase());
 });
 
 test("recurring cash-out awards only the proven winner", async () => {

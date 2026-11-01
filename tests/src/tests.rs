@@ -1899,6 +1899,88 @@ fn test_batch_deliver_sequential() {
     println!("test_batch_deliver_sequential cycles: {}", cycles);
 }
 
+// Exercise the real FON state lock as well as the campaign type script.
+fn regular_wallet_payout_transaction(same_wallet: bool, owner_payout: bool) -> (Context, ckb_testtool::ckb_types::core::TransactionView) {
+    let mut context = Context::default();
+    let freight = context.deploy_cell_by_name("freight");
+    let always_success = context.deploy_cell(ALWAYS_SUCCESS.clone());
+    let created_at = 1_700_000_000_000u64;
+    let reward_pool = 1_000u64;
+    let creator = address_from(CREATOR);
+    let campaign_type = context.build_script(&freight, Bytes::from(vec![2u8])).unwrap();
+    let creator_lock = context.build_script(&always_success, Bytes::from(creator.to_vec())).unwrap();
+    let campaign_output = CellOutput::new_builder().capacity(20_000u64)
+        .lock(creator_lock).type_(Some(campaign_type).pack()).build();
+    let campaign_data = build_campaign_bytes(created_at, 0, 60, &creator, CampaignType::Raffle,
+        reward_pool, reward_pool, CampaignStatus::Completed, 0, [0u8;32], &default_summary(), 1);
+    let mut campaign_data = campaign_data.to_vec();
+    campaign_data[174..182].copy_from_slice(&reward_pool.to_le_bytes());
+    let campaign_point = context.create_cell(campaign_output.clone(), Bytes::from(campaign_data));
+    let mut inputs = vec![CellInput::new_builder().previous_output(campaign_point).build()];
+    let mut outputs = vec![campaign_output.as_builder().capacity(19_000u64).build()];
+    let mut outputs_data = vec![build_campaign_bytes(created_at, 0, 60, &creator, CampaignType::Raffle,
+        reward_pool, 0, CampaignStatus::Completed, 0, [0u8;32], &default_summary(), 1)];
+    let secp_hash: [u8;32] = [0x9b,0xd7,0xe0,0x6f,0x3e,0xcf,0x4b,0xe0,0xf2,0xfc,0xd2,0x18,0x8b,0x23,0xf1,0xb9,0xfc,0xc8,0x8e,0x5d,0x4b,0x65,0xa8,0x63,0x7b,0x17,0x72,0x3b,0xbd,0xa3,0xcc,0xe8];
+    for index in 0..2u8 {
+        let address = address_from(if same_wallet { 42 } else { 42 + index });
+        let wallet = if owner_payout {
+            let owner_code: [u8;32] = [0x2b,0xa4,0x31,0xb2,0x7a,0x84,0x4a,0x36,0x64,0xe2,0x4c,0x54,0x8e,0xcd,0x17,0x5c,0xea,0x3b,0xa0,0x05,0x59,0x0f,0x4f,0x36,0x2b,0xee,0x5a,0x94,0xac,0xac,0x92,0xe6];
+            Script::new_builder().code_hash(owner_code.pack()).hash_type(4u8)
+                .args(Bytes::from(vec![address[0];97]).pack()).build()
+        } else {
+            Script::new_builder().code_hash(secp_hash.pack()).hash_type(1u8).args(Bytes::from(address.to_vec()).pack()).build()
+        };
+        let address: [u8;20] = if owner_payout { blake2b_256(wallet.as_slice())[0..20].try_into().unwrap() } else { address };
+        let mut args = vec![255]; args.extend_from_slice(&creator); args.extend_from_slice(&created_at.to_le_bytes()); args.extend_from_slice(&address);
+        let state_lock = context.build_script(&freight, Bytes::from(args)).unwrap();
+        let point = context.create_cell(CellOutput::new_builder().capacity(10_000u64).lock(state_lock).build(),
+            build_participant_bytes(&creator, created_at, CampaignType::Raffle, &address, created_at, ParticipantStatus::Verified, 0));
+        inputs.push(CellInput::new_builder().previous_output(point).build());
+        outputs.push(CellOutput::new_builder().capacity(10_500u64).lock(wallet).build());
+        outputs_data.push(Bytes::new());
+    }
+    let header = insert_header(&mut context, created_at + 61_000);
+    let tx = TransactionBuilder::default().inputs(inputs).outputs(outputs).outputs_data(outputs_data.pack()).header_dep(header).build();
+    let tx = context.complete_tx(tx);
+    (context, tx)
+}
+
+#[test]
+fn test_regular_raffle_pays_wallets_and_returns_each_ticket_capacity() {
+    for same_wallet in [false, true] {
+        for owner_payout in [false, true] {
+            let (context, tx) = regular_wallet_payout_transaction(same_wallet, owner_payout);
+            context.verify_tx(&tx, 10_000_000).expect("plain wallet payouts must succeed");
+        }
+    }
+}
+
+#[test]
+fn test_regular_raffle_rejects_escrow_redirect_data_shortpay_and_reused_payout() {
+    for mutation in ["escrow", "redirect", "data", "shortpay", "reuse", "untrusted", "escrow-capacity", "typed"] {
+        let (context, tx) = regular_wallet_payout_transaction(mutation == "reuse", false);
+        let mut outputs: Vec<_> = tx.outputs().into_iter().collect();
+        let mut data: Vec<_> = tx.outputs_data().into_iter().map(|value| value.raw_data()).collect();
+        match mutation {
+            "escrow" => { let input = tx.inputs().get(1).unwrap().previous_output();
+                let lock = context.get_cell(&input).unwrap().0.lock();
+                outputs[1] = outputs[1].clone().as_builder().lock(lock).build(); }
+            "redirect" => {let lock = outputs[1].lock().as_builder().args(Bytes::from(address_from(99).to_vec()).pack()).build();
+                outputs[1] = outputs[1].clone().as_builder().lock(lock).build();}
+            "data" => data[1] = Bytes::from(vec![1u8]),
+            "shortpay" => outputs[1] = outputs[1].clone().as_builder().capacity(10_499u64).build(),
+            "reuse" => { outputs.pop(); data.pop(); }
+            "untrusted" => { let lock = outputs[1].lock().as_builder().code_hash(outputs[0].lock().code_hash()).build();
+                outputs[1] = outputs[1].clone().as_builder().lock(lock).build(); }
+            "escrow-capacity" => outputs[0] = outputs[0].clone().as_builder().capacity(20_000u64).build(),
+            "typed" => outputs[1] = outputs[1].clone().as_builder().type_(outputs[0].type_()).build(),
+            _ => unreachable!(),
+        }
+        let changed = tx.as_advanced_builder().set_outputs(outputs).outputs_data(data.pack()).build();
+        assert!(context.verify_tx(&changed, 10_000_000).is_err(), "must reject {}", mutation);
+    }
+}
+
 #[test]
 fn test_batch_deliver_randomness_success() {
     let preimage = [7u8; 32];

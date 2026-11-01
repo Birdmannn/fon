@@ -112,9 +112,10 @@ iframe alive for approved automatic signing. The header Disconnect action reopen
 the account modal.
 
 FON separates 28 app actions into transaction and message capabilities. The SDK
-and React packages are pinned to Owl commit
-`288628434e10a24b740bceb97de5fe5362c06d33`, including bounded repeated-entry
-templates. See `frontend/vendor/owl/README.md` for provenance.
+uses SDK and React archives built from upstream Owl commit
+`1e16e9ccf689cdcdd0bc2347c9825f16d6408a60`, including bounded script and identity
+alternatives. Its compiled SDK matches the earlier local mixed-payout snapshot.
+See `frontend/vendor/owl/README.md` for provenance.
 Connection requests `accountMode: "general"` and uses `buildPolicies` to validate
 the selected owner/account pair before offering 15 real message scopes and
 19 whole-transaction templates covering all 15 FON transaction action IDs:
@@ -137,12 +138,17 @@ the selected owner/account pair before offering 15 real message scopes and
   receive a direct tip under the current contract; this integration does not
   change that contract rule.
 - **Distribute rewards** is one permission for variable batches of 1–64 raffle
-  winners. Pilot's bounded `forEach` rule preserves every entry's full lock and
-  identity fields and binds every entry to the campaign. Inputs/outputs pair by
-  role occurrence order with equal counts. Changed recipients or identities,
-  missing/duplicated counterparts and reordered identities reject automatic
-  signing. The FON contract retains winner selection and reward arithmetic.
-  Larger batches and other participant lock/type layouts require owner review.
+  winners with mixed JoyID, secp256k1, OmniLock and Pilot wallet payouts. Each
+  ticket's beneficiary identity (data offset29, length20) must match its paired
+  payout's argument prefix for ordinary programs, or its script-hash prefix for
+  the Pilot passkey-owner program. Each alternative binds its wallet script and
+  identity check together; checks from different branches cannot combine.
+  Payout cells require empty data and no type script. The template explicitly includes plain payouts to the signing Pilot account itself in application role checks. Equal counts, ordered
+  pairing and common campaign identity checks remain mandatory. The updated
+  FON contract returns ticket capacity with each reward and checks amounts and
+  escrow reduction; the fresh payout contract is deployed on testnet. Larger batches and unsupported
+  layouts/programs require owner review. This wallet template does not preserve
+  the old ticket lock or interpret reward arithmetic.
 - **Draw recurring raffle**, **Claim raffle reward**, **Roll over raffle** and
   **Reclaim raffle entry** use separate selectors and pin recurring campaign
   layouts. Claims/reclaims bind the entry beneficiary to the selected account.
@@ -172,12 +178,15 @@ bypass action-template restrictions, and the CKB allowance does not value tokens
 or NFTs. Pilot displays this distinction during approval. The same owner address
 continues to identify profiles and FBARS; general mode uses a fresh spending
 address and fresh owner-approved funding. Existing test sessions are not migrated.
-The hosted wallet must include the repeated-entry matcher; its public asset was
-checked on 30 October 2026 and includes this schema. FON and its message-verifying
-backend must use the pinned SDK and catalog. No contract redeployment is needed. Existing
-fixed-size permissions are not silently expanded: settle pending receipts and
-explicitly approve a replacement grant containing Distribute rewards. Live
-reward distribution after redeployment remains unverified.
+The hosted wallet asset checked on 1 November contains the script-alternative,
+guarded identity and account-output matcher fields. Funded hosted distribution
+remains unverified. FON and its message-verifying backend must use the new
+SDK and catalog. This template extension needs no Pilot contract redeployment;
+the separately updated FON payout contract was freshly deployed and verified
+on testnet on 1 November 2026.
+Existing grants are not silently expanded: settle pending receipts and explicitly
+approve a replacement grant containing the new Distribute rewards rule. Live
+mixed-wallet distribution remains unverified.
 
 `freightTransactionPolicies` remains an exact-cell effect utility;
 `freightTransactionTemplates` supplies the connection templates. Tests use

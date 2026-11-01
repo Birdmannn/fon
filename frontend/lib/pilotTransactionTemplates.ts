@@ -1,13 +1,13 @@
 import { ccc } from "@ckb-ccc/core";
 import { PILOT_PASSKEY_CODE_HASH, PILOT_WALLET_GENERAL_CODE_HASH, pilotTemplatePolicy,
-  type PilotScriptPattern, type PilotTemplateCell, type PilotTemplateField, type PilotTemplateRepeatedField, type PilotTransactionTemplate } from "@owl/pilot";
+  type PilotScriptMatch, type PilotTemplateCell, type PilotTemplateField, type PilotTemplateRepeatedField, type PilotTransactionTemplate } from "@owl/pilot";
 import { FREIGHT_CONTRACT } from "./contract";
 import type { FreightTransactionPermission } from "./owlPermissions";
 
 export const FREIGHT_PILOT_BUDGET = ccc.fixedPointFrom(1_000_000);
 export const PILOT_AUTOMATIC_TICKET_LIMIT = 64;
 const identity = { account: "accountLockArgs" as const, offset: 0, length: 20 };
-const app = (args: Extract<PilotScriptPattern, object>["args"]): PilotScriptPattern => ({
+const app = (args: Extract<PilotScriptMatch, object>["args"]): PilotScriptMatch => ({
   codeHash: FREIGHT_CONTRACT.codeHash as ccc.Hex, hashType: FREIGHT_CONTRACT.hashType, args,
 });
 const campaignLock = app({ prefix: "0xff", length: 21 });
@@ -37,7 +37,6 @@ export async function freightRecipientScripts(client: ccc.Client): Promise<Freig
     { name: "Pilot passkey", codeHash: PILOT_PASSKEY_CODE_HASH, hashType: "data2" as const }];
 }
 
-export const PILOT_AUTOMATIC_DELIVERY_LIMIT = 64;
 const entry: PilotTemplateCell = { role: "entry", lock: app({ prefix: "0xff", length: 49 }), type: null,
   data: { minLength: 66, maxLength: 82 } };
 const ownEntry: PilotTemplateCell = { ...entry,
@@ -121,26 +120,28 @@ export function freightTransactionTemplates(recipients: readonly FreightRecipien
         { left: field("input", "campaign", "data", 24, 20), right: field("output", "creator", "lockArgs", 0, 20) }],
     }, true);
   }
-  // One permission covers bounded variable batches. Every entry pair preserves
-  // its lock/identity and each input is bound to the shared campaign.
-  const eachEntry = (source: "input" | "output", key: PilotTemplateField["field"], offset?: number, length?: number): PilotTemplateRepeatedField => ({
-    ...field(source, "entry", key, offset, length), index: "each",
+  // Every ticket pairs with one plain wallet payout. Script guards bind each
+  // identity comparison to its intended wallet program; branches never mix.
+  const each = (source: "input" | "output", role: string, key: PilotTemplateField["field"], offset?: number, length?: number): PilotTemplateRepeatedField => ({
+    ...field(source, role, key, offset, length), index: "each",
   });
-  const preserveEntry = (key: PilotTemplateField["field"], offset?: number, length?: number) => ({
-    left: eachEntry("input", key, offset, length), right: eachEntry("output", key, offset, length),
-  });
+  const payoutPrograms = recipients.map(recipient => ({ codeHash: recipient.codeHash, hashType: recipient.hashType, args: {} }));
   add("batch-deliver", "Distribute rewards", "0x02", {
-    inputs: [campaign, { ...entry, min: 1, max: PILOT_AUTOMATIC_DELIVERY_LIMIT,
+    includeAccountOutputs: true,
+    inputs: [campaign, { ...entry, min: 1, max: 64,
       data: { length: 66, fields: [{ offset: 57, value: "0x01" }] } }],
-    outputs: [campaign, { ...entry, min: 1, max: PILOT_AUTOMATIC_DELIVERY_LIMIT,
-      data: { length: 66, fields: [{ offset: 57, value: "0x02" }] } }],
+    outputs: [campaign, { role: "payout", min: 1, max: 64,
+      lock: { anyOf: payoutPrograms }, type: null, data: { length: 0 } }],
     relations: campaignIdentity,
-    forEach: [{ inputRole: "entry", outputRole: "entry", relations: [
-      preserveEntry("lock"), preserveEntry("data", 0, 57), preserveEntry("data", 58),
+    forEach: [{ inputRole: "entry", outputRole: "payout", relations: [
       ...entryCampaign.map(r => ({ left: { ...r.left, index: "each" as const }, right: r.right })),
-      { left: eachEntry("input", "lockArgs", 1, 28), right: eachEntry("input", "data", 0, 28) },
-      { left: eachEntry("input", "lockArgs", 29, 20), right: eachEntry("input", "data", 29, 20) },
-    ] }],
+      { left: each("input", "entry", "lockArgs", 1, 28), right: each("input", "entry", "data", 0, 28) },
+      { left: each("input", "entry", "lockArgs", 29, 20), right: each("input", "entry", "data", 29, 20) },
+    ], anyOf: recipients.map((recipient, index) => ({
+      outputLock: payoutPrograms[index],
+      relations: [{ left: each("input", "entry", "data", 29, 20),
+        right: each("output", "payout", recipient.codeHash === PILOT_PASSKEY_CODE_HASH ? "lock" : "lockArgs", 0, 20) }],
+    })) }],
   }, true);
   add("creator-withdraw", "Withdraw support", "0x08", {
     inputs: [ownCampaign], outputs: [ownCampaign], maxSpend: ccc.fixedPointFrom(1000).toString(),

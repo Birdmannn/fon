@@ -1,3 +1,4 @@
+import { rafflePayoutMatchesIdentity } from "./rafflePayout";
 import { Address, type Cell, type Client, type Transaction } from "@ckb-ccc/core";
 
 import { buildStableCampaignId } from "@/lib/campaignIdentity";
@@ -53,19 +54,6 @@ function verifyParticipantLock(input: Cell) {
   }
 }
 
-function matchingParticipant(input: Cell, outputData: string, campaignId: string, status: number) {
-  const before = decodeParticipantData(hexToBytes(input.outputData));
-  const after = decodeParticipantData(hexToBytes(outputData));
-  const beforeId = buildStableCampaignId(bytesToHex(before.campaignCreatedBy), before.campaignCreatedAt, before.campaignType);
-  const afterId = buildStableCampaignId(bytesToHex(after.campaignCreatedBy), after.campaignCreatedAt, after.campaignType);
-  if (beforeId !== campaignId || afterId !== campaignId
-    || bytesToHex(before.participantAddress) !== bytesToHex(after.participantAddress)
-    || before.joinedAt !== after.joinedAt || after.status !== status) {
-    throw new Error("Transaction does not prove a matching paid participant");
-  }
-  return { before, after };
-}
-
 export async function verifyRaffleSettlement(
   client: Client,
   transaction: Transaction,
@@ -86,16 +74,19 @@ export async function verifyRaffleSettlement(
     const input = await transaction.inputs[index + 1].getCell(client);
     verifyParticipantLock(input);
     const output = transaction.outputs[index + 1];
-    if (!output || !output.lock.eq(input.cellOutput.lock)) {
-      throw new Error("Settlement winner output does not match its ticket input");
-    }
-    const { before } = matchingParticipant(input, transaction.outputsData[index + 1] ?? "0x", campaignId, ParticipantStatus.Rewarded);
-    if (before.status !== ParticipantStatus.Verified) {
-      throw new Error("Settlement ticket was not verified");
+    const before = decodeParticipantData(hexToBytes(input.outputData));
+    const beforeId = buildStableCampaignId(bytesToHex(before.campaignCreatedBy), before.campaignCreatedAt, before.campaignType);
+    if (beforeId !== campaignId || before.status !== ParticipantStatus.Verified) {
+      throw new Error("Settlement ticket was not verified for this freight");
     }
     const address = await Address.fromString(recipient.address, client);
-    if (bytesToHex(lockScriptToAddressBytes(address.script)) !== bytesToHex(before.participantAddress)) {
+    if (!rafflePayoutMatchesIdentity(address.script, bytesToHex(before.participantAddress))) {
       throw new Error("Settlement recipient does not own the winning ticket");
+    }
+    if (!output || !output.lock.eq(address.script) || output.type
+      || transaction.outputsData[index + 1] !== "0x"
+      || output.lock.codeHash.toLowerCase() === FREIGHT_CONTRACT.codeHash.toLowerCase()) {
+      throw new Error("Settlement must pay an ordinary participant wallet output");
     }
     const amount = BigInt(output.capacity) - BigInt(input.cellOutput.capacity);
     if (amount <= 0n || amount.toString() !== recipient.amountShannons) {
@@ -105,7 +96,8 @@ export async function verifyRaffleSettlement(
     awards.push({ address: recipient.address.trim().toLowerCase(), amountShannons: amount, outputIndex: index + 1 });
   }
 
-  if (original.currentDeposits - updated.currentDeposits !== distributed) {
+  if (original.currentDeposits - updated.currentDeposits !== distributed
+    || BigInt(campaignInput.cellOutput.capacity) - BigInt(transaction.outputs[0].capacity) !== distributed) {
     throw new Error("Settlement distribution does not match freight escrow");
   }
   for (let index = recipients.length + 1; index < transaction.outputs.length; index += 1) {

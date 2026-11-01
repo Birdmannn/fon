@@ -697,6 +697,13 @@ pub fn batch_deliver(args: &[u8]) -> Result<(), Error> {
     let total_payout = reward_per_participant
         .checked_mul(winner_count as u64)
         .ok_or(Error::AmountMismatch)?;
+    if campaign.is_raffle() {
+        let input_capacity = load_cell_capacity(0, Source::GroupInput).map_err(|_| Error::InvalidCellData)?;
+        let output_capacity = load_cell_capacity(0, Source::GroupOutput).map_err(|_| Error::InvalidCellData)?;
+        if input_capacity.checked_sub(total_payout) != Some(output_capacity) {
+            return Err(Error::AmountMismatch);
+        }
+    }
     campaign.current_deposits = campaign.current_deposits
         .checked_sub(total_payout)
         .ok_or(Error::AmountMismatch)?;

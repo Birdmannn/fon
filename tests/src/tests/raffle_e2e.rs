@@ -640,24 +640,16 @@ fn test_raffle_full_lifecycle_e2e() {
     let mut deliver_outputs = vec![delivered_campaign_output.clone()];
     let mut deliver_outputs_data = vec![delivered_campaign_data.clone()];
     for winner in &winners {
-        let winner_lock = context
-            .build_script(&always_success_out_point, Bytes::from(winner.address.to_vec()))
-            .expect("build winner lock");
+        let secp_hash: [u8;32] = [0x9b,0xd7,0xe0,0x6f,0x3e,0xcf,0x4b,0xe0,0xf2,0xfc,0xd2,0x18,0x8b,0x23,0xf1,0xb9,0xfc,0xc8,0x8e,0x5d,0x4b,0x65,0xa8,0x63,0x7b,0x17,0x72,0x3b,0xbd,0xa3,0xcc,0xe8];
+        let winner_lock = Script::new_builder().code_hash(secp_hash.pack()).hash_type(1u8)
+            .args(Bytes::from(winner.address.to_vec()).pack()).build();
         deliver_outputs.push(
             CellOutput::new_builder()
                 .capacity(Pack::<Uint64>::pack(&(winner.input_capacity + reward_per_winner)))
                 .lock(winner_lock)
                 .build(),
         );
-        deliver_outputs_data.push(build_participant_bytes(
-            &creator_address,
-            created_at,
-            CampaignType::Raffle,
-            &winner.address,
-            winner.joined_at,
-            ParticipantStatus::Rewarded,
-            ticket_price,
-        ));
+        deliver_outputs_data.push(Bytes::new());
     }
 
     let deliver_header_hash = insert_header(&mut context, completed_timestamp + 1_000);

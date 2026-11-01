@@ -59,6 +59,7 @@ import {
   type CampaignCell,
 } from "@/lib/transactions";
 import { ccc } from "@ckb-ccc/connector-react";
+import { isRaffleProfileOwner } from "@/lib/rafflePayout";
 
 const pendingWinRequests = new Set<string>();
 
@@ -1199,7 +1200,11 @@ export function useCampaignCardState({
         participantAddresses.map(async (address: string) => {
           try {
             const addressObj = await ccc.Address.fromString(address, client);
-            return [bytesToHex(lockScriptToAddressBytes(addressObj.script)), address] as const;
+            const indexed = participantIndexPayload.participants.find((entry: {participantAddress?: string; profileAddress?: unknown}) => entry.participantAddress === address && typeof entry.profileAddress === "string");
+            const payoutAddress = typeof indexed?.profileAddress === "string" ? indexed.profileAddress : address;
+            const payout = await ccc.Address.fromString(payoutAddress, client);
+            if (!isRaffleProfileOwner(payout.script, addressObj.script)) throw new Error("Participant profile does not own this wallet");
+            return [bytesToHex(lockScriptToAddressBytes(addressObj.script)), payoutAddress] as const;
           } catch {
             return null;
           }
@@ -1296,7 +1301,7 @@ export function useCampaignCardState({
         } else {
           try {
             await assertFreightParentPreflight(cardId, await signer.getRecommendedAddress());
-            distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage);
+            distributionTxHash = await sendBatchDeliver(signer, c, winners, revealedPreimage, winnerAddresses);
           } catch (error) {
             if (error instanceof Error && /Transient CKB cell lookup failed/i.test(error.message)) {
               throw new Error("Settlement was interrupted while the chain was updating live cells. Please wait a moment and try Share2 again.");
@@ -1304,6 +1309,7 @@ export function useCampaignCardState({
             throw error;
           }
           let settledAt = new Date().toISOString();
+          let settlementConfirmed = false;
 
           if (record?._id) {
             const key = `fon:pending-win:${record._id}:${distributionTxHash.toLowerCase()}`;
@@ -1324,6 +1330,10 @@ export function useCampaignCardState({
             try {
               const settleResponse = await postPendingWin(key, url, body);
               const settlePayload = await settleResponse?.json().catch(() => null);
+              settlementConfirmed = settleResponse?.ok === true;
+              if (!settlementConfirmed) {
+                errorMessage = settlePayload?.error ?? "Distribution submitted; waiting for confirmed wallet payouts. The settlement record will be retried.";
+              }
               if (settleResponse?.ok && typeof settlePayload?.settledAt === "string" && settlePayload.settledAt.trim()) {
                 settledAt = settlePayload.settledAt.trim();
               }
@@ -1331,11 +1341,11 @@ export function useCampaignCardState({
                 recipients.splice(0, recipients.length, ...settlePayload.settledRecipients);
               }
             } catch {
-              // Non-fatal — optimistic UI update still uses the local timestamp.
+              errorMessage = "Distribution submitted; wallet payouts have not been confirmed yet. The settlement record will be retried.";
             }
           }
 
-          onSettlementCompleted(
+          if (settlementConfirmed) onSettlementCompleted(
             getCampaignStableId(c),
             distributionTxHash,
             settledAt,
